@@ -6,5 +6,7 @@ edition = "2018"
 
 [dependencies]
 bitcoin = "0.21"
-secp256k1 = "0.15"
-lightning = { git = "https://github.com/rust-bitcoin/rust-lightning" }
+
+[dependencies.secp256k1]
+git = "https://github.com/yancyribbens/rust-secp256k1"
+rev = "98f086355c8f05370a77a17d2c69de1115e12828"
