@@ -1,0 +1,10 @@
+[package]
+name = "rust-dlc"
+version = "0.1.0"
+authors = ["Crypto Garage"]
+edition = "2018"
+
+[dependencies]
+bitcoin = "0.21"
+secp256k1 = "0.15"
+lightning = { git = "https://github.com/rust-bitcoin/rust-lightning" }
