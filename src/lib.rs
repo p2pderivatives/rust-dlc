@@ -1,18 +1,59 @@
 use bitcoin::blockdata::transaction::{TxOut, TxIn, Transaction};
-use secp256k1::PublicKey;
+use bitcoin::blockdata::script::{Script, Builder};
+use bitcoin::blockdata::opcodes;
+use bitcoin::util::address::Address;
 
+use secp256k1::PublicKey;
 use lightning::ln::chan_utils::*;
 
 const DUST_LIMIT: u64 = 5000;
 const TX_VERSION: u32 = 2;
+const MATURITY_TIME_MIN: u32 = 500000000;
+
+pub fn combine_keys(pub_keys: &[PublicKey]) -> PublicKey {
+    pub_keys.iter().fold(pub_keys[0], |keys, key| keys.combine(key).unwrap())
+}
+
+pub fn create_cet(cet_script: &[u8],
+                  remote_final_address: Address,
+                  local_payout: u64,
+                  remote_payout: u64,
+                  fund_txin: TxIn,
+                  maturity_time: u32) -> Option<Transaction>
+{
+    if maturity_time < MATURITY_TIME_MIN {
+        return None
+    }
+
+    let lock_script = create_p2wsh_locking_script(cet_script);
+
+    let tx_out_local = TxOut {
+        value: local_payout,
+        script_pubkey: lock_script
+    };
+
+    let tx_out_remote = TxOut {
+        value: remote_payout,
+        script_pubkey: remote_final_address.script_pubkey()
+    };
+
+    let cet = Transaction {
+        version: TX_VERSION,
+        lock_time: maturity_time,
+        input: vec![fund_txin],
+        output: vec![tx_out_local, tx_out_remote]
+    };
+
+    Some(cet)
+}
 
 pub fn create_funding_transaction(local_fund_pubkey: PublicKey,
-                              remote_fund_pubkey: PublicKey,
-                              output_amount: u64,
-                              local_inputs: Vec<TxIn>,
-                              remote_inputs: Vec<TxIn>,
-                              local_change_output: Vec<TxOut>,
-                              remote_change_output: Vec<TxOut>) -> Transaction {
+                                  remote_fund_pubkey: PublicKey,
+                                  output_amount: u64,
+                                  local_inputs: Vec<TxIn>,
+                                  remote_inputs: Vec<TxIn>,
+                                  local_change_output: Vec<TxOut>,
+                                  remote_change_output: Vec<TxOut>) -> Transaction {
 
     let script = make_funding_redeemscript(&local_fund_pubkey, &remote_fund_pubkey);
 
@@ -42,22 +83,10 @@ pub fn create_funding_transaction(local_fund_pubkey: PublicKey,
     return funding_transaction
 }
 
-pub fn create_refund_transaction(local_output: TxOut,
-                                 remote_output: TxOut,
-                                 funding_input: TxIn,
-                                 locktime: u32) -> Transaction {
-	Transaction {
-        version: TX_VERSION,
-        lock_time: locktime,
-        input: vec![funding_input],
-        output: vec![local_output, remote_output]
-    }
-}
-
 pub fn create_mutual_closing_transaction(local_output: TxOut,
                                          remote_output: TxOut,
                                          funding_input: TxIn) -> Transaction {
-	Transaction {
+    Transaction {
         version: TX_VERSION,
         lock_time: 0,
         input: vec![funding_input],
@@ -65,9 +94,28 @@ pub fn create_mutual_closing_transaction(local_output: TxOut,
     }
 }
 
+pub fn create_refund_transaction(local_output: TxOut,
+                                 remote_output: TxOut,
+                                 funding_input: TxIn,
+                                 locktime: u32) -> Transaction {
+    Transaction {
+        version: TX_VERSION,
+        lock_time: locktime,
+        input: vec![funding_input],
+        output: vec![local_output, remote_output]
+    }
+}
+
+pub fn create_p2wsh_locking_script(script: &[u8]) -> Script {
+    Builder::new().push_opcode(opcodes::all::OP_PUSHBYTES_0)
+        .push_slice(script)
+        .into_script()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
     use secp256k1::{Secp256k1, SecretKey, PublicKey};
     use bitcoin::blockdata::script::Script;
     use bitcoin::blockdata::transaction::OutPoint;
@@ -126,8 +174,8 @@ mod tests {
         (local, remote, funding)
     }
 
-	#[test]
-	fn create_refund_transaction_test() {
+    #[test]
+    fn create_refund_transaction_test() {
         let (local, remote, funding) = create_test_tx_io();
 
         let refund_transaction = create_refund_transaction(local, remote, funding, 0);
@@ -136,7 +184,7 @@ mod tests {
         assert_eq!(1, refund_transaction.output[0].value);
         assert_eq!(2, refund_transaction.output[1].value);
         assert_eq!(3, refund_transaction.input[0].sequence);
-	}
+    }
 
     #[test]
     fn create_funding_transaction_test() {
@@ -207,5 +255,45 @@ mod tests {
         assert_eq!(1, refund_transaction.output[0].value);
         assert_eq!(2, refund_transaction.output[1].value);
         assert_eq!(3, refund_transaction.input[0].sequence);
+    }
+    #[test]
+    fn create_cet_test() {
+        let addr = Address::from_str("33iFwdLuRpW1uK1RTRqsoi8rR4NpDzk66k").unwrap();
+
+        let maturity_time = 500000001;
+        let cet_script = vec![0u8, 1, 2, 3];
+
+        let txin = TxIn {
+            previous_output: OutPoint::default(),
+            script_sig: Script::new(),
+            sequence: 0,
+            witness: Vec::new(),
+        };
+
+        let cet = create_cet(&cet_script, addr, 1, 2, txin, maturity_time).unwrap();
+
+        assert_eq!(maturity_time, cet.lock_time);
+        assert_eq!(2, cet.version);
+        assert_eq!(0, cet.input[0].sequence);
+        assert_eq!(2, cet.output[1].value);
+        assert_eq!(1, cet.output[0].value);
+    }
+
+    #[test]
+    fn create_cet_with_maturity_time_less_than_min_test() {
+        let addr = Address::from_str("33iFwdLuRpW1uK1RTRqsoi8rR4NpDzk66k").unwrap();
+
+        let maturity_time = 1;
+        let cet_script = vec![0u8, 1, 2, 3];
+
+        let txin = TxIn {
+            previous_output: OutPoint::default(),
+            script_sig: Script::new(),
+            sequence: 0,
+            witness: Vec::new(),
+        };
+
+        let cet = create_cet(&cet_script, addr, 1, 2, txin, maturity_time);
+        assert_eq!(None, cet);
     }
 }
