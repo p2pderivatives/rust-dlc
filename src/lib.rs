@@ -2,9 +2,7 @@ use bitcoin::blockdata::transaction::{TxOut, TxIn, Transaction};
 use bitcoin::blockdata::script::{Script, Builder};
 use bitcoin::blockdata::opcodes;
 use bitcoin::util::address::Address;
-
-use secp256k1::PublicKey;
-use lightning::ln::chan_utils::*;
+use secp256k1_zkp::secp256k1::PublicKey;
 
 const DUST_LIMIT: u64 = 5000;
 const TX_VERSION: u32 = 2;
@@ -110,6 +108,22 @@ pub fn create_p2wsh_locking_script(script: &[u8]) -> Script {
     Builder::new().push_opcode(opcodes::all::OP_PUSHBYTES_0)
         .push_slice(script)
         .into_script()
+}
+
+/// Gets the redeemscript for a funding output from the two funding public keys.
+/// Note that the order of funding public keys does not matter.
+pub fn make_funding_redeemscript(a: &PublicKey, b: &PublicKey) -> Script {
+    let our_funding_key = a.serialize();
+    let their_funding_key = b.serialize();
+
+    let builder = Builder::new().push_opcode(opcodes::all::OP_PUSHNUM_2);
+    if our_funding_key[..] < their_funding_key[..] {
+        builder.push_slice(&our_funding_key)
+            .push_slice(&their_funding_key)
+    } else {
+        builder.push_slice(&their_funding_key)
+            .push_slice(&our_funding_key)
+    }.push_opcode(opcodes::all::OP_PUSHNUM_2).push_opcode(opcodes::all::OP_CHECKMULTISIG).into_script()
 }
 
 #[cfg(test)]
