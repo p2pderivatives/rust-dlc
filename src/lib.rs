@@ -2,11 +2,31 @@ use bitcoin::blockdata::transaction::{TxOut, TxIn, Transaction};
 use bitcoin::blockdata::script::{Script, Builder};
 use bitcoin::blockdata::opcodes;
 use bitcoin::util::address::Address;
-use secp256k1_zkp::secp256k1::PublicKey;
+use secp256k1::key::PublicKey;
+
+use secp256k1::*;
 
 const DUST_LIMIT: u64 = 5000;
 const TX_VERSION: u32 = 2;
 const MATURITY_TIME_MIN: u32 = 500000000;
+
+pub fn schnorrsig_sig_pubkey() -> PublicKey {
+    let s = Secp256k1::signing_only();
+
+    let mut pk = PublicKey::from_slice(
+        &[3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78])
+        .unwrap();
+    let pk1 = PublicKey::from_slice(
+        &[3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78])
+        .unwrap();
+    let pk2 = PublicKey::from_slice(
+        &[3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78])
+        .unwrap();
+
+    let msg = Message::from_slice(&[1; 32]).unwrap();
+
+    PublicKey::schnorrsig_sig_pubkey(&s, &mut pk, &pk1, &msg, &pk2)
+}
 
 pub fn combine_keys(pub_keys: &[PublicKey]) -> PublicKey {
     pub_keys.iter().fold(pub_keys[0], |keys, key| keys.combine(key).unwrap())

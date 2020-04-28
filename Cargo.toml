@@ -6,9 +6,7 @@ edition = "2018"
 
 [dependencies]
 bitcoin = "0.21"
-#secp256k1 = "0.15"
-# TODO - use secp256k1-zkp fork with schnorr sigs and additonal DLC functions
-# currently secp256k1 forks version 0.13 which causes compatibility problems
-# with the version of secp256k1 used by rust-lightning (0.15)
-secp256k1-zkp = { git = "https://github.com/yancyribbens/rust-secp256k1-zkp", branch = "feature/add-schnorr-pubkey" }
-# lightning = { git = "https://github.com/rust-bitcoin/rust-lightning" }
+
+[dependencies.secp256k1]
+git = "https://github.com/yancyribbens/rust-secp256k1"
+rev = "98f086355c8f05370a77a17d2c69de1115e12828"
