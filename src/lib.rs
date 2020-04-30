@@ -2,7 +2,8 @@ use bitcoin::blockdata::transaction::{TxOut, TxIn, Transaction};
 use bitcoin::blockdata::script::{Script, Builder};
 use bitcoin::blockdata::opcodes;
 use bitcoin::util::address::Address;
-use secp256k1::key::PublicKey;
+use secp256k1::key::{PublicKey};
+use bitcoin::hashes::{Hash, sha256d};
 
 use secp256k1::*;
 
@@ -14,16 +15,23 @@ pub fn combine_keys(pub_keys: &[PublicKey]) -> PublicKey {
     pub_keys.iter().fold(pub_keys[0], |keys, key| keys.combine(key).unwrap())
 }
 
-pub fn get_secp_committed_key(oracle_pub_key: PublicKey, oracle_r_point: PublicKey, message: String) -> PublicKey {
+pub fn get_secp_committed_key(oracle_pub_key: PublicKey,
+                              oracle_r_point: PublicKey,
+                              message: String) -> PublicKey {
     let s = Secp256k1::signing_only();
     let msg = Message::from_slice(message.as_bytes()).unwrap();
     PublicKey::schnorrsig_sig_pubkey(&s, &oracle_r_point, &msg, &oracle_pub_key)
 }
 
-pub fn get_committed_key(oracle_pub_key: PublicKey, oracle_r_points: &[PublicKey], messages: &[String]) -> PublicKey {
+pub fn get_committed_key(oracle_pub_key: PublicKey,
+                         oracle_r_points: &[PublicKey],
+                         messages: &[String]) -> PublicKey {
     let mut pubkey_list = Vec::new();
     for (r_point, msg) in oracle_r_points.iter().zip(messages.iter()) {
-        let secp_commitment_key = get_secp_committed_key(oracle_pub_key, *r_point, msg.to_string());
+        let secp_commitment_key = get_secp_committed_key(
+            oracle_pub_key, *r_point, msg.to_string()
+        );
+
         pubkey_list.push(secp_commitment_key);
     }
     combine_keys(&pubkey_list)
@@ -62,6 +70,40 @@ pub fn create_cet_transaction(cet_script: &[u8],
     Some(cet)
 }
 
+//TODO is fund_tx_id sufficient, or should fund_vout be an argument as well
+pub fn create_cet(local_fund_pubkey: PublicKey,
+                  local_sweep_pubkey: PublicKey,
+                  remote_sweep_pubkey: PublicKey,
+                  remote_final_address: Address,
+                  oracle_pubkey: PublicKey,
+                  oracle_r_points: &[PublicKey],
+                  messages: &[String],
+                  delay: i64,
+                  local_payout: u64,
+                  remote_payout: u64,
+                  maturity_time: u32,
+                  fund_tx_id: TxIn
+) -> Option<Transaction> {
+
+    let cet_script = create_cet_redeem_script(
+        local_fund_pubkey,
+        local_sweep_pubkey,
+        remote_sweep_pubkey,
+        oracle_pubkey,
+        oracle_r_points,
+        messages, 
+        delay
+    );
+
+    create_cet_transaction(
+        cet_script.as_bytes(),
+        remote_final_address,
+        local_payout,
+        remote_payout,
+        fund_tx_id,
+        maturity_time)
+}
+
 pub fn create_cet_redeem_script(local_fund_pubkey: PublicKey,
                                 local_sweep_pubkey: PublicKey,
                                 remote_sweep_pubkey: PublicKey,
@@ -69,7 +111,15 @@ pub fn create_cet_redeem_script(local_fund_pubkey: PublicKey,
                                 oracle_r_points: &[PublicKey],
                                 messages: &[String],
                                 delay: i64) -> Script {
-    let combine_pubkey = get_committed_key(oracle_pubkey, oracle_r_points, messages);
+
+    let s = Secp256k1::signing_only();
+    let local_sweep_hash = sha256d::Hash::hash(local_sweep_pubkey.to_string().as_bytes());
+    let sk_local_sweep = SecretKey::from_slice(&local_sweep_hash).unwrap();
+    let pk_local_sweep = PublicKey::from_secret_key(&s, &sk_local_sweep);
+
+    let combine_pubkey = get_committed_key(oracle_pubkey, oracle_r_points, messages)
+        .combine(&local_fund_pubkey).unwrap()
+        .combine(&pk_local_sweep).unwrap();
 
     Builder::new()
         .push_opcode(opcodes::all::OP_IF)
