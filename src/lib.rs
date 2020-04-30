@@ -10,26 +10,23 @@ const DUST_LIMIT: u64 = 5000;
 const TX_VERSION: u32 = 2;
 const MATURITY_TIME_MIN: u32 = 500000000;
 
-pub fn schnorrsig_sig_pubkey() -> PublicKey {
-    let s = Secp256k1::signing_only();
-
-    let mut pk = PublicKey::from_slice(
-        &[3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78])
-        .unwrap();
-    let pk1 = PublicKey::from_slice(
-        &[3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78])
-        .unwrap();
-    let pk2 = PublicKey::from_slice(
-        &[3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143, 114, 134, 88, 73, 198, 174, 52, 184, 78])
-        .unwrap();
-
-    let msg = Message::from_slice(&[1; 32]).unwrap();
-
-    PublicKey::schnorrsig_sig_pubkey(&s, &mut pk, &pk1, &msg, &pk2)
-}
-
 pub fn combine_keys(pub_keys: &[PublicKey]) -> PublicKey {
     pub_keys.iter().fold(pub_keys[0], |keys, key| keys.combine(key).unwrap())
+}
+
+pub fn get_secp_committed_key(oracle_pub_key: PublicKey, oracle_r_point: PublicKey, message: String) -> PublicKey {
+    let s = Secp256k1::signing_only();
+    let msg = Message::from_slice(message.as_bytes()).unwrap();
+    PublicKey::schnorrsig_sig_pubkey(&s, &oracle_r_point, &msg, &oracle_pub_key)
+}
+
+pub fn get_committed_key(oracle_pub_key: PublicKey, oracle_r_points: &[PublicKey], messages: &[String]) -> PublicKey {
+    let mut pubkey_list = Vec::new();
+    for (r_point, msg) in oracle_r_points.iter().zip(messages.iter()) {
+        let secp_commitment_key = get_secp_committed_key(oracle_pub_key, *r_point, msg.to_string());
+        pubkey_list.push(secp_commitment_key);
+    }
+    combine_keys(&pubkey_list)
 }
 
 pub fn create_cet(cet_script: &[u8],
