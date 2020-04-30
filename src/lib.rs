@@ -29,7 +29,7 @@ pub fn get_committed_key(oracle_pub_key: PublicKey, oracle_r_points: &[PublicKey
     combine_keys(&pubkey_list)
 }
 
-pub fn create_cet(cet_script: &[u8],
+pub fn create_cet_transaction(cet_script: &[u8],
                   remote_final_address: Address,
                   local_payout: u64,
                   remote_payout: u64,
@@ -60,6 +60,28 @@ pub fn create_cet(cet_script: &[u8],
     };
 
     Some(cet)
+}
+
+pub fn create_cet_redeem_script(local_fund_pubkey: PublicKey,
+                                local_sweep_pubkey: PublicKey,
+                                remote_sweep_pubkey: PublicKey,
+                                oracle_pubkey: PublicKey,
+                                oracle_r_points: &[PublicKey],
+                                messages: &[String],
+                                delay: i64) -> Script {
+    let combine_pubkey = get_committed_key(oracle_pubkey, oracle_r_points, messages);
+
+    Builder::new()
+        .push_opcode(opcodes::all::OP_IF)
+        .push_slice(combine_pubkey.to_string().as_bytes())
+        .push_opcode(opcodes::all::OP_ELSE)
+        .push_int(delay)
+        .push_opcode(opcodes::all::OP_CHECKSIGVERIFY)
+        .push_opcode(opcodes::all::OP_DROP)
+        .push_slice(remote_sweep_pubkey.to_string().as_bytes())
+        .push_opcode(opcodes::all::OP_ENDIF)
+        .push_opcode(opcodes::all::OP_CHECKSIG)
+        .into_script()
 }
 
 pub fn create_funding_transaction(local_fund_pubkey: PublicKey,
@@ -288,7 +310,7 @@ mod tests {
         assert_eq!(3, refund_transaction.input[0].sequence);
     }
     #[test]
-    fn create_cet_test() {
+    fn create_cet_transaction_test() {
         let addr = Address::from_str("33iFwdLuRpW1uK1RTRqsoi8rR4NpDzk66k").unwrap();
 
         let maturity_time = 500000001;
@@ -301,7 +323,7 @@ mod tests {
             witness: Vec::new(),
         };
 
-        let cet = create_cet(&cet_script, addr, 1, 2, txin, maturity_time).unwrap();
+        let cet = create_cet_transaction(&cet_script, addr, 1, 2, txin, maturity_time).unwrap();
 
         assert_eq!(maturity_time, cet.lock_time);
         assert_eq!(2, cet.version);
@@ -324,7 +346,7 @@ mod tests {
             witness: Vec::new(),
         };
 
-        let cet = create_cet(&cet_script, addr, 1, 2, txin, maturity_time);
+        let cet = create_cet_transaction(&cet_script, addr, 1, 2, txin, maturity_time);
         assert_eq!(None, cet);
     }
 }
