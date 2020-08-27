@@ -1,12 +1,5 @@
-[package]
-name = "rust-dlc"
-version = "0.1.0"
-authors = ["Crypto Garage"]
-edition = "2018"
+[workspace]
 
-[dependencies]
-bitcoin = "0.21"
-
-[dependencies.secp256k1]
-git = "https://github.com/yancyribbens/rust-secp256k1"
-rev = "98f086355c8f05370a77a17d2c69de1115e12828"
+members = [
+    "dlc",
+]
