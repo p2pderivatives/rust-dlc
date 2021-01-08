@@ -1,0 +1,43 @@
+on: [push, pull_request]
+
+name: Continuous integration
+
+jobs:
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    container:
+      image: xd009642/tarpaulin
+      options: --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build
+        run: cargo build --verbose
+      - name: Test
+        run: cargo test --verbose
+      - name: Install nightly toolchain
+        run: rustup toolchain install nightly
+      - name: code coverage
+        run: ./scripts/generate_coverage.sh
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v1
+        with:
+          name: code-coverage-report
+          path: tarpaulin-report.html
+
+  integration_tests:
+    name: integration-tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tests:
+          - close
+          - refund
+    steps:
+      - uses: actions/checkout@v2
+      - name: Start bitcoin node
+        run: ./scripts/start_node.sh
+      - name: Run test
+        run: cargo test -- --ignored integration_tests_${{ matrix.tests }}
+      - name: Stop bitcoin node
+        run: ./scripts/stop_node.sh
