@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "bitcoin-test-utils",
     "dlc",
     "dlc-messages",
 ]

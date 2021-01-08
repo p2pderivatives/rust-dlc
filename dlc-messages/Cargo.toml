@@ -19,3 +19,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 bitcoin = { version="0.25.2-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin", features=["use-serde"] }
 secp256k1 = { version="0.19.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1", features=["serde"] } 
+bitcoin-test-utils = { version="0.0.1", path="../bitcoin-test-utils" }

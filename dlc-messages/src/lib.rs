@@ -7,11 +7,16 @@ extern crate dlc;
 extern crate secp256k1;
 extern crate unicode_normalization;
 
+#[cfg(test)]
+extern crate bitcoin_test_utils;
 #[cfg(any(test, feature = "serde"))]
 extern crate serde;
 
 #[cfg(test)]
 extern crate serde_json;
+
+#[cfg(test)]
+mod compatibility_tests;
 
 use bitcoin::hashes::*;
 use bitcoin::{consensus::Decodable, hash_types::Txid, OutPoint, Script, Transaction};
