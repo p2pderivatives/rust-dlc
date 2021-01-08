@@ -8,4 +8,7 @@ bitcoin = {version="0.25.2-adaptor.0", git = "https://github.com/p2pderivatives/
 secp256k1 = {version="0.19.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1"}
 
 [dev-dependencies]
-secp256k1 = {version="0.19.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1", features=["rand-std", "rand", "bitcoin_hashes"]}
+bitcoin = {version="0.25.2-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin", features=["use-serde"]}
+secp256k1 = {version="0.19.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1", features=["serde", "rand-std", "rand", "bitcoin_hashes"]}
+bitcoincore-rpc = {version="0.12.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
+bitcoincore-rpc-json = {version="0.12.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
