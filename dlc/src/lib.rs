@@ -26,7 +26,7 @@ use bitcoin::blockdata::{
 };
 use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verification};
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Verification};
 
 pub mod util;
 
@@ -92,6 +92,16 @@ pub struct TxInputInfo {
     pub max_witness_len: usize,
     /// The redeem script
     pub redeem_script: Script,
+}
+
+///
+pub struct OracleInfo {
+    ///
+    pub public_key: SchnorrPublicKey,
+    ///
+    pub nonces: Vec<SchnorrPublicKey>,
+    ///
+    pub msgs: Vec<Vec<Message>>,
 }
 
 /// An error code.
@@ -417,7 +427,52 @@ pub fn make_funding_redeemscript(a: &PublicKey, b: &PublicKey) -> Script {
         .into_script()
 }
 
-/// Create an adaptor signature for the given cet
+fn combine_pubkeys(pubkeys: &Vec<PublicKey>) -> Result<PublicKey, Error> {
+    if pubkeys.len() < 1 {
+        return Err(Error::InvalidArgument);
+    }
+    let res = pubkeys[0];
+    Ok(pubkeys
+        .iter()
+        .skip(1)
+        .try_fold(res, |acc, pk| acc.combine(&pk))?)
+}
+
+fn get_oracle_sig_point<C: secp256k1::Signing>(
+    secp: &Secp256k1<C>,
+    oracle_info: &OracleInfo,
+    index: usize,
+) -> Result<PublicKey, Error> {
+    if oracle_info.nonces.len() < oracle_info.msgs[index].len() {
+        return Err(Error::InvalidArgument);
+    }
+
+    let sig_points: Vec<PublicKey> = oracle_info
+        .nonces
+        .iter()
+        .zip(oracle_info.msgs[index].iter())
+        .map(|(nonce, msg)| secp.schnorrsig_compute_sig_point(msg, nonce, &oracle_info.public_key))
+        .collect::<Result<Vec<PublicKey>, secp256k1::Error>>()?;
+    Ok(combine_pubkeys(&sig_points)?)
+}
+
+fn get_adaptor_point<C: Signing>(
+    secp: &Secp256k1<C>,
+    oracle_infos: &Vec<OracleInfo>,
+    index: usize,
+) -> Result<PublicKey, Error> {
+    if oracle_infos.len() < 1 {
+        return Err(Error::InvalidArgument);
+    }
+
+    let mut oracle_sigpoints = Vec::with_capacity(oracle_infos[0].msgs.len());
+    for info in oracle_infos {
+        oracle_sigpoints.push(get_oracle_sig_point(secp, &info, index)?);
+    }
+    combine_pubkeys(&oracle_sigpoints)
+}
+
+/// Create an adaptor signature for the given cet using the provided adaptor point.
 pub fn create_cet_adaptor_sig_from_point<C: secp256k1::Signing>(
     secp: &secp256k1::Secp256k1<C>,
     cet: &Transaction,
@@ -431,18 +486,17 @@ pub fn create_cet_adaptor_sig_from_point<C: secp256k1::Signing>(
     Ok(secp.adaptor_sign(&sig_hash, &funding_sk, adaptor_point))
 }
 
-/// Create an adaptor signature for the given cet
-pub fn create_cet_adaptor_sig_from_oracle_info<C: secp256k1::Signing>(
-    secp: &secp256k1::Secp256k1<C>,
+/// Create an adaptor signature for the given cet using the provided oracle infos.
+pub fn create_cet_adaptor_sig_from_oracle_info(
+    secp: &secp256k1::Secp256k1<secp256k1::All>,
     cet: &Transaction,
-    oracle_pubkey: &SchnorrPublicKey,
-    oracle_r_value: &SchnorrPublicKey,
+    oracle_infos: &Vec<OracleInfo>,
     funding_sk: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    msg: &Message,
+    index: usize,
 ) -> Result<(AdaptorSignature, AdaptorProof), Error> {
-    let adaptor_point = secp.schnorrsig_compute_sig_point(msg, oracle_r_value, &oracle_pubkey)?;
+    let adaptor_point = get_adaptor_point(secp, oracle_infos, index)?;
     create_cet_adaptor_sig_from_point(
         secp,
         cet,
@@ -477,49 +531,65 @@ pub fn create_cet_adaptor_sigs_from_points<C: secp256k1::Signing>(
 }
 
 /// Crerate a set of adaptor signatures for the given cet/message pairs.
-pub fn create_cet_adaptor_sigs_from_oracle_info<C: secp256k1::Signing>(
-    secp: &secp256k1::Secp256k1<C>,
-    inputs: &Vec<(&Transaction, &Message)>,
-    oracle_pubkey: &SchnorrPublicKey,
-    oracle_r_value: &SchnorrPublicKey,
+pub fn create_cet_adaptor_sigs_from_oracle_info(
+    secp: &secp256k1::Secp256k1<secp256k1::All>,
+    cets: &Vec<Transaction>,
+    oracle_infos: &Vec<OracleInfo>,
     funding_sk: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
 ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, Error> {
-    inputs
-        .iter()
-        .map(|(cet, msg)| {
+    let all_valid = oracle_infos.iter().all(|x| x.msgs.len() == cets.len());
+    if !all_valid {
+        return Err(Error::InvalidArgument);
+    }
+
+    cets.iter()
+        .enumerate()
+        .map(|(i, cet)| {
             create_cet_adaptor_sig_from_oracle_info(
                 secp,
                 cet,
-                oracle_pubkey,
-                oracle_r_value,
+                oracle_infos,
                 funding_sk,
                 funding_script_pubkey,
                 fund_output_value,
-                msg,
+                i,
             )
         })
         .collect()
 }
 
-/// Sign the given CET using own private key, adapt the counter party signature
+fn signatures_to_secret(signatures: &Vec<Vec<SchnorrSignature>>) -> Result<SecretKey, Error> {
+    let decomposed = signatures
+        .iter()
+        .flatten()
+        .map(|x| x.decompose())
+        .collect::<Result<Vec<(SchnorrPublicKey, &[u8])>, secp256k1::Error>>()?;
+    let s_values: Vec<&[u8]> = decomposed.iter().map(|x| x.1).collect();
+    let mut secret = SecretKey::from_slice(s_values[0])?;
+    for s in s_values.iter().skip(1) {
+        secret.add_assign(s)?;
+    }
+
+    Ok(secret)
+}
+
+/// Sign the given cet using own private key, adapt the counter party signature
 /// and place both signatures and the funding multi sig script pubkey on the
 /// witness stack
 pub fn sign_cet<C: secp256k1::Signing>(
     secp: &secp256k1::Secp256k1<C>,
     cet: &mut Transaction,
     adaptor_signature: &AdaptorSignature,
-    oracle_signature: &SchnorrSignature,
+    oracle_signatures: &Vec<Vec<SchnorrSignature>>,
     funding_sk: &SecretKey,
     other_pk: &PublicKey,
     funding_script_pubkey: &Script,
     fund_output: u64,
 ) -> Result<(), Error> {
-    let (_, adaptor_secret) = oracle_signature.decompose()?;
-
-    let adapted_sig =
-        secp.adaptor_adapt(&SecretKey::from_slice(adaptor_secret)?, adaptor_signature);
+    let adaptor_secret = signatures_to_secret(oracle_signatures)?;
+    let adapted_sig = secp.adaptor_adapt(&adaptor_secret, adaptor_signature);
 
     util::sign_multi_sig_input(
         secp,
@@ -565,14 +635,13 @@ pub fn verify_cet_adaptor_sig_from_oracle_info(
     adaptor_sig: &AdaptorSignature,
     adaptor_proof: &AdaptorProof,
     cet: &Transaction,
-    oracle_pubkey: &SchnorrPublicKey,
-    oracle_r_value: &SchnorrPublicKey,
+    oracle_infos: &Vec<OracleInfo>,
     pubkey: &PublicKey,
     funding_script_pubkey: &Script,
     total_collateral: u64,
-    msg: &Message,
+    index: usize,
 ) -> Result<(), Error> {
-    let adaptor_point = secp.schnorrsig_compute_sig_point(msg, oracle_r_value, &oracle_pubkey)?;
+    let adaptor_point = get_adaptor_point(secp, oracle_infos, index)?;
     verify_cet_adaptor_sig_from_point(
         secp,
         adaptor_sig,
@@ -610,8 +679,10 @@ mod tests {
     use bitcoin::{network::constants::Network, Address, Txid};
     use secp256k1::{
         rand::{Rng, RngCore},
+        schnorrsig::KeyPair,
         PublicKey, Secp256k1, SecretKey, Signing,
     };
+    use std::convert::TryInto;
     use std::fmt::Write;
     use std::str::FromStr;
     use util;
@@ -972,29 +1043,63 @@ mod tests {
         .unwrap();
 
         let cets = dlc_txs.cets;
-        let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
-        let mut oracle_k_value = [0u8; 32];
-        rng.fill_bytes(&mut oracle_k_value);
-        let oracle_r_kp =
-            secp256k1::schnorrsig::KeyPair::from_seckey_slice(&secp, &oracle_k_value).unwrap();
+        const NB_ORACLES: usize = 3;
+        const NB_OUTCOMES: usize = 2;
+        const NB_DIGITS: usize = 20;
+        let mut oracle_infos: Vec<OracleInfo> = Vec::with_capacity(NB_ORACLES);
+        let mut oracle_sks: Vec<KeyPair> = Vec::with_capacity(NB_ORACLES);
+        let mut oracle_sk_nonce: Vec<Vec<[u8; 32]>> = Vec::with_capacity(NB_ORACLES);
+        let mut oracle_sigs: Vec<Vec<SchnorrSignature>> = Vec::with_capacity(NB_ORACLES);
+        let mut messages: Vec<Vec<Vec<_>>> = (0..NB_ORACLES)
+            .map(|x| {
+                (0..NB_OUTCOMES)
+                    .map(|y| {
+                        (0..NB_DIGITS).map(|z|
+                    Message::from_hashed_data::<secp256k1::bitcoin_hashes::sha256::Hash>(&[
+                        ((y + x + z) as u8).try_into().unwrap()
+                    ])).collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        for i in 0..NB_ORACLES {
+            let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
+            let mut nonces: Vec<SchnorrPublicKey> = Vec::with_capacity(NB_DIGITS);
+            let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(NB_DIGITS);
+            oracle_sigs.push(Vec::with_capacity(NB_DIGITS));
+            for j in 0..NB_DIGITS {
+                let mut sk_nonce = [0u8; 32];
+                rng.fill_bytes(&mut sk_nonce);
+                let oracle_r_kp =
+                    secp256k1::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
+                let nonce = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
+                let sig =
+                    secp.schnorrsig_sign_with_nonce(&messages[0][0][j], &oracle_kp, &sk_nonce);
+                oracle_sigs[i].push(sig);
+                nonces.push(nonce);
+                sk_nonces.push(sk_nonce);
+            }
+            oracle_infos.push(OracleInfo {
+                public_key: oracle_pubkey,
+                nonces,
+                msgs: messages.remove(0),
+            });
+            oracle_sk_nonce.push(sk_nonces);
+            oracle_sks.push(oracle_kp);
+        }
+
         let funding_script_pubkey = make_funding_redeemscript(
             &offer_party_params.fund_pubkey,
             &accept_party_params.fund_pubkey,
         );
-        let oracle_r_value = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
-        let messages: Vec<_> = vec![0, 1]
-            .into_iter()
-            .map(|x| Message::from_hashed_data::<secp256k1::bitcoin_hashes::sha256::Hash>(&[x]))
-            .collect();
-        let oracle_sig = secp.schnorrsig_sign_with_nonce(&messages[0], &oracle_kp, &oracle_k_value);
         let fund_output_value = dlc_txs.fund.output[0].value;
 
         // Act
         let cet_sigs = create_cet_adaptor_sigs_from_oracle_info(
             &secp,
-            &cets.iter().zip(messages.iter()).collect(),
-            &oracle_pubkey,
-            &oracle_r_value,
+            &cets,
+            &oracle_infos,
             &offer_fund_sk,
             &funding_script_pubkey,
             fund_output_value,
@@ -1005,7 +1110,7 @@ mod tests {
             &secp,
             &mut cets[0].clone(),
             &cet_sigs[0].0,
-            &oracle_sig,
+            &oracle_sigs,
             &accept_fund_sk,
             &offer_party_params.fund_pubkey,
             &funding_script_pubkey,
@@ -1021,12 +1126,11 @@ mod tests {
                 &x.0,
                 &x.1,
                 &cets[i],
-                &oracle_pubkey,
-                &oracle_r_value,
+                &oracle_infos,
                 &offer_party_params.fund_pubkey,
                 &funding_script_pubkey,
                 fund_output_value,
-                &messages[i]
+                i,
             )
             .is_ok()));
         assert!(sign_res.is_ok());

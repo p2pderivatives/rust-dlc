@@ -7,12 +7,14 @@ extern crate secp256k1;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
 
-use bitcoin::hashes::{sha256, Hash};
 use bitcoin::{OutPoint, Script, SigHashType};
-use dlc::{PartyParams, Payout, TxInputInfo};
-use secp256k1::{schnorrsig::PublicKey as SchnorrPublicKey, Message, PublicKey, SecretKey};
-
-use secp256k1::rand::{thread_rng, RngCore};
+use dlc::{OracleInfo, PartyParams, Payout, TxInputInfo};
+use secp256k1::{
+    rand::{thread_rng, Rng},
+    schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
+    Message, PublicKey, Secp256k1, SecretKey, Signing,
+};
+use std::convert::TryInto;
 
 const LOCALPARTY: &str = "alice";
 const REMOTEPARTY: &str = "bob";
@@ -22,8 +24,6 @@ const RPCBASE: &str = "http://localhost:18443";
 
 const BTC_TO_SAT: u64 = 100000000;
 const PARTY_COLLATERAL: u64 = 1 * BTC_TO_SAT;
-const WIN: &str = "WIN";
-const LOSE: &str = "LOSE";
 
 const FUND_LOCK_TIME: u32 = 1000;
 const CET_LOCK_TIME: u32 = FUND_LOCK_TIME + 1000;
@@ -42,22 +42,64 @@ fn outcomes() -> Vec<Payout> {
     ]
 }
 
-fn hashed_msg() -> Vec<Message> {
-    [WIN, LOSE]
-        .iter()
-        .map(|m| {
-            Message::from_slice(sha256::Hash::hash(&m.as_bytes()).into_inner()[..].as_ref())
-                .unwrap()
-        })
-        .collect()
-}
-
 fn get_new_wallet_rpc(default_rpc: &Client, wallet_name: &str, auth: Auth) -> Client {
     default_rpc
         .create_wallet(wallet_name, Some(false), None, None, None)
         .unwrap();
     let rpc_url = format!("{}{}{}", RPCBASE, "/wallet/", wallet_name);
     Client::new(rpc_url, auth).unwrap()
+}
+
+fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
+    secp: &Secp256k1<C>,
+    rng: &mut R,
+) -> (Vec<OracleInfo>, Vec<Vec<SchnorrSignature>>) {
+    const NB_ORACLES: usize = 3;
+    const NB_OUTCOMES: usize = 2;
+    const NB_DIGITS: usize = 20;
+    let mut oracle_infos: Vec<OracleInfo> = Vec::with_capacity(NB_ORACLES);
+    let mut oracle_sks: Vec<KeyPair> = Vec::with_capacity(NB_ORACLES);
+    let mut oracle_sk_nonce: Vec<Vec<[u8; 32]>> = Vec::with_capacity(NB_ORACLES);
+    let mut oracle_sigs: Vec<Vec<SchnorrSignature>> = Vec::with_capacity(NB_ORACLES);
+    let mut messages: Vec<Vec<Vec<_>>> =
+        (0..NB_ORACLES)
+            .map(|x| {
+                (0..NB_OUTCOMES)
+                    .map(|y| {
+                        (0..NB_DIGITS).map(|z|
+                Message::from_hashed_data::<secp256k1::bitcoin_hashes::sha256::Hash>(&[
+                    ((y + x + z) as u8).try_into().unwrap()
+                ])).collect()
+                    })
+                    .collect()
+            })
+            .collect();
+
+    for i in 0..NB_ORACLES {
+        let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(rng);
+        let mut nonces: Vec<SchnorrPublicKey> = Vec::with_capacity(NB_DIGITS);
+        let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(NB_DIGITS);
+        oracle_sigs.push(Vec::with_capacity(NB_DIGITS));
+        for j in 0..NB_DIGITS {
+            let mut sk_nonce = [0u8; 32];
+            rng.fill_bytes(&mut sk_nonce);
+            let oracle_r_kp =
+                secp256k1::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
+            let nonce = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
+            let sig = secp.schnorrsig_sign_with_nonce(&messages[0][0][j], &oracle_kp, &sk_nonce);
+            oracle_sigs[i].push(sig);
+            nonces.push(nonce);
+            sk_nonces.push(sk_nonce);
+        }
+        oracle_infos.push(OracleInfo {
+            public_key: oracle_pubkey,
+            nonces,
+            msgs: messages.remove(0),
+        });
+        oracle_sk_nonce.push(sk_nonces);
+        oracle_sks.push(oracle_kp);
+    }
+    (oracle_infos, oracle_sigs)
 }
 
 fn init() -> (Client, Client, Box<dyn Fn(u64) -> ()>) {
@@ -162,13 +204,7 @@ fn integration_tests_refund() {
 fn integration_tests_common(test_case: TestCase) {
     let secp = secp256k1::Secp256k1::new();
     let rng = &mut thread_rng();
-    let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(rng);
-    let mut oracle_k_value = [0u8; 32];
-    rng.fill_bytes(&mut oracle_k_value);
-    let oracle_r_kp =
-        secp256k1::schnorrsig::KeyPair::from_seckey_slice(&secp, &oracle_k_value).unwrap();
-
-    let oracle_r_value = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
+    let (oracle_infos, oracle_signatures) = get_oracle_infos(&secp, rng);
     let (offer_rpc, accept_rpc, generate_blocks) = init();
 
     let (offer_params, offer_fund_sk, offer_input_sk) =
@@ -190,82 +226,63 @@ fn integration_tests_common(test_case: TestCase) {
     let funding_script_pubkey =
         dlc::make_funding_redeemscript(&offer_params.fund_pubkey, &accept_params.fund_pubkey);
     let fund_output_value = dlc_txs.fund.output[0].value;
-    let msgs = hashed_msg();
-    let accept_sig = {
-        let mut offer_cets_sigs = dlc_txs.cets.iter().zip(&msgs).map(|z| {
-            (
-                z,
-                dlc::create_cet_adaptor_sig_from_oracle_info(
-                    &secp,
-                    &z.0,
-                    &oracle_pubkey,
-                    &oracle_r_value,
-                    &offer_fund_sk,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                    z.1,
-                )
-                .expect("Error creating adaptor sig"),
-            )
-        });
-        let mut accept_cets_sigs = dlc_txs.cets.iter().zip(&msgs).map(|z| {
-            (
-                z,
-                dlc::create_cet_adaptor_sig_from_oracle_info(
-                    &secp,
-                    &z.0,
-                    &oracle_pubkey,
-                    &oracle_r_value,
-                    &accept_fund_sk,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                    z.1,
-                )
-                .expect("Error creating adaptor sig"),
-            )
-        });
+    let remote_sig = {
+        let local_cets_sigs = dlc::create_cet_adaptor_sigs_from_oracle_info(
+            &secp,
+            &dlc_txs.cets,
+            &oracle_infos,
+            &offer_fund_sk,
+            &funding_script_pubkey,
+            fund_output_value,
+        )
+        .unwrap();
+        let remote_cets_sigs = dlc::create_cet_adaptor_sigs_from_oracle_info(
+            &secp,
+            &dlc_txs.cets,
+            &oracle_infos,
+            &accept_fund_sk,
+            &funding_script_pubkey,
+            fund_output_value,
+        )
+        .unwrap();
 
-        assert!(
-            offer_cets_sigs.all(|z| dlc::verify_cet_adaptor_sig_from_oracle_info(
+        assert!(local_cets_sigs.iter().enumerate().all(|(i, z)| {
+            dlc::verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &(z.1).0,
-                &(z.1).1,
-                &(z.0).0,
-                &oracle_pubkey,
-                &oracle_r_value,
+                &z.0,
+                &z.1,
+                &dlc_txs.cets[i],
+                &oracle_infos,
                 &offer_params.fund_pubkey,
                 &funding_script_pubkey,
                 fund_output_value,
-                &(z.0).1
+                i,
             )
-            .is_ok())
-        );
+            .is_ok()
+        }));
 
-        assert!(accept_cets_sigs
-            .clone()
-            .all(|z| dlc::verify_cet_adaptor_sig_from_oracle_info(
+        assert!(remote_cets_sigs.iter().enumerate().all(|(i, z)| {
+            dlc::verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &(z.1).0,
-                &(z.1).1,
-                &(z.0).0,
-                &oracle_pubkey,
-                &oracle_r_value,
+                &z.0,
+                &z.1,
+                &dlc_txs.cets[i],
+                &oracle_infos,
                 &accept_params.fund_pubkey,
                 &funding_script_pubkey,
                 fund_output_value,
-                &(z.0).1
+                i,
             )
-            .is_ok()));
-        accept_cets_sigs.nth(0).unwrap().1
+            .is_ok()
+        }));
+        remote_cets_sigs[0]
     };
-
-    let oracle_sig = secp.schnorrsig_sign_with_nonce(&msgs[0], &oracle_kp, &oracle_k_value);
 
     assert!(dlc::sign_cet(
         &secp,
         &mut dlc_txs.cets[0],
-        &accept_sig.0,
-        &oracle_sig,
+        &remote_sig.0,
+        &oracle_signatures,
         &offer_fund_sk,
         &PublicKey::from_secret_key(&secp, &accept_fund_sk),
         &funding_script_pubkey,
