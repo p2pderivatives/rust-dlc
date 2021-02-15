@@ -1141,3 +1141,9 @@ mod tests {
         assert!(sign_res.is_ok());
     }
 }
+
+#[cfg(all(test, feature = "unstable"))]
+mod benches {
+    #[bench]
+    fn bench_create_adaptor_sig(b: &mut Bencher) {}
+}
