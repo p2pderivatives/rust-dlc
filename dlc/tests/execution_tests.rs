@@ -53,11 +53,7 @@ fn get_new_wallet_rpc(default_rpc: &Client, wallet_name: &str, auth: Auth) -> Cl
 fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
     secp: &Secp256k1<C>,
     rng: &mut R,
-) -> (
-    Vec<OracleInfo>,
-    Vec<Vec<Vec<Message>>>,
-    Vec<Vec<SchnorrSignature>>,
-) {
+) -> (Vec<OracleInfo>, Vec<Vec<SchnorrSignature>>) {
     const NB_ORACLES: usize = 3;
     const NB_OUTCOMES: usize = 2;
     const NB_DIGITS: usize = 20;
@@ -65,7 +61,7 @@ fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
     let mut oracle_sks: Vec<KeyPair> = Vec::with_capacity(NB_ORACLES);
     let mut oracle_sk_nonce: Vec<Vec<[u8; 32]>> = Vec::with_capacity(NB_ORACLES);
     let mut oracle_sigs: Vec<Vec<SchnorrSignature>> = Vec::with_capacity(NB_ORACLES);
-    let messages: Vec<Vec<Vec<_>>> =
+    let mut messages: Vec<Vec<Vec<_>>> =
         (0..NB_OUTCOMES)
             .map(|x| {
                 (0..NB_ORACLES)
@@ -98,11 +94,12 @@ fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
         oracle_infos.push(OracleInfo {
             public_key: oracle_pubkey,
             nonces,
+            msgs: messages.remove(0),
         });
         oracle_sk_nonce.push(sk_nonces);
         oracle_sks.push(oracle_kp);
     }
-    (oracle_infos, messages, oracle_sigs)
+    (oracle_infos, oracle_sigs)
 }
 
 fn init() -> (Client, Client, Box<dyn Fn(u64) -> ()>) {
@@ -207,7 +204,7 @@ fn integration_tests_refund() {
 fn integration_tests_common(test_case: TestCase) {
     let secp = secp256k1::Secp256k1::new();
     let rng = &mut thread_rng();
-    let (oracle_infos, messages, oracle_signatures) = get_oracle_infos(&secp, rng);
+    let (oracle_infos, oracle_signatures) = get_oracle_infos(&secp, rng);
     let (offer_rpc, accept_rpc, generate_blocks) = init();
 
     let (offer_params, offer_fund_sk, offer_input_sk) =
@@ -237,7 +234,6 @@ fn integration_tests_common(test_case: TestCase) {
             &offer_fund_sk,
             &funding_script_pubkey,
             fund_output_value,
-            &messages,
         )
         .unwrap();
         let remote_cets_sigs = dlc::create_cet_adaptor_sigs_from_oracle_info(
@@ -247,7 +243,6 @@ fn integration_tests_common(test_case: TestCase) {
             &accept_fund_sk,
             &funding_script_pubkey,
             fund_output_value,
-            &messages,
         )
         .unwrap();
 
@@ -261,7 +256,7 @@ fn integration_tests_common(test_case: TestCase) {
                 &offer_params.fund_pubkey,
                 &funding_script_pubkey,
                 fund_output_value,
-                &messages[i],
+                i,
             )
             .is_ok()
         }));
@@ -276,7 +271,7 @@ fn integration_tests_common(test_case: TestCase) {
                 &accept_params.fund_pubkey,
                 &funding_script_pubkey,
                 fund_output_value,
-                &messages[i],
+                i,
             )
             .is_ok()
         }));

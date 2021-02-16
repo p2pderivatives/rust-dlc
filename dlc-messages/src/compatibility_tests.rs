@@ -18,7 +18,7 @@ use lightning::util::ser::Writeable;
 use secp256k1::{
     ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
     schnorrsig::Signature as SchnorrSignature,
-    Message, PublicKey, Secp256k1, SecretKey, Signature, Signing,
+    PublicKey, Secp256k1, SecretKey, Signature, Signing,
 };
 use std::str::FromStr;
 
@@ -362,10 +362,9 @@ fn get_funding_signatures<C: Signing>(
     )
 }
 
-fn get_cets_and_refund_sigs<C: Signing>(
-    secp: &Secp256k1<C>,
+fn get_cets_and_refund_sigs(
+    secp: &Secp256k1<secp256k1::All>,
     cets: &Vec<Transaction>,
-    msgs: &Vec<Vec<Vec<Message>>>,
     refund_tx: &Transaction,
     oracle_infos: &Vec<DlcOracleInfo>,
     fund_sk: &SecretKey,
@@ -380,7 +379,6 @@ fn get_cets_and_refund_sigs<C: Signing>(
             fund_sk,
             funding_script_pubkey,
             fund_output_value,
-            msgs,
         )
         .unwrap(),
         dlc::util::get_raw_sig_for_tx_input(
@@ -462,19 +460,19 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
     let accept_fund_sk = case.inputs.accept_params.funding_priv_key;
     let oracle_pub_key = params.oracle_info.public_key;
     let oracle_nonce = params.oracle_info.nonce;
+    let msgs: Vec<_> = outcomes
+        .iter()
+        .map(|x| vec![secp256k1::Message::from_slice(x).unwrap()])
+        .collect();
     let oracle_infos = vec![DlcOracleInfo {
         public_key: oracle_pub_key,
         nonces: vec![oracle_nonce],
+        msgs,
     }];
-    let msgs: Vec<_> = outcomes
-        .iter()
-        .map(|x| vec![vec![secp256k1::Message::from_slice(x).unwrap()]])
-        .collect();
 
     let (offer_cets_sigs, offer_refund_sig) = get_cets_and_refund_sigs(
         secp,
         &dlc_txs.cets,
-        &msgs,
         &refund_tx,
         &oracle_infos,
         &offer_fund_sk,
@@ -484,7 +482,6 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
     let (accept_cets_sigs, accept_refund_sig) = get_cets_and_refund_sigs(
         secp,
         &dlc_txs.cets,
-        &msgs,
         &refund_tx,
         &oracle_infos,
         &accept_fund_sk,
