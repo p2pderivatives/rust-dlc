@@ -64,11 +64,13 @@ pub fn get_oracle_sig_point_batch_no_hash<C: Verification>(
     nonces: &[SchnorrPublicKey],
     len: usize,
 ) -> Result<PublicKey, Error> {
-    let mut sum: Vec<_> = (0..(len as u64)).sum::<u64>().to_be_bytes().to_vec();
-    sum.resize(32, 0);
-    let nonces_sum = add_schnorr_pubkeys(nonces)?;
+    // compute addition of pubkey for each digit
     let mut pubkey = schnorr_pubkey_to_pubkey(oracle_pubkey)?;
-    pubkey.mul_assign(secp, &sum)?;
+    for _ in 1..len {
+        pubkey = pubkey.combine(&pubkey)?;
+    }
+    // compute sum of nonces
+    let nonces_sum = add_schnorr_pubkeys(nonces)?;
     Ok(pubkey.combine(&nonces_sum)?)
 }
 

@@ -1466,6 +1466,6 @@ mod benches {
             oracle_infos.push(generate_oracle_info(&secp, &mut rng, NB_NONCES));
         }
 
-        b.iter(|| get_adaptor_point_no_hash(&secp, &oracle_infos, 0))
+        b.iter(|| get_adaptor_point_no_hash_factor(&secp, &oracle_infos, 0))
     }
 }
