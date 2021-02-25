@@ -58,36 +58,100 @@ pub fn get_oracle_sig_point_batch<C: Verification>(
 }
 
 ///
-pub fn get_oracle_sig_point_batch_no_hash<C: Verification>(
-    secp: &Secp256k1<C>,
+pub fn get_oracle_sig_points_no_hash_for_nonce(
     oracle_pubkey: &SchnorrPublicKey,
-    nonces: &[SchnorrPublicKey],
-    len: usize,
-) -> Result<PublicKey, Error> {
-    // compute addition of pubkey for each digit
-    let mut pubkey = schnorr_pubkey_to_pubkey(oracle_pubkey)?;
-    for _ in 1..len {
-        pubkey = pubkey.combine(&pubkey)?;
+    nonce: &SchnorrPublicKey,
+    nb_outcomes: usize,
+) -> Result<Vec<PublicKey>, Error> {
+    let mut cur = schnorr_pubkey_to_pubkey(nonce)?;
+    let oracle_pubkey = schnorr_pubkey_to_pubkey(oracle_pubkey)?;
+    let mut sig_points = vec![cur];
+    for _ in 1..nb_outcomes {
+        cur = cur.combine(&oracle_pubkey)?;
+        sig_points.push(cur);
     }
-    // compute sum of nonces
-    let nonces_sum = add_schnorr_pubkeys(nonces)?;
-    Ok(pubkey.combine(&nonces_sum)?)
+
+    Ok(sig_points)
 }
 
 ///
-pub fn get_oracle_sig_point_no_hash_factor<C: Verification>(
-    secp: &Secp256k1<C>,
-    oracle_pubkeys: &[SchnorrPublicKey],
-    nonces: &[SchnorrPublicKey],
-    len: usize,
-) -> Result<PublicKey, Error> {
-    let mut sum = Vec::with_capacity(32);
-    sum.resize(24, 0);
-    sum.extend(&(1..(len as u64 + 1)).sum::<u64>().to_be_bytes());
-    let nonces_sum = add_schnorr_pubkeys(nonces)?;
-    let mut pubkey = add_schnorr_pubkeys(oracle_pubkeys)?;
-    pubkey.mul_assign(secp, &sum)?;
-    Ok(pubkey.combine(&nonces_sum)?)
+pub fn get_oracle_sig_points_no_hash_for_nonce_pk(
+    oracle_pubkey: &PublicKey,
+    nonce: &PublicKey,
+    nb_outcomes: usize,
+) -> Result<Vec<PublicKey>, Error> {
+    let mut nonce = nonce.clone();
+    let mut sig_points = vec![nonce];
+    for _ in 1..nb_outcomes {
+        nonce = nonce.combine(oracle_pubkey)?;
+        sig_points.push(nonce);
+    }
+
+    Ok(sig_points)
+}
+
+///
+pub fn get_oracle_sig_points_no_hash(
+    oracle_pubkey: &SchnorrPublicKey,
+    nonces: &Vec<SchnorrPublicKey>,
+    nb_outcomes_per_nonce: usize,
+) -> Result<Vec<PublicKey>, Error> {
+    let nb_nonces = nonces.len();
+    let mut nonces_sig_points = Vec::with_capacity(nb_nonces);
+    let nb_outcomes = nb_outcomes_per_nonce.pow(nonces.len() as u32);
+    let mut res = Vec::with_capacity(nb_outcomes);
+
+    for i in 0..nonces.len() {
+        nonces_sig_points.push(get_oracle_sig_points_no_hash_for_nonce(
+            oracle_pubkey,
+            &nonces[i],
+            nb_outcomes_per_nonce,
+        )?);
+    }
+
+    // compute all possible combinations of outcome sigpoints
+    for i in 0..nb_outcomes {
+        let mut to_combine = Vec::with_capacity(nb_nonces);
+        for j in 0..nb_nonces {
+            let x = (i / (nb_outcomes_per_nonce.pow(j as u32)) % nb_outcomes_per_nonce);
+            to_combine.push(nonces_sig_points[j][x]);
+        }
+        res.push(super::combine_pubkeys(&to_combine)?);
+    }
+
+    Ok(res)
+}
+
+///
+pub fn get_oracle_sig_points_no_hash_pk(
+    oracle_pubkey: &PublicKey,
+    nonces: &Vec<PublicKey>,
+    nb_outcomes_per_nonce: usize,
+) -> Result<Vec<PublicKey>, Error> {
+    let nb_nonces = nonces.len();
+    let mut nonces_sig_points = Vec::with_capacity(nb_nonces);
+    let nb_outcomes = nb_outcomes_per_nonce.pow(nonces.len() as u32);
+    let mut res = Vec::with_capacity(nb_outcomes);
+
+    for i in 0..nonces.len() {
+        nonces_sig_points.push(get_oracle_sig_points_no_hash_for_nonce_pk(
+            oracle_pubkey,
+            &nonces[i],
+            nb_outcomes_per_nonce,
+        )?);
+    }
+
+    // compute all possible combinations of outcome sigpoints
+    for i in 0..nb_outcomes {
+        let mut to_combine = Vec::with_capacity(nb_nonces);
+        for j in 0..nb_nonces {
+            let x = (i / (nb_outcomes_per_nonce.pow(j as u32)) % nb_outcomes_per_nonce);
+            to_combine.push(nonces_sig_points[j][x]);
+        }
+        res.push(super::combine_pubkeys(&to_combine)?);
+    }
+
+    Ok(res)
 }
 
 pub(crate) fn add_schnorr_pubkeys(pubkeys: &[SchnorrPublicKey]) -> Result<PublicKey, Error> {
