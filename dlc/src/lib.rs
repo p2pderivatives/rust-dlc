@@ -1363,6 +1363,7 @@ mod iteres {
 
     use self::bitcoin_test_utils::tx_from_string;
     use super::*;
+    // use rayon::prelude::*;
     use secp256k1::{rand::Rng, PublicKey, Secp256k1, SecretKey, Signing};
 
     use test::{black_box, Bencher};
@@ -1462,6 +1463,30 @@ mod iteres {
     }
 
     #[bench]
+    fn bench_get_adaptor_point_opar(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let mut oracle_infos = Vec::with_capacity(NB_ORACLES);
+
+        for _ in 0..NB_ORACLES {
+            oracle_infos.push(generate_oracle_info(
+                &secp,
+                &mut rng,
+                NB_NONCES,
+                NB_OUTCOMES_PER_NONCE,
+            ));
+        }
+
+        b.iter(|| {
+            (0..oracle_infos[0].msgs.len())
+                .into_par_iter()
+                .for_each(|i| {
+                    black_box(get_adaptor_point(&secp, &oracle_infos, i));
+                });
+        })
+    }
+
+    #[bench]
     fn bench_get_adaptor_point(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1524,6 +1549,54 @@ mod iteres {
             for i in 0..oracle_infos[0].msgs.len() {
                 black_box(get_adaptor_point_batch_par(&secp, &oracle_infos, i));
             }
+        });
+    }
+
+    #[bench]
+    fn bench_get_adaptor_point_batch_opar(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let mut oracle_infos = Vec::with_capacity(NB_ORACLES);
+
+        for _ in 0..NB_ORACLES {
+            oracle_infos.push(generate_oracle_info(
+                &secp,
+                &mut rng,
+                NB_NONCES,
+                NB_OUTCOMES_PER_NONCE,
+            ));
+        }
+
+        b.iter(|| {
+            (0..oracle_infos[0].msgs.len())
+                .into_par_iter()
+                .for_each(|i| {
+                    black_box(get_adaptor_point_batch(&secp, &oracle_infos, i));
+                });
+        });
+    }
+
+    #[bench]
+    fn bench_get_adaptor_point_batch_par_opar(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let mut oracle_infos = Vec::with_capacity(NB_ORACLES);
+
+        for _ in 0..NB_ORACLES {
+            oracle_infos.push(generate_oracle_info(
+                &secp,
+                &mut rng,
+                NB_NONCES,
+                NB_OUTCOMES_PER_NONCE,
+            ));
+        }
+
+        b.iter(|| {
+            (0..oracle_infos[0].msgs.len())
+                .into_par_iter()
+                .for_each(|i| {
+                    black_box(get_adaptor_point_batch(&secp, &oracle_infos, i));
+                });
         });
     }
 
