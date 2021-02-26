@@ -3,6 +3,7 @@
 use super::Error;
 use bitcoin::hashes::Hash;
 use bitcoin::hashes::*;
+use itertools::Itertools;
 use secp256k1::{
     schnorrsig::PublicKey as SchnorrPublicKey, Message, PublicKey, Secp256k1, SecretKey,
     Verification,
@@ -110,12 +111,7 @@ pub fn get_oracle_sig_points_no_hash(
     }
 
     // compute all possible combinations of outcome sigpoints
-    for i in 0..nb_outcomes {
-        let mut to_combine = Vec::with_capacity(nb_nonces);
-        for j in 0..nb_nonces {
-            let x = (i / (nb_outcomes_per_nonce.pow(j as u32)) % nb_outcomes_per_nonce);
-            to_combine.push(nonces_sig_points[j][x]);
-        }
+    for to_combine in nonces_sig_points.into_iter().multi_cartesian_product() {
         res.push(super::combine_pubkeys(&to_combine)?);
     }
 
@@ -142,12 +138,7 @@ pub fn get_oracle_sig_points_no_hash_pk(
     }
 
     // compute all possible combinations of outcome sigpoints
-    for i in 0..nb_outcomes {
-        let mut to_combine = Vec::with_capacity(nb_nonces);
-        for j in 0..nb_nonces {
-            let x = (i / (nb_outcomes_per_nonce.pow(j as u32)) % nb_outcomes_per_nonce);
-            to_combine.push(nonces_sig_points[j][x]);
-        }
+    for to_combine in nonces_sig_points.into_iter().multi_cartesian_product() {
         res.push(super::combine_pubkeys(&to_combine)?);
     }
 

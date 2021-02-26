@@ -20,6 +20,7 @@
 
 // #[macro_use]
 extern crate bitcoin;
+extern crate itertools;
 extern crate rayon;
 extern crate secp256k1;
 #[cfg(all(test, feature = "unstable"))]
