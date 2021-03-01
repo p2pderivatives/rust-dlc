@@ -76,6 +76,25 @@ pub fn get_oracle_sig_points_no_hash_for_nonce(
 }
 
 ///
+pub fn get_oracle_sig_points_for_nonce(
+    secp: &Secp256k1<secp256k1::All>,
+    oracle_pubkey: &SchnorrPublicKey,
+    nonce: &SchnorrPublicKey,
+    outcomes: &Vec<Message>,
+) -> Result<Vec<PublicKey>, Error> {
+    outcomes
+        .iter()
+        .map(|x| {
+            let p = secp.schnorrsig_compute_sig_point(x, nonce, oracle_pubkey);
+            match p {
+                Ok(o) => Ok(o),
+                Err(e) => Err(Error::from(e)),
+            }
+        })
+        .collect()
+}
+
+///
 pub fn get_oracle_sig_points_no_hash_for_nonce_pk(
     oracle_pubkey: &PublicKey,
     nonce: &PublicKey,
@@ -107,6 +126,35 @@ pub fn get_oracle_sig_points_no_hash(
             oracle_pubkey,
             &nonces[i],
             nb_outcomes_per_nonce,
+        )?);
+    }
+
+    // compute all possible combinations of outcome sigpoints
+    for to_combine in nonces_sig_points.into_iter().multi_cartesian_product() {
+        res.push(super::combine_pubkeys(&to_combine)?);
+    }
+
+    Ok(res)
+}
+
+///
+pub fn get_oracle_sig_points_pre_compute(
+    secp: &Secp256k1<secp256k1::All>,
+    oracle_pubkey: &SchnorrPublicKey,
+    nonces: &Vec<SchnorrPublicKey>,
+    outcomes: &Vec<Vec<Message>>,
+) -> Result<Vec<PublicKey>, Error> {
+    let nb_nonces = nonces.len();
+    let mut nonces_sig_points = Vec::with_capacity(nb_nonces);
+    let nb_outcomes = outcomes[0].len().pow(nonces.len() as u32);
+    let mut res = Vec::with_capacity(nb_outcomes);
+
+    for i in 0..nonces.len() {
+        nonces_sig_points.push(get_oracle_sig_points_for_nonce(
+            secp,
+            oracle_pubkey,
+            &nonces[i],
+            &outcomes[i],
         )?);
     }
 

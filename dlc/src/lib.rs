@@ -12,7 +12,7 @@
 #![deny(non_camel_case_types)]
 #![deny(non_snake_case)]
 #![deny(unused_mut)]
-#![deny(dead_code)]
+// #![deny(dead_code)]
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 // Experimental features we need
@@ -519,6 +519,36 @@ pub fn get_adaptor_point_batch<C: Verification>(
 }
 
 ///
+pub fn get_adaptor_points_pre_compute(
+    secp: &Secp256k1<secp256k1::All>,
+    oracle_infos: &Vec<OracleInfo>,
+) -> Result<Vec<PublicKey>, Error> {
+    if oracle_infos.len() < 1 {
+        return Err(Error::InvalidArgument);
+    }
+
+    let first = hash_util::get_oracle_sig_points_pre_compute(
+        secp,
+        &oracle_infos[0].public_key,
+        &oracle_infos[0].nonces,
+        &oracle_infos[0].msgs,
+    )?;
+    oracle_infos.iter().skip(1).try_fold(first, |acc, x| {
+        let n =
+            hash_util::get_oracle_sig_points_pre_compute(secp, &x.public_key, &x.nonces, &x.msgs)?;
+        let res: Result<Vec<PublicKey>, secp256k1::Error> = acc
+            .iter()
+            .zip(n.iter())
+            .map(|(a, b)| a.combine(b))
+            .collect();
+        match res {
+            Ok(v) => Ok(v),
+            Err(e) => Err(Error::from(e)),
+        }
+    })
+}
+
+///
 pub fn get_adaptor_points_no_hash(
     oracle_infos: &Vec<OracleInfo>,
     nb_outcomes_per_nonce: usize,
@@ -605,6 +635,35 @@ pub fn get_adaptor_points_no_hash_par(
                 &x.nonces,
                 nb_outcomes_per_nonce,
             )
+        })
+        .try_reduce_with(|a, b| {
+            a.iter()
+                .zip(b.iter())
+                .map(|(l, r)| {
+                    let res = l.combine(r);
+                    match res {
+                        Ok(o) => Ok(o),
+                        Err(error) => Err(Error::from(error)),
+                    }
+                })
+                .collect()
+        })
+        .ok_or(Error::InvalidArgument)?
+}
+
+///
+pub fn get_adaptor_points_pre_compute_par(
+    secp: &Secp256k1<secp256k1::All>,
+    oracle_infos: &Vec<OracleInfo>,
+) -> Result<Vec<PublicKey>, Error> {
+    if oracle_infos.len() < 1 {
+        return Err(Error::InvalidArgument);
+    }
+
+    oracle_infos
+        .par_iter()
+        .map(|x| {
+            hash_util::get_oracle_sig_points_pre_compute(secp, &x.public_key, &x.nonces, &x.msgs)
         })
         .try_reduce_with(|a, b| {
             a.iter()
@@ -1359,7 +1418,7 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "unstable"))]
-mod iteres {
+mod benches {
     extern crate bitcoin_test_utils;
 
     use self::bitcoin_test_utils::tx_from_string;
@@ -1370,7 +1429,7 @@ mod iteres {
     use test::{black_box, Bencher};
 
     const NB_ORACLES: usize = 3;
-    const NB_NONCES: usize = 5;
+    const NB_NONCES: usize = 6;
     const NB_OUTCOMES_PER_NONCE: usize = 2;
 
     fn generate_oracle_info<C: Signing, R: Rng + ?Sized>(
@@ -1387,6 +1446,36 @@ mod iteres {
         let msgs = (0..nb_outcomes_per_nonce.pow(nb_nonces as u32))
             .map(|_| {
                 (0..nb_nonces)
+                    .map(|_| {
+                        let mut buf = [0u8; 32];
+                        rng.fill_bytes(&mut buf);
+                        Message::from_slice(&buf).unwrap()
+                    })
+                    .collect()
+            })
+            .collect();
+
+        OracleInfo {
+            public_key,
+            nonces,
+            msgs,
+        }
+    }
+
+    fn generate_oracle_info_pre_compute<C: Signing, R: Rng + ?Sized>(
+        secp: &Secp256k1<C>,
+        rng: &mut R,
+        nb_nonces: usize,
+        nb_outcomes_per_nonce: usize,
+    ) -> OracleInfo {
+        let (_, public_key) = secp.generate_schnorrsig_keypair(rng);
+        let mut nonces = Vec::with_capacity(nb_nonces);
+        for _ in 0..nb_nonces {
+            nonces.push(secp.generate_schnorrsig_keypair(rng).1);
+        }
+        let msgs = (0..nb_nonces)
+            .map(|_| {
+                (0..nb_outcomes_per_nonce)
                     .map(|_| {
                         let mut buf = [0u8; 32];
                         rng.fill_bytes(&mut buf);
@@ -1620,6 +1709,24 @@ mod iteres {
     }
 
     #[bench]
+    fn bench_get_adaptor_point_pre_compute(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let mut oracle_infos = Vec::with_capacity(NB_ORACLES);
+
+        for _ in 0..NB_ORACLES {
+            oracle_infos.push(generate_oracle_info_pre_compute(
+                &secp,
+                &mut rng,
+                NB_NONCES,
+                NB_OUTCOMES_PER_NONCE,
+            ));
+        }
+
+        b.iter(|| get_adaptor_points_pre_compute(&secp, &oracle_infos))
+    }
+
+    // #[bench]
     fn bench_get_adaptor_point_no_hash_batch(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1637,7 +1744,7 @@ mod iteres {
         b.iter(|| get_adaptor_points_no_hash_batch(&oracle_infos, NB_OUTCOMES_PER_NONCE))
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_no_hash_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1655,5 +1762,23 @@ mod iteres {
         b.iter(|| {
             assert!(get_adaptor_points_no_hash_par(&oracle_infos, NB_OUTCOMES_PER_NONCE).is_ok())
         })
+    }
+
+    // #[bench]
+    fn bench_get_adaptor_point_pre_compute_par(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let mut oracle_infos = Vec::with_capacity(NB_ORACLES);
+
+        for _ in 0..NB_ORACLES {
+            oracle_infos.push(generate_oracle_info_pre_compute(
+                &secp,
+                &mut rng,
+                NB_NONCES,
+                NB_OUTCOMES_PER_NONCE,
+            ));
+        }
+
+        b.iter(|| assert!(get_adaptor_points_pre_compute_par(&secp, &oracle_infos).is_ok()))
     }
 }
