@@ -163,6 +163,56 @@ pub fn get_oracle_sig_points_pre_compute(
         res.push(super::combine_pubkeys(&to_combine)?);
     }
 
+    assert_eq!(res.len() as u32, 2_u32.pow(nonces.len() as u32));
+
+    Ok(res)
+}
+
+fn compute_recursively(
+    index: usize,
+    prev: Option<PublicKey>,
+    nonces_sig_points: &Vec<Vec<PublicKey>>,
+    res: &mut Vec<PublicKey>,
+) -> Result<(), Error> {
+    for i in 0..nonces_sig_points[index].len() {
+        let next = match prev {
+            Some(prev) => prev.combine(&nonces_sig_points[index][i])?,
+            None => nonces_sig_points[0][index],
+        };
+        if index < nonces_sig_points.len() - 1 {
+            compute_recursively(index + 1, Some(next), nonces_sig_points, res)?;
+        } else {
+            res.push(next);
+        }
+    }
+
+    Ok(())
+}
+
+///
+pub fn get_oracle_sig_points_pre_compute_cache(
+    secp: &Secp256k1<secp256k1::All>,
+    oracle_pubkey: &SchnorrPublicKey,
+    nonces: &Vec<SchnorrPublicKey>,
+    outcomes: &Vec<Vec<Message>>,
+) -> Result<Vec<PublicKey>, Error> {
+    let nb_nonces = nonces.len();
+    let mut nonces_sig_points = Vec::with_capacity(nb_nonces);
+    let nb_outcomes = outcomes[0].len().pow(nonces.len() as u32);
+    let mut res = Vec::with_capacity(nb_outcomes);
+
+    for i in 0..nonces.len() {
+        nonces_sig_points.push(get_oracle_sig_points_for_nonce(
+            secp,
+            oracle_pubkey,
+            &nonces[i],
+            &outcomes[i],
+        )?);
+    }
+
+    compute_recursively(0, None, &nonces_sig_points, &mut res)?;
+
+    assert_eq!(res.len() as u32, 2_u32.pow(nonces.len() as u32));
     Ok(res)
 }
 
@@ -185,10 +235,14 @@ pub fn get_oracle_sig_points_no_hash_pk(
         )?);
     }
 
-    // compute all possible combinations of outcome sigpoints
-    for to_combine in nonces_sig_points.into_iter().multi_cartesian_product() {
-        res.push(super::combine_pubkeys(&to_combine)?);
-    }
+    // // compute all possible combinations of outcome sigpoints
+    // for to_combine in nonces_sig_points.into_iter().multi_cartesian_product() {
+    //     res.push(super::combine_pubkeys(&to_combine)?);
+    // }
+
+    compute_recursively(0, None, &nonces_sig_points, &mut res)?;
+
+    assert_eq!(res.len() as u32, 2_u32.pow(nonces.len() as u32));
 
     Ok(res)
 }
