@@ -583,6 +583,40 @@ pub fn get_adaptor_points_pre_compute_cache(
 }
 
 ///
+pub fn get_adaptor_points_pre_compute_cache_par(
+    secp: &Secp256k1<secp256k1::All>,
+    oracle_infos: &Vec<OracleInfo>,
+) -> Result<Vec<PublicKey>, Error> {
+    if oracle_infos.len() < 1 {
+        return Err(Error::InvalidArgument);
+    }
+
+    oracle_infos
+        .par_iter()
+        .map(|x| {
+            hash_util::get_oracle_sig_points_pre_compute_cache(
+                secp,
+                &x.public_key,
+                &x.nonces,
+                &x.msgs,
+            )
+        })
+        .try_reduce_with(|a, b| {
+            a.iter()
+                .zip(b.iter())
+                .map(|(l, r)| {
+                    let res = l.combine(r);
+                    match res {
+                        Ok(o) => Ok(o),
+                        Err(error) => Err(Error::from(error)),
+                    }
+                })
+                .collect()
+        })
+        .ok_or(Error::InvalidArgument)?
+}
+
+///
 pub fn get_adaptor_points_no_hash(
     oracle_infos: &Vec<OracleInfo>,
     nb_outcomes_per_nonce: usize,
@@ -1779,6 +1813,24 @@ mod benches {
     }
 
     #[bench]
+    fn bench_get_adaptor_point_pre_compute_cache_par(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+        let mut oracle_infos = Vec::with_capacity(NB_ORACLES);
+
+        for _ in 0..NB_ORACLES {
+            oracle_infos.push(generate_oracle_info_pre_compute(
+                &secp,
+                &mut rng,
+                NB_NONCES,
+                NB_OUTCOMES_PER_NONCE,
+            ));
+        }
+
+        b.iter(|| assert!(get_adaptor_points_pre_compute_cache_par(&secp, &oracle_infos).is_ok()))
+    }
+
+    #[bench]
     fn bench_get_adaptor_point_no_hash_batch(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1796,7 +1848,7 @@ mod benches {
         b.iter(|| get_adaptor_points_no_hash_batch(&oracle_infos, NB_OUTCOMES_PER_NONCE))
     }
 
-    // #[bench]
+    #[bench]
     fn bench_get_adaptor_point_no_hash_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1816,7 +1868,7 @@ mod benches {
         })
     }
 
-    // #[bench]
+    #[bench]
     fn bench_get_adaptor_point_pre_compute_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
