@@ -29,6 +29,8 @@ use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrS
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verification};
 
 pub mod digit_decomposition;
+pub mod digit_trie;
+pub mod trie;
 pub mod util;
 
 /// Minimum value that can be included in a transaction output. Under this value,
