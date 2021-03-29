@@ -91,7 +91,7 @@ fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey
         key: PublicKey::from_secret_key(secp, sk),
     };
     let mut hash_engine = PubkeyHash::engine();
-    pk.write_into(&mut hash_engine);
+    pk.write_into(&mut hash_engine).unwrap();
     let pkh = Payload::PubkeyHash(PubkeyHash::from_engine(hash_engine));
     pkh.script_pubkey()
 }

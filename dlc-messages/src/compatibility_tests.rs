@@ -12,12 +12,12 @@ use bitcoin::consensus::encode::Decodable;
 use bitcoin::SigHashType;
 use bitcoin::{Address, OutPoint, Script, Transaction, Txid, VarInt};
 use bitcoin_test_utils::*;
-use dlc::{DlcTransactions, PartyParams, Payout, TxInputInfo};
+use dlc::{DlcTransactions, OracleInfo as DlcOracleInfo, PartyParams, Payout, TxInputInfo};
 use lightning::ln::wire::{write, Encode};
 use lightning::util::ser::Writeable;
 use secp256k1::{
     ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
+    schnorrsig::Signature as SchnorrSignature,
     Message, PublicKey, Secp256k1, SecretKey, Signature, Signing,
 };
 use std::str::FromStr;
@@ -362,25 +362,25 @@ fn get_funding_signatures<C: Signing>(
     )
 }
 
-fn get_cets_and_refund_sigs<C: Signing>(
-    secp: &Secp256k1<C>,
-    cet_msg_pairs: &Vec<(&Transaction, &Message)>,
+fn get_cets_and_refund_sigs(
+    secp: &Secp256k1<secp256k1::All>,
+    cets: &Vec<Transaction>,
     refund_tx: &Transaction,
-    oracle_pub_key: &SchnorrPublicKey,
-    oracle_nonce: &SchnorrPublicKey,
+    oracle_infos: &Vec<DlcOracleInfo>,
     fund_sk: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
+    messages: &Vec<Vec<Vec<Message>>>,
 ) -> (Vec<(AdaptorSignature, AdaptorProof)>, Signature) {
     (
         dlc::create_cet_adaptor_sigs_from_oracle_info(
             secp,
-            cet_msg_pairs,
-            oracle_pub_key,
-            oracle_nonce,
+            cets,
+            oracle_infos,
             fund_sk,
             funding_script_pubkey,
             fund_output_value,
+            messages,
         )
         .unwrap(),
         dlc::util::get_raw_sig_for_tx_input(
@@ -462,31 +462,34 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
     let accept_fund_sk = case.inputs.accept_params.funding_priv_key;
     let oracle_pub_key = params.oracle_info.public_key;
     let oracle_nonce = params.oracle_info.nonce;
-    let msg_outcomes: Vec<_> = outcomes
+    let msgs: Vec<_> = outcomes
         .iter()
-        .map(|x| secp256k1::Message::from_slice(x).unwrap())
+        .map(|x| vec![vec![secp256k1::Message::from_slice(x).unwrap()]])
         .collect();
-    let cet_msg_pairs: Vec<_> = dlc_txs.cets.iter().zip(msg_outcomes.iter()).collect();
+    let oracle_infos = vec![DlcOracleInfo {
+        public_key: oracle_pub_key,
+        nonces: vec![oracle_nonce],
+    }];
 
     let (offer_cets_sigs, offer_refund_sig) = get_cets_and_refund_sigs(
         secp,
-        &cet_msg_pairs,
+        &dlc_txs.cets,
         &refund_tx,
-        &oracle_pub_key,
-        &oracle_nonce,
+        &oracle_infos,
         &offer_fund_sk,
         &funding_script_pubkey,
         fund_output_value,
+        &msgs,
     );
     let (accept_cets_sigs, accept_refund_sig) = get_cets_and_refund_sigs(
         secp,
-        &cet_msg_pairs,
+        &dlc_txs.cets,
         &refund_tx,
-        &oracle_pub_key,
-        &oracle_nonce,
+        &oracle_infos,
         &accept_fund_sk,
         &funding_script_pubkey,
         fund_output_value,
+        &msgs,
     );
 
     let actual_outcome_index = params
@@ -516,7 +519,7 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
         secp,
         &mut offer_final_cet,
         &accept_cets_sigs[actual_outcome_index].0,
-        &case.inputs.params.oracle_signature,
+        &vec![vec![case.inputs.params.oracle_signature]],
         &offer_fund_sk,
         &accept_params.fund_pubkey,
         &funding_script_pubkey,
@@ -530,7 +533,7 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
         secp,
         &mut accept_final_cet,
         &offer_cets_sigs[actual_outcome_index].0,
-        &case.inputs.params.oracle_signature,
+        &vec![vec![case.inputs.params.oracle_signature]],
         &accept_fund_sk,
         &offer_params.fund_pubkey,
         &funding_script_pubkey,
