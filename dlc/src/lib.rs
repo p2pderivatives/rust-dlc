@@ -28,6 +28,7 @@ use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verification};
 
+pub mod digit_decomposition;
 pub mod util;
 
 /// Minimum value that can be included in a transaction output. Under this value,
@@ -65,11 +66,23 @@ const ENABLE_LOCKTIME: u32 = 0xfffffffe;
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
 /// accepting the contract.
+#[derive(PartialEq, Debug)]
 pub struct Payout {
     /// Payout for the offering party
     pub offer: u64,
     /// Payout for the accepting party
     pub accept: u64,
+}
+
+#[derive(PartialEq, Debug)]
+/// Representation of a set of contiguous outcomes that share a single payout.
+pub struct RangePayout {
+    /// The start of the range
+    pub start: usize,
+    /// the number of outcome in the range
+    pub count: usize,
+    /// the payout associated with all outcomes described by start and count
+    pub payout: Payout,
 }
 
 /// Contains the necessary transactions for establishing a DLC
