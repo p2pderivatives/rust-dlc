@@ -28,9 +28,11 @@ use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Verification};
 
+pub mod combination_iterator;
 pub mod digit_decomposition;
 pub mod digit_trie;
 pub mod multi_oracle;
+pub mod multi_trie;
 pub mod trie;
 pub mod util;
 
