@@ -31,6 +31,7 @@ use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Ve
 pub mod digit_decomposition;
 pub mod digit_trie;
 pub mod multi_oracle;
+pub mod multi_oracle_trie;
 pub mod trie;
 pub mod util;
 
