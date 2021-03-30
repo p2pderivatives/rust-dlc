@@ -10,11 +10,11 @@ use bitcoincore_rpc_json::AddressType;
 use bitcoin::hashes::*;
 use bitcoin::{OutPoint, Script, SigHashType};
 use dlc::digit_decomposition::{decompose_value, group_by_ignoring_digits, pad_range_payouts};
-use dlc::digit_trie::{DigitTrie, DigitTrieIter};
+use dlc::multi_oracle_trie::{MultiOracleTrie, MultiOracleTrieIterator};
 use dlc::{DlcTransactions, OracleInfo, PartyParams, Payout, RangeInfo, RangePayout, TxInputInfo};
 use secp256k1::{
     ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    rand::{thread_rng, Rng, RngCore},
+    rand::{seq::SliceRandom, thread_rng, Rng, RngCore},
     schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
     Message, PublicKey, Secp256k1, SecretKey, Signing,
 };
@@ -270,25 +270,43 @@ fn integration_tests_refund() {
 
 #[test]
 #[ignore]
-fn integration_tests_decomposed() {
+fn integration_tests_decomposed_single_oracle() {
+    integration_tests_decomposed_common(1, 1, 1000, 11, 4, 5, 2);
+}
+
+#[test]
+#[ignore]
+fn integration_tests_decomposed_multi_oracle() {
+    integration_tests_decomposed_common(3, 2, 100, 11, 4, 5, 2);
+}
+
+fn integration_tests_decomposed_common(
+    nb_oracles: usize,
+    nb_required: usize,
+    nb_payouts: u64,
+    nb_digits: usize,
+    min_support_exp: usize,
+    max_error_exp: usize,
+    base: usize,
+) {
     let secp = secp256k1::Secp256k1::new();
-    let rng = &mut thread_rng();
-    let payouts: Vec<Payout> = (0..1000)
+    let mut rng = &mut thread_rng();
+    let payouts: Vec<Payout> = (0..nb_payouts)
         .map(|i| Payout {
-            offer: (2000 - 2 * i) * (BTC_TO_SAT / 1000),
-            accept: (2 * i) * (BTC_TO_SAT / 1000),
+            offer: (2 * nb_payouts - 2 * i) * (BTC_TO_SAT / nb_payouts),
+            accept: (2 * i) * (BTC_TO_SAT / nb_payouts),
         })
         .collect();
     let mut outcomes = Vec::<RangePayout>::new();
-    for i in 0..1000 {
+    for i in 0..(nb_payouts as usize) {
         outcomes.push(RangePayout {
-            start: 1000 + i,
+            start: (nb_payouts as usize) + i,
             count: 1,
             payout: payouts[i].clone(),
         })
     }
 
-    let outcomes = pad_range_payouts(outcomes, 2, 11);
+    let outcomes = pad_range_payouts(outcomes, base, nb_digits);
 
     let (offer_rpc, accept_rpc, sink_rpc) = init();
 
@@ -306,8 +324,8 @@ fn integration_tests_decomposed() {
     )
     .expect("Error creating dlc transactions.");
 
-    let oracle_priv_infos = get_oracle_infos(&secp, rng, 1, 11);
-    let oracle_infos = oracle_priv_infos.iter().map(|x| x.info.clone()).collect();
+    let oracle_priv_infos = get_oracle_infos(&secp, rng, nb_oracles, nb_digits);
+    let oracle_infos: Vec<OracleInfo> = oracle_priv_infos.iter().map(|x| x.info.clone()).collect();
 
     let funding_script_pubkey = dlc::make_funding_redeemscript(
         &offer_params.params.fund_pubkey,
@@ -315,7 +333,15 @@ fn integration_tests_decomposed() {
     );
     let fund_output_value = dlc_txs.fund.output[0].value;
 
-    let mut outcome_trie = DigitTrie::<RangeInfo>::new(2);
+    let mut multi_oracle_trie = MultiOracleTrie::new(
+        nb_oracles,
+        nb_required,
+        base,
+        min_support_exp,
+        max_error_exp,
+        nb_digits,
+        true,
+    );
     let mut adaptor_pairs_offer = Vec::new();
     let mut adaptor_pairs_accept = Vec::new();
     let mut cet_index = 0;
@@ -336,53 +362,77 @@ fn integration_tests_decomposed() {
             assert_eq!(outcome.payout.accept, cet.output[1].value);
         }
 
-        let groups =
-            group_by_ignoring_digits(outcome.start, outcome.start + outcome.count - 1, 2, 11)
-                .unwrap();
+        let groups = group_by_ignoring_digits(
+            outcome.start,
+            outcome.start + outcome.count - 1,
+            base,
+            nb_digits,
+        )
+        .unwrap();
         for group in groups {
-            let adaptor_point =
-                get_adaptor_point_from_paths(&secp, &oracle_infos, &vec![group.clone()]).unwrap();
-            let adaptor_pair_offer = dlc::create_cet_adaptor_sig_from_point(
-                &secp,
-                cet,
-                &adaptor_point,
-                &offer_params.fund_priv_key,
-                &funding_script_pubkey,
-                fund_output_value,
-            )
-            .unwrap();
-            let adaptor_pair_accept = dlc::create_cet_adaptor_sig_from_point(
-                &secp,
-                cet,
-                &adaptor_point,
-                &accept_params.fund_priv_key,
-                &funding_script_pubkey,
-                fund_output_value,
-            )
-            .unwrap();
-            adaptor_pairs_offer.push(adaptor_pair_offer);
-            adaptor_pairs_accept.push(adaptor_pair_accept);
-            let mut range_info_get = |_| RangeInfo {
-                cet_index,
-                adaptor_index: adaptor_pairs_offer.len() - 1,
-            };
-            outcome_trie.insert(&group, &mut range_info_get);
+            let mut get_value =
+                |paths: &Vec<Vec<usize>>, oracle_indexes: &Vec<usize>| -> RangeInfo {
+                    let adaptor_point = get_adaptor_point_from_paths(
+                        &secp,
+                        &oracle_infos
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, x)| {
+                                if oracle_indexes.contains(&i) {
+                                    Some(x.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        paths,
+                    )
+                    .unwrap();
+                    let adaptor_pair_offer = dlc::create_cet_adaptor_sig_from_point(
+                        &secp,
+                        cet,
+                        &adaptor_point,
+                        &offer_params.fund_priv_key,
+                        &funding_script_pubkey,
+                        fund_output_value,
+                    )
+                    .unwrap();
+                    let adaptor_pair_accept = dlc::create_cet_adaptor_sig_from_point(
+                        &secp,
+                        cet,
+                        &adaptor_point,
+                        &accept_params.fund_priv_key,
+                        &funding_script_pubkey,
+                        fund_output_value,
+                    )
+                    .unwrap();
+                    adaptor_pairs_offer.push(adaptor_pair_offer);
+                    adaptor_pairs_accept.push(adaptor_pair_accept);
+                    RangeInfo {
+                        cet_index,
+                        adaptor_index: adaptor_pairs_offer.len() - 1,
+                    }
+                };
+            multi_oracle_trie.insert(&group, &mut get_value);
         }
     }
 
-    let digit_trie_iter = DigitTrieIter::new(&outcome_trie);
+    let m_trie_iter = MultiOracleTrieIterator::new(&multi_oracle_trie);
 
-    for res in digit_trie_iter {
-        let msgs: Vec<Message> = res
-            .path
-            .iter()
-            .map(|x| Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes()))
-            .collect();
+    for res in m_trie_iter {
+        let mut cur_oracle_infos: Vec<OracleInfo> = Vec::with_capacity(nb_required);
+        let mut paths = Vec::new();
+
+        for (oracle_index, path) in res.path {
+            cur_oracle_infos.push(oracle_infos[oracle_index].clone());
+            paths.push(path);
+        }
+
+        let adaptor_point = get_adaptor_point_from_paths(&secp, &cur_oracle_infos, &paths).unwrap();
+
         let adaptor_pair_offer = adaptor_pairs_offer[res.value.adaptor_index];
         let adaptor_pair_accept = adaptor_pairs_accept[res.value.adaptor_index];
         let cet = &dlc_txs.cets[res.value.cet_index];
-        let adaptor_point =
-            dlc::get_adaptor_point_from_oracle_info(&secp, &oracle_infos, &vec![msgs]).unwrap();
         assert!(dlc::verify_cet_adaptor_sig_from_point(
             &secp,
             &adaptor_pair_offer.0,
@@ -407,35 +457,99 @@ fn integration_tests_decomposed() {
         .is_ok());
     }
 
-    let outcome = rng.next_u32() % 2048;
-    let decomposed_outcome = decompose_value(outcome as usize, 2, 11);
-    let mut oracle_signatures: Vec<SchnorrSignature> = decomposed_outcome
-        .iter()
-        .enumerate()
-        .map(|(i, x)| {
-            let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
-            secp.schnorrsig_sign_with_nonce(
-                &msg,
-                &oracle_priv_infos[0].priv_keypair,
-                &oracle_priv_infos[0].priv_nonces[i],
-            )
+    let max_value = base.pow(nb_digits as u32);
+    let outcome = (rng.next_u32() % (max_value as u32)) as usize;
+    let nb_active_oracles = if nb_required == nb_oracles {
+        nb_required
+    } else {
+        (rng.next_u32() % ((nb_oracles - nb_required) as u32) + (nb_required as u32)) as usize
+    };
+    let mut oracle_indexes: Vec<usize> = (0..nb_oracles).collect();
+    oracle_indexes.shuffle(&mut rng);
+    oracle_indexes = oracle_indexes.into_iter().take(nb_active_oracles).collect();
+    oracle_indexes.sort();
+
+    let decomposed_outcome = decompose_value(outcome, base, nb_digits);
+    let mut oracle_signatures: Vec<(usize, Vec<SchnorrSignature>)> = vec![(
+        oracle_indexes[0],
+        decomposed_outcome
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
+                secp.schnorrsig_sign_with_nonce(
+                    &msg,
+                    &oracle_priv_infos[oracle_indexes[0]].priv_keypair,
+                    &oracle_priv_infos[oracle_indexes[0]].priv_nonces[i],
+                )
+            })
+            .collect(),
+    )];
+    let mut paths = vec![(oracle_indexes[0], decomposed_outcome)];
+
+    for index in oracle_indexes.iter().skip(1) {
+        let mut delta = ((rng.next_u32() as usize) % base.pow(min_support_exp as u32)) as i32;
+        delta = if rng.next_u32() % 2 == 1 {
+            -delta
+        } else {
+            delta
+        };
+
+        let cur_outcome: usize = {
+            let tmp_outcome = (outcome as i32) + delta;
+            if tmp_outcome < 0 {
+                0
+            } else if tmp_outcome > (max_value as i32) {
+                max_value as usize
+            } else {
+                tmp_outcome as usize
+            }
+        };
+
+        let decomposed_value = decompose_value(cur_outcome, base, nb_digits);
+        oracle_signatures.push((
+            *index,
+            decomposed_value
+                .iter()
+                .enumerate()
+                .map(|(i, x)| {
+                    let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
+                    secp.schnorrsig_sign_with_nonce(
+                        &msg,
+                        &oracle_priv_infos[*index].priv_keypair,
+                        &oracle_priv_infos[*index].priv_nonces[i],
+                    )
+                })
+                .collect(),
+        ));
+        paths.push((*index, decomposed_value));
+    }
+
+    let outcome_info = multi_oracle_trie.look_up(&paths).unwrap();
+    let outcome_range_info = outcome_info.value;
+    let outcome_path = outcome_info.path;
+
+    let final_oracle_signatures = oracle_signatures
+        .into_iter()
+        .filter_map(|(index, mut sigs)| {
+            if let Some((_, path)) = outcome_path.iter().find(|(i, _)| *i == index) {
+                sigs.drain(path.len()..);
+                return Some(sigs);
+            }
+            None
         })
         .collect();
 
-    let outcome_range_info = outcome_trie.look_up(&decomposed_outcome).unwrap();
-
-    oracle_signatures.drain(outcome_range_info[0].path.len()..);
-
     let mut test_params = TestParams {
         secp,
-        offer_adaptor_pair: adaptor_pairs_offer[outcome_range_info[0].value.adaptor_index],
+        offer_adaptor_pair: adaptor_pairs_offer[outcome_range_info.adaptor_index],
         offer_params,
         accept_params,
         dlc_txs,
-        oracle_signatures: vec![oracle_signatures],
+        oracle_signatures: final_oracle_signatures,
         funding_script_pubkey,
         fund_output_value,
-        cet_index: outcome_range_info[0].value.cet_index,
+        cet_index: outcome_range_info.cet_index,
         sink_rpc,
     };
 
