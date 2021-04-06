@@ -4,4 +4,4 @@ version = "0.0.1"
 authors = ["Crypto Garage"]
 
 [dependencies]
-bitcoin = {version="0.25.2-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin"}
+bitcoin = {version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin"}
