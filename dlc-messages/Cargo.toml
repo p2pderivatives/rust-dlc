@@ -11,7 +11,6 @@ bitcoin = {version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/
 secp256k1 = {version="0.20.1-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1"}
 lightning = {version="0.0.13-adaptor.0", git = "https://github.com/p2pderivatives/rust-lightning", branch= "ecdsa-adaptor"}
 serde = { version = "1", features = ["derive"], optional = true }
-unicode-normalization = { version = "0.1.16" }
 dlc = { version = "0.0.1", path = "../dlc" }
 
 [dev-dependencies]

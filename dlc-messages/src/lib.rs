@@ -5,7 +5,6 @@ extern crate bitcoin;
 extern crate lightning;
 extern crate dlc;
 extern crate secp256k1;
-extern crate unicode_normalization;
 
 #[cfg(test)]
 extern crate bitcoin_test_utils;
@@ -15,8 +14,12 @@ extern crate serde;
 #[cfg(test)]
 extern crate serde_json;
 
-#[cfg(test)]
-mod compatibility_tests;
+// #[cfg(test)]
+// mod compatibility_tests;
+
+pub mod contract_msgs;
+pub mod oracle_msgs;
+mod utils;
 
 use bitcoin::hashes::*;
 use bitcoin::{consensus::Decodable, hash_types::Txid, OutPoint, Script, Transaction};
@@ -25,137 +28,16 @@ use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::{write, Encode, MessageType};
 use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
 use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
-use secp256k1::schnorrsig::PublicKey as SchnorrPublicKey;
 use secp256k1::{constants, PublicKey, Signature};
-use unicode_normalization::UnicodeNormalization;
+
+use contract_msgs::ContractInfo;
+use oracle_msgs::OracleInfo;
 
 const CONTRACT_INFO_TYPE: u64 = 42768;
 const ORACLE_INFO_TYPE: u64 = 42770;
 const FUNDING_INPUT_TYPE: u64 = 42772;
 const CET_ADAPTOR_SIGNATURES_TYPE: u64 = 42774;
 const FUNDING_SIGNATURES_TYPE: u64 = 42776;
-
-/// Represents a single outcome of a DLC contract and the associated offer party
-/// payout.
-#[derive(Clone, PartialEq)]
-#[cfg_attr(
-    any(test, feature = "serde"),
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "camelCase")
-)]
-pub struct ContractOutcome {
-    pub outcome: String,
-    pub local_payout: u64,
-}
-
-fn write_string<W: Writer>(input: &str, writer: &mut W) -> Result<(), ::std::io::Error> {
-    let nfced = input.nfc().collect::<String>();
-    let len = BigSize(nfced.len() as u64);
-    len.write(writer)?;
-    let bytes = nfced.as_bytes();
-
-    for b in bytes {
-        b.write(writer)?;
-    }
-
-    Ok(())
-}
-
-impl Writeable for ContractOutcome {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        write_string(&self.outcome, writer)?;
-
-        self.local_payout.write(writer)?;
-        Ok(())
-    }
-}
-
-impl Readable for ContractOutcome {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<ContractOutcome, DecodeError> {
-        let len: BigSize = Readable::read(reader)?;
-        let mut outcome_vec = Vec::with_capacity(len.0 as usize);
-
-        for _ in 0..len.0 {
-            let b: u8 = Readable::read(reader)?;
-            outcome_vec.push(b);
-        }
-
-        let outcome = match String::from_utf8(outcome_vec) {
-            Ok(s) => s,
-            Err(_) => return Err(DecodeError::InvalidValue),
-        };
-
-        let local_payout = Readable::read(reader)?;
-        Ok(ContractOutcome {
-            outcome,
-            local_payout,
-        })
-    }
-}
-
-/// Structure containing the list of outcome of a DLC contract.
-#[cfg_attr(
-    any(test, feature = "serde"),
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "camelCase")
-)]
-pub struct ContractInfo {
-    pub outcomes: Vec<ContractOutcome>,
-}
-
-impl Writeable for ContractInfo {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        let size: BigSize = BigSize(self.outcomes.len() as u64);
-        size.write(writer)?;
-        for ref outcome in &self.outcomes {
-            outcome.write(writer)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl Readable for ContractInfo {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<ContractInfo, DecodeError> {
-        let outcomes_count: BigSize = Readable::read(reader)?;
-        let mut outcomes: Vec<ContractOutcome> = Vec::new();
-        for _ in 0..(outcomes_count.0) {
-            outcomes.push(Readable::read(reader)?);
-        }
-
-        Ok(ContractInfo { outcomes })
-    }
-}
-
-/// Structure containing information about an oracle to be used as external
-/// data source for a DLC contract.
-#[cfg_attr(
-    any(test, feature = "serde"),
-    derive(serde::Deserialize, serde::Serialize),
-    serde(rename_all = "camelCase")
-)]
-pub struct OracleInfo {
-    pub public_key: SchnorrPublicKey,
-    pub nonce: SchnorrPublicKey,
-}
-
-impl Writeable for OracleInfo {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.public_key.write(writer)?;
-        self.nonce.write(writer)?;
-
-        Ok(())
-    }
-}
-
-impl Readable for OracleInfo {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleInfo, DecodeError> {
-        let public_key = Readable::read(reader)?;
-        let nonce = Readable::read(reader)?;
-
-        Ok(OracleInfo { public_key, nonce })
-    }
-}
 
 /// Contains information about a specific input to be used in a funding transaction,
 /// as well as its corresponding on-chain UTXO.
@@ -597,14 +479,6 @@ impl Encode for AcceptDlc {
 
 impl Encode for SignDlc {
     const TYPE: u16 = 42782;
-}
-
-impl Encode for ContractInfo {
-    const TYPE: u16 = 42768;
-}
-
-impl Encode for OracleInfo {
-    const TYPE: u16 = 42770;
 }
 
 impl Encode for FundingInput {
