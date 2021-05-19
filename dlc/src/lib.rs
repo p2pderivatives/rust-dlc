@@ -438,14 +438,16 @@ pub fn make_funding_redeemscript(a: &PublicKey, b: &PublicKey) -> Script {
 }
 
 pub(crate) fn combine_pubkeys(pubkeys: &Vec<PublicKey>) -> Result<PublicKey, Error> {
-    if pubkeys.len() < 1 {
-        return Err(Error::InvalidArgument);
-    }
-    let res = pubkeys[0];
-    Ok(pubkeys
-        .iter()
-        .skip(1)
-        .try_fold(res, |acc, pk| acc.combine(&pk))?)
+    PublicKey::combine_keys(&(pubkeys.iter().collect::<Vec<&PublicKey>>()))
+        .or(Err(Error::InvalidArgument))
+    // if pubkeys.len() < 1 {
+    //     return Err(Error::InvalidArgument);
+    // }
+    // let res = pubkeys[0];
+    // Ok(pubkeys
+    //     .iter()
+    //     .skip(1)
+    //     .try_fold(res, |acc, pk| acc.combine(&pk))?)
 }
 
 fn get_oracle_sig_point<C: secp256k1::Signing>(
@@ -1560,7 +1562,7 @@ mod benches {
         }
     }
 
-    #[bench]
+    // #[bench]
     fn bench_create_adaptor_sig_from_oracle_info(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1596,7 +1598,7 @@ mod benches {
         })
     }
 
-    #[bench]
+    // #[bench]
     fn bench_create_adaptor_sig_from_point(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1620,7 +1622,7 @@ mod benches {
         })
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_opar(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1644,7 +1646,7 @@ mod benches {
         })
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1666,7 +1668,7 @@ mod benches {
         })
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_batch(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1688,7 +1690,7 @@ mod benches {
         });
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_batch_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1710,7 +1712,7 @@ mod benches {
         });
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_batch_opar(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1734,7 +1736,7 @@ mod benches {
         });
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_batch_par_opar(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1758,7 +1760,7 @@ mod benches {
         });
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_no_hash(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1812,7 +1814,7 @@ mod benches {
         b.iter(|| assert!(get_adaptor_points_pre_compute_cache(&secp, &oracle_infos).is_ok()))
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_pre_compute_cache_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1830,7 +1832,7 @@ mod benches {
         b.iter(|| assert!(get_adaptor_points_pre_compute_cache_par(&secp, &oracle_infos).is_ok()))
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_no_hash_batch(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1848,7 +1850,7 @@ mod benches {
         b.iter(|| get_adaptor_points_no_hash_batch(&oracle_infos, NB_OUTCOMES_PER_NONCE))
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_no_hash_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1868,7 +1870,7 @@ mod benches {
         })
     }
 
-    #[bench]
+    // #[bench]
     fn bench_get_adaptor_point_pre_compute_par(b: &mut Bencher) {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = secp256k1::rand::thread_rng();
@@ -1884,5 +1886,38 @@ mod benches {
         }
 
         b.iter(|| assert!(get_adaptor_points_pre_compute_par(&secp, &oracle_infos).is_ok()))
+    }
+
+    // #[bench]
+    fn add_no_batch(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+
+        let pubkeys: Vec<PublicKey> = (0..1000)
+            .map(|_| PublicKey::from_secret_key(&secp, &SecretKey::new(&mut rng)))
+            .collect();
+
+        b.iter(|| {
+            let mut sum = pubkeys[0];
+            for pubkey in pubkeys.iter().skip(1) {
+                sum = sum.combine(&pubkey).unwrap();
+            }
+            sum
+        });
+    }
+
+    // #[bench]
+    fn add_batch(b: &mut Bencher) {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = secp256k1::rand::thread_rng();
+
+        let pubkeys: Vec<PublicKey> = (0..1000)
+            .map(|_| PublicKey::from_secret_key(&secp, &SecretKey::new(&mut rng)))
+            .collect();
+
+        b.iter(|| {
+            let sum = PublicKey::combine_keys(&(pubkeys.iter().collect::<Vec<&PublicKey>>()));
+            sum
+        });
     }
 }
