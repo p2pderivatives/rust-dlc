@@ -27,11 +27,17 @@ use bitcoin::blockdata::{
 use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Verification};
+use std::fmt;
 
+pub mod combination_iterator;
 pub mod digit_decomposition;
 pub mod digit_trie;
+pub mod dlc_trie;
+pub mod dlc_trie_utils;
 pub mod multi_oracle;
 pub mod multi_oracle_trie;
+pub mod multi_oracle_trie_with_diff;
+pub mod multi_trie;
 pub mod trie;
 pub mod util;
 
@@ -89,7 +95,38 @@ pub struct RangePayout {
     pub payout: Payout,
 }
 
-#[derive(PartialEq, Debug)]
+///
+#[derive(Clone, Debug)]
+pub struct EnumerationPayout {
+    ///
+    pub outcome: String,
+    ///
+    pub payout: Payout,
+}
+
+///
+pub enum PayoutOutcomes {
+    ///
+    Enum(Vec<EnumerationPayout>),
+    ///
+    Range(Vec<RangePayout>),
+}
+
+impl PayoutOutcomes {
+    ///
+    pub fn get_payouts(&self) -> Vec<Payout> {
+        match self {
+            PayoutOutcomes::Enum(enum_payouts) => {
+                enum_payouts.iter().map(|x| x.payout.clone()).collect()
+            }
+            PayoutOutcomes::Range(range_payouts) => {
+                range_payouts.iter().map(|x| x.payout.clone()).collect()
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
 /// Structure that stores the indexes at which the CET and adaptor signature
 /// related to a given outcome are located in CET and adaptor signatures arrays
 /// respectively.
@@ -124,9 +161,18 @@ impl DlcTransactions {
             .unwrap()
             .1
     }
+
+    /// Get the fund output in the fund transaction
+    pub fn get_fund_output_index(&self) -> usize {
+        let v0_witness_fund_script = self.funding_script_pubkey.to_v0_p2wsh();
+        util::get_output_for_script_pubkey(&self.fund, &v0_witness_fund_script)
+            .unwrap()
+            .0
+    }
 }
 
 /// Contains info about a utxo used for funding a DLC contract
+#[derive(Clone, Debug)]
 pub struct TxInputInfo {
     /// The outpoint for the utxo
     pub outpoint: OutPoint,
@@ -140,7 +186,7 @@ pub struct TxInputInfo {
 }
 
 /// Structure containing oracle information for a single event.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OracleInfo {
     /// The public key of the oracle.
     pub public_key: SchnorrPublicKey,
@@ -152,20 +198,30 @@ pub struct OracleInfo {
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     /// Secp256k1 error
-    Base(secp256k1::Error),
+    Secp256k1(secp256k1::Error),
     /// An invalid argument was provided
     InvalidArgument,
 }
 
 impl From<secp256k1::Error> for Error {
     fn from(error: secp256k1::Error) -> Error {
-        Error::Base(error)
+        Error::Secp256k1(error)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Secp256k1(ref e) => write!(f, "Secp256k1 error {}", e),
+            Error::InvalidArgument => write!(f, "Invalid argument"),
+        }
     }
 }
 
 /// Contains the parameters required for creating DLC transactions for a single
 /// party. Specifically these are the common fields between Offer and Accept
 /// messages.
+#[derive(Clone, Debug)]
 pub struct PartyParams {
     /// The public key for the fund multisig script
     pub fund_pubkey: PublicKey,
@@ -275,7 +331,7 @@ pub fn create_dlc_transactions(
         .iter()
         .all(|o| o.offer + o.accept == total_collateral);
 
-    if !has_proper_outcomes {
+    if !has_proper_outcomes || payouts.len() < 2 {
         return Err(Error::InvalidArgument);
     }
 
@@ -556,7 +612,7 @@ fn get_oracle_sig_point<C: secp256k1::Signing>(
 ///
 pub fn get_adaptor_point_from_oracle_info<C: Signing>(
     secp: &Secp256k1<C>,
-    oracle_infos: &Vec<OracleInfo>,
+    oracle_infos: &[OracleInfo],
     msgs: &Vec<Vec<Message>>,
 ) -> Result<PublicKey, Error> {
     if oracle_infos.len() < 1 || msgs.len() < 1 {
@@ -585,8 +641,8 @@ pub fn create_cet_adaptor_sig_from_point<C: secp256k1::Signing>(
 }
 
 /// Create an adaptor signature for the given cet using the provided oracle infos.
-pub fn create_cet_adaptor_sig_from_oracle_info(
-    secp: &secp256k1::Secp256k1<secp256k1::All>,
+pub fn create_cet_adaptor_sig_from_oracle_info<C: secp256k1::Signing>(
+    secp: &secp256k1::Secp256k1<C>,
     cet: &Transaction,
     oracle_infos: &Vec<OracleInfo>,
     funding_sk: &SecretKey,
@@ -707,8 +763,8 @@ pub fn sign_cet<C: secp256k1::Signing>(
 
 /// Verify that a given adaptor signature for a given cet is valid with respect
 /// to an adaptor point.
-pub fn verify_cet_adaptor_sig_from_point(
-    secp: &Secp256k1<secp256k1::All>,
+pub fn verify_cet_adaptor_sig_from_point<C: Verification>(
+    secp: &Secp256k1<C>,
     adaptor_sig: &AdaptorSignature,
     adaptor_proof: &AdaptorProof,
     cet: &Transaction,
@@ -862,6 +918,7 @@ mod tests {
             value: change,
             script_pubkey: Script::new(),
         };
+
         let funding_script_pubkey = make_funding_redeemscript(&pk, &pk1);
 
         let transaction = create_funding_transaction(
@@ -1271,7 +1328,7 @@ mod tests {
             expected_input_order: [usize; 2],
             expected_fund_output_order: [usize; 3],
             expected_payout_order: [usize; 2],
-        };
+        }
 
         let cases = vec![
             OrderingCase {
@@ -1300,10 +1357,7 @@ mod tests {
             },
         ];
 
-        let mut i: usize = 0;
         for case in cases {
-            println!("{}", i);
-            i += 1;
             let (offer_party_params, _) =
                 get_party_params(1000000000, 100000000, Some(case.serials[1]));
             let (accept_party_params, _) =
@@ -1312,10 +1366,16 @@ mod tests {
             let dlc_txs = create_dlc_transactions(
                 &offer_party_params,
                 &accept_party_params,
-                &vec![Payout {
-                    offer: 100000000,
-                    accept: 100000000,
-                }],
+                &vec![
+                    Payout {
+                        offer: 100000000,
+                        accept: 100000000,
+                    },
+                    Payout {
+                        offer: 100000000,
+                        accept: 100000000,
+                    },
+                ],
                 100,
                 4,
                 10,

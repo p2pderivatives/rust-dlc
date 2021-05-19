@@ -31,17 +31,17 @@ use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::{constants, PublicKey, Signature};
 
 use contract_msgs::ContractInfo;
-use oracle_msgs::OracleInfo;
 
 const CONTRACT_INFO_TYPE: u64 = 42768;
-const ORACLE_INFO_TYPE: u64 = 42770;
 const FUNDING_INPUT_TYPE: u64 = 42772;
 const CET_ADAPTOR_SIGNATURES_TYPE: u64 = 42774;
 const FUNDING_SIGNATURES_TYPE: u64 = 42776;
 
 /// Contains information about a specific input to be used in a funding transaction,
 /// as well as its corresponding on-chain UTXO.
+#[derive(Clone, Debug)]
 pub struct FundingInput {
+    pub input_serial_id: u64,
     pub prev_tx: Vec<u8>,
     pub prev_tx_vout: u32,
     pub sequence: u32,
@@ -60,13 +60,14 @@ impl From<&FundingInput> for TxInputInfo {
             },
             max_witness_len: (funding_input.max_witness_len as usize),
             redeem_script: funding_input.redeem_script.clone(),
-            serial_id: 0,
+            serial_id: funding_input.input_serial_id,
         }
     }
 }
 
 impl Writeable for FundingInput {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
+        self.input_serial_id.write(writer)?;
         self.prev_tx.write(writer)?;
         self.prev_tx_vout.write(writer)?;
         self.sequence.write(writer)?;
@@ -79,6 +80,7 @@ impl Writeable for FundingInput {
 
 impl Readable for FundingInput {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<FundingInput, DecodeError> {
+        let input_serial_id = Readable::read(reader)?;
         let prev_tx = Readable::read(reader)?;
         let prev_tx_vout = Readable::read(reader)?;
         let sequence = Readable::read(reader)?;
@@ -86,6 +88,7 @@ impl Readable for FundingInput {
         let redeem_script = Readable::read(reader)?;
 
         Ok(FundingInput {
+            input_serial_id,
             prev_tx,
             prev_tx_vout,
             sequence,
@@ -96,6 +99,7 @@ impl Readable for FundingInput {
 }
 
 /// Contains an adaptor signature for a CET input and its associated DLEQ proof.
+#[derive(Clone)]
 pub struct CetAdaptorSignature {
     pub signature: AdaptorSignature,
     pub proof: AdaptorProof,
@@ -131,6 +135,7 @@ impl Readable for CetAdaptorSignature {
 }
 
 /// Contains a list of adaptor signature for a number of CET inputs.
+#[derive(Clone)]
 pub struct CetAdaptorSignatures {
     pub ecdsa_adaptor_signatures: Vec<CetAdaptorSignature>,
 }
@@ -175,6 +180,7 @@ impl Readable for CetAdaptorSignatures {
 }
 
 /// Contains the witness elements to use to make a funding transaction input valid.
+#[derive(Clone)]
 pub struct FundingSignature {
     pub witness_elements: Vec<WitnessElement>,
 }
@@ -207,6 +213,7 @@ impl Readable for FundingSignature {
 
 /// Contains a list of witness elements to satisfy the spending conditions of
 /// funding inputs.
+#[derive(Clone)]
 pub struct FundingSignatures {
     pub funding_signatures: Vec<FundingSignature>,
 }
@@ -237,6 +244,7 @@ impl Readable for FundingSignatures {
 }
 
 /// Contains serialized data representing a single witness stack element.
+#[derive(Clone)]
 pub struct WitnessElement {
     pub witness: Vec<u8>,
 }
@@ -257,16 +265,19 @@ impl Readable for WitnessElement {
 /// Contains information about a party wishing to enter into a DLC with
 /// another party. The contained information is sufficient for any other party
 /// to create a set of transactions representing the contract and its terms.
+#[derive(Clone)]
 pub struct OfferDlc {
     pub contract_flags: u8,
     pub chain_hash: [u8; 32],
     pub contract_info: ContractInfo,
-    pub oracle_info: OracleInfo,
     pub funding_pubkey: PublicKey,
     pub payout_spk: Script,
-    pub total_collateral: u64,
+    pub payout_serial_id: u64,
+    pub offer_collateral: u64,
     pub funding_inputs: Vec<FundingInput>,
     pub change_spk: Script,
+    pub change_serial_id: u64,
+    pub fund_output_serial_id: u64,
     pub fee_rate_per_vb: u64,
     pub contract_maturity_bound: u32,
     pub contract_timeout: u32,
@@ -279,6 +290,13 @@ impl OfferDlc {
         write(self, &mut buff)?;
         Ok(sha256::Hash::hash(&buff).into_inner())
     }
+
+    pub fn get_total_collateral(&self) -> u64 {
+        match &self.contract_info {
+            ContractInfo::ContractInfoV0(v0) => v0.total_collateral,
+            ContractInfo::ContractInfoV1(v1) => v1.total_collateral,
+        }
+    }
 }
 
 impl Writeable for OfferDlc {
@@ -286,10 +304,10 @@ impl Writeable for OfferDlc {
         self.contract_flags.write(writer)?;
         self.chain_hash.write(writer)?;
         encode_tlv!(writer, { (CONTRACT_INFO_TYPE, self.contract_info) });
-        encode_tlv!(writer, { (ORACLE_INFO_TYPE, self.oracle_info) });
         self.funding_pubkey.write(writer)?;
         self.payout_spk.write(writer)?;
-        self.total_collateral.write(writer)?;
+        self.payout_serial_id.write(writer)?;
+        self.offer_collateral.write(writer)?;
         let num_funding_inputs = self.funding_inputs.len();
         (num_funding_inputs as u16).write(writer)?;
 
@@ -298,6 +316,8 @@ impl Writeable for OfferDlc {
         }
 
         self.change_spk.write(writer)?;
+        self.change_serial_id.write(writer)?;
+        self.fund_output_serial_id.write(writer)?;
         self.fee_rate_per_vb.write(writer)?;
         self.contract_maturity_bound.write(writer)?;
         self.contract_timeout.write(writer)
@@ -311,12 +331,10 @@ impl Readable for OfferDlc {
         let mut contract_info_opt: Option<ContractInfo> = None;
         decode_tlv!(&mut reader, {}, { (CONTRACT_INFO_TYPE, contract_info_opt) });
         let contract_info = contract_info_opt.ok_or(DecodeError::InvalidValue)?;
-        let mut oracle_info_opt: Option<OracleInfo> = None;
-        decode_tlv!(&mut reader, {}, { (ORACLE_INFO_TYPE, oracle_info_opt) });
-        let oracle_info = oracle_info_opt.ok_or(DecodeError::InvalidValue)?;
         let funding_pubkey = Readable::read(reader)?;
         let payout_spk = Readable::read(reader)?;
-        let total_collateral = Readable::read(reader)?;
+        let payout_serial_id = Readable::read(reader)?;
+        let offer_collateral = Readable::read(reader)?;
         let num_funding_inputs: u16 = Readable::read(reader)?;
         let mut funding_inputs = Vec::<FundingInput>::with_capacity(num_funding_inputs as usize);
 
@@ -325,6 +343,8 @@ impl Readable for OfferDlc {
         }
 
         let change_spk = Readable::read(reader)?;
+        let change_serial_id = Readable::read(reader)?;
+        let fund_output_serial_id = Readable::read(reader)?;
         let fee_rate_per_vb = Readable::read(reader)?;
         let contract_maturity_bound = Readable::read(reader)?;
         let contract_timeout = Readable::read(reader)?;
@@ -333,12 +353,14 @@ impl Readable for OfferDlc {
             contract_flags,
             chain_hash,
             contract_info,
-            oracle_info,
             funding_pubkey,
             payout_spk,
-            total_collateral,
+            payout_serial_id,
+            offer_collateral,
             funding_inputs,
             change_spk,
+            change_serial_id,
+            fund_output_serial_id,
             fee_rate_per_vb,
             contract_maturity_bound,
             contract_timeout,
@@ -350,13 +372,16 @@ impl Readable for OfferDlc {
 /// information is sufficient for the offering party to re-build the set of
 /// transactions representing the contract and its terms, and guarantees the offering
 /// party that they can safely provide signatures for their funding input.
+#[derive(Clone)]
 pub struct AcceptDlc {
     pub temporary_contract_id: [u8; 32],
-    pub total_collateral: u64,
+    pub accept_collateral: u64,
     pub funding_pubkey: PublicKey,
     pub payout_spk: Script,
+    pub payout_serial_id: u64,
     pub funding_inputs: Vec<FundingInput>,
     pub change_spk: Script,
+    pub change_serial_id: u64,
     pub cet_adaptor_signatures: CetAdaptorSignatures,
     pub refund_signature: Signature,
 }
@@ -364,7 +389,7 @@ pub struct AcceptDlc {
 impl Writeable for AcceptDlc {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
         self.temporary_contract_id.write(writer)?;
-        self.total_collateral.write(writer)?;
+        self.accept_collateral.write(writer)?;
         self.funding_pubkey.write(writer)?;
         self.payout_spk.write(writer)?;
         let num_funding_inputs = self.funding_inputs.len() as u16;
@@ -385,9 +410,10 @@ impl Writeable for AcceptDlc {
 impl Readable for AcceptDlc {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<AcceptDlc, DecodeError> {
         let temporary_contract_id = Readable::read(reader)?;
-        let total_collateral = Readable::read(reader)?;
+        let accept_collateral = Readable::read(reader)?;
         let funding_pubkey = Readable::read(reader)?;
         let payout_spk = Readable::read(reader)?;
+        let payout_serial_id = Readable::read(reader)?;
         let num_funding_inputs: u16 = Readable::read(reader)?;
         let mut funding_inputs = Vec::with_capacity(num_funding_inputs as usize);
 
@@ -396,16 +422,19 @@ impl Readable for AcceptDlc {
         }
 
         let change_spk = Readable::read(reader)?;
+        let change_serial_id = Readable::read(reader)?;
         let cet_adaptor_signatures = Readable::read(reader)?;
         let refund_signature = Readable::read(reader)?;
 
         Ok(AcceptDlc {
             temporary_contract_id,
-            total_collateral,
+            accept_collateral,
             funding_pubkey,
             payout_spk,
+            payout_serial_id,
             funding_inputs,
             change_spk,
+            change_serial_id,
             cet_adaptor_signatures,
             refund_signature,
         })
@@ -414,6 +443,7 @@ impl Readable for AcceptDlc {
 
 /// Contains all the required signatures for the DLC transactions from the offering
 /// party.
+#[derive(Clone)]
 pub struct SignDlc {
     pub contract_id: [u8; 32],
     pub cet_adaptor_signatures: CetAdaptorSignatures,

@@ -103,6 +103,28 @@ fn single_covering_prefix_combinations(
     res
 }
 
+/// All combinations of main outcome and other except for the one that contains
+/// only main outcome.
+fn double_covering_restricted_prefix_combinations(
+    main_outcome_prefix: &[usize],
+    other_interval_prefix: &[usize],
+    nb_oracles: usize,
+) -> Vec<Vec<Vec<usize>>> {
+    let mut combinations = double_covering_prefix_combinations(
+        main_outcome_prefix,
+        main_outcome_prefix,
+        other_interval_prefix,
+        nb_oracles,
+    );
+
+    if main_outcome_prefix > other_interval_prefix {
+        combinations.remove(combinations.len() - 1);
+        combinations
+    } else {
+        combinations.into_iter().skip(1).collect::<Vec<_>>()
+    }
+}
+
 fn double_covering_prefix_combinations(
     main_outcome_prefix: &[usize],
     left_interval_prefix: &[usize],
@@ -110,18 +132,23 @@ fn double_covering_prefix_combinations(
     nb_oracles: usize,
 ) -> Vec<Vec<Vec<usize>>> {
     let mut res = Vec::with_capacity(nb_oracles);
+    let (first, second) = if left_interval_prefix <= right_interval_prefix {
+        (left_interval_prefix, right_interval_prefix)
+    } else {
+        (right_interval_prefix, left_interval_prefix)
+    };
 
     for i in 0..(1 << (nb_oracles - 1)) {
         let mut mid_res = Vec::with_capacity(nb_oracles);
-        mid_res.push(main_outcome_prefix.to_vec());
-        let mask = 1;
-        for _ in 0..(nb_oracles - 1) {
-            let val: Vec<usize> = match i & mask {
-                0 => left_interval_prefix.to_vec(),
-                _ => right_interval_prefix.to_vec(),
+        for j in 0..(nb_oracles - 1) {
+            let val: Vec<usize> = match i & (1 << j) {
+                0 => first.to_vec(),
+                _ => second.to_vec(),
             };
             mid_res.push(val);
         }
+        mid_res.push(main_outcome_prefix.to_vec());
+        mid_res.reverse();
         res.push(mid_res);
     }
 
@@ -213,6 +240,7 @@ pub fn compute_outcome_combinations(
                 } else {
                     compute_right_covering_prefix(end, max_error_exp, min_support, nb_digits)
                 };
+
                 double_covering_prefix_combinations(
                     &main_outcome_prefix,
                     &left_interval_prefix,
@@ -240,14 +268,12 @@ pub fn compute_outcome_combinations(
             num_to_vec(start - min_support, nb_digits, min_support_exp, 2)
         };
 
-        let mut combination = double_covering_prefix_combinations(
-            &right_interval_prefix,
+        let mut combination = double_covering_restricted_prefix_combinations(
             &right_interval_prefix,
             &left_interval_prefix,
             nb_oracles,
-        )
-        .drain(1..)
-        .collect();
+        );
+
         res.append(&mut combination);
     }
 
@@ -270,14 +296,11 @@ pub fn compute_outcome_combinations(
             num_to_vec(end + 1, nb_digits, min_support_exp, 2)
         };
 
-        let mut combination = double_covering_prefix_combinations(
-            &right_interval_prefix,
+        let mut combination = double_covering_restricted_prefix_combinations(
             &right_interval_prefix,
             &left_interval_prefix,
             nb_oracles,
-        )
-        .drain(1..)
-        .collect();
+        );
         res.append(&mut combination);
     }
 
@@ -368,10 +391,10 @@ mod tests {
                 nb_digits: 13,
                 max_error_exp: 11,
                 min_support_exp: 7,
-                expected_max: vec![(prefix(1), vec![0, 1]), (prefix(1), vec![0, 0, 1])],
+                expected_max: vec![(prefix(1), vec![0, 0, 1]), (prefix(1), vec![0, 1])],
                 expected_min: vec![
-                    (prefix(1), vec![0, 1, 0, 0, 0]),
                     (prefix(1), vec![0, 0, 1, 1, 1, 1]),
+                    (prefix(1), vec![0, 1, 0, 0, 0]),
                 ],
             },
             TestCase {
@@ -462,6 +485,22 @@ mod tests {
             assert_eq!(case.expected_max, max);
             assert_eq!(case.expected_min, min);
         }
+    }
+
+    #[test]
+    fn compute_outcome_three_oracles() {
+        let prefix = vec![0, 1, 0];
+
+        let res = compute_outcome_combinations(3, &prefix, 2, 1, true, 3);
+
+        let expected = vec![
+            vec![vec![0, 1, 0], vec![0], vec![0]],
+            vec![vec![0, 1, 0], vec![0], vec![1, 0]],
+            vec![vec![0, 1, 0], vec![1, 0], vec![0]],
+            vec![vec![0, 1, 0], vec![1, 0], vec![1, 0]],
+        ];
+
+        assert_eq!(res, expected);
     }
 
     #[test]

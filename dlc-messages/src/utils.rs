@@ -30,6 +30,28 @@ pub(crate) fn read_string<R: ::std::io::Read>(reader: &mut R) -> Result<String, 
     Ok(res)
 }
 
+pub(crate) fn write_strings<W: Writer>(
+    inputs: &Vec<String>,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    (inputs.len() as u16).write(writer)?;
+    for s in inputs {
+        write_string(&s, writer)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn read_strings<R: ::std::io::Read>(reader: &mut R) -> Result<Vec<String>, DecodeError> {
+    let len: u16 = Readable::read(reader)?;
+    let mut res = Vec::<String>::new();
+    for _ in 0..len {
+        res.push(read_string(reader)?);
+    }
+
+    Ok(res)
+}
+
 pub(crate) fn write_vec<W: Writer, T>(
     input: &Vec<T>,
     writer: &mut W,
@@ -55,4 +77,23 @@ where
     }
 
     Ok(res)
+}
+
+pub(crate) fn write_f64<W: Writer>(input: f64, writer: &mut W) -> Result<(), ::std::io::Error> {
+    let sign = input >= 0.0;
+    sign.write(writer)?;
+    let input_abs = f64::abs(input);
+    let no_precision = f64::floor(input_abs);
+    BigSize(no_precision as u64).write(writer)?;
+    let extra_precision = f64::floor((input_abs - no_precision) * ((1 << 16) as f64)) as u16;
+    extra_precision.write(writer)
+}
+
+pub(crate) fn read_f64<R: ::std::io::Read>(reader: &mut R) -> Result<f64, DecodeError> {
+    let sign: bool = Readable::read(reader)?;
+    let no_precision_bs: BigSize = Readable::read(reader)?;
+    let no_precision = no_precision_bs.0 as f64;
+    let extra_precision: u16 = Readable::read(reader)?;
+
+    Ok((no_precision) + ((extra_precision as f64) / ((1 << 16) as f64)))
 }

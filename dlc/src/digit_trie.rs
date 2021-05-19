@@ -1,15 +1,17 @@
 //! Data structure to store and lookup digit decomposition data.
 //!
 
-use trie::{LookupError, LookupResult, Node};
+use super::Error;
+use trie::{LookupResult, Node};
 
 /// Structure to store data inserted and looked-up based on digit paths.
+#[derive(Clone)]
 pub struct DigitTrie<T> {
     /// Use the arena allocated approach which makes it easier to
     /// satisfy the borrow checker.  
     store: Vec<Node<DigitLeaf<T>, DigitNode<T>>>,
     root: Option<usize>,
-    base: usize,
+    pub(crate) base: usize,
 }
 
 /// Structure used to iterated through a `DigitTrie` values. The iterator performs
@@ -42,11 +44,13 @@ impl<'a, T> DigitTrieIter<'a, T> {
     }
 }
 
+#[derive(Clone)]
 struct DigitLeaf<T> {
     data: T,
     prefix: Vec<usize>,
 }
 
+#[derive(Clone)]
 struct DigitNode<T> {
     children: Vec<Option<usize>>,
     prefix: Vec<usize>,
@@ -200,15 +204,16 @@ impl<T> DigitTrie<T> {
     }
 
     /// Insert or update data at `path`.
-    pub fn insert<F>(&mut self, path: &[usize], get_data: &mut F)
+    pub fn insert<F>(&mut self, path: &[usize], get_data: &mut F) -> Result<(), Error>
     where
-        F: FnMut(Option<T>) -> T,
+        F: FnMut(Option<T>) -> Result<T, Error>,
     {
         if path.len() < 1 || path.iter().any(|x| x > &self.base) {
             panic!("Invalid path");
         }
 
-        self.root = Some(self.insert_internal(self.root, path, get_data));
+        self.root = Some(self.insert_internal(self.root, path, get_data)?);
+        Ok(())
     }
 
     fn insert_internal<F>(
@@ -216,12 +221,12 @@ impl<T> DigitTrie<T> {
         cur_index: Option<usize>,
         path: &[usize],
         get_data: &mut F,
-    ) -> usize
+    ) -> Result<usize, Error>
     where
-        F: FnMut(Option<T>) -> T,
+        F: FnMut(Option<T>) -> Result<T, Error>,
     {
         match cur_index {
-            None => insert_new_leaf(self, path, get_data(None)),
+            None => Ok(insert_new_leaf(self, path, get_data(None)?)),
             Some(cur_index) => {
                 self.store.push(Node::None);
                 let mut cur_node = self.store.swap_remove(cur_index);
@@ -230,15 +235,15 @@ impl<T> DigitTrie<T> {
                     match cur_node {
                         Node::Leaf(digit_leaf) => {
                             self.store[cur_index] = Node::Leaf(DigitLeaf {
-                                data: get_data(Some(digit_leaf.data)),
+                                data: get_data(Some(digit_leaf.data))?,
                                 prefix: digit_leaf.prefix.to_vec(),
                             });
-                            cur_index
+                            Ok(cur_index)
                         }
                         Node::Node(mut node) => {
-                            node.data = Some(get_data(node.data));
+                            node.data = Some(get_data(node.data)?);
                             self.store[cur_index] = Node::Node(node);
-                            cur_index
+                            Ok(cur_index)
                         }
                         Node::None => unreachable!(),
                     }
@@ -252,26 +257,26 @@ impl<T> DigitTrie<T> {
                                     digit_node.children[suffix[0]],
                                     &suffix,
                                     get_data,
-                                ));
+                                )?);
                                 self.store[cur_index] = Node::Node(DigitNode {
                                     children: digit_node.children,
                                     prefix: digit_node.prefix,
                                     data: digit_node.data,
                                 });
-                                return cur_index;
+                                return Ok(cur_index);
                             }
                             Node::None => unreachable!(),
                             Node::Leaf(digit_leaf) => {
                                 let mut new_children = Vec::new();
                                 new_children.resize_with(self.base, || None);
                                 new_children[suffix[0]] =
-                                    Some(insert_new_leaf(self, &suffix, get_data(None)));
+                                    Some(insert_new_leaf(self, &suffix, get_data(None)?));
                                 self.store[cur_index] = Node::Node(DigitNode {
                                     prefix: digit_leaf.prefix,
                                     children: new_children,
                                     data: Some(digit_leaf.data),
                                 });
-                                return cur_index;
+                                return Ok(cur_index);
                             }
                         }
                     }
@@ -280,10 +285,10 @@ impl<T> DigitTrie<T> {
                     new_children.resize_with(self.base, || None);
 
                     let data = if path == common_prefix {
-                        Some(get_data(None))
+                        Some(get_data(None)?)
                     } else {
                         new_children[path[common_prefix.len()]] =
-                            Some(insert_new_leaf(self, &suffix, get_data(None)));
+                            Some(insert_new_leaf(self, &suffix, get_data(None)?));
                         None
                     };
 
@@ -297,14 +302,14 @@ impl<T> DigitTrie<T> {
                         data,
                     }));
                     self.store[cur_index] = cur_node;
-                    self.store.len() - 1
+                    Ok(self.store.len() - 1)
                 }
             }
         }
     }
 
     /// Lookup for nodes whose path is either equal or a prefix of `path`.
-    pub fn look_up(&self, path: &[usize]) -> Result<Vec<LookupResult<T, usize>>, LookupError> {
+    pub fn look_up(&self, path: &[usize]) -> Option<Vec<LookupResult<T, usize>>> {
         self.look_up_internal(self.root, path)
     }
 
@@ -312,33 +317,33 @@ impl<T> DigitTrie<T> {
         &self,
         cur_index: Option<usize>,
         path: &[usize],
-    ) -> Result<Vec<LookupResult<T, usize>>, LookupError> {
+    ) -> Option<Vec<LookupResult<T, usize>>> {
         match cur_index {
-            None => Err(LookupError::NotFound),
+            None => None,
             Some(cur_index) => match &self.store[cur_index] {
                 Node::None => unreachable!(),
                 Node::Leaf(digit_leaf) => {
                     let common_prefix = get_common_prefix(&digit_leaf.prefix, path);
                     if digit_leaf.prefix == common_prefix {
-                        Ok(vec![LookupResult {
+                        Some(vec![LookupResult {
                             path: digit_leaf.prefix.to_vec(),
                             value: &digit_leaf.data,
                         }])
                     } else {
-                        Err(LookupError::NotFound)
+                        None
                     }
                 }
                 Node::Node(digit_node) => {
                     if digit_node.prefix.len() > path.len()
                         || !is_prefix_of(&digit_node.prefix, path)
                     {
-                        return Err(LookupError::NotFound);
+                        return None;
                     }
 
                     if digit_node.prefix.len() == path.len() {
                         return match &digit_node.data {
-                            None => Err(LookupError::NotFound),
-                            Some(data) => Ok(vec![LookupResult {
+                            None => None,
+                            Some(data) => Some(vec![LookupResult {
                                 value: data,
                                 path: digit_node.prefix.clone(),
                             }]),
@@ -350,15 +355,15 @@ impl<T> DigitTrie<T> {
                         path.iter().skip(digit_node.prefix.len()).cloned().collect();
                     let res = self.look_up_internal(digit_node.children[prefix], &suffix);
                     match res {
-                        Err(res) => match &digit_node.data {
-                            Some(data) => Ok(vec![LookupResult {
+                        None => match &digit_node.data {
+                            Some(data) => Some(vec![LookupResult {
                                 value: data,
                                 path: digit_node.prefix.clone(),
                             }]),
-                            None => Err(res),
+                            None => None,
                         },
-                        Ok(l_res) => match &digit_node.data {
-                            None => Ok(extend_lookup_res_paths(l_res, &digit_node.prefix)),
+                        Some(l_res) => match &digit_node.data {
+                            None => Some(extend_lookup_res_paths(l_res, &digit_node.prefix)),
                             Some(data) => {
                                 let mut up_res = extend_lookup_res_paths(l_res, &digit_node.prefix);
                                 let mut final_res = vec![LookupResult {
@@ -366,7 +371,7 @@ impl<T> DigitTrie<T> {
                                     path: digit_node.prefix.clone(),
                                 }];
                                 final_res.append(&mut up_res);
-                                Ok(final_res)
+                                Some(final_res)
                             }
                         },
                     }
@@ -427,14 +432,14 @@ mod tests {
         for test_case in digit_trie_test_cases() {
             let mut digit_trie = DigitTrie::<usize>::new(16);
             for (i, path) in test_case.iter().enumerate() {
-                digit_trie.insert(path, &mut |_| i);
+                digit_trie.insert(path, &mut |_| Ok(i)).unwrap();
             }
 
             for (i, path) in test_case.iter().enumerate() {
                 let actual = digit_trie.look_up(path);
                 match actual {
-                    Err(_) => panic!(),
-                    Ok(l_res) => {
+                    None => panic!(),
+                    Some(l_res) => {
                         assert_eq!(1, l_res.len());
                         assert_eq!(path, &l_res[0].path);
                         assert_eq!(i, *l_res[0].value);
@@ -449,11 +454,13 @@ mod tests {
         let mut digit_trie = DigitTrie::new(5);
         let expected_path = &[0, 1];
         let expected_value = 1;
-        digit_trie.insert(expected_path, &mut |_| expected_value);
+        digit_trie
+            .insert(expected_path, &mut |_| Ok(expected_value))
+            .unwrap();
         let actual = digit_trie.look_up(&[0, 1, 2]);
         match actual {
-            Err(_) => panic!(),
-            Ok(l_res) => {
+            None => panic!(),
+            Some(l_res) => {
                 assert_eq!(1, l_res.len());
                 assert_eq!(l_res[0].path, &[0, 1]);
                 assert_eq!(*l_res[0].value, expected_value);
@@ -464,8 +471,8 @@ mod tests {
     #[test]
     fn digit_trie_insert_on_common_prefix_query_longest_returns_both() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2, 3], &mut |_| 1);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 2);
+        digit_trie.insert(&[0, 1, 2, 3], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(2)).unwrap();
         let res = digit_trie.look_up(&[0, 1, 2, 3]).unwrap();
 
         assert_eq!(res.len(), 2);
@@ -476,8 +483,8 @@ mod tests {
     #[test]
     fn digit_trie_insert_on_common_prefix_query_shortest_returns_single() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2, 3], &mut |_| 1);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 2);
+        digit_trie.insert(&[0, 1, 2, 3], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(2)).unwrap();
         let res = digit_trie.look_up(&[0, 1, 2]).unwrap();
 
         assert_eq!(res.len(), 1);
@@ -487,8 +494,8 @@ mod tests {
     #[test]
     fn digit_trie_insert_on_common_prefix_query_longer_non_existing_returns_single() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2, 3], &mut |_| 1);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 2);
+        digit_trie.insert(&[0, 1, 2, 3], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(2)).unwrap();
         let res = digit_trie.look_up(&[0, 1, 2, 4]).unwrap();
 
         assert_eq!(res.len(), 1);
@@ -498,8 +505,8 @@ mod tests {
     #[test]
     fn digit_trie_insert_on_leaf_returns_both() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 1);
-        digit_trie.insert(&[0, 1, 2, 3], &mut |_| 2);
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[0, 1, 2, 3], &mut |_| Ok(2)).unwrap();
         let res = digit_trie.look_up(&[0, 1, 2, 3]).unwrap();
 
         assert_eq!(res.len(), 2);
@@ -510,32 +517,32 @@ mod tests {
     #[test]
     fn digit_trie_query_non_inserted_returns_not_found() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 1);
-        digit_trie.insert(&[1, 2, 3], &mut |_| 2);
-        assert!(digit_trie.look_up(&[0, 1, 3]).is_err());
-        assert!(digit_trie.look_up(&[1, 2, 5]).is_err());
-        assert!(digit_trie.look_up(&[0, 0, 0]).is_err());
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[1, 2, 3], &mut |_| Ok(2)).unwrap();
+        assert!(digit_trie.look_up(&[0, 1, 3]).is_none());
+        assert!(digit_trie.look_up(&[1, 2, 5]).is_none());
+        assert!(digit_trie.look_up(&[0, 0, 0]).is_none());
     }
 
     #[test]
     fn digit_trie_replace_data_when_insert_on_existing_path() {
         let mut digit_trie = DigitTrie::new(5);
         let path = &[0, 1, 2, 3];
-        digit_trie.insert(path, &mut |_| 1);
-        digit_trie.insert(path, &mut |_| 2);
+        digit_trie.insert(path, &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(path, &mut |_| Ok(2)).unwrap();
         let res = digit_trie.look_up(path);
         match res {
-            Err(_) => panic!(),
-            Ok(l_res) => assert_eq!(*l_res[0].value, 2),
+            None => panic!(),
+            Some(l_res) => assert_eq!(*l_res[0].value, 2),
         }
     }
 
     #[test]
     fn digit_trie_insert_on_mid_node_returns_all() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2, 3], &mut |_| 1);
-        digit_trie.insert(&[0, 1, 2, 4], &mut |_| 2);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 3);
+        digit_trie.insert(&[0, 1, 2, 3], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[0, 1, 2, 4], &mut |_| Ok(2)).unwrap();
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(3)).unwrap();
 
         let res = digit_trie.look_up(&[0, 1, 2, 3]).unwrap();
 
@@ -550,12 +557,12 @@ mod tests {
         assert_eq!(*res[1].value, 2);
     }
 
-    fn assert_not_found<T>(res: Result<Vec<LookupResult<T, usize>>, LookupError>)
+    fn assert_not_found<T>(res: Option<Vec<LookupResult<T, usize>>>)
     where
         T: Copy,
     {
         match res {
-            Ok(_) => panic!(),
+            Some(_) => panic!(),
             _ => {}
         }
     }
@@ -563,9 +570,9 @@ mod tests {
     #[test]
     fn digit_trie_return_not_found_if_not_inserted() {
         let mut digit_trie = DigitTrie::new(5);
-        digit_trie.insert(&[0, 1, 2], &mut |_| 1);
-        digit_trie.insert(&[0, 1, 3], &mut |_| 2);
-        digit_trie.insert(&[4, 1, 2], &mut |_| 3);
+        digit_trie.insert(&[0, 1, 2], &mut |_| Ok(1)).unwrap();
+        digit_trie.insert(&[0, 1, 3], &mut |_| Ok(2)).unwrap();
+        digit_trie.insert(&[4, 1, 2], &mut |_| Ok(3)).unwrap();
 
         assert_not_found(digit_trie.look_up(&[1, 2, 5]));
         assert_not_found(digit_trie.look_up(&[2]));
@@ -579,7 +586,7 @@ mod tests {
         for test_case in digit_trie_test_cases() {
             let mut digit_trie = DigitTrie::<usize>::new(16);
             for (i, path) in test_case.iter().enumerate() {
-                digit_trie.insert(path, &mut |_| i);
+                digit_trie.insert(path, &mut |_| Ok(i)).unwrap();
             }
 
             let digit_trie_iter = DigitTrieIter::new(&digit_trie);
@@ -622,7 +629,7 @@ mod tests {
         ];
         for test_case in test_cases {
             for (i, test_path) in test_case.iter().enumerate() {
-                digit_trie.insert(test_path, &mut |_| i);
+                digit_trie.insert(test_path, &mut |_| Ok(i)).unwrap();
             }
 
             let digit_trie_iter = DigitTrieIter::new(&digit_trie);

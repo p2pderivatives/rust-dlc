@@ -107,14 +107,24 @@ pub fn sign_p2wpkh_input<C: Signing>(
     sig_hash_type: SigHashType,
     value: u64,
 ) {
-    let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type);
+    tx.input[input_index].witness =
+        get_witness_for_p2wpkh_input(secp, sk, tx, input_index, sig_hash_type, value);
+}
 
-    tx.input[input_index].witness = {
-        let mut wit: Vec<Vec<u8>> = Vec::new();
-        wit.push(full_sig);
-        wit.push(PublicKey::from_secret_key(secp, sk).serialize().to_vec());
-        wit
-    }
+///
+pub fn get_witness_for_p2wpkh_input<C: Signing>(
+    secp: &Secp256k1<C>,
+    sk: &SecretKey,
+    tx: &Transaction,
+    input_index: usize,
+    sig_hash_type: SigHashType,
+    value: u64,
+) -> Vec<Vec<u8>> {
+    let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type);
+    let mut wit: Vec<Vec<u8>> = Vec::new();
+    wit.push(full_sig);
+    wit.push(PublicKey::from_secret_key(secp, sk).serialize().to_vec());
+    wit
 }
 
 /// Generates a signature for a given p2wsh transaction input using the given secret

@@ -1,0 +1,27 @@
+version: "3.4"
+services:
+  ### BITCOIND
+  bitcoind:
+    image: ruimarinho/bitcoin-core:0.20.0
+    command: >
+      -regtest=1 
+      -rpcallowip=0.0.0/0
+      -rpcbind=0.0.0.0
+      -rpcauth='testuser:ea8070e0acccb49670309dd6c7812e16$$2a3487173f9f6b603d43a70e6ccb0aa671a16dbee1cf86b098e77532d2515370'
+      -addresstype=bech32
+
+  tester:
+    image: rust-dlc-test
+    environment:
+      - TEST_BIN=$TEST_BIN
+      - TEST_NAME=$TEST_NAME
+      - BITCOIND_HOST=bitcoind
+    security_opt:
+      - seccomp:unconfined
+    depends_on:
+      - bitcoind
+    volumes:
+      - ./target/cov:/app/target/cov
+
+volumes:
+  bitcoind-data:

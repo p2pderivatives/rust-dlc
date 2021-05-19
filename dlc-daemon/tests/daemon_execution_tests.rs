@@ -1,0 +1,808 @@
+extern crate bitcoin_rpc_provider;
+extern crate bitcoin_test_utils;
+extern crate bitcoincore_rpc;
+extern crate bitcoincore_rpc_json;
+extern crate dlc_daemon;
+
+mod memory_storage_provider;
+mod mock_network_provider;
+mod mock_oracle_provider;
+mod mock_time;
+
+use bitcoin::secp256k1::rand::{seq::SliceRandom, thread_rng, RngCore};
+use bitcoin::secp256k1::{ecdsa_adaptor::AdaptorSignature, Signature};
+use bitcoin_rpc_provider::BitcoinCoreProvider;
+use bitcoin_test_utils::rpc_helpers::init_clients;
+use bitcoincore_rpc::RpcApi;
+use dlc::digit_decomposition::decompose_value;
+use dlc::{EnumerationPayout, Payout};
+use dlc_daemon::contract::{
+    Contract, ContractDescriptor, ContractView, ContractViewInfo, DifferenceParams, EnumDescriptor,
+    NumericalDescriptor, NumericalEventInfo, OracleView,
+};
+use dlc_daemon::daemon::{DlcDaemon, DlcStorage, Oracle};
+use dlc_daemon::payout_curve::{
+    PayoutFunction, PayoutFunctionPiece, PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval,
+    RoundingIntervals,
+};
+use dlc_messages::oracle_msgs::{
+    DigitDecompositionEventDescriptorV0, EnumEventDescriptorV0, EventDescriptor,
+};
+use dlc_messages::{AcceptDlc, CetAdaptorSignatures, Message, SignDlc};
+use mock_oracle_provider::MockOracle;
+use std::collections::HashMap;
+use std::sync::{mpsc::channel, Arc, Mutex};
+use std::thread;
+
+macro_rules! assert_contract_state {
+    ($d:expr, $id:expr, $p:pat) => {
+        let res = $d
+            .lock()
+            .unwrap()
+            .get_store()
+            .get_contract(&$id)
+            .expect("Could not retrieve contract");
+        if let $p = res {
+        } else {
+            panic!("Unexpected contract state");
+        }
+    };
+}
+
+macro_rules! periodic_check {
+    ($d:expr, $id:expr, $p:pat) => {
+        $d.lock()
+            .unwrap()
+            .periodic_check()
+            .expect("Periodic check error");
+
+        assert_contract_state!($d, $id, $p);
+    };
+}
+
+macro_rules! receive_loop {
+    ($receive:expr, $daemon:expr, $send:expr, $expect_err:expr, $sync_send:expr, $rcv_callback: expr) => {
+        thread::spawn(move || loop {
+            match $receive.recv() {
+                Ok(Some(msg)) => match $daemon.lock().unwrap().on_dlc_message(&msg) {
+                    Ok(opt) => {
+                        if *$expect_err.lock().unwrap() != false {
+                            panic!("Expected error not raised");
+                        }
+                        match opt {
+                            Some(msg) => {
+                                let msg = $rcv_callback(msg);
+                                (&$send).send(Some(msg)).expect("Error sending");
+                            }
+                            None => {}
+                        }
+                    }
+                    Err(e) => {
+                        if *$expect_err.lock().unwrap() != true {
+                            panic!("Unexpected error {}", e);
+                        }
+                    }
+                },
+                Ok(None) | Err(_) => return,
+            };
+            $sync_send.send(()).expect("Error syncing");
+        });
+    };
+}
+
+const NB_DIGITS: u32 = 3;
+const BASE: u32 = 2;
+const EVENT_MATURITY: u32 = 1623133104;
+const EVENT_ID: &str = "Test";
+const COLLATERAL: u64 = 100000000;
+
+#[derive(Eq, PartialEq, Clone)]
+enum TestPath {
+    Close,
+    Refund,
+    BadAcceptCetSignature,
+    BadAcceptRefundSignature,
+    BadSignCetSignature,
+    BadSignRefundSignature,
+}
+
+fn enum_outcomes() -> Vec<String> {
+    vec![
+        "a".to_owned(),
+        "b".to_owned(),
+        "c".to_owned(),
+        "d".to_owned(),
+    ]
+}
+
+fn max_value() -> u32 {
+    BASE.pow(NB_DIGITS as u32) - 1
+}
+
+fn select_active_oracles(nb_oracles: usize, threshold: usize) -> Vec<usize> {
+    let nb_active_oracles = if threshold == nb_oracles {
+        threshold
+    } else {
+        (thread_rng().next_u32() % ((nb_oracles - threshold) as u32) + (threshold as u32)) as usize
+    };
+    let mut oracle_indexes: Vec<usize> = (0..nb_oracles).collect();
+    oracle_indexes.shuffle(&mut thread_rng());
+    oracle_indexes = oracle_indexes.into_iter().take(nb_active_oracles).collect();
+    oracle_indexes.sort();
+    oracle_indexes
+}
+
+struct TestParams {
+    oracles: Vec<MockOracle>,
+    contract_view: ContractView,
+}
+
+fn get_difference_params() -> DifferenceParams {
+    DifferenceParams {
+        max_error_exp: 2,
+        min_support_exp: 1,
+        maximize_coverage: false,
+    }
+}
+
+fn get_enum_contract_descriptor() -> ContractDescriptor {
+    let outcome_payouts: Vec<_> = enum_outcomes()
+        .iter()
+        .enumerate()
+        .map(|(i, x)| {
+            let payout = if i % 2 == 0 {
+                Payout {
+                    offer: 2 * COLLATERAL,
+                    accept: 0,
+                }
+            } else {
+                Payout {
+                    offer: 0,
+                    accept: 2 * COLLATERAL,
+                }
+            };
+            EnumerationPayout {
+                outcome: x.to_owned(),
+                payout,
+            }
+        })
+        .collect();
+    ContractDescriptor::Enum(EnumDescriptor { outcome_payouts })
+}
+
+fn get_enum_oracle() -> MockOracle {
+    let mut oracle = MockOracle::new();
+    let event = EnumEventDescriptorV0 {
+        outcomes: enum_outcomes(),
+    };
+
+    oracle.add_event(
+        &EVENT_ID,
+        &EventDescriptor::EnumEventDescriptorV0(event),
+        EVENT_MATURITY,
+    );
+
+    oracle
+}
+
+fn get_enum_oracles(nb_oracles: usize, threshold: usize) -> Vec<MockOracle> {
+    let mut oracles: Vec<_> = (0..nb_oracles).map(|_| get_enum_oracle()).collect();
+
+    let active_oracles = select_active_oracles(nb_oracles, threshold);
+    let outcomes = enum_outcomes();
+    let outcome = outcomes[(thread_rng().next_u32() as usize) % outcomes.len()].clone();
+    for index in active_oracles {
+        oracles
+            .get_mut(index)
+            .unwrap()
+            .add_attestation(EVENT_ID, &vec![outcome.clone()]);
+    }
+
+    oracles
+}
+
+fn get_enum_test_params(
+    nb_oracles: usize,
+    threshold: usize,
+    oracles: Option<Vec<MockOracle>>,
+) -> TestParams {
+    let oracles = oracles.unwrap_or_else(|| get_enum_oracles(nb_oracles, threshold));
+    let contract_descriptor = get_enum_contract_descriptor();
+    let contract_info = ContractViewInfo {
+        contract_descriptor,
+        oracles: OracleView {
+            public_keys: oracles.iter().map(|x| x.get_public_key()).collect(),
+            event_id: EVENT_ID.to_owned(),
+            threshold: threshold as u16,
+        },
+    };
+
+    let contract_view = ContractView {
+        offer_collateral: COLLATERAL,
+        accept_collateral: COLLATERAL,
+        maturity_time: EVENT_MATURITY,
+        fee_rate: 2,
+        contract_infos: vec![contract_info],
+    };
+
+    TestParams {
+        oracles,
+        contract_view,
+    }
+}
+
+fn get_numerical_contract_descriptor(
+    difference_params: Option<DifferenceParams>,
+) -> ContractDescriptor {
+    ContractDescriptor::Numerical(NumericalDescriptor {
+        payout_function: PayoutFunction {
+            payout_function_pieces: vec![PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 0,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: max_value() as u64,
+                            outcome_payout: 200000000,
+                            extra_precision: 0,
+                        },
+                    ],
+                },
+            )],
+        },
+        rounding_intervals: RoundingIntervals {
+            intervals: vec![RoundingInterval {
+                begin_interval: 0,
+                rounding_mod: 1,
+            }],
+        },
+        info: NumericalEventInfo {
+            base: BASE as usize,
+            nb_digits: NB_DIGITS as usize,
+            unit: "sats/sec".to_owned(),
+        },
+        difference_params,
+    })
+}
+
+fn get_digit_decomposition_oracle() -> MockOracle {
+    let mut oracle = MockOracle::new();
+    let event = DigitDecompositionEventDescriptorV0 {
+        base: BASE as u64,
+        is_signed: false,
+        unit: "sats/sec".to_owned(),
+        precision: 0,
+        nb_digits: NB_DIGITS as u16,
+    };
+
+    oracle.add_event(
+        &EVENT_ID,
+        &EventDescriptor::DigitDecompositionEventDescriptorV0(event),
+        EVENT_MATURITY,
+    );
+    oracle
+}
+
+fn get_digit_decomposition_oracles(
+    nb_oracles: usize,
+    threshold: usize,
+    min_support_exp: usize,
+) -> Vec<MockOracle> {
+    let mut oracles: Vec<_> = (0..nb_oracles)
+        .map(|_| get_digit_decomposition_oracle())
+        .collect();
+    let outcome_value = (thread_rng().next_u32() % max_value()) as usize;
+    let oracle_indexes = select_active_oracles(nb_oracles, threshold);
+
+    for (i, index) in oracle_indexes.iter().enumerate() {
+        let cur_outcome: usize = if i == 0 {
+            outcome_value
+        } else {
+            let mut delta = (thread_rng().next_u32() % BASE.pow(min_support_exp as u32)) as i32;
+            delta = if thread_rng().next_u32() % 2 == 1 {
+                -delta
+            } else {
+                delta
+            };
+
+            let tmp_outcome = (outcome_value as i32) + delta;
+            if tmp_outcome < 0 {
+                0
+            } else if tmp_outcome > (max_value as i32) {
+                max_value as usize
+            } else {
+                tmp_outcome as usize
+            }
+        };
+
+        let outcomes: Vec<_> = decompose_value(cur_outcome, BASE as usize, NB_DIGITS as usize)
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+
+        oracles
+            .get_mut(*index)
+            .unwrap()
+            .add_attestation(&EVENT_ID, &outcomes);
+    }
+
+    oracles
+}
+
+fn get_numerical_test_params(
+    nb_oracles: usize,
+    threshold: usize,
+    min_support_exp: usize,
+    contract_descriptor: ContractDescriptor,
+) -> TestParams {
+    let oracles = get_digit_decomposition_oracles(nb_oracles, threshold, min_support_exp);
+    let contract_info = ContractViewInfo {
+        oracles: OracleView {
+            public_keys: oracles.iter().map(|x| x.get_public_key()).collect(),
+            event_id: EVENT_ID.to_owned(),
+            threshold: threshold as u16,
+        },
+        contract_descriptor,
+    };
+
+    let contract_view = ContractView {
+        offer_collateral: 100000000,
+        accept_collateral: 100000000,
+        maturity_time: EVENT_MATURITY,
+        fee_rate: 2,
+        contract_infos: vec![contract_info],
+    };
+
+    TestParams {
+        oracles,
+        contract_view,
+    }
+}
+
+fn numerical_common(
+    nb_oracles: usize,
+    threshold: usize,
+    min_support_exp: usize,
+    contract_descriptor: ContractDescriptor,
+) {
+    daemon_execution_test(
+        get_numerical_test_params(nb_oracles, threshold, min_support_exp, contract_descriptor),
+        TestPath::Close,
+    );
+}
+
+fn get_enum_and_numerical_test_params(
+    nb_oracles: usize,
+    threshold: usize,
+    min_support_exp: usize,
+    difference_params: Option<DifferenceParams>,
+) -> TestParams {
+    let enum_oracles = get_enum_oracles(nb_oracles, threshold);
+    let enum_contract_descriptor = get_enum_contract_descriptor();
+    let enum_contract_info = ContractViewInfo {
+        oracles: OracleView {
+            public_keys: enum_oracles.iter().map(|x| x.get_public_key()).collect(),
+            event_id: EVENT_ID.to_owned(),
+            threshold: threshold as u16,
+        },
+        contract_descriptor: enum_contract_descriptor,
+    };
+    let numerical_oracles = get_digit_decomposition_oracles(nb_oracles, threshold, min_support_exp);
+    let numerical_contract_descriptor = get_numerical_contract_descriptor(difference_params);
+    let numerical_contract_info = ContractViewInfo {
+        oracles: OracleView {
+            public_keys: numerical_oracles
+                .iter()
+                .map(|x| x.get_public_key())
+                .collect(),
+            event_id: EVENT_ID.to_owned(),
+            threshold: threshold as u16,
+        },
+        contract_descriptor: numerical_contract_descriptor,
+    };
+
+    let contract_infos = if thread_rng().next_u32() % 2 == 0 {
+        vec![enum_contract_info, numerical_contract_info]
+    } else {
+        vec![numerical_contract_info, enum_contract_info]
+    };
+
+    let contract_view = ContractView {
+        offer_collateral: 100000000,
+        accept_collateral: 100000000,
+        maturity_time: EVENT_MATURITY,
+        fee_rate: 2,
+        contract_infos,
+    };
+
+    TestParams {
+        oracles: enum_oracles
+            .into_iter()
+            .chain(numerical_oracles.into_iter())
+            .collect(),
+        contract_view,
+    }
+}
+
+#[test]
+fn single_oracle_numerical_test() {
+    numerical_common(1, 1, 0, get_numerical_contract_descriptor(None));
+}
+
+#[test]
+fn three_of_three_oracle_numerical_test() {
+    numerical_common(3, 3, 0, get_numerical_contract_descriptor(None));
+}
+
+#[test]
+fn two_of_five_oracle_numerical_test() {
+    numerical_common(5, 2, 0, get_numerical_contract_descriptor(None));
+}
+
+#[test]
+fn three_of_three_oracle_numerical_with_diff_test() {
+    numerical_common(
+        3,
+        3,
+        1,
+        get_numerical_contract_descriptor(Some(get_difference_params())),
+    );
+}
+
+#[test]
+fn two_of_five_oracle_numerical_with_diff_test() {
+    numerical_common(
+        5,
+        2,
+        2,
+        get_numerical_contract_descriptor(Some(get_difference_params())),
+    );
+}
+
+#[test]
+fn three_of_five_oracle_numerical_with_diff_test() {
+    numerical_common(
+        5,
+        3,
+        2,
+        get_numerical_contract_descriptor(Some(get_difference_params())),
+    );
+}
+
+#[test]
+fn enum_single_oracle_test() {
+    daemon_execution_test(get_enum_test_params(1, 1, None), TestPath::Close);
+}
+
+#[test]
+fn enum_3_of_3_test() {
+    daemon_execution_test(get_enum_test_params(3, 3, None), TestPath::Close);
+}
+
+#[test]
+fn enum_3_of_5_test() {
+    daemon_execution_test(get_enum_test_params(5, 3, None), TestPath::Refund);
+}
+
+#[test]
+fn enum_and_numerical_with_diff_3_of_5_test() {
+    daemon_execution_test(
+        get_enum_and_numerical_test_params(5, 3, 1, Some(get_difference_params())),
+        TestPath::Close,
+    );
+}
+
+#[test]
+fn enum_and_numerical_with_diff_5_of_5_test() {
+    daemon_execution_test(
+        get_enum_and_numerical_test_params(5, 5, 1, Some(get_difference_params())),
+        TestPath::Close,
+    );
+}
+
+#[test]
+fn enum_and_numerical_3_of_5_test() {
+    daemon_execution_test(
+        get_enum_and_numerical_test_params(5, 3, 0, None),
+        TestPath::Close,
+    );
+}
+
+#[test]
+fn enum_and_numerical_5_of_5_test() {
+    daemon_execution_test(
+        get_enum_and_numerical_test_params(5, 5, 0, None),
+        TestPath::Close,
+    );
+}
+
+#[test]
+fn enum_single_oracle_refund_test() {
+    daemon_execution_test(
+        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
+        TestPath::Refund,
+    );
+}
+
+#[test]
+fn enum_single_oracle_bad_accept_cet_sig_test() {
+    daemon_execution_test(
+        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
+        TestPath::BadAcceptCetSignature,
+    );
+}
+
+#[test]
+fn enum_single_oracle_bad_accept_refund_sig_test() {
+    daemon_execution_test(
+        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
+        TestPath::BadAcceptRefundSignature,
+    );
+}
+
+#[test]
+fn enum_single_oracle_bad_sign_cet_sig_test() {
+    daemon_execution_test(
+        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
+        TestPath::BadSignCetSignature,
+    );
+}
+
+#[test]
+fn enum_single_oracle_bad_sign_refund_sig_test() {
+    daemon_execution_test(
+        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
+        TestPath::BadSignRefundSignature,
+    );
+}
+
+fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
+    let sig_index = thread_rng().next_u32() as usize % input.ecdsa_adaptor_signatures.len();
+
+    let mut copy = input.ecdsa_adaptor_signatures[sig_index]
+        .signature
+        .as_ref()
+        .clone();
+    let i = thread_rng().next_u32() as usize % secp256k1::constants::ADAPTOR_SIGNATURE_SIZE;
+    copy[i] = copy[i].checked_add(1).unwrap_or(0);
+    input.ecdsa_adaptor_signatures[sig_index].signature =
+        AdaptorSignature::from_slice(&copy).unwrap();
+}
+
+fn alter_refund_sig(refund_signature: &Signature) -> Signature {
+    let mut copy = refund_signature.serialize_compact();
+    let i = thread_rng().next_u32() as usize % secp256k1::constants::COMPACT_SIGNATURE_SIZE;
+    copy[i] = copy[i].checked_add(1).unwrap_or(0);
+    Signature::from_compact(&copy).unwrap()
+}
+
+fn daemon_execution_test(test_params: TestParams, path: TestPath) {
+    env_logger::init();
+    let (alice_send, bob_receive) = channel::<Option<Message>>();
+    let (bob_send, alice_receive) = channel::<Option<Message>>();
+    let (sync_send, sync_receive) = channel::<()>();
+    let alice_sync_send = sync_send.clone();
+    let bob_sync_send = sync_send.clone();
+    let (alice_rpc, bob_rpc, sink_rpc) = init_clients();
+
+    let network = bitcoin::network::constants::Network::Regtest;
+
+    let alice_bitcoin_core = Arc::new(BitcoinCoreProvider {
+        client: alice_rpc,
+        network,
+    });
+    let bob_bitcoin_core = Arc::new(BitcoinCoreProvider {
+        client: bob_rpc,
+        network,
+    });
+
+    let mut alice_oracles = HashMap::with_capacity(1);
+    let mut bob_oracles = HashMap::with_capacity(1);
+
+    for oracle in test_params.oracles {
+        let oracle = Arc::new(oracle);
+        alice_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
+        bob_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
+    }
+
+    let alice_store = memory_storage_provider::MemoryStorage::new();
+    let bob_store = memory_storage_provider::MemoryStorage::new();
+    let mock_time = Arc::new(mock_time::MockTime {});
+    mock_time::set_time((test_params.contract_view.maturity_time as u64) - 1);
+
+    let alice_daemon = Arc::new(Mutex::new(DlcDaemon::new(
+        Arc::clone(&alice_bitcoin_core),
+        Arc::clone(&alice_bitcoin_core),
+        Box::new(alice_store),
+        alice_oracles,
+        Arc::clone(&mock_time),
+    )));
+
+    let alice_daemon_loop = Arc::clone(&alice_daemon);
+    let alice_daemon_send = Arc::clone(&alice_daemon);
+
+    let bob_daemon = Arc::new(Mutex::new(DlcDaemon::new(
+        Arc::clone(&bob_bitcoin_core),
+        Arc::clone(&bob_bitcoin_core),
+        Box::new(bob_store),
+        bob_oracles,
+        Arc::clone(&mock_time),
+    )));
+
+    let bob_daemon_loop = Arc::clone(&bob_daemon);
+    let bob_daemon_send = Arc::clone(&bob_daemon);
+    let alice_send_loop = alice_send.clone();
+    let bob_send_loop = bob_send.clone();
+
+    let alice_expect_error = Arc::new(Mutex::new(false));
+    let bob_expect_error = Arc::new(Mutex::new(false));
+
+    let alice_expect_error_loop = Arc::clone(&alice_expect_error);
+    let bob_expect_error_loop = Arc::clone(&bob_expect_error);
+
+    let path_copy = path.clone();
+    let alter_sign = move |msg| match msg {
+        Message::SignDlc(mut sign_dlc) => {
+            match path_copy {
+                TestPath::BadSignCetSignature => {
+                    alter_adaptor_sig(&mut sign_dlc.cet_adaptor_signatures)
+                }
+                TestPath::BadSignRefundSignature => {
+                    sign_dlc.refund_signature = alter_refund_sig(&sign_dlc.refund_signature);
+                }
+                _ => {}
+            }
+            Message::SignDlc(sign_dlc)
+        }
+        _ => msg,
+    };
+
+    let alice_handle = receive_loop!(
+        alice_receive,
+        alice_daemon_loop,
+        alice_send_loop,
+        alice_expect_error_loop,
+        alice_sync_send,
+        |msg| msg
+    );
+
+    let bob_handle = receive_loop!(
+        bob_receive,
+        bob_daemon_loop,
+        bob_send_loop,
+        bob_expect_error_loop,
+        bob_sync_send,
+        alter_sign
+    );
+
+    let offer_msg = bob_daemon_send
+        .lock()
+        .unwrap()
+        .send_offer(&test_params.contract_view)
+        .expect("Send offer error");
+    let temporary_contract_id = offer_msg.get_hash().unwrap();
+    bob_send.send(Some(Message::OfferDlc(offer_msg))).unwrap();
+
+    assert_contract_state!(bob_daemon_send, temporary_contract_id, Contract::Offered{..});
+
+    sync_receive.recv().expect("Error synchronizing");
+
+    assert_contract_state!(alice_daemon_send, temporary_contract_id, Contract::Offered{..});
+
+    let (contract_id, mut accept_msg) = alice_daemon_send
+        .lock()
+        .unwrap()
+        .accept_contract_offer(&temporary_contract_id)
+        .expect("Error accepting contract offer");
+
+    assert_contract_state!(alice_daemon_send, contract_id, Contract::Accepted{..});
+
+    match path {
+        TestPath::BadAcceptCetSignature | TestPath::BadAcceptRefundSignature => {
+            if let Message::AcceptDlc(mut accept_dlc) = accept_msg {
+                match path {
+                    TestPath::BadAcceptCetSignature => {
+                        alter_adaptor_sig(&mut accept_dlc.cet_adaptor_signatures)
+                    }
+                    TestPath::BadAcceptRefundSignature => {
+                        accept_dlc.refund_signature =
+                            alter_refund_sig(&accept_dlc.refund_signature);
+                    }
+                    _ => {}
+                }
+                accept_msg = Message::AcceptDlc(accept_dlc);
+            }
+
+            *bob_expect_error.lock().unwrap() = true;
+            alice_send.send(Some(accept_msg)).unwrap();
+            sync_receive.recv().expect("Error synchronizing");
+            assert_contract_state!(bob_daemon_send, temporary_contract_id, Contract::FailedAccept{..});
+        }
+        TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
+            *alice_expect_error.lock().unwrap() = true;
+            alice_send.send(Some(accept_msg)).unwrap();
+            sync_receive.recv().expect("Error synchronizing");
+            assert_contract_state!(alice_daemon_send, contract_id, Contract::FailedSign{..});
+        }
+        _ => {
+            alice_send.send(Some(accept_msg)).unwrap();
+            sync_receive.recv().expect("Error synchronizing");
+
+            assert_contract_state!(bob_daemon_send, contract_id, Contract::Signed{..});
+
+            // Should not change state and should not error
+            periodic_check!(bob_daemon_send, contract_id, Contract::Signed{..});
+
+            sync_receive.recv().expect("Error synchronizing");
+
+            assert_contract_state!(alice_daemon_send, contract_id, Contract::Signed{..});
+
+            let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
+            sink_rpc
+                .generate_to_address(6, &sink_address)
+                .expect("RPC Error");
+
+            periodic_check!(alice_daemon_send, contract_id, Contract::Confirmed{ .. });
+            periodic_check!(bob_daemon_send, contract_id, Contract::Confirmed{ .. });
+
+            mock_time::set_time((test_params.contract_view.maturity_time as u64) + 1);
+
+            // Select the first one to close or refund randomly
+            let (first, second) = if thread_rng().next_u32() % 2 == 0 {
+                (alice_daemon_send, bob_daemon_send)
+            } else {
+                (bob_daemon_send, alice_daemon_send)
+            };
+
+            match path {
+                TestPath::Close => {
+                    periodic_check!(first, contract_id, Contract::Closed{ .. });
+
+                    // Randomly check with or without having the CET mined
+                    if thread_rng().next_u32() % 2 == 0 {
+                        sink_rpc
+                            .generate_to_address(1, &sink_address)
+                            .expect("RPC Error");
+                    }
+
+                    periodic_check!(second, contract_id, Contract::Closed{ .. });
+                }
+                TestPath::Refund => {
+                    periodic_check!(first, contract_id, Contract::Confirmed{ .. });
+
+                    periodic_check!(second, contract_id, Contract::Confirmed{ .. });
+
+                    mock_time::set_time(
+                        ((test_params.contract_view.maturity_time
+                            + dlc_daemon::daemon::REFUND_DELAY) as u64)
+                            + 1,
+                    );
+                    sink_rpc
+                        .generate_to_address(10, &sink_address)
+                        .expect("RPC Error");
+
+                    periodic_check!(first, contract_id, Contract::Refunded{ .. });
+
+                    // Randomly check with or without having the Refund mined.
+                    if thread_rng().next_u32() % 2 == 0 {
+                        sink_rpc
+                            .generate_to_address(1, &sink_address)
+                            .expect("RPC Error");
+                    }
+
+                    periodic_check!(second, contract_id, Contract::Refunded{ .. });
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    alice_send.send(None).unwrap();
+    bob_send.send(None).unwrap();
+
+    alice_handle.join().unwrap();
+    bob_handle.join().unwrap();
+}

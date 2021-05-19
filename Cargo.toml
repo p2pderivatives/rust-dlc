@@ -1,7 +1,9 @@
 [workspace]
 
 members = [
+    "bitcoin-rpc-provider",
     "bitcoin-test-utils",
     "dlc",
     "dlc-messages",
+    "dlc-daemon",
 ]
