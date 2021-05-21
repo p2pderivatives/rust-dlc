@@ -4,7 +4,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{
     blockdata::script::Builder, hash_types::PubkeyHash, util::address::Payload, Script,
-    SigHashType, Transaction,
+    SigHashType, Transaction, TxOut,
 };
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing};
 
@@ -91,7 +91,8 @@ fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey
         key: PublicKey::from_secret_key(secp, sk),
     };
     let mut hash_engine = PubkeyHash::engine();
-    pk.write_into(&mut hash_engine).unwrap();
+    pk.write_into(&mut hash_engine)
+        .expect("Error writing hash.");
     let pkh = Payload::PubkeyHash(PubkeyHash::from_engine(hash_engine));
     pkh.script_pubkey()
 }
@@ -133,7 +134,7 @@ pub fn sign_multi_sig_input<C: Signing>(
     let own_sig = get_sig_for_tx_input(
         secp,
         transaction,
-        0,
+        input_index,
         script_pubkey,
         input_value,
         SigHashType::All,
@@ -167,4 +168,26 @@ pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
         0 => Script::new(),
         _ => Builder::new().push_slice(redeem.as_bytes()).into_script(),
     }
+}
+
+pub(crate) fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &Vec<u64>) -> Vec<T> {
+    let mut combined: Vec<(&u64, T)> = ids.iter().zip(inputs.into_iter()).collect();
+    combined.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
+    combined.into_iter().map(|x| x.1).collect()
+}
+
+/// Get the vout and TxOut of the first output with a matching `script_pubkey`
+/// if any.
+pub fn get_output_for_script_pubkey<'a>(
+    tx: &'a Transaction,
+    script_pubkey: &Script,
+) -> Option<(usize, &'a TxOut)> {
+    tx.output
+        .iter()
+        .enumerate()
+        .find(|(_, x)| &x.script_pubkey == script_pubkey)
+}
+
+pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
+    txs.into_iter().filter(|x| x.value >= dust_limit).collect()
 }
