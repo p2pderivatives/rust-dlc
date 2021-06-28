@@ -34,7 +34,8 @@ jobs:
         tests:
           - close
           - refund
-          - decomposed
+          - decomposed_single
+          - decomposed_multi
     steps:
       - uses: actions/checkout@v2
       - name: Start bitcoin node
