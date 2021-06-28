@@ -31,7 +31,11 @@ use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Ve
 pub mod combination_iterator;
 pub mod digit_decomposition;
 pub mod digit_trie;
+pub mod dlc_trie;
+pub mod dlc_trie_utils;
 pub mod multi_oracle;
+pub mod multi_oracle_trie;
+pub mod multi_oracle_trie_with_diff;
 pub mod multi_trie;
 pub mod trie;
 pub mod util;
@@ -90,7 +94,7 @@ pub struct RangePayout {
     pub payout: Payout,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 /// Structure that stores the indexes at which the CET and adaptor signature
 /// related to a given outcome are located in CET and adaptor signatures arrays
 /// respectively.
@@ -554,10 +558,10 @@ fn get_oracle_sig_point<C: secp256k1::Signing>(
     Ok(combine_pubkeys(&sig_points)?)
 }
 
-///
+/// Get an adaptor point generated using the given oracle information and messages.
 pub fn get_adaptor_point_from_oracle_info<C: Signing>(
     secp: &Secp256k1<C>,
-    oracle_infos: &Vec<OracleInfo>,
+    oracle_infos: &[OracleInfo],
     msgs: &Vec<Vec<Message>>,
 ) -> Result<PublicKey, Error> {
     if oracle_infos.len() < 1 || msgs.len() < 1 {
