@@ -5,7 +5,7 @@ use super::Error;
 use combination_iterator::CombinationIterator;
 use digit_trie::{DigitTrie, DigitTrieIter};
 use multi_oracle::compute_outcome_combinations;
-use trie::{LookupResult, Node};
+use crate::{LookupResult, Node};
 
 #[derive(Clone, Debug)]
 struct TrieNodeInfo {
