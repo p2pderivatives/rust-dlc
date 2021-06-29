@@ -28,16 +28,6 @@ use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Verification};
 
-pub mod combination_iterator;
-pub mod digit_decomposition;
-pub mod digit_trie;
-pub mod dlc_trie;
-pub mod dlc_trie_utils;
-pub mod multi_oracle;
-pub mod multi_oracle_trie;
-pub mod multi_oracle_trie_with_diff;
-pub mod multi_trie;
-pub mod trie;
 pub mod util;
 
 /// Minimum value that can be included in a transaction output. Under this value,
@@ -92,17 +82,6 @@ pub struct RangePayout {
     pub count: usize,
     /// The payout associated with all outcomes
     pub payout: Payout,
-}
-
-#[derive(PartialEq, Debug, Clone)]
-/// Structure that stores the indexes at which the CET and adaptor signature
-/// related to a given outcome are located in CET and adaptor signatures arrays
-/// respectively.
-pub struct RangeInfo {
-    /// a cet index
-    pub cet_index: usize,
-    /// an adaptor signature index
-    pub adaptor_index: usize,
 }
 
 /// Contains the necessary transactions for establishing a DLC
