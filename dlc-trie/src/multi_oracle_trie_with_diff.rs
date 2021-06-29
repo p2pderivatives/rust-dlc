@@ -4,9 +4,9 @@
 //! between the outcomes of each oracle can be supported.
 
 use crate::digit_decomposition::group_by_ignoring_digits;
-use crate::dlc_trie::DlcTrie;
-use crate::dlc_trie_utils::get_adaptor_point_for_indexed_paths;
 use crate::multi_trie::{MultiTrie, MultiTrieIterator};
+use crate::utils::get_adaptor_point_for_indexed_paths;
+use crate::DlcTrie;
 use crate::{Error, OracleInfo, RangeInfo, RangePayout};
 use bitcoin::{Script, Transaction};
 use secp256k1::{
@@ -136,7 +136,7 @@ impl DlcTrie for MultiOracleTrieWithDiff {
         let mut adaptor_pairs = Vec::<(usize, (AdaptorSignature, AdaptorProof))>::new();
         let mut callback =
             |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {
-                let adaptor_pair = crate::create_cet_adaptor_sig_from_point(
+                let adaptor_pair = dlc::create_cet_adaptor_sig_from_point(
                     &secp,
                     &cets[range_info.cet_index],
                     &adaptor_point,
