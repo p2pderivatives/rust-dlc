@@ -107,14 +107,24 @@ pub fn sign_p2wpkh_input<C: Signing>(
     sig_hash_type: SigHashType,
     value: u64,
 ) {
-    let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type);
+    tx.input[input_index].witness =
+        get_witness_for_p2wpkh_input(secp, sk, tx, input_index, sig_hash_type, value);
+}
 
-    tx.input[input_index].witness = {
-        let mut wit: Vec<Vec<u8>> = Vec::new();
-        wit.push(full_sig);
-        wit.push(PublicKey::from_secret_key(secp, sk).serialize().to_vec());
-        wit
-    }
+/// Generates the witness data for a P2WPKH input using the provided secret key.
+pub fn get_witness_for_p2wpkh_input<C: Signing>(
+    secp: &Secp256k1<C>,
+    sk: &SecretKey,
+    tx: &Transaction,
+    input_index: usize,
+    sig_hash_type: SigHashType,
+    value: u64,
+) -> Vec<Vec<u8>> {
+    let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type);
+    let mut wit: Vec<Vec<u8>> = Vec::new();
+    wit.push(full_sig);
+    wit.push(PublicKey::from_secret_key(secp, sk).serialize().to_vec());
+    wit
 }
 
 /// Generates a signature for a given p2wsh transaction input using the given secret
@@ -170,7 +180,9 @@ pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
     }
 }
 
+/// Sorts the given inputs in following the order of the ids.
 pub(crate) fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &Vec<u64>) -> Vec<T> {
+    debug_assert!(inputs.len() == ids.len());
     let mut combined: Vec<(&u64, T)> = ids.iter().zip(inputs.into_iter()).collect();
     combined.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
     combined.into_iter().map(|x| x.1).collect()
@@ -188,6 +200,7 @@ pub fn get_output_for_script_pubkey<'a>(
         .find(|(_, x)| &x.script_pubkey == script_pubkey)
 }
 
+/// Filters the outputs that have a value lower than the given `dust_limit`.
 pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
     txs.into_iter().filter(|x| x.value >= dust_limit).collect()
 }

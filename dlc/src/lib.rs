@@ -27,6 +27,7 @@ use bitcoin::blockdata::{
 use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
 use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing, Verification};
+use std::fmt;
 
 pub mod util;
 
@@ -84,6 +85,15 @@ pub struct RangePayout {
     pub payout: Payout,
 }
 
+/// Representation of a payout for an enumeration outcome.
+#[derive(Clone, Debug)]
+pub struct EnumerationPayout {
+    /// The outcome value (prior to hashing)
+    pub outcome: String,
+    /// The corresponding payout
+    pub payout: Payout,
+}
+
 /// Contains the necessary transactions for establishing a DLC
 #[derive(Clone)]
 pub struct DlcTransactions {
@@ -108,9 +118,18 @@ impl DlcTransactions {
             .unwrap()
             .1
     }
+
+    /// Get the fund output in the fund transaction
+    pub fn get_fund_output_index(&self) -> usize {
+        let v0_witness_fund_script = self.funding_script_pubkey.to_v0_p2wsh();
+        util::get_output_for_script_pubkey(&self.fund, &v0_witness_fund_script)
+            .unwrap()
+            .0
+    }
 }
 
 /// Contains info about a utxo used for funding a DLC contract
+#[derive(Clone)]
 pub struct TxInputInfo {
     /// The outpoint for the utxo
     pub outpoint: OutPoint,
@@ -136,20 +155,30 @@ pub struct OracleInfo {
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     /// Secp256k1 error
-    Base(secp256k1::Error),
+    Secp256k1(secp256k1::Error),
     /// An invalid argument was provided
     InvalidArgument,
 }
 
 impl From<secp256k1::Error> for Error {
     fn from(error: secp256k1::Error) -> Error {
-        Error::Base(error)
+        Error::Secp256k1(error)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Secp256k1(ref e) => write!(f, "Secp256k1 error {}", e),
+            Error::InvalidArgument => write!(f, "Invalid argument"),
+        }
     }
 }
 
 /// Contains the parameters required for creating DLC transactions for a single
 /// party. Specifically these are the common fields between Offer and Accept
 /// messages.
+#[derive(Clone)]
 pub struct PartyParams {
     /// The public key for the fund multisig script
     pub fund_pubkey: PublicKey,
