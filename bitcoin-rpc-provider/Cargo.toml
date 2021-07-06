@@ -1,0 +1,12 @@
+[package]
+name = "bitcoin-rpc-provider"
+version = "0.0.1"
+authors = ["Crypto Garage"]
+
+[dependencies]
+bitcoin = {version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin"}
+bitcoincore-rpc = {version="0.13.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
+bitcoincore-rpc-json = {version="0.13.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
+dlc-manager = { version = "0.0.1", path = "../dlc-manager" }
+rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", branch = "ecdsa-adaptor", features=["rand"]}
+

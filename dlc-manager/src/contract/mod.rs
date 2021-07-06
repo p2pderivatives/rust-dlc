@@ -36,6 +36,22 @@ pub enum Contract {
     FailedSign(FailedSignContract),
 }
 
+impl std::fmt::Debug for Contract {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = match self {
+            Contract::Offered(_) => "offered",
+            Contract::Accepted(_) => "accepted",
+            Contract::Signed(_) => "signed",
+            Contract::Confirmed(_) => "confirmed",
+            Contract::Closed(_) => "closed",
+            Contract::Refunded(_) => "refunded",
+            Contract::FailedAccept(_) => "failed accept",
+            Contract::FailedSign(_) => "failed sign",
+        };
+        f.debug_struct("Contract").field("state", &state).finish()
+    }
+}
+
 impl Contract {
     /// Get the id of a contract. Returns the temporary contract id for offered
     /// and failed accept contracts.
