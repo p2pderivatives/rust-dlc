@@ -1,11 +1,15 @@
 //! Utility functions to be used only in tests.
 
 extern crate bitcoin;
+extern crate bitcoincore_rpc;
+extern crate bitcoincore_rpc_json;
 
 use bitcoin::consensus::Decodable;
 use bitcoin::consensus::Encodable;
 use bitcoin::Transaction;
 use std::fmt::Write;
+
+pub mod rpc_helpers;
 
 /// Utility function used to parse hex into a target u8 buffer. Returns
 /// the number of bytes converted or an error if it encounters an invalid
