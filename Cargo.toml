@@ -5,4 +5,5 @@ members = [
     "dlc",
     "dlc-messages",
     "dlc-trie",
+    "dlc-manager"
 ]
