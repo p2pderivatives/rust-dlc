@@ -18,9 +18,15 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      - uses: actions/cache@v2
+        env:
+          cache-name: test-cache
+        with:
+          path: target/debug/deps
+          key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - uses: actions/checkout@v2
       - id: set-matrix
-        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/generate_integration_tests_list.sh)"
+        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager)"
   integration_tests:
     name: integration-tests
     needs: integration_tests_prepare
@@ -30,9 +36,17 @@ jobs:
         tests: ${{ fromJson(needs.integration_tests_prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        env:
+          cache-name: test-cache
+        with:
+          path: target/debug/deps
+          key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - name: Start bitcoin node
         run: ./scripts/start_node.sh
+      - name: Wait for container to run
+        run: ./scripts/wait_for_container.sh bitcoin-node
       - name: Run test
-        run: cargo test -- --ignored ${{ matrix.tests }}
+        run: RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored
       - name: Stop bitcoin node
         run: ./scripts/stop_node.sh
