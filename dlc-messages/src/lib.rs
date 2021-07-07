@@ -178,6 +178,7 @@ impl From<&FundingInput> for TxInputInfo {
             },
             max_witness_len: (funding_input.max_witness_len as usize),
             redeem_script: funding_input.redeem_script.clone(),
+            serial_id: 0,
         }
     }
 }

@@ -207,6 +207,7 @@ fn get_funding_params(
 fn get_party_params<C: Signing>(
     secp: &Secp256k1<C>,
     params: &TestPartyParams,
+    serial_id: u64,
 ) -> (PartyParams, Vec<FundingInput>, Vec<Vec<SecretKey>>) {
     let (fund_inputs, sks, total_value) = get_funding_params(&params.funding_input_txs);
     let inputs: Vec<TxInputInfo> = fund_inputs.iter().map(|x| x.into()).collect();
@@ -214,7 +215,9 @@ fn get_party_params<C: Signing>(
         PartyParams {
             fund_pubkey: PublicKey::from_secret_key(secp, &params.funding_priv_key),
             change_script_pubkey: params.change_address.script_pubkey(),
-            final_script_pubkey: params.payout_address.script_pubkey(),
+            change_serial_id: serial_id,
+            payout_script_pubkey: params.payout_address.script_pubkey(),
+            payout_serial_id: serial_id,
             inputs,
             collateral: params.collateral,
             input_amount: total_value,
@@ -404,9 +407,9 @@ fn assert_msg_eq<M: Encode + Writeable>(expected_str: &str, actual: M) {
 fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
     let params = &case.inputs.params;
     let (offer_params, offer_inputs, offer_input_sks) =
-        get_party_params(&secp, &case.inputs.offer_params);
+        get_party_params(&secp, &case.inputs.offer_params, 1);
     let (accept_params, accept_inputs, accept_input_sks) =
-        get_party_params(&secp, &case.inputs.accept_params);
+        get_party_params(&secp, &case.inputs.accept_params, 2);
 
     let total_collateral = offer_params.collateral + accept_params.collateral;
 
@@ -431,6 +434,7 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
         params.fee_rate,
         0,
         params.contract_maturity_bound,
+        0,
     )
     .unwrap();
 
@@ -556,6 +560,7 @@ fn test_single(case: TestCase, secp: &secp256k1::Secp256k1<secp256k1::All>) {
         fund: fund_tx,
         cets: vec![offer_final_cet, accept_final_cet],
         refund: refund_tx,
+        funding_script_pubkey,
     };
 
     let offer = OfferDlc {
@@ -654,6 +659,7 @@ fn test_dlc_fees() {
                 },
                 max_witness_len: x.max_witness_len,
                 redeem_script: get_redeem_script(x.redeem_script_len),
+                serial_id: 0,
             })
             .collect()
     };
@@ -669,7 +675,9 @@ fn test_dlc_fees() {
             .unwrap(),
             collateral: 100000,
             change_script_pubkey: get_test_script(change_spk_len),
-            final_script_pubkey: get_test_script(payout_spk_len),
+            change_serial_id: 0,
+            payout_script_pubkey: get_test_script(payout_spk_len),
+            payout_serial_id: 0,
             inputs: get_inputs(inputs),
             input_amount: 110000,
         }
@@ -708,8 +716,8 @@ fn test_dlc_txs() {
 
     for test_case in test_cases {
         let params = test_case.inputs.params;
-        let (offer_params, _, _) = get_party_params(&secp, &test_case.inputs.offer_params);
-        let (accept_params, _, _) = get_party_params(&secp, &test_case.inputs.accept_params);
+        let (offer_params, _, _) = get_party_params(&secp, &test_case.inputs.offer_params, 1);
+        let (accept_params, _, _) = get_party_params(&secp, &test_case.inputs.accept_params, 2);
         let total_collateral = offer_params.collateral + accept_params.collateral;
         let txs = dlc::create_dlc_transactions(
             &offer_params,
@@ -723,6 +731,7 @@ fn test_dlc_txs() {
             params.fee_rate,
             0,
             params.contract_maturity_bound,
+            0,
         )
         .unwrap();
         let test_txs = test_case.txs.unwrap();

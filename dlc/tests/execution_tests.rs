@@ -189,10 +189,11 @@ fn generate_dlc_parameters<'a, C: secp256k1::Signing>(
     secp: &secp256k1::Secp256k1<C>,
     collateral: u64,
 ) -> PartyTestParams {
+    let mut rng = thread_rng();
     let change_address = rpc
         .get_new_address(None, Some(AddressType::Bech32))
         .unwrap();
-    let final_address = rpc
+    let payout_address = rpc
         .get_new_address(None, Some(AddressType::Bech32))
         .unwrap();
     let fund_address = rpc
@@ -213,7 +214,9 @@ fn generate_dlc_parameters<'a, C: secp256k1::Signing>(
         params: PartyParams {
             fund_pubkey: PublicKey::from_secret_key(secp, &fund_priv_key),
             change_script_pubkey: change_address.script_pubkey(),
-            final_script_pubkey: final_address.script_pubkey(),
+            change_serial_id: rng.next_u64(),
+            payout_script_pubkey: payout_address.script_pubkey(),
+            payout_serial_id: rng.next_u64(),
             inputs: vec![TxInputInfo {
                 outpoint: OutPoint {
                     txid: utxo.txid,
@@ -221,6 +224,7 @@ fn generate_dlc_parameters<'a, C: secp256k1::Signing>(
                 },
                 max_witness_len: dlc::P2WPKH_WITNESS_SIZE,
                 redeem_script: Script::new(),
+                serial_id: rng.next_u64(),
             }],
             input_amount: utxo.amount.as_sat(),
             collateral,
@@ -321,6 +325,7 @@ fn integration_tests_decomposed_common(
         2,
         FUND_LOCK_TIME,
         CET_LOCK_TIME,
+        rng.next_u64(),
     )
     .expect("Error creating dlc transactions.");
 
@@ -331,7 +336,14 @@ fn integration_tests_decomposed_common(
         &offer_params.params.fund_pubkey,
         &accept_params.params.fund_pubkey,
     );
-    let fund_output_value = dlc_txs.fund.output[0].value;
+
+    let fund_output_value = dlc::util::get_output_for_script_pubkey(
+        &dlc_txs.fund,
+        &funding_script_pubkey.to_v0_p2wsh(),
+    )
+    .expect("Could not find fund output")
+    .1
+    .value;
 
     let mut multi_trie = MultiTrie::new(
         nb_oracles,
@@ -353,14 +365,6 @@ fn integration_tests_decomposed_common(
         }
 
         let cet = &dlc_txs.cets[cet_index];
-
-        if outcome.payout.offer > 0 {
-            assert_eq!(outcome.payout.offer, cet.output[0].value);
-        }
-
-        if outcome.payout.accept > 0 {
-            assert_eq!(outcome.payout.accept, cet.output[1].value);
-        }
 
         let groups = group_by_ignoring_digits(
             outcome.start,
@@ -584,6 +588,7 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1::All> {
         2,
         FUND_LOCK_TIME,
         CET_LOCK_TIME,
+        rng.next_u64(),
     )
     .expect("Error creating dlc transactions.");
 
@@ -591,7 +596,13 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1::All> {
         &offer_params.params.fund_pubkey,
         &accept_params.params.fund_pubkey,
     );
-    let fund_output_value = dlc_txs.fund.output[0].value;
+    let fund_output_value = dlc::util::get_output_for_script_pubkey(
+        &dlc_txs.fund,
+        &funding_script_pubkey.to_v0_p2wsh(),
+    )
+    .expect("Could not find fund output")
+    .1
+    .value;
     let (offer_adaptor_pair, _) = {
         let offer_cets_sigs = dlc::create_cet_adaptor_sigs_from_oracle_info(
             &secp,
@@ -684,11 +695,32 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
     )
     .is_ok());
 
+    let mut input_serial_ids: Vec<u64> = test_params
+        .offer_params
+        .params
+        .inputs
+        .iter()
+        .map(|x| x.serial_id)
+        .chain(
+            test_params
+                .accept_params
+                .params
+                .inputs
+                .iter()
+                .map(|x| x.serial_id),
+        )
+        .collect();
+
+    input_serial_ids.sort();
+
     dlc::util::sign_p2wpkh_input(
         &test_params.secp,
         &test_params.offer_params.input_priv_key,
         &mut dlc_txs.fund,
-        0,
+        input_serial_ids
+            .iter()
+            .position(|&x| x == test_params.offer_params.params.inputs[0].serial_id)
+            .unwrap(),
         SigHashType::All,
         test_params.offer_params.params.input_amount,
     );
@@ -697,7 +729,10 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
         &test_params.secp,
         &test_params.accept_params.input_priv_key,
         &mut dlc_txs.fund,
-        1,
+        input_serial_ids
+            .iter()
+            .position(|&x| x == test_params.accept_params.params.inputs[0].serial_id)
+            .unwrap(),
         SigHashType::All,
         test_params.accept_params.params.input_amount,
     );
@@ -717,11 +752,11 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
 
     go_to_height(FUND_LOCK_TIME as u64);
 
-    assert!(test_params
+    test_params
         .offer_params
         .rpc
         .send_raw_transaction(&dlc_txs.fund)
-        .is_ok());
+        .expect("Could not send fund transaction.");
 
     generate_blocks(1);
 
@@ -731,7 +766,7 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
             &dlc_txs.refund,
             0,
             &test_params.funding_script_pubkey,
-            test_params.dlc_txs.fund.output[0].value,
+            test_params.fund_output_value,
             &test_params.offer_params.fund_priv_key,
         );
 
@@ -742,7 +777,7 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
             &PublicKey::from_secret_key(&test_params.secp, &test_params.offer_params.fund_priv_key),
             &test_params.accept_params.fund_priv_key,
             &test_params.funding_script_pubkey,
-            dlc_txs.fund.output[0].value,
+            test_params.fund_output_value,
             0,
         );
 
@@ -755,11 +790,11 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
 
         go_to_height(REFUND_LOCK_TIME as u64);
 
-        assert!(test_params
+        test_params
             .offer_params
             .rpc
             .send_raw_transaction(&dlc_txs.refund)
-            .is_ok());
+            .expect("Could not send refund transaction.");
     } else {
         // Should not be able to broadcast before cet lock time
         assert!(test_params
@@ -770,10 +805,10 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
 
         go_to_height(CET_LOCK_TIME as u64);
 
-        assert!(test_params
+        test_params
             .offer_params
             .rpc
             .send_raw_transaction(&dlc_txs.cets[test_params.cet_index])
-            .is_ok());
+            .expect("Could not send CET.");
     }
 }
