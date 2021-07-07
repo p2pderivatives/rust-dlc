@@ -22,7 +22,7 @@ pub(crate) fn get_adaptor_point_from_paths<C: Signing>(
                 .collect()
         })
         .collect();
-    super::get_adaptor_point_from_oracle_info(&secp, oracle_infos, &paths_msg)
+    dlc::get_adaptor_point_from_oracle_info(&secp, oracle_infos, &paths_msg)
 }
 
 /// Creates an adaptor point using the provided oracle infos and paths, selecting

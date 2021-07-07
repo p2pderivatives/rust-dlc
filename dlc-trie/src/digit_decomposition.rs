@@ -1,6 +1,6 @@
 //! Utility functions to decompose numeric outcome values
 
-use super::{Error, Payout, RangePayout};
+use dlc::{Error, Payout, RangePayout};
 
 /// Describes an interval that starts at `prefix || start` and terminates at `prefix || end`.
 struct PrefixInterval {
@@ -223,7 +223,7 @@ pub fn group_by_ignoring_digits(
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Payout, RangePayout};
+    use dlc::{Payout, RangePayout};
     struct DecompositionTestCase {
         composed: usize,
         decomposed: Vec<usize>,

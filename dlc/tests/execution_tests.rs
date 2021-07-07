@@ -2,6 +2,7 @@ extern crate bitcoin;
 extern crate bitcoincore_rpc;
 extern crate bitcoincore_rpc_json;
 extern crate dlc;
+extern crate dlc_trie;
 extern crate secp256k1;
 
 use bitcoincore_rpc::{Auth, Client, RpcApi};
@@ -9,10 +10,10 @@ use bitcoincore_rpc_json::AddressType;
 
 use bitcoin::hashes::*;
 use bitcoin::{OutPoint, Script, SigHashType};
-use dlc::digit_decomposition::{decompose_value, pad_range_payouts};
-use dlc::dlc_trie::DlcTrie;
-use dlc::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc::{DlcTransactions, OracleInfo, PartyParams, Payout, RangePayout, TxInputInfo};
+use dlc_trie::digit_decomposition::{decompose_value, pad_range_payouts};
+use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
+use dlc_trie::DlcTrie;
 use secp256k1::{
     ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
     rand::{seq::SliceRandom, thread_rng, Rng, RngCore},

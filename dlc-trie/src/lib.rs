@@ -1,13 +1,71 @@
-//! # DlcTrie
-//! Common trait and functions for trie data structures that store adaptor
-//! signature information.
+//! # Dlc-trie
+//! Package for storing and retrieving DLC data using tries.
 
-use crate::{Error, OracleInfo, RangeInfo, RangePayout};
+#![crate_name = "dlc_trie"]
+#![crate_type = "dylib"]
+#![crate_type = "rlib"]
+// Coding conventions
+#![forbid(unsafe_code)]
+#![deny(non_upper_case_globals)]
+#![deny(non_camel_case_types)]
+#![deny(non_snake_case)]
+#![deny(unused_mut)]
+#![deny(dead_code)]
+#![deny(unused_imports)]
+#![deny(missing_docs)]
+
+extern crate bitcoin;
+extern crate dlc;
+extern crate secp256k1;
+
 use bitcoin::{Script, Transaction};
+use dlc::{Error, OracleInfo, RangePayout};
 use secp256k1::{
     ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
     All, PublicKey, Secp256k1, SecretKey, Signing,
 };
+
+pub mod combination_iterator;
+pub mod digit_decomposition;
+pub mod digit_trie;
+pub mod multi_oracle;
+pub mod multi_oracle_trie;
+pub mod multi_oracle_trie_with_diff;
+pub mod multi_trie;
+pub mod utils;
+
+/// Structure containing a reference to a looked-up value and the
+/// path at which it was found.
+#[derive(Debug)]
+pub struct LookupResult<'a, TValue, TPath> {
+    /// The path at which the `value` was found.
+    pub path: Vec<TPath>,
+    /// The value that was returned.
+    pub value: &'a TValue,
+}
+
+/// Enum representing the different type of nodes in a tree
+#[derive(Debug, Clone)]
+pub enum Node<TLeaf, TNode> {
+    /// None is only used as a placeholder when taking mutable ownership of a
+    /// node during insertion.
+    None,
+    /// A leaf is a node in the tree that does not have any children.
+    Leaf(TLeaf),
+    /// A node is parent to at least one other node in a tree.
+    Node(TNode),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+/// Structure that stores the indexes at which the CET and adaptor signature
+/// related to a given outcome are located in CET and adaptor signatures arrays
+/// respectively.
+pub struct RangeInfo {
+    /// a cet index
+    pub cet_index: usize,
+    /// an adaptor signature index
+    pub adaptor_index: usize,
+}
 
 /// A common trait for trie data structures that store DLC adaptor signature
 /// information.
@@ -55,7 +113,7 @@ pub trait DlcTrie {
                 let adaptor_pair = adaptor_pairs[adaptor_sig_index];
                 let cet = &cets[cet_index];
                 adaptor_sig_index += 1;
-                super::verify_cet_adaptor_sig_from_point(
+                dlc::verify_cet_adaptor_sig_from_point(
                     secp,
                     &adaptor_pair.0,
                     &adaptor_pair.1,
@@ -87,7 +145,7 @@ pub trait DlcTrie {
         let mut adaptor_index = adaptor_index_start;
         let mut sign_callback =
             |cet_index: usize, adaptor_point: &PublicKey| -> Result<usize, crate::Error> {
-                let adaptor_pair = crate::create_cet_adaptor_sig_from_point(
+                let adaptor_pair = dlc::create_cet_adaptor_sig_from_point(
                     &secp,
                     &cets[cet_index],
                     &adaptor_point,
@@ -123,7 +181,7 @@ pub trait DlcTrie {
                 if range_info.adaptor_index > max_adaptor_index {
                     max_adaptor_index = range_info.adaptor_index;
                 }
-                super::verify_cet_adaptor_sig_from_point(
+                dlc::verify_cet_adaptor_sig_from_point(
                     secp,
                     &adaptor_pair.0,
                     &adaptor_pair.1,

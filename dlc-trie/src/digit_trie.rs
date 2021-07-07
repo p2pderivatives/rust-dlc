@@ -2,7 +2,7 @@
 //! Data structure to store and lookup digit decomposition data.
 
 use super::Error;
-use trie::{LookupResult, Node};
+use crate::{LookupResult, Node};
 
 /// Structure to store data inserted and looked-up based on digit paths.
 #[derive(Clone)]
@@ -59,7 +59,7 @@ struct DigitNode<T> {
 
 trait NodePrefix {
     fn get_node_prefix(&self) -> Vec<usize>;
-    fn set_node_prefix(&mut self, Vec<usize>);
+    fn set_node_prefix(&mut self, prefix: Vec<usize>);
 }
 
 impl<T> NodePrefix for Node<DigitLeaf<T>, DigitNode<T>> {
