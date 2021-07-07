@@ -13,3 +13,4 @@ secp256k1 = {version="0.20.1-adaptor.0", git = "https://github.com/p2pderivative
 bitcoincore-rpc = {version="0.13.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
 bitcoincore-rpc-json = {version="0.13.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
 dlc-trie = { path="../dlc-trie" }
+bitcoin-test-utils = { path="../bitcoin-test-utils" }

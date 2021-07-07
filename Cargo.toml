@@ -2,7 +2,9 @@
 
 members = [
     "bitcoin-test-utils",
+    "bitcoin-rpc-provider",
     "dlc",
     "dlc-messages",
     "dlc-trie",
+    "dlc-manager"
 ]

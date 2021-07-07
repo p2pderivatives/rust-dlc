@@ -1,15 +1,16 @@
 extern crate bitcoin;
+extern crate bitcoin_test_utils;
 extern crate bitcoincore_rpc;
 extern crate bitcoincore_rpc_json;
 extern crate dlc;
 extern crate dlc_trie;
 extern crate secp256k1;
 
-use bitcoincore_rpc::{Auth, Client, RpcApi};
-use bitcoincore_rpc_json::AddressType;
-
 use bitcoin::hashes::*;
 use bitcoin::{OutPoint, Script, SigHashType};
+use bitcoin_test_utils::rpc_helpers::init_clients;
+use bitcoincore_rpc::{Client, RpcApi};
+use bitcoincore_rpc_json::AddressType;
 use dlc::{DlcTransactions, OracleInfo, PartyParams, Payout, RangePayout, TxInputInfo};
 use dlc_trie::digit_decomposition::{decompose_value, pad_range_payouts};
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
@@ -21,12 +22,6 @@ use secp256k1::{
     Message, PublicKey, Secp256k1, SecretKey, Signing,
 };
 use std::convert::TryInto;
-
-const LOCALPARTY: &str = "alice";
-const REMOTEPARTY: &str = "bob";
-const SINK: &str = "sink";
-
-const RPCBASE: &str = "http://localhost:18443";
 
 const BTC_TO_SAT: u64 = 100000000;
 const PARTY_COLLATERAL: u64 = 1 * BTC_TO_SAT;
@@ -72,14 +67,6 @@ fn outcomes() -> Vec<Payout> {
             accept: 2 * BTC_TO_SAT,
         },
     ]
-}
-
-fn get_new_wallet_rpc(default_rpc: &Client, wallet_name: &str, auth: Auth) -> Client {
-    default_rpc
-        .create_wallet(wallet_name, Some(false), None, None, None)
-        .unwrap();
-    let rpc_url = format!("{}{}{}", RPCBASE, "/wallet/", wallet_name);
-    Client::new(rpc_url, auth).unwrap()
 }
 
 fn get_base_test_msgs(
@@ -159,15 +146,7 @@ fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
 }
 
 fn init() -> (Client, Client, Client) {
-    let auth = Auth::UserPass(
-        "testuser".to_string(),
-        "lq6zequb-gYTdF2_ZEUtr8ywTXzLYtknzWU4nV8uVoo=".to_string(),
-    );
-    let rpc = Client::new(RPCBASE.to_string(), auth.clone()).unwrap();
-
-    let offer_rpc = get_new_wallet_rpc(&rpc, LOCALPARTY, auth.clone());
-    let accept_rpc = get_new_wallet_rpc(&rpc, REMOTEPARTY, auth.clone());
-    let sink_rpc = get_new_wallet_rpc(&rpc, SINK, auth.clone());
+    let (offer_rpc, accept_rpc, sink_rpc) = init_clients();
 
     let offer_address = offer_rpc
         .get_new_address(None, Some(AddressType::Bech32))
