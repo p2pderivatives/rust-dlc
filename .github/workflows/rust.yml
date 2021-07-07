@@ -6,41 +6,33 @@ jobs:
   unit-tests:
     name: unit-tests
     runs-on: ubuntu-latest
-    # Bug in cargo prevents doing code coverage for now
-    # container:
-    #   image: xd009642/tarpaulin:latest-slim
-    #   options: --security-opt seccomp=unconfined
     steps:
       - uses: actions/checkout@v2
       - name: Build
         run: cargo build --verbose
       - name: Test
         run: cargo test --verbose
-      # - name: Install nightly toolchain
-      #   run: rustup toolchain install nightly
-      # - name: code coverage
-      #   run: ./scripts/generate_coverage.sh
-      # - name: Archive code coverage results
-      #   uses: actions/upload-artifact@v1
-      #   with:
-      #     name: code-coverage-report
-      #     path: tarpaulin-report.html
 
+  integration_tests_prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v2
+      - id: set-matrix
+        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/generate_integration_tests_list.sh)"
   integration_tests:
     name: integration-tests
+    needs: integration_tests_prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        tests:
-          - close
-          - refund
-          - decomposed_single
-          - decomposed_multi
+        tests: ${{ fromJson(needs.integration_tests_prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v2
       - name: Start bitcoin node
         run: ./scripts/start_node.sh
       - name: Run test
-        run: cargo test -- --ignored integration_tests_${{ matrix.tests }}
+        run: cargo test -- --ignored ${{ matrix.tests }}
       - name: Stop bitcoin node
         run: ./scripts/stop_node.sh
