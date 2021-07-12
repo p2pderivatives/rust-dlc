@@ -21,7 +21,7 @@ extern crate dlc_messages;
 extern crate dlc_trie;
 extern crate lightning;
 extern crate log;
-extern crate secp256k1;
+extern crate secp256k1_zkp;
 
 pub mod contract;
 mod conversion_utils;
@@ -34,8 +34,8 @@ use bitcoin::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestationV0};
 use error::Error;
-use secp256k1::schnorrsig::PublicKey as SchnorrPublicKey;
-use secp256k1::{PublicKey, SecretKey};
+use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
+use secp256k1_zkp::{PublicKey, SecretKey};
 
 /// Type alias for a contract id.
 pub type ContractId = [u8; 32];

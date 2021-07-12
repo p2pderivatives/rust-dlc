@@ -7,9 +7,9 @@ use dlc::{OracleInfo, Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    All, PublicKey, Secp256k1, SecretKey, Signing,
+use secp256k1_zkp::{
+    EcdsaAdaptorSignature,
+    All, PublicKey, Secp256k1, SecretKey,
 };
 
 /// Information about the base, number of digits and unit of a numerical event.
@@ -81,7 +81,7 @@ impl NumericalDescriptor {
         threshold: usize,
         oracle_infos: &[OracleInfo],
         cets: &[Transaction],
-        adaptor_pairs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_pairs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
     ) -> Result<(AdaptorInfo, usize), dlc::Error> {
         match &self.difference_params {
@@ -131,9 +131,9 @@ impl NumericalDescriptor {
     }
 
     /// Generate the set of adaptor signatures and the adaptor info.
-    pub fn get_adaptor_info<C: Signing>(
+    pub fn get_adaptor_info(
         &self,
-        secp: &Secp256k1<C>,
+        secp: &Secp256k1<All>,
         total_collateral: u64,
         fund_priv_key: &SecretKey,
         funding_script_pubkey: &Script,
@@ -142,7 +142,7 @@ impl NumericalDescriptor {
         oracle_infos: &[OracleInfo],
         cets: &[Transaction],
         adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, Vec<(AdaptorSignature, AdaptorProof)>), dlc::Error> {
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), dlc::Error> {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(

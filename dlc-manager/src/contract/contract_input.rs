@@ -1,7 +1,7 @@
 //! #ContractInput
 
 use super::ContractDescriptor;
-use secp256k1::schnorrsig::PublicKey as SchnorrPublicKey;
+use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
 
 /// Oracle information required for the initial creation of a contract.
 #[derive(Debug)]

@@ -554,8 +554,7 @@ impl From<&AcceptedContract> for AcceptDlc {
                     .iter()
                     .cloned()
                     .map::<CetAdaptorSignature, _>(|x| CetAdaptorSignature {
-                        signature: x.0,
-                        proof: x.1,
+                        signature: x,
                     })
                     .collect(),
             },
@@ -577,8 +576,7 @@ impl From<&SignedContract> for SignDlc {
                     .unwrap()
                     .iter()
                     .map(|x| CetAdaptorSignature {
-                        signature: x.0.clone(),
-                        proof: x.1.clone(),
+                        signature: x.clone(),
                     })
                     .collect(),
             },

@@ -257,7 +257,7 @@ impl RoundingIntervals {
 #[cfg(test)]
 mod test {
     use super::*;
-    use secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1_zkp::rand::{thread_rng, RngCore};
 
     #[test]
     fn lagrange_interpolate_test() {

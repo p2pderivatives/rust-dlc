@@ -1,6 +1,6 @@
 extern crate dlc_manager;
 extern crate dlc_messages;
-extern crate secp256k1;
+extern crate secp256k1_zkp;
 
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
@@ -8,10 +8,10 @@ use dlc_messages::oracle_msgs::{
     EventDescriptor, OracleAnnouncement, OracleAttestationV0, OracleEventV0,
 };
 use lightning::ln::wire::write;
-use secp256k1::key::SecretKey;
-use secp256k1::rand::thread_rng;
-use secp256k1::schnorrsig::{KeyPair, PublicKey};
-use secp256k1::{All, Secp256k1};
+use secp256k1_zkp::key::SecretKey;
+use secp256k1_zkp::rand::thread_rng;
+use secp256k1_zkp::schnorrsig::{KeyPair, PublicKey};
+use secp256k1_zkp::{All, Message, Secp256k1};
 
 use std::collections::HashMap;
 
@@ -73,7 +73,7 @@ impl MockOracle {
         };
 
         let priv_nonces: Vec<_> = (0..nb_nonces)
-            .map(|_| secp256k1::key::SecretKey::new(&mut thread_rng()))
+            .map(|_| SecretKey::new(&mut thread_rng()))
             .collect();
         let key_pairs: Vec<_> = priv_nonces
             .iter()
@@ -99,9 +99,8 @@ impl MockOracle {
         };
         let mut event_hex = Vec::new();
         write(&oracle_event, &mut event_hex).expect("Error writing oracle event");
-        let msg = secp256k1::Message::from_hashed_data::<secp256k1::bitcoin_hashes::sha256::Hash>(
-            &event_hex,
-        );
+        let msg =
+            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
         let sig = self.secp.schnorrsig_sign(&msg, &self.key_pair);
         let announcement = OracleAnnouncement {
             oracle_event: oracle_event,
@@ -118,11 +117,15 @@ impl MockOracle {
             .iter()
             .zip(nonces.iter())
             .map(|(x, nonce)| {
-                let msg = secp256k1::Message::from_hashed_data::<
-                    secp256k1::bitcoin_hashes::sha256::Hash,
-                >(&x.as_bytes());
-                self.secp
-                    .schnorrsig_sign_with_nonce(&msg, &self.key_pair, nonce.as_ref())
+                let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
+                    &x.as_bytes(),
+                );
+                dlc::secp_utils::schnorrsig_sign_with_nonce(
+                    &self.secp,
+                    &msg,
+                    &self.key_pair,
+                    nonce.as_ref(),
+                )
             })
             .collect();
         let attestation = OracleAttestationV0 {

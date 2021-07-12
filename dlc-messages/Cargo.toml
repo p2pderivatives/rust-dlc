@@ -1,22 +1,22 @@
 [package]
+authors = ["Crypto Garage"]
 name = "dlc-messages"
 version = "0.0.1"
-authors = ["Crypto Garage"]
 
 [features]
-use-serde = ["serde", "bitcoin/serde", "secp256k1/serde"]
+use-serde = ["serde", "bitcoin/serde", "secp256k1-zkp/serde"]
 
 [dependencies]
-bitcoin = {version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin"}
-secp256k1 = {version="0.20.1-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1"}
-lightning = {version="0.0.13-adaptor.0", git = "https://github.com/p2pderivatives/rust-lightning", branch= "ecdsa-adaptor"}
-serde = { version = "1", features = ["derive"], optional = true }
-unicode-normalization = { version = "0.1.16" }
-dlc = { version = "0.0.1", path = "../dlc" }
+bitcoin = {version = "0.26.0"}
+dlc = {version = "0.0.1", path = "../dlc"}
+lightning = {version = "0.0.98", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-version"}
+secp256k1-zkp = {version = "0.4.0", features = ["hashes", "rand", "rand-std"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
+serde = {version = "1.0", features = ["derive"], optional = true}
+unicode-normalization = {version = "0.1.16"}
 
 [dev-dependencies]
-serde = { version = "1", features = ["derive"] }
+bitcoin = {version = "0.26.0", features = ["use-serde"]}
+bitcoin-test-utils = {version = "0.0.1", path = "../bitcoin-test-utils"}
+secp256k1-zkp = {version = "0.4.0", features = ["use-serde"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
+serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
-bitcoin = { version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin", features=["use-serde"] }
-secp256k1 = { version="0.20.1-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1", features=["serde"] } 
-bitcoin-test-utils = { version="0.0.1", path="../bitcoin-test-utils" }

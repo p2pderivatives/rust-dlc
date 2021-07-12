@@ -8,9 +8,9 @@ use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_trie::combination_iterator::CombinationIterator;
 use dlc_trie::{DlcTrie, RangeInfo};
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    All, PublicKey, Secp256k1, SecretKey, Signing,
+use secp256k1_zkp::{
+    EcdsaAdaptorSignature,
+    All, PublicKey, Secp256k1, SecretKey,
 };
 
 /// Contains information about the contract conditions and oracles used.
@@ -50,7 +50,7 @@ impl ContractInfo {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-    ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, dlc::Error> {
+    ) -> Result<Vec<EcdsaAdaptorSignature>, dlc::Error> {
         let oracle_infos = self.get_oracle_infos();
         match adaptor_info {
             AdaptorInfo::Enum => match &self.contract_descriptor {
@@ -94,7 +94,7 @@ impl ContractInfo {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        adaptor_sigs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
     ) -> Result<(AdaptorInfo, usize), dlc::Error> {
         let oracle_infos = self.get_oracle_infos();
@@ -204,7 +204,7 @@ impl ContractInfo {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        adaptor_sigs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
         adaptor_info: &AdaptorInfo,
     ) -> Result<usize, dlc::Error> {
@@ -246,16 +246,16 @@ impl ContractInfo {
     }
 
     /// Generate the adaptor info and adaptor signatures for the contract.
-    pub fn get_adaptor_info<C: Signing>(
+    pub fn get_adaptor_info(
         &self,
-        secp: &Secp256k1<C>,
+        secp: &Secp256k1<All>,
         total_collateral: u64,
         fund_priv_key: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
         adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, Vec<(AdaptorSignature, AdaptorProof)>), dlc::Error> {
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), dlc::Error> {
         let oracle_infos = self.get_oracle_infos();
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.get_adaptor_info(

@@ -10,10 +10,7 @@ use crate::utils::get_adaptor_point_for_indexed_paths;
 use crate::DlcTrie;
 use crate::{Error, OracleInfo, RangeInfo, RangePayout};
 use bitcoin::{Script, Transaction};
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    All, PublicKey, Secp256k1, SecretKey, Signing,
-};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with t of n oracles where at least t oracles need to sign the
@@ -41,7 +38,7 @@ impl MultiOracleTrie {
 }
 
 impl DlcTrie for MultiOracleTrie {
-    fn generate<C: Signing, F>(
+    fn generate<C: Verification, F>(
         &mut self,
         secp: &Secp256k1<C>,
         outcomes: &[RangePayout],
@@ -125,7 +122,7 @@ impl DlcTrie for MultiOracleTrie {
         fund_output_value: u64,
         cets: &[Transaction],
         oracle_infos: &[OracleInfo],
-    ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, Error> {
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_pairs = Vec::new();
         let mut callback =
             |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {

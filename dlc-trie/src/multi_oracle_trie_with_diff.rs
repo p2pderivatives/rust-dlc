@@ -9,10 +9,7 @@ use crate::utils::get_adaptor_point_for_indexed_paths;
 use crate::DlcTrie;
 use crate::{Error, OracleInfo, RangeInfo, RangePayout};
 use bitcoin::{Script, Transaction};
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    All, PublicKey, Secp256k1, SecretKey, Signing,
-};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with multiple oracles where some difference between the outcomes
@@ -53,7 +50,7 @@ impl MultiOracleTrieWithDiff {
 }
 
 impl DlcTrie for MultiOracleTrieWithDiff {
-    fn generate<C: Signing, F>(
+    fn generate<C: Verification, F>(
         &mut self,
         secp: &Secp256k1<C>,
         outcomes: &[RangePayout],
@@ -132,8 +129,8 @@ impl DlcTrie for MultiOracleTrieWithDiff {
         fund_output_value: u64,
         cets: &[Transaction],
         oracle_infos: &[OracleInfo],
-    ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, Error> {
-        let mut adaptor_pairs = Vec::<(usize, (AdaptorSignature, AdaptorProof))>::new();
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+        let mut adaptor_pairs = Vec::<(usize, EcdsaAdaptorSignature)>::new();
         let mut callback =
             |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {
                 let adaptor_pair = dlc::create_cet_adaptor_sig_from_point(

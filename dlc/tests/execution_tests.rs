@@ -4,9 +4,9 @@ extern crate bitcoincore_rpc;
 extern crate bitcoincore_rpc_json;
 extern crate dlc;
 extern crate dlc_trie;
-extern crate secp256k1;
+extern crate secp256k1_zkp;
 
-use bitcoin::hashes::*;
+use secp256k1_zkp::bitcoin_hashes::*;
 use bitcoin::{OutPoint, Script, SigHashType};
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::{Client, RpcApi};
@@ -15,11 +15,10 @@ use dlc::{DlcTransactions, OracleInfo, PartyParams, Payout, RangePayout, TxInput
 use dlc_trie::digit_decomposition::{decompose_value, pad_range_payouts};
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
+use secp256k1_zkp::{
     rand::{seq::SliceRandom, thread_rng, Rng, RngCore},
     schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
-    Message, PublicKey, Secp256k1, SecretKey, Signing,
+    EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Signing,
 };
 use std::convert::TryInto;
 
@@ -45,7 +44,7 @@ struct PartyTestParams {
 
 struct TestParams<C: Signing> {
     secp: Secp256k1<C>,
-    offer_adaptor_pair: (AdaptorSignature, AdaptorProof),
+    offer_adaptor_pair: EcdsaAdaptorSignature,
     offer_params: PartyTestParams,
     accept_params: PartyTestParams,
     dlc_txs: DlcTransactions,
@@ -80,9 +79,12 @@ fn get_base_test_msgs(
                 .map(|y| {
                     (0..nb_digits)
                         .map(|z| {
-                            Message::from_hashed_data::<secp256k1::bitcoin_hashes::sha256::Hash>(&[
-                                ((y + x + z) as u8).try_into().unwrap(),
-                            ])
+                            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&[((y
+                                + x
+                                + z)
+                                as u8)
+                                .try_into()
+                                .unwrap()])
                         })
                         .collect()
                 })
@@ -101,7 +103,8 @@ fn get_oracle_sigs<C: Signing>(
     oracle_sigs.resize(oracle_infos.len(), Vec::new());
     for (i, info) in oracle_infos.iter().enumerate() {
         for j in 0..messages[outcome_index][i].len() {
-            let sig = secp.schnorrsig_sign_with_nonce(
+            let sig = dlc::secp_utils::schnorrsig_sign_with_nonce(
+                secp,
                 &messages[outcome_index][i][j],
                 &info.priv_keypair,
                 &info.priv_nonces[j],
@@ -128,7 +131,7 @@ fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
             let mut sk_nonce = [0u8; 32];
             rng.fill_bytes(&mut sk_nonce);
             let oracle_r_kp =
-                secp256k1::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
+                secp256k1_zkp::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
             let nonce = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
             nonces.push(nonce);
             sk_nonces.push(sk_nonce);
@@ -165,9 +168,9 @@ fn init() -> (Client, Client, Client) {
     (offer_rpc, accept_rpc, sink_rpc)
 }
 
-fn generate_dlc_parameters<'a, C: secp256k1::Signing>(
+fn generate_dlc_parameters<'a, C: secp256k1_zkp::Signing>(
     rpc: Client,
-    secp: &secp256k1::Secp256k1<C>,
+    secp: &secp256k1_zkp::Secp256k1<C>,
     collateral: u64,
 ) -> PartyTestParams {
     let mut rng = thread_rng();
@@ -258,7 +261,7 @@ fn integration_tests_decomposed_common(
     max_error_exp: usize,
     base: usize,
 ) {
-    let secp = secp256k1::Secp256k1::new();
+    let secp = secp256k1_zkp::Secp256k1::new();
     let mut rng = &mut thread_rng();
     let payouts: Vec<Payout> = (0..nb_payouts)
         .map(|i| Payout {
@@ -385,7 +388,8 @@ fn integration_tests_decomposed_common(
             .enumerate()
             .map(|(i, x)| {
                 let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
-                secp.schnorrsig_sign_with_nonce(
+                dlc::secp_utils::schnorrsig_sign_with_nonce(
+                    &secp,
                     &msg,
                     &oracle_priv_infos[oracle_indexes[0]].priv_keypair,
                     &oracle_priv_infos[oracle_indexes[0]].priv_nonces[i],
@@ -423,7 +427,8 @@ fn integration_tests_decomposed_common(
                 .enumerate()
                 .map(|(i, x)| {
                     let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
-                    secp.schnorrsig_sign_with_nonce(
+                    dlc::secp_utils::schnorrsig_sign_with_nonce(
+                        &secp,
                         &msg,
                         &oracle_priv_infos[*index].priv_keypair,
                         &oracle_priv_infos[*index].priv_nonces[i],
@@ -468,14 +473,14 @@ fn integration_tests_decomposed_common(
     integration_tests_common(&mut test_params, TestCase::Decomposition);
 }
 
-fn integration_tests_basic_setup() -> TestParams<secp256k1::All> {
+fn integration_tests_basic_setup() -> TestParams<secp256k1_zkp::All> {
     let nb_oracles = 3;
     let nb_digits = 20;
     let nb_outcomes = 2;
     let outcome_index = 0;
     let messages = get_base_test_msgs(nb_oracles, nb_outcomes, nb_digits);
     let outcomes = outcomes();
-    let secp = secp256k1::Secp256k1::new();
+    let secp = secp256k1_zkp::Secp256k1::new();
     let rng = &mut thread_rng();
     let oracle_priv_infos = get_oracle_infos(&secp, rng, nb_oracles, nb_digits);
     let oracle_signatures = get_oracle_sigs(&secp, &oracle_priv_infos, &messages, outcome_index);
@@ -533,8 +538,7 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1::All> {
         assert!(offer_cets_sigs.iter().enumerate().all(|(i, z)| {
             dlc::verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &z.0,
-                &z.1,
+                &z,
                 &dlc_txs.cets[i],
                 &oracle_infos,
                 &offer_params.params.fund_pubkey,
@@ -548,8 +552,7 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1::All> {
         assert!(accept_cets_sigs.iter().enumerate().all(|(i, z)| {
             dlc::verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &z.0,
-                &z.1,
+                &z,
                 &dlc_txs.cets[i],
                 &oracle_infos,
                 &accept_params.params.fund_pubkey,
@@ -591,7 +594,7 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
     assert!(dlc::sign_cet(
         &test_params.secp,
         &mut dlc_txs.cets[test_params.cet_index],
-        &test_params.offer_adaptor_pair.0,
+        &test_params.offer_adaptor_pair,
         &test_params.oracle_signatures,
         &test_params.accept_params.fund_priv_key,
         &test_params.offer_params.params.fund_pubkey,

@@ -8,8 +8,6 @@ mod memory_storage_provider;
 mod mock_oracle_provider;
 mod mock_time;
 
-use bitcoin::secp256k1::rand::{seq::SliceRandom, thread_rng, RngCore};
-use bitcoin::secp256k1::{ecdsa_adaptor::AdaptorSignature, Signature};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
@@ -32,6 +30,8 @@ use dlc_messages::oracle_msgs::{
 use dlc_messages::{CetAdaptorSignatures, Message};
 use dlc_trie::digit_decomposition::decompose_value;
 use mock_oracle_provider::MockOracle;
+use secp256k1_zkp::rand::{seq::SliceRandom, thread_rng, RngCore};
+use secp256k1_zkp::{EcdsaAdaptorSignature, Signature};
 use std::collections::HashMap;
 use std::sync::{mpsc::channel, Arc, Mutex};
 use std::thread;
@@ -587,16 +587,16 @@ fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
     let mut copy = input.ecdsa_adaptor_signatures[sig_index]
         .signature
         .as_ref()
-        .clone();
-    let i = thread_rng().next_u32() as usize % secp256k1::constants::ADAPTOR_SIGNATURE_SIZE;
+        .to_vec();
+    let i = thread_rng().next_u32() as usize % secp256k1_zkp::ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH;
     copy[i] = copy[i].checked_add(1).unwrap_or(0);
     input.ecdsa_adaptor_signatures[sig_index].signature =
-        AdaptorSignature::from_slice(&copy).unwrap();
+        EcdsaAdaptorSignature::from_slice(&copy).unwrap();
 }
 
 fn alter_refund_sig(refund_signature: &Signature) -> Signature {
     let mut copy = refund_signature.serialize_compact();
-    let i = thread_rng().next_u32() as usize % secp256k1::constants::COMPACT_SIGNATURE_SIZE;
+    let i = thread_rng().next_u32() as usize % secp256k1_zkp::constants::COMPACT_SIGNATURE_SIZE;
     copy[i] = copy[i].checked_add(1).unwrap_or(0);
     Signature::from_compact(&copy).unwrap()
 }
