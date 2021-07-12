@@ -16,14 +16,11 @@
 
 extern crate bitcoin;
 extern crate dlc;
-extern crate secp256k1;
+extern crate secp256k1_zkp;
 
 use bitcoin::{Script, Transaction};
 use dlc::{Error, OracleInfo, RangePayout};
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    All, PublicKey, Secp256k1, SecretKey, Signing,
-};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification};
 
 pub mod combination_iterator;
 pub mod digit_decomposition;
@@ -73,7 +70,7 @@ pub trait DlcTrie {
     /// Generate the trie using the provided outcomes and oracle information,
     /// calling the provided callback with the CET index and adaptor point for
     /// each adaptor signature.
-    fn generate<C: Signing, F>(
+    fn generate<C: Verification, F>(
         &mut self,
         secp: &Secp256k1<C>,
         outcomes: &[RangePayout],
@@ -97,26 +94,25 @@ pub trait DlcTrie {
     /// Generate the trie while verifying the provided adaptor signatures.
     fn generate_verify(
         &mut self,
-        secp: &Secp256k1<secp256k1::All>,
+        secp: &Secp256k1<secp256k1_zkp::All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         outcomes: &Vec<RangePayout>,
         cets: &[Transaction],
         oracle_infos: &[OracleInfo],
-        adaptor_pairs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
     ) -> Result<usize, Error> {
         let mut adaptor_sig_index = adaptor_index_start;
         let mut verify_callback =
             |cet_index: usize, adaptor_point: &PublicKey| -> Result<usize, crate::Error> {
-                let adaptor_pair = adaptor_pairs[adaptor_sig_index];
+                let adaptor_sig = adaptor_sigs[adaptor_sig_index];
                 let cet = &cets[cet_index];
                 adaptor_sig_index += 1;
                 dlc::verify_cet_adaptor_sig_from_point(
                     secp,
-                    &adaptor_pair.0,
-                    &adaptor_pair.1,
+                    &adaptor_sig,
                     cet,
                     &adaptor_point,
                     &fund_pubkey,
@@ -130,9 +126,9 @@ pub trait DlcTrie {
     }
 
     /// Generate the trie while creating the set of adaptor signatures.
-    fn generate_sign<C: Signing>(
+    fn generate_sign(
         &mut self,
-        secp: &Secp256k1<C>,
+        secp: &Secp256k1<All>,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
@@ -140,7 +136,7 @@ pub trait DlcTrie {
         cets: &[Transaction],
         oracle_infos: &[OracleInfo],
         adaptor_index_start: usize,
-    ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, Error> {
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_pairs = Vec::new();
         let mut adaptor_index = adaptor_index_start;
         let mut sign_callback =
@@ -169,22 +165,21 @@ pub trait DlcTrie {
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
-        adaptor_pairs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_sigs: &[EcdsaAdaptorSignature],
         cets: &[Transaction],
         oracle_infos: &[OracleInfo],
     ) -> Result<usize, Error> {
         let mut max_adaptor_index = 0;
         let mut callback =
             |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {
-                let adaptor_pair = adaptor_pairs[range_info.adaptor_index];
+                let adaptor_sig = adaptor_sigs[range_info.adaptor_index];
                 let cet = &cets[range_info.cet_index];
                 if range_info.adaptor_index > max_adaptor_index {
                     max_adaptor_index = range_info.adaptor_index;
                 }
                 dlc::verify_cet_adaptor_sig_from_point(
                     secp,
-                    &adaptor_pair.0,
-                    &adaptor_pair.1,
+                    &adaptor_sig,
                     cet,
                     &adaptor_point,
                     &fund_pubkey,
@@ -206,5 +201,5 @@ pub trait DlcTrie {
         fund_output_value: u64,
         cets: &[Transaction],
         oracle_infos: &[OracleInfo],
-    ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, Error>;
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error>;
 }

@@ -4,7 +4,7 @@ extern crate bitcoin;
 #[macro_use]
 extern crate lightning;
 extern crate dlc;
-extern crate secp256k1;
+extern crate secp256k1_zkp;
 
 #[cfg(test)]
 extern crate bitcoin_test_utils;
@@ -18,14 +18,15 @@ pub mod contract_msgs;
 pub mod oracle_msgs;
 mod utils;
 
-use bitcoin::hashes::*;
+use secp256k1_zkp::bitcoin_hashes::*;
 use bitcoin::{consensus::Decodable, hash_types::Txid, OutPoint, Script, Transaction};
 use dlc::TxInputInfo;
 use lightning::ln::msgs::DecodeError;
-use lightning::ln::wire::{write, Encode, MessageType};
+use lightning::ln::wire::{write, Encode};
 use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
-use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
-use secp256k1::{constants, PublicKey, Signature};
+use secp256k1_zkp::ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH;
+use secp256k1_zkp::EcdsaAdaptorSignature;
+use secp256k1_zkp::{PublicKey, Signature};
 
 use contract_msgs::ContractInfo;
 
@@ -98,36 +99,26 @@ impl Readable for FundingInput {
 /// Contains an adaptor signature for a CET input and its associated DLEQ proof.
 #[derive(Clone)]
 pub struct CetAdaptorSignature {
-    pub signature: AdaptorSignature,
-    pub proof: AdaptorProof,
+    pub signature: EcdsaAdaptorSignature,
 }
 
 impl Writeable for CetAdaptorSignature {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        let mut ser_sig = [0; 65];
-        ser_sig.copy_from_slice(&self.signature[..]);
-        ser_sig.write(writer)?;
-        let mut ser_proof = [0; 97];
-        ser_proof.copy_from_slice(&self.proof[..]);
-        ser_proof.write(writer)
+        let mut ser_sig = [0; ECDSA_ADAPTOR_SIGNATURE_LENGTH];
+        ser_sig.copy_from_slice(&self.signature.as_ref());
+        ser_sig.write(writer)
     }
 }
 
 impl Readable for CetAdaptorSignature {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<CetAdaptorSignature, DecodeError> {
-        let sig_buf: [u8; constants::ADAPTOR_SIGNATURE_SIZE] = Readable::read(reader)?;
-        let signature = match AdaptorSignature::from_slice(&sig_buf) {
+        let sig_buf: [u8; ECDSA_ADAPTOR_SIGNATURE_LENGTH] = Readable::read(reader)?;
+        let signature = match EcdsaAdaptorSignature::from_slice(&sig_buf) {
             Ok(sig) => sig,
             Err(_) => return Err(DecodeError::InvalidValue),
         };
 
-        let proof_buf: [u8; constants::ADAPTOR_PROOF_SIZE] = Readable::read(reader)?;
-        let proof = match AdaptorProof::from_slice(&proof_buf) {
-            Ok(proof) => proof,
-            Err(_) => return Err(DecodeError::InvalidValue),
-        };
-
-        Ok(CetAdaptorSignature { signature, proof })
+        Ok(CetAdaptorSignature { signature })
     }
 }
 
@@ -137,14 +128,13 @@ pub struct CetAdaptorSignatures {
     pub ecdsa_adaptor_signatures: Vec<CetAdaptorSignature>,
 }
 
-impl From<Vec<(AdaptorSignature, AdaptorProof)>> for CetAdaptorSignatures {
-    fn from(pairs: Vec<(AdaptorSignature, AdaptorProof)>) -> Self {
+impl From<Vec<EcdsaAdaptorSignature>> for CetAdaptorSignatures {
+    fn from(signatures: Vec<EcdsaAdaptorSignature>) -> Self {
         CetAdaptorSignatures {
-            ecdsa_adaptor_signatures: pairs
+            ecdsa_adaptor_signatures: signatures
                 .iter()
                 .map(|x| CetAdaptorSignature {
-                    signature: x.0,
-                    proof: x.1,
+                    signature: x.clone(),
                 })
                 .collect(),
         }
@@ -300,7 +290,7 @@ impl Writeable for OfferDlc {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
         self.contract_flags.write(writer)?;
         self.chain_hash.write(writer)?;
-        encode_tlv!(writer, { (CONTRACT_INFO_TYPE, self.contract_info) });
+        encode_tlv!(writer, CONTRACT_INFO_TYPE, self.contract_info, required);
         self.funding_pubkey.write(writer)?;
         self.payout_spk.write(writer)?;
         self.payout_serial_id.write(writer)?;
@@ -309,7 +299,7 @@ impl Writeable for OfferDlc {
         (num_funding_inputs as u16).write(writer)?;
 
         for input in &self.funding_inputs {
-            encode_tlv!(writer, { (FUNDING_INPUT_TYPE, input) });
+            encode_tlv!(writer, FUNDING_INPUT_TYPE, input, required);
         }
 
         self.change_spk.write(writer)?;
@@ -325,8 +315,8 @@ impl Readable for OfferDlc {
     fn read<R: ::std::io::Read>(mut reader: &mut R) -> Result<OfferDlc, DecodeError> {
         let contract_flags = Readable::read(reader)?;
         let chain_hash = Readable::read(reader)?;
-        let mut contract_info_opt: Option<ContractInfo> = None;
-        decode_tlv!(&mut reader, {}, { (CONTRACT_INFO_TYPE, contract_info_opt) });
+        let contract_info_opt: Option<ContractInfo>;
+        decode_tlv!(&mut reader, contract_info_opt, option);
         let contract_info = contract_info_opt.ok_or(DecodeError::InvalidValue)?;
         let funding_pubkey = Readable::read(reader)?;
         let payout_spk = Readable::read(reader)?;
@@ -393,13 +383,16 @@ impl Writeable for AcceptDlc {
         num_funding_inputs.write(writer)?;
 
         for input in &self.funding_inputs {
-            encode_tlv!(writer, { (FUNDING_INPUT_TYPE, input) });
+            encode_tlv!(writer, FUNDING_INPUT_TYPE, input, required);
         }
 
         self.change_spk.write(writer)?;
-        encode_tlv!(writer, {
-            (CET_ADAPTOR_SIGNATURES_TYPE, self.cet_adaptor_signatures)
-        });
+        encode_tlv!(
+            writer,
+            CET_ADAPTOR_SIGNATURES_TYPE,
+            self.cet_adaptor_signatures,
+            required
+        );
         self.refund_signature.write(writer)
     }
 }
@@ -451,13 +444,19 @@ pub struct SignDlc {
 impl Writeable for SignDlc {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
         self.contract_id.write(writer)?;
-        encode_tlv!(writer, {
-            (CET_ADAPTOR_SIGNATURES_TYPE, self.cet_adaptor_signatures)
-        });
+        encode_tlv!(
+            writer,
+            CET_ADAPTOR_SIGNATURES_TYPE,
+            self.cet_adaptor_signatures,
+            required
+        );
         self.refund_signature.write(writer)?;
-        encode_tlv!(writer, {
-            (FUNDING_SIGNATURES_TYPE, self.funding_signatures)
-        });
+        encode_tlv!(
+            writer,
+            FUNDING_SIGNATURES_TYPE,
+            self.funding_signatures,
+            required
+        );
         Ok(())
     }
 }
@@ -483,17 +482,6 @@ pub enum Message {
     OfferDlc(OfferDlc),
     AcceptDlc(AcceptDlc),
     SignDlc(SignDlc),
-}
-
-impl Message {
-    ///
-    pub fn type_id(&self) -> MessageType {
-        match self {
-            &Message::OfferDlc(ref msg) => msg.type_id(),
-            &Message::AcceptDlc(ref msg) => msg.type_id(),
-            &Message::SignDlc(ref msg) => msg.type_id(),
-        }
-    }
 }
 
 impl Encode for OfferDlc {

@@ -6,9 +6,9 @@ use bitcoin::{Script, Transaction};
 use dlc::OracleInfo;
 use dlc::{EnumerationPayout, Payout};
 use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
-use secp256k1::{
-    ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    All, Message, PublicKey, Secp256k1, SecretKey, Signing,
+use secp256k1_zkp::{
+    EcdsaAdaptorSignature,
+    All, Message, PublicKey, Secp256k1, SecretKey, Verification
 };
 
 /// A descriptor for a contract whose outcomes are represented as an enumeration.
@@ -91,7 +91,7 @@ impl EnumDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        adaptor_sigs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
     ) -> Result<usize, dlc::Error> {
         let mut adaptor_sig_index = adaptor_sig_start;
@@ -101,8 +101,7 @@ impl EnumDescriptor {
                 adaptor_sig_index += 1;
                 dlc::verify_cet_adaptor_sig_from_point(
                     secp,
-                    &sig.0,
-                    &sig.1,
+                    &sig,
                     &cets[cet_index],
                     &adaptor_point,
                     fund_pubkey,
@@ -127,7 +126,7 @@ impl EnumDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        adaptor_sigs: &[(AdaptorSignature, AdaptorProof)],
+        adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
     ) -> Result<(AdaptorInfo, usize), dlc::Error> {
         let adaptor_sig_index = self.verify_adaptor_info(
@@ -146,16 +145,16 @@ impl EnumDescriptor {
     }
 
     /// Generate the set of adaptor signatures and return the adaptor info.
-    pub fn get_adaptor_info<C: Signing>(
+    pub fn get_adaptor_info(
         &self,
-        secp: &Secp256k1<C>,
+        secp: &Secp256k1<All>,
         oracle_infos: &[OracleInfo],
         threshold: usize,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-    ) -> Result<(AdaptorInfo, Vec<(AdaptorSignature, AdaptorProof)>), dlc::Error> {
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), dlc::Error> {
         let adaptor_sigs = self.get_adaptor_signatures(
             secp,
             oracle_infos,
@@ -170,16 +169,16 @@ impl EnumDescriptor {
     }
 
     /// Generate the set of adaptor signatures.
-    pub fn get_adaptor_signatures<C: Signing>(
+    pub fn get_adaptor_signatures(
         &self,
-        secp: &Secp256k1<C>,
+        secp: &Secp256k1<All>,
         oracle_infos: &[OracleInfo],
         threshold: usize,
         cets: &[Transaction],
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
-    ) -> Result<Vec<(AdaptorSignature, AdaptorProof)>, dlc::Error> {
+    ) -> Result<Vec<EcdsaAdaptorSignature>, dlc::Error> {
         let mut adaptor_sigs = Vec::new();
         let mut callback =
             |adaptor_point: &PublicKey, cet_index: usize| -> Result<(), dlc::Error> {
@@ -200,7 +199,7 @@ impl EnumDescriptor {
         Ok(adaptor_sigs)
     }
 
-    fn iter_outcomes<C: Signing, F>(
+    fn iter_outcomes<C: Verification, F>(
         &self,
         secp: &Secp256k1<C>,
         oracle_infos: &[OracleInfo],
@@ -215,7 +214,7 @@ impl EnumDescriptor {
             .iter()
             .map(|x| {
                 let message = vec![Message::from_hashed_data::<
-                    secp256k1::bitcoin_hashes::sha256::Hash,
+                    secp256k1_zkp::bitcoin_hashes::sha256::Hash,
                 >(x.outcome.as_bytes())];
                 std::iter::repeat(message).take(threshold).collect()
             })

@@ -2,8 +2,12 @@ use dlc::OracleInfo as DlcOracleInfo;
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Encode;
 use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
-use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
-use utils::{read_string, read_strings, read_vec, write_string, write_strings, write_vec};
+use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
+use utils::{
+    read_schnorr_pubkey, read_schnorr_pubkeys, read_schnorr_signatures, read_schnorrsig,
+    read_string, read_strings, read_vec, write_schnorr_pubkey, write_schnorr_pubkeys,
+    write_schnorr_signatures, write_schnorrsig, write_string, write_strings, write_vec,
+};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum OracleInfo {
@@ -187,8 +191,8 @@ impl Encode for OracleAnnouncement {
 
 impl Writeable for OracleAnnouncement {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.announcement_signature.write(writer)?;
-        self.oracle_public_key.write(writer)?;
+        write_schnorrsig(&self.announcement_signature, writer)?;
+        write_schnorr_pubkey(&self.oracle_public_key, writer)?;
         self.oracle_event.write(writer)?;
         Ok(())
     }
@@ -196,8 +200,8 @@ impl Writeable for OracleAnnouncement {
 
 impl Readable for OracleAnnouncement {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleAnnouncement, DecodeError> {
-        let announcement_signature: SchnorrSignature = Readable::read(reader)?;
-        let oracle_public_key: SchnorrPublicKey = Readable::read(reader)?;
+        let announcement_signature: SchnorrSignature = read_schnorrsig(reader)?;
+        let oracle_public_key: SchnorrPublicKey = read_schnorr_pubkey(reader)?;
         let oracle_event: OracleEventV0 = Readable::read(reader)?;
 
         Ok(OracleAnnouncement {
@@ -231,7 +235,7 @@ impl Encode for OracleEventV0 {
 
 impl Writeable for OracleEventV0 {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.oracle_nonces.write(writer)?;
+        write_schnorr_pubkeys(&self.oracle_nonces, writer)?;
         self.event_maturity_epoch.write(writer)?;
         self.event_descriptor.write(writer)?;
         write_string(&self.event_id, writer)?;
@@ -241,7 +245,7 @@ impl Writeable for OracleEventV0 {
 
 impl Readable for OracleEventV0 {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleEventV0, DecodeError> {
-        let oracle_nonces: Vec<SchnorrPublicKey> = Readable::read(reader)?;
+        let oracle_nonces: Vec<SchnorrPublicKey> = read_schnorr_pubkeys(reader)?;
         let event_maturity_epoch: u32 = Readable::read(reader)?;
         let event_descriptor: EventDescriptor = Readable::read(reader)?;
         let event_id = read_string(reader)?;
@@ -381,8 +385,8 @@ impl Encode for OracleAttestationV0 {
 
 impl Writeable for OracleAttestationV0 {
     fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.oracle_public_key.write(writer)?;
-        write_vec(&self.signatures, writer)?;
+        write_schnorr_pubkey(&self.oracle_public_key, writer)?;
+        write_schnorr_signatures(&self.signatures, writer)?;
         write_strings(&self.outcomes, writer)?;
 
         Ok(())
@@ -391,8 +395,8 @@ impl Writeable for OracleAttestationV0 {
 
 impl Readable for OracleAttestationV0 {
     fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleAttestationV0, DecodeError> {
-        let oracle_public_key = Readable::read(reader)?;
-        let signatures = Readable::read(reader)?;
+        let oracle_public_key = read_schnorr_pubkey(reader)?;
+        let signatures = read_schnorr_signatures(reader)?;
         let outcomes = read_strings(reader)?;
         Ok(OracleAttestationV0 {
             oracle_public_key,

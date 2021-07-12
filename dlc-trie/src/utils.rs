@@ -1,13 +1,12 @@
 //! Utility functions when working with DLC trie
 
 use super::OracleInfo;
-use bitcoin::hashes::*;
-use secp256k1::{Message, PublicKey, Secp256k1, Signing};
+use secp256k1_zkp::{Message, PublicKey, Secp256k1, Verification};
 
 /// Creates an adaptor point using the provided oracle infos and paths. The paths
 /// are converted to strings and hashed to be used as messages in adaptor signature
 /// creation.
-pub(crate) fn get_adaptor_point_from_paths<C: Signing>(
+pub(crate) fn get_adaptor_point_from_paths<C: Verification>(
     secp: &Secp256k1<C>,
     oracle_infos: &[OracleInfo],
     paths: &[Vec<usize>],
@@ -18,7 +17,7 @@ pub(crate) fn get_adaptor_point_from_paths<C: Signing>(
         .iter()
         .map(|x| {
             x.iter()
-                .map(|y| Message::from_hashed_data::<sha256::Hash>(y.to_string().as_bytes()))
+                .map(|y| Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(y.to_string().as_bytes()))
                 .collect()
         })
         .collect();
@@ -28,7 +27,7 @@ pub(crate) fn get_adaptor_point_from_paths<C: Signing>(
 /// Creates an adaptor point using the provided oracle infos and paths, selecting
 /// the oracle info at the provided indexes only. The paths are converted to
 /// strings and hashed to be used as messages in adaptor signature creation.
-pub(crate) fn get_adaptor_point_for_indexed_paths<C: Signing>(
+pub(crate) fn get_adaptor_point_for_indexed_paths<C: Verification>(
     secp: &Secp256k1<C>,
     oracle_infos: &[OracleInfo],
     indexes: &Vec<usize>,

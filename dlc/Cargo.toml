@@ -1,16 +1,17 @@
 [package]
+authors = ["Crypto Garage"]
 name = "dlc"
 version = "0.0.1"
-authors = ["Crypto Garage"]
 
 [dependencies]
-bitcoin = {version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin"}
-secp256k1 = {version="0.20.1-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1"}
+bitcoin = {version = "0.26.0"}
+secp256k1-sys = {version = "0.4.0"}
+secp256k1-zkp = {version = "0.4.0", git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
 
 [dev-dependencies]
-bitcoin = {version="0.26.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoin", branch = "ecdsa-adaptor", package="bitcoin", features=["use-serde"]}
-secp256k1 = {version="0.20.1-adaptor.0", git = "https://github.com/p2pderivatives/rust-secp256k1", branch = "ecdsa-adaptor", package="secp256k1", features=["serde", "rand-std", "rand", "bitcoin_hashes"]}
-bitcoincore-rpc = {version="0.13.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
-bitcoincore-rpc-json = {version="0.13.0-adaptor.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "ecdsa-adaptor"}
-dlc-trie = { path="../dlc-trie" }
-bitcoin-test-utils = { path="../bitcoin-test-utils" }
+bitcoin = {version = "0.26.0", features = ["use-serde"]}
+bitcoin-test-utils = {path = "../bitcoin-test-utils"}
+bitcoincore-rpc = {version = "0.13.0"}
+bitcoincore-rpc-json = {version = "0.13.0"}
+dlc-trie = {path = "../dlc-trie"}
+secp256k1-zkp = {version = "0.4.0", features = ["hashes", "rand", "rand-std", "serde"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}

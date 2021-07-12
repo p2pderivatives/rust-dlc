@@ -315,7 +315,7 @@ pub fn compute_outcome_combinations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1_zkp::rand::{thread_rng, RngCore};
 
     fn compute_covering_cets_min_and_max(
         nb_digits: usize,

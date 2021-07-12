@@ -1,12 +1,11 @@
 //! Utility functions not uniquely related to DLC
 
-use bitcoin::hashes::Hash;
 use bitcoin::util::bip143::SigHashCache;
 use bitcoin::{
     blockdata::script::Builder, hash_types::PubkeyHash, util::address::Payload, Script,
     SigHashType, Transaction, TxOut,
 };
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing};
+use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing};
 
 /// Get a BIP143 (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
 /// signature hash with sighash all flag for a segwit transaction input as
@@ -86,6 +85,7 @@ pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> u64 {
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {
+    use bitcoin::hashes::*;
     let pk = bitcoin::PublicKey {
         compressed: true,
         key: PublicKey::from_secret_key(secp, sk),

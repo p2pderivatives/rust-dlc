@@ -21,10 +21,10 @@ use dlc_messages::{
     SignDlc, WitnessElement,
 };
 use log::{error, warn};
-use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
-use secp256k1::rand::{thread_rng, RngCore};
-use secp256k1::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
-use secp256k1::{All, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::rand::{thread_rng, RngCore};
+use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
+use secp256k1_zkp::EcdsaAdaptorSignature;
+use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::ops::{Deref, DerefMut};
@@ -69,7 +69,7 @@ where
         time: T,
     ) -> Self {
         Manager {
-            secp: secp256k1::Secp256k1::new(),
+            secp: secp256k1_zkp::Secp256k1::new(),
             wallet,
             blockchain,
             store,
@@ -417,7 +417,7 @@ where
             .cet_adaptor_signatures
             .ecdsa_adaptor_signatures
             .iter()
-            .map(|x| (x.signature.clone(), x.proof.clone()))
+            .map(|x| x.signature.clone())
             .collect();
 
         let adaptor_verify_result = offered_contract.contract_info[0].verify_and_get_adaptor_info(
@@ -469,7 +469,7 @@ where
             adaptor_infos.push(adaptor_info);
         }
 
-        let mut own_signatures: Vec<(AdaptorSignature, AdaptorProof)> = Vec::new();
+        let mut own_signatures: Vec<EcdsaAdaptorSignature> = Vec::new();
 
         let fund_privkey = self
             .wallet
@@ -603,7 +603,7 @@ where
             .cet_adaptor_signatures
             .ecdsa_adaptor_signatures
             .iter()
-            .map(|x| (x.signature, x.proof))
+            .map(|x| x.signature)
             .collect();
 
         let mut adaptor_sig_start = 0;
@@ -824,11 +824,14 @@ where
                         &attestations,
                     ) {
                         Ok(()) => return Ok(()),
-                        Err(e) => warn!(
-                            "Failed to close contract {}: {}",
-                            contract.accepted_contract.get_contract_id_string(),
-                            e
-                        ),
+                        Err(e) => {
+                            warn!(
+                                "Failed to close contract {}: {}",
+                                contract.accepted_contract.get_contract_id_string(),
+                                e
+                            );
+                            return Err(e);
+                        }
                     }
                 }
             }
@@ -892,7 +895,7 @@ where
                 dlc::sign_cet(
                     &self.secp,
                     &mut cet,
-                    &adaptor_sigs[range_info.adaptor_index].0,
+                    &adaptor_sigs[range_info.adaptor_index],
                     &sigs,
                     &funding_sk,
                     other_pubkey,

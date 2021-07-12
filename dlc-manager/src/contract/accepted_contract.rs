@@ -3,8 +3,8 @@
 use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
 use dlc::{DlcTransactions, PartyParams};
-use secp256k1::ecdsa_adaptor::{AdaptorProof, AdaptorSignature};
-use secp256k1::Signature;
+use secp256k1_zkp::EcdsaAdaptorSignature;
+use secp256k1_zkp::Signature;
 
 /// An AcceptedContract represents a contract in the accepted state.
 #[derive(Clone)]
@@ -20,7 +20,7 @@ pub struct AcceptedContract {
     pub adaptor_infos: Vec<AdaptorInfo>,
     /// The adaptor signatures of the accepting party. Note that the accepting
     /// party does not keep them thus an option is used.
-    pub adaptor_signatures: Option<Vec<(AdaptorSignature, AdaptorProof)>>,
+    pub adaptor_signatures: Option<Vec<EcdsaAdaptorSignature>>,
     /// The signature for the refund transaction from the accepting party.
     pub accept_refund_signature: Signature,
     /// The bitcoin set of bitcoin transactions for the contract.

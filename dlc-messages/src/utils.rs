@@ -1,5 +1,6 @@
 use lightning::ln::msgs::DecodeError;
-use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
+use lightning::util::ser::{BigSize, Readable, Writeable, Writer, MAX_BUF_SIZE};
+use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 
 pub(crate) fn write_string<W: Writer>(input: &str, writer: &mut W) -> Result<(), ::std::io::Error> {
     let len = BigSize(input.len() as u64);
@@ -97,4 +98,94 @@ pub(crate) fn read_f64<R: ::std::io::Read>(reader: &mut R) -> Result<f64, Decode
     let mul_sign: f64 = if sign { 1.0 } else { -1.0 };
 
     Ok(((no_precision) + ((extra_precision as f64) / ((1 << 16) as f64))) * mul_sign)
+}
+
+pub(crate) fn write_schnorrsig<W: Writer>(
+    signature: &SchnorrSignature,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    signature.as_ref().write(writer)
+}
+
+pub(crate) fn read_schnorrsig<R: ::std::io::Read>(
+    reader: &mut R,
+) -> Result<SchnorrSignature, DecodeError> {
+    let buf: [u8; 64] = Readable::read(reader)?;
+    match SchnorrSignature::from_slice(&buf) {
+        Ok(sig) => Ok(sig),
+        Err(_) => return Err(DecodeError::InvalidValue),
+    }
+}
+
+pub(crate) fn write_schnorr_signatures<W: Writer>(
+    signatures: &Vec<SchnorrSignature>,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    (signatures.len() as u16).write(writer)?;
+    for signature in signatures {
+        write_schnorrsig(signature, writer)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn read_schnorr_signatures<R: ::std::io::Read>(
+    reader: &mut R,
+) -> Result<Vec<SchnorrSignature>, DecodeError> {
+    let len: u16 = Readable::read(reader)?;
+    let byte_size = (len as usize)
+        .checked_mul(secp256k1_zkp::constants::SCHNORRSIG_SIGNATURE_SIZE)
+        .ok_or(DecodeError::BadLengthDescriptor)?;
+    if byte_size > MAX_BUF_SIZE {
+        return Err(DecodeError::BadLengthDescriptor);
+    }
+    let mut ret = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        ret.push(read_schnorrsig(reader)?);
+    }
+    Ok(ret)
+}
+
+pub(crate) fn write_schnorr_pubkey<W: Writer>(
+    pubkey: &SchnorrPublicKey,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    pubkey.serialize().write(writer)
+}
+
+pub(crate) fn read_schnorr_pubkey<R: ::std::io::Read>(
+    reader: &mut R,
+) -> Result<SchnorrPublicKey, DecodeError> {
+    let buf: [u8; 32] = Readable::read(reader)?;
+    match SchnorrPublicKey::from_slice(&buf) {
+        Ok(sig) => Ok(sig),
+        Err(_) => return Err(DecodeError::InvalidValue),
+    }
+}
+
+pub(crate) fn write_schnorr_pubkeys<W: Writer>(
+    pubkeys: &Vec<SchnorrPublicKey>,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    (pubkeys.len() as u16).write(writer)?;
+    for pubkey in pubkeys {
+        write_schnorr_pubkey(pubkey, writer)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn read_schnorr_pubkeys<R: ::std::io::Read>(
+    reader: &mut R,
+) -> Result<Vec<SchnorrPublicKey>, DecodeError> {
+    let len: u16 = Readable::read(reader)?;
+    let byte_size = (len as usize)
+        .checked_mul(secp256k1_zkp::constants::SCHNORRSIG_PUBLIC_KEY_SIZE)
+        .ok_or(DecodeError::BadLengthDescriptor)?;
+    if byte_size > MAX_BUF_SIZE {
+        return Err(DecodeError::BadLengthDescriptor);
+    }
+    let mut ret = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        ret.push(read_schnorr_pubkey(reader)?);
+    }
+    Ok(ret)
 }
