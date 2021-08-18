@@ -4,7 +4,7 @@ name = "dlc-messages"
 version = "0.0.1"
 
 [features]
-use-serde = ["serde", "bitcoin/serde", "secp256k1-zkp/serde"]
+use-serde = ["serde", "bitcoin/use-serde", "secp256k1-zkp/use-serde"]
 
 [dependencies]
 bitcoin = {version = "0.26.0"}
