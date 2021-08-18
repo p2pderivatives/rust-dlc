@@ -20,7 +20,7 @@ pub enum Error {
     /// The storage component encountered an error.
     StorageError,
     /// The oracle component encountered an error.
-    OracleError,
+    OracleError(String),
     /// An error occurred in the DLC library.
     DlcError(dlc::Error),
 }
@@ -36,7 +36,7 @@ impl fmt::Display for Error {
             Error::BlockchainError => write!(f, "Blockchain error"),
             Error::StorageError => write!(f, "Storage error"),
             Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
-            Error::OracleError => write!(f, "Oracle error"),
+            Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
         }
     }
 }

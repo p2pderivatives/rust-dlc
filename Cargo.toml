@@ -1,10 +1,11 @@
 [workspace]
 
 members = [
-    "bitcoin-test-utils",
-    "bitcoin-rpc-provider",
-    "dlc",
-    "dlc-messages",
-    "dlc-trie",
-    "dlc-manager"
+  "bitcoin-test-utils",
+  "bitcoin-rpc-provider",
+  "cg-oracle-client",
+  "dlc",
+  "dlc-messages",
+  "dlc-trie",
+  "dlc-manager",
 ]

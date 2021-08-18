@@ -48,7 +48,9 @@ impl Oracle for MockOracle {
         let res = self
             .announcements
             .get(event_id)
-            .ok_or(DaemonError::OracleError)?;
+            .ok_or(DaemonError::OracleError(
+                "Announcement not found".to_string(),
+            ))?;
         Ok(res.clone())
     }
 
@@ -56,7 +58,9 @@ impl Oracle for MockOracle {
         let res = self
             .attestations
             .get(event_id)
-            .ok_or(DaemonError::OracleError)?;
+            .ok_or(DaemonError::OracleError(
+                "Attestation not found".to_string(),
+            ))?;
         Ok(res.clone())
     }
 }
