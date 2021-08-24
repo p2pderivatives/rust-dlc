@@ -1,13 +1,9 @@
-extern crate dlc_manager;
-extern crate dlc_messages;
-extern crate secp256k1_zkp;
-
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
     EventDescriptor, OracleAnnouncement, OracleAttestationV0, OracleEventV0,
 };
-use lightning::ln::wire::write;
+use lightning::util::ser::Writeable;
 use secp256k1_zkp::key::SecretKey;
 use secp256k1_zkp::rand::thread_rng;
 use secp256k1_zkp::schnorrsig::{KeyPair, PublicKey};
@@ -28,6 +24,19 @@ impl MockOracle {
     pub fn new() -> Self {
         let secp = Secp256k1::new();
         let key_pair = KeyPair::new(&secp, &mut thread_rng());
+
+        MockOracle {
+            secp,
+            key_pair,
+            announcements: HashMap::new(),
+            attestations: HashMap::new(),
+            nonces: HashMap::new(),
+        }
+    }
+
+    pub fn from_secret_key(sk: &SecretKey) -> Self {
+        let secp = Secp256k1::new();
+        let key_pair = KeyPair::from_secret_key(&secp, sk.clone());
 
         MockOracle {
             secp,
@@ -102,7 +111,9 @@ impl MockOracle {
             event_id: event_id.to_string(),
         };
         let mut event_hex = Vec::new();
-        write(&oracle_event, &mut event_hex).expect("Error writing oracle event");
+        oracle_event
+            .write(&mut event_hex)
+            .expect("Error writing oracle event");
         let msg =
             Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
         let sig = self.secp.schnorrsig_sign(&msg, &self.key_pair);
