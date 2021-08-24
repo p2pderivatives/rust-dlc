@@ -14,17 +14,17 @@ use crate::payout_curve::{
 use bitcoin::{consensus::encode::Decodable, OutPoint, Transaction};
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use dlc_messages::contract_msgs::{
-    ContractDescriptor as SerContractDescriptor, ContractDescriptorV0, ContractDescriptorV1,
-    ContractInfo as SerContractInfo, ContractInfoInner, ContractInfoV0, ContractInfoV1,
-    ContractOutcome, HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece,
+    ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
+    ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
+    HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece, NumericOutcomeContractDescriptor,
     PayoutCurvePiece as SerPayoutCurvePiece, PayoutFunction as SerPayoutFunction,
     PayoutFunctionPiece as SerPayoutFunctionPiece, PayoutPoint as SerPayoutPoint,
     PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
-    RoundingInterval as SerRoundingInterval, RoundingIntervalsV0,
+    RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
+    SingleContractInfo,
 };
 use dlc_messages::oracle_msgs::{
-    EventDescriptor, OracleInfo as SerOracleInfo, OracleInfoV0, OracleInfoV1, OracleInfoV2,
-    OracleParamsV0,
+    EventDescriptor, MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
 };
 use dlc_messages::{
     AcceptDlc, CetAdaptorSignature, CetAdaptorSignatures, FundingInput, OfferDlc, SignDlc,
@@ -155,17 +155,19 @@ impl TryFrom<&OfferDlc> for OfferedContract {
 fn get_contract_info_and_announcements(offer_dlc: &OfferDlc) -> Result<Vec<ContractInfo>, Error> {
     let mut contract_infos = Vec::new();
     let (total_collateral, inner_contract_infos) = match &offer_dlc.contract_info {
-        SerContractInfo::ContractInfoV0(v0) => {
-            (v0.total_collateral, vec![v0.contract_info.clone()])
+        SerContractInfo::SingleContractInfo(single) => {
+            (single.total_collateral, vec![single.contract_info.clone()])
         }
-        SerContractInfo::ContractInfoV1(v1) => (v1.total_collateral, v1.contract_infos.clone()),
+        SerContractInfo::DisjointContractInfo(disjoint) => {
+            (disjoint.total_collateral, disjoint.contract_infos.clone())
+        }
     };
 
     for contract_info in inner_contract_infos {
         let (descriptor, oracle_announcements, threshold) = match contract_info.contract_descriptor
         {
-            SerContractDescriptor::ContractDescriptorV0(v0) => {
-                let outcome_payouts = v0
+            SerContractDescriptor::EnumeratedContractDescriptor(enumerated) => {
+                let outcome_payouts = enumerated
                     .payouts
                     .iter()
                     .map(|x| EnumerationPayout {
@@ -179,54 +181,49 @@ fn get_contract_info_and_announcements(offer_dlc: &OfferDlc) -> Result<Vec<Contr
                 let descriptor = ContractDescriptor::Enum(EnumDescriptor { outcome_payouts });
                 let mut threshold = 1;
                 let announcements = match contract_info.oracle_info {
-                    SerOracleInfo::OracleInfoV0(v0) => vec![v0.oracle_announcement],
-                    SerOracleInfo::OracleInfoV1(v1) => {
-                        threshold = v1.threshold;
-                        v1.oracle_announcements
+                    SerOracleInfo::Single(single) => vec![single.oracle_announcement],
+                    SerOracleInfo::Multi(multi) => {
+                        threshold = multi.threshold;
+                        multi.oracle_announcements
                     }
-                    _ => return Err(Error::InvalidParameters),
                 };
 
                 (descriptor, announcements, threshold)
             }
-            SerContractDescriptor::ContractDescriptorV1(v1) => {
+            SerContractDescriptor::NumericOutcomeContractDescriptor(numeric) => {
                 let threshold;
                 let mut difference_params: Option<DifferenceParams> = None;
                 let announcements = match contract_info.oracle_info {
-                    SerOracleInfo::OracleInfoV0(v0) => {
+                    SerOracleInfo::Single(single) => {
                         threshold = 1;
-                        vec![v0.oracle_announcement]
+                        vec![single.oracle_announcement]
                     }
-                    SerOracleInfo::OracleInfoV1(v1) => {
-                        threshold = v1.threshold;
-                        v1.oracle_announcements.clone()
-                    }
-                    SerOracleInfo::OracleInfoV2(v2) => {
-                        threshold = v2.threshold;
-                        difference_params = Some(DifferenceParams {
-                            max_error_exp: v2.oracle_params.max_error_exp as usize,
-                            min_support_exp: v2.oracle_params.min_fail_exp as usize,
-                            maximize_coverage: v2.oracle_params.maximize_coverage,
-                        });
-                        v2.oracle_announcements.clone()
+                    SerOracleInfo::Multi(multi) => {
+                        threshold = multi.threshold;
+                        if let Some(params) = multi.oracle_params {
+                            difference_params = Some(DifferenceParams {
+                                max_error_exp: params.max_error_exp as usize,
+                                min_support_exp: params.min_fail_exp as usize,
+                                maximize_coverage: params.maximize_coverage,
+                            })
+                        }
+                        multi.oracle_announcements.clone()
                     }
                 };
                 if announcements.len() < 1 {
                     return Err(Error::InvalidParameters);
                 }
                 let info = match &announcements[0].oracle_event.event_descriptor {
-                    EventDescriptor::EnumEventDescriptorV0(_) => {
-                        return Err(Error::InvalidParameters)
-                    }
-                    EventDescriptor::DigitDecompositionEventDescriptorV0(d) => NumericalEventInfo {
+                    EventDescriptor::EnumEvent(_) => return Err(Error::InvalidParameters),
+                    EventDescriptor::DigitDecompositionEvent(d) => NumericalEventInfo {
                         base: d.base as usize,
                         nb_digits: d.nb_digits as usize,
                         unit: d.unit.clone(),
                     },
                 };
                 let descriptor = ContractDescriptor::Numerical(NumericalDescriptor {
-                    payout_function: (&v1.payout_function).into(),
-                    rounding_intervals: (&v1.rounding_intervals).into(),
+                    payout_function: (&numeric.payout_function).into(),
+                    rounding_intervals: (&numeric.rounding_intervals).into(),
                     info,
                     difference_params,
                 });
@@ -256,12 +253,12 @@ impl From<&OfferedContract> for SerContractInfo {
             })
             .collect();
         return if contract_infos.len() == 1 {
-            SerContractInfo::ContractInfoV0(ContractInfoV0 {
+            SerContractInfo::SingleContractInfo(SingleContractInfo {
                 total_collateral: offered_contract.total_collateral,
                 contract_info: contract_infos.remove(0),
             })
         } else {
-            SerContractInfo::ContractInfoV1(ContractInfoV1 {
+            SerContractInfo::DisjointContractInfo(DisjointContractInfo {
                 total_collateral: offered_contract.total_collateral,
                 contract_infos,
             })
@@ -275,30 +272,31 @@ impl From<&OfferedContract> for Vec<SerOracleInfo> {
         for contract_info in &offered_contract.contract_info {
             let announcements = &contract_info.oracle_announcements;
             if announcements.len() == 1 {
-                infos.push(SerOracleInfo::OracleInfoV0(OracleInfoV0 {
+                infos.push(SerOracleInfo::Single(SingleOracleInfo {
                     oracle_announcement: announcements[0].clone(),
                 }));
             } else {
                 match &contract_info.contract_descriptor {
                     ContractDescriptor::Numerical(n) => {
                         if let Some(params) = &n.difference_params {
-                            infos.push(SerOracleInfo::OracleInfoV2(OracleInfoV2 {
+                            infos.push(SerOracleInfo::Multi(MultiOracleInfo {
                                 threshold: contract_info.threshold as u16,
                                 oracle_announcements: announcements.clone(),
-                                oracle_params: OracleParamsV0 {
+                                oracle_params: Some(OracleParams {
                                     max_error_exp: params.max_error_exp as u16,
                                     min_fail_exp: params.min_support_exp as u16,
                                     maximize_coverage: params.maximize_coverage,
-                                },
+                                }),
                             }));
                             continue;
                         }
                     }
                     _ => {}
                 }
-                infos.push(SerOracleInfo::OracleInfoV1(OracleInfoV1 {
+                infos.push(SerOracleInfo::Multi(MultiOracleInfo {
                     threshold: contract_info.threshold as u16,
                     oracle_announcements: announcements.clone(),
+                    oracle_params: None,
                 }))
             }
         }
@@ -307,8 +305,8 @@ impl From<&OfferedContract> for Vec<SerOracleInfo> {
     }
 }
 
-impl From<&EnumDescriptor> for ContractDescriptorV0 {
-    fn from(enum_descriptor: &EnumDescriptor) -> ContractDescriptorV0 {
+impl From<&EnumDescriptor> for EnumeratedContractDescriptor {
+    fn from(enum_descriptor: &EnumDescriptor) -> EnumeratedContractDescriptor {
         let payouts: Vec<ContractOutcome> = enum_descriptor
             .outcome_payouts
             .iter()
@@ -317,13 +315,13 @@ impl From<&EnumDescriptor> for ContractDescriptorV0 {
                 local_payout: x.payout.offer,
             })
             .collect();
-        ContractDescriptorV0 { payouts }
+        EnumeratedContractDescriptor { payouts }
     }
 }
 
-impl From<&NumericalDescriptor> for ContractDescriptorV1 {
-    fn from(num_descriptor: &NumericalDescriptor) -> ContractDescriptorV1 {
-        ContractDescriptorV1 {
+impl From<&NumericalDescriptor> for NumericOutcomeContractDescriptor {
+    fn from(num_descriptor: &NumericalDescriptor) -> NumericOutcomeContractDescriptor {
+        NumericOutcomeContractDescriptor {
             payout_function: (&num_descriptor.payout_function).into(),
             rounding_intervals: (&num_descriptor.rounding_intervals).into(),
         }
@@ -333,9 +331,11 @@ impl From<&NumericalDescriptor> for ContractDescriptorV1 {
 impl From<&ContractDescriptor> for SerContractDescriptor {
     fn from(descriptor: &ContractDescriptor) -> SerContractDescriptor {
         match descriptor {
-            ContractDescriptor::Enum(e) => SerContractDescriptor::ContractDescriptorV0(e.into()),
+            ContractDescriptor::Enum(e) => {
+                SerContractDescriptor::EnumeratedContractDescriptor(e.into())
+            }
             ContractDescriptor::Numerical(n) => {
-                SerContractDescriptor::ContractDescriptorV1(n.into())
+                SerContractDescriptor::NumericOutcomeContractDescriptor(n.into())
             }
         }
     }
@@ -439,19 +439,19 @@ fn from_ser_payout_function_piece(
     }
 }
 
-impl From<&RoundingIntervals> for RoundingIntervalsV0 {
-    fn from(rounding_intervals: &RoundingIntervals) -> RoundingIntervalsV0 {
+impl From<&RoundingIntervals> for SerRoundingIntervals {
+    fn from(rounding_intervals: &RoundingIntervals) -> SerRoundingIntervals {
         let intervals = rounding_intervals
             .intervals
             .iter()
             .map(|x| x.into())
             .collect();
-        RoundingIntervalsV0 { intervals }
+        SerRoundingIntervals { intervals }
     }
 }
 
-impl From<&RoundingIntervalsV0> for RoundingIntervals {
-    fn from(rounding_intervals: &RoundingIntervalsV0) -> RoundingIntervals {
+impl From<&SerRoundingIntervals> for RoundingIntervals {
+    fn from(rounding_intervals: &SerRoundingIntervals) -> RoundingIntervals {
         let intervals = rounding_intervals
             .intervals
             .iter()
@@ -553,9 +553,7 @@ impl From<&AcceptedContract> for AcceptDlc {
                     .unwrap()
                     .iter()
                     .cloned()
-                    .map::<CetAdaptorSignature, _>(|x| CetAdaptorSignature {
-                        signature: x,
-                    })
+                    .map::<CetAdaptorSignature, _>(|x| CetAdaptorSignature { signature: x })
                     .collect(),
             },
             refund_signature: contract.accept_refund_signature,
@@ -601,9 +599,9 @@ impl From<&FundingInput> for FundingInputInfo {
     }
 }
 
-impl From<&DifferenceParams> for OracleParamsV0 {
-    fn from(input: &DifferenceParams) -> OracleParamsV0 {
-        OracleParamsV0 {
+impl From<&DifferenceParams> for OracleParams {
+    fn from(input: &DifferenceParams) -> OracleParams {
+        OracleParams {
             max_error_exp: input.max_error_exp as u16,
             min_fail_exp: input.min_support_exp as u16,
             maximize_coverage: input.maximize_coverage,
@@ -611,8 +609,8 @@ impl From<&DifferenceParams> for OracleParamsV0 {
     }
 }
 
-impl From<&OracleParamsV0> for DifferenceParams {
-    fn from(input: &OracleParamsV0) -> DifferenceParams {
+impl From<&OracleParams> for DifferenceParams {
+    fn from(input: &OracleParams) -> DifferenceParams {
         DifferenceParams {
             max_error_exp: input.max_error_exp as usize,
             min_support_exp: input.min_fail_exp as usize,

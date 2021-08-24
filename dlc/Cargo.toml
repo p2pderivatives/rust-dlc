@@ -4,14 +4,14 @@ name = "dlc"
 version = "0.0.1"
 
 [dependencies]
-bitcoin = {version = "0.26.0"}
+bitcoin = {version = "0.27"}
 secp256k1-sys = {version = "0.4.0"}
 secp256k1-zkp = {version = "0.4.0", git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
 
 [dev-dependencies]
-bitcoin = {version = "0.26.0", features = ["use-serde"]}
+bitcoin = {version = "0.27", features = ["use-serde"]}
 bitcoin-test-utils = {path = "../bitcoin-test-utils"}
-bitcoincore-rpc = {version = "0.13.0"}
-bitcoincore-rpc-json = {version = "0.13.0"}
+bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
+bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 dlc-trie = {path = "../dlc-trie"}
 secp256k1-zkp = {version = "0.4.0", features = ["hashes", "rand", "rand-std", "serde"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}

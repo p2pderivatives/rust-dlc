@@ -18,7 +18,7 @@ pub fn get_new_wallet_rpc(
 ) -> Result<Client, bitcoincore_rpc::Error> {
     default_rpc.create_wallet(wallet_name, Some(false), None, None, None)?;
     let rpc_url = format!("{}/wallet/{}", rpc_base(), wallet_name);
-    Ok(Client::new(rpc_url, auth)?)
+    Ok(Client::new(&rpc_url, auth)?)
 }
 
 pub fn init_clients() -> (Client, Client, Client) {
@@ -26,7 +26,7 @@ pub fn init_clients() -> (Client, Client, Client) {
         "testuser".to_string(),
         "lq6zequb-gYTdF2_ZEUtr8ywTXzLYtknzWU4nV8uVoo=".to_string(),
     );
-    let rpc = Client::new(rpc_base(), auth.clone()).unwrap();
+    let rpc = Client::new(&rpc_base(), auth.clone()).unwrap();
 
     // Deals with wallet loading error.
     let retry_count = 0;

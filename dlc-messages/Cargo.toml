@@ -7,15 +7,15 @@ version = "0.0.1"
 use-serde = ["serde", "bitcoin/use-serde", "secp256k1-zkp/use-serde"]
 
 [dependencies]
-bitcoin = {version = "0.26.0"}
+bitcoin = {version = "0.27"}
 dlc = {version = "0.0.1", path = "../dlc"}
-lightning = {version = "0.0.98", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-version"}
+lightning = {version = "0.0.100", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-serialization-macros"}
 secp256k1-zkp = {version = "0.4.0", features = ["hashes", "rand", "rand-std"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
 serde = {version = "1.0", features = ["derive"], optional = true}
 unicode-normalization = {version = "0.1.16"}
 
 [dev-dependencies]
-bitcoin = {version = "0.26.0", features = ["use-serde"]}
+bitcoin = {version = "0.27", features = ["use-serde"]}
 bitcoin-test-utils = {version = "0.0.1", path = "../bitcoin-test-utils"}
 secp256k1-zkp = {version = "0.4.0", features = ["use-serde"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
 serde = {version = "1.0", features = ["derive"]}

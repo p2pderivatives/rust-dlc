@@ -24,8 +24,8 @@ use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use dlc_manager::error::Error as DlcManagerError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
-    DigitDecompositionEventDescriptorV0, EventDescriptor as OracleEventDescriptor,
-    OracleAnnouncement, OracleAttestationV0, OracleEventV0,
+    DigitDecompositionEventDescriptor, EventDescriptor as OracleEventDescriptor,
+    OracleAnnouncement, OracleAttestation, OracleEvent,
 };
 use secp256k1_zkp::schnorrsig::{PublicKey, Signature};
 
@@ -166,8 +166,8 @@ impl Oracle for CGOracleClient {
             // TODO(tibo): fix once oracle provides signatures.
             announcement_signature: "67159dad98bdc1ee51169bece3b1da1ab7f918697a084afce3db639388757d1bfacf0a4d725fc8e09ed97dac559a0e89648e04cb64405ae5a3ba3280c3eef1ff".parse().unwrap(),
             oracle_public_key,
-            oracle_event: OracleEventV0 {
-                event_descriptor: OracleEventDescriptor::DigitDecompositionEventDescriptorV0(DigitDecompositionEventDescriptorV0 {
+            oracle_event: OracleEvent {
+                event_descriptor: OracleEventDescriptor::DigitDecompositionEvent(DigitDecompositionEventDescriptor {
                     base,
                     is_signed,
                     unit,
@@ -184,7 +184,7 @@ impl Oracle for CGOracleClient {
     fn get_attestation(
         &self,
         event_id: &str,
-    ) -> Result<OracleAttestationV0, dlc_manager::error::Error> {
+    ) -> Result<OracleAttestation, dlc_manager::error::Error> {
         let (asset_id, date_time) = parse_event_id(event_id)?;
         let path = attestation_path(&self.host, &asset_id, &date_time);
         let AttestationResponse {
@@ -193,7 +193,7 @@ impl Oracle for CGOracleClient {
             values,
         } = get::<AttestationResponse>(&path)?;
 
-        Ok(OracleAttestationV0 {
+        Ok(OracleAttestation {
             oracle_public_key: self.public_key,
             signatures: signatures,
             outcomes: values,

@@ -794,7 +794,7 @@ mod tests {
     use bitcoin::blockdata::script::Script;
     use bitcoin::blockdata::transaction::{OutPoint, SigHashType};
     use bitcoin::consensus::encode::Encodable;
-    use secp256k1_zkp::bitcoin_hashes::hex::FromHex;
+    use bitcoin::hashes::hex::FromHex;
     use bitcoin::{network::constants::Network, Address, Txid};
     use secp256k1_zkp::{
         rand::{Rng, RngCore},

@@ -21,7 +21,7 @@ use dlc_manager::payout_curve::{
 };
 use dlc_manager::{Oracle, Storage};
 use dlc_messages::oracle_msgs::{
-    DigitDecompositionEventDescriptorV0, EnumEventDescriptorV0, EventDescriptor,
+    DigitDecompositionEventDescriptor, EnumEventDescriptor, EventDescriptor,
 };
 use dlc_messages::{CetAdaptorSignatures, Message};
 use dlc_trie::digit_decomposition::decompose_value;
@@ -172,13 +172,13 @@ fn get_enum_contract_descriptor() -> ContractDescriptor {
 
 fn get_enum_oracle() -> MockOracle {
     let mut oracle = MockOracle::new();
-    let event = EnumEventDescriptorV0 {
+    let event = EnumEventDescriptor {
         outcomes: enum_outcomes(),
     };
 
     oracle.add_event(
         &EVENT_ID,
-        &EventDescriptor::EnumEventDescriptorV0(event),
+        &EventDescriptor::EnumEvent(event),
         EVENT_MATURITY,
     );
 
@@ -270,7 +270,7 @@ fn get_numerical_contract_descriptor(
 
 fn get_digit_decomposition_oracle() -> MockOracle {
     let mut oracle = MockOracle::new();
-    let event = DigitDecompositionEventDescriptorV0 {
+    let event = DigitDecompositionEventDescriptor {
         base: BASE as u64,
         is_signed: false,
         unit: "sats/sec".to_owned(),
@@ -280,7 +280,7 @@ fn get_digit_decomposition_oracle() -> MockOracle {
 
     oracle.add_event(
         &EVENT_ID,
-        &EventDescriptor::DigitDecompositionEventDescriptorV0(event),
+        &EventDescriptor::DigitDecompositionEvent(event),
         EVENT_MATURITY,
     );
     oracle
@@ -655,7 +655,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     let path_copy = path.clone();
     let alter_sign = move |msg| match msg {
-        Message::SignDlc(mut sign_dlc) => {
+        Message::Sign(mut sign_dlc) => {
             match path_copy {
                 TestPath::BadSignCetSignature => {
                     alter_adaptor_sig(&mut sign_dlc.cet_adaptor_signatures)
@@ -665,7 +665,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                 }
                 _ => {}
             }
-            Message::SignDlc(sign_dlc)
+            Message::Sign(sign_dlc)
         }
         _ => msg,
     };
@@ -694,7 +694,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         .send_offer(&test_params.contract_input)
         .expect("Send offer error");
     let temporary_contract_id = offer_msg.get_hash().unwrap();
-    bob_send.send(Some(Message::OfferDlc(offer_msg))).unwrap();
+    bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
 
     assert_contract_state!(
         bob_manager_send,
@@ -720,7 +720,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     match path {
         TestPath::BadAcceptCetSignature | TestPath::BadAcceptRefundSignature => {
-            if let Message::AcceptDlc(mut accept_dlc) = accept_msg {
+            if let Message::Accept(mut accept_dlc) = accept_msg {
                 match path {
                     TestPath::BadAcceptCetSignature => {
                         alter_adaptor_sig(&mut accept_dlc.cet_adaptor_signatures)
@@ -731,7 +731,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                     }
                     _ => {}
                 }
-                accept_msg = Message::AcceptDlc(accept_dlc);
+                accept_msg = Message::Accept(accept_dlc);
             }
 
             *bob_expect_error.lock().unwrap() = true;

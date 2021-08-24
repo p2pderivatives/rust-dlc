@@ -15,7 +15,7 @@ use bitcoin::{
     Address, Transaction,
 };
 use dlc::{DlcTransactions, PartyParams, TxInputInfo};
-use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestationV0};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::{
     AcceptDlc, FundingInput, FundingSignature, FundingSignatures, Message as DlcMessage, OfferDlc,
     SignDlc, WitnessElement,
@@ -86,12 +86,12 @@ where
     /// Function called to pass a DlcMessage to the Manager.
     pub fn on_dlc_message(&mut self, msg: &DlcMessage) -> Result<Option<DlcMessage>, Error> {
         match msg {
-            DlcMessage::OfferDlc(o) => {
+            DlcMessage::Offer(o) => {
                 self.on_offer_message(o)?;
                 Ok(None)
             }
-            DlcMessage::AcceptDlc(a) => Ok(Some(self.on_accept_message(a)?)),
-            DlcMessage::SignDlc(s) => {
+            DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a)?)),
+            DlcMessage::Sign(s) => {
                 self.on_sign_message(s)?;
                 Ok(None)
             }
@@ -349,7 +349,7 @@ where
         self.store
             .update_contract(&Contract::Accepted(accepted_contract))?;
 
-        Ok((contract_id, DlcMessage::AcceptDlc(accept_msg)))
+        Ok((contract_id, DlcMessage::Accept(accept_msg)))
     }
 
     fn on_accept_message(&mut self, accept_msg: &AcceptDlc) -> Result<DlcMessage, Error> {
@@ -576,7 +576,7 @@ where
         self.store
             .update_contract(&Contract::Signed(signed_contract))?;
 
-        Ok(DlcMessage::SignDlc(signed_msg))
+        Ok(DlcMessage::Sign(signed_msg))
     }
 
     fn on_sign_message(&mut self, sign_message: &SignDlc) -> Result<(), Error> {
@@ -847,7 +847,7 @@ where
         contract: &SignedContract,
         contract_info: &ContractInfo,
         adaptor_info: &AdaptorInfo,
-        attestations: &[(usize, OracleAttestationV0)],
+        attestations: &[(usize, OracleAttestation)],
     ) -> Result<(), Error> {
         let offered_contract = &contract.accepted_contract.offered_contract;
         let outcomes = attestations
