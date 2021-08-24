@@ -20,7 +20,6 @@ use rust_bitcoin_coin_selection::select_coins;
 
 pub struct BitcoinCoreProvider {
     pub client: Client,
-    pub network: Network,
 }
 
 #[derive(Debug)]
@@ -70,9 +69,22 @@ impl std::error::Error for Error {
 }
 
 impl BitcoinCoreProvider {
-    pub fn new(url: String, auth: Auth, network: Network) -> Result<Self, Error> {
-        let client = Client::new(url, auth)?;
-        Ok(BitcoinCoreProvider { client, network })
+    pub fn new(
+        host: String,
+        port: u16,
+        wallet: Option<String>,
+        rpc_user: String,
+        rpc_password: String,
+    ) -> Result<Self, Error> {
+        let rpc_base = format!("http://{}:{}", host, port);
+        let rpc_url = if let Some(wallet_name) = wallet {
+            format!("{}/wallet/{}", rpc_base, wallet_name)
+        } else {
+            rpc_base
+        };
+        let auth = Auth::UserPass(rpc_user, rpc_password);
+        let client = Client::new(rpc_url, auth)?;
+        Ok(BitcoinCoreProvider { client })
     }
 }
 
@@ -85,15 +97,15 @@ impl rust_bitcoin_coin_selection::Utxo for UtxoWrap {
     }
 }
 
-fn rpc_err_to_manager_err<T>(e: bitcoincore_rpc::Error) -> Result<T, ManagerError> {
-    Err(Error::RpcError(e).into())
+fn rpc_err_to_manager_err(e: bitcoincore_rpc::Error) -> ManagerError {
+    Error::RpcError(e).into()
 }
 
 impl Wallet for BitcoinCoreProvider {
     fn get_new_address(&self) -> Result<Address, ManagerError> {
         self.client
             .get_new_address(None, Some(AddressType::Bech32))
-            .or_else(rpc_err_to_manager_err)
+            .map_err(rpc_err_to_manager_err)
     }
 
     fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
@@ -102,13 +114,13 @@ impl Wallet for BitcoinCoreProvider {
             .import_private_key(
                 &PrivateKey {
                     compressed: true,
-                    network: self.network,
+                    network: self.get_network()?,
                     key: sk,
                 },
                 None,
                 Some(false),
             )
-            .or_else(rpc_err_to_manager_err)?;
+            .map_err(rpc_err_to_manager_err)?;
 
         Ok(sk)
     }
@@ -118,7 +130,8 @@ impl Wallet for BitcoinCoreProvider {
             compressed: true,
             key: pubkey.clone(),
         };
-        let address = Address::p2wpkh(&b_pubkey, self.network).or(Err(Error::BitcoinError))?;
+        let address =
+            Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
         self.get_secret_key_for_address(&address)
     }
 
@@ -126,7 +139,7 @@ impl Wallet for BitcoinCoreProvider {
         let pk = self
             .client
             .dump_private_key(address)
-            .or_else(rpc_err_to_manager_err)?;
+            .map_err(rpc_err_to_manager_err)?;
         Ok(pk.key)
     }
 
@@ -139,7 +152,7 @@ impl Wallet for BitcoinCoreProvider {
         let utxo_res = self
             .client
             .list_unspent(None, None, None, None, None)
-            .or_else(rpc_err_to_manager_err)?;
+            .map_err(rpc_err_to_manager_err)?;
         let mut utxo_pool: Vec<UtxoWrap> = utxo_res
             .iter()
             .map(|x| {
@@ -164,7 +177,7 @@ impl Wallet for BitcoinCoreProvider {
             let outputs: Vec<_> = selection.iter().map(|x| x.0.outpoint.clone()).collect();
             self.client
                 .lock_unspent(&outputs)
-                .or_else(rpc_err_to_manager_err)?;
+                .map_err(rpc_err_to_manager_err)?;
         }
 
         Ok(selection.into_iter().map(|x| x.0).collect())
@@ -173,14 +186,14 @@ impl Wallet for BitcoinCoreProvider {
     fn import_address(&self, address: &Address) -> Result<(), ManagerError> {
         self.client
             .import_address(address, None, None)
-            .or_else(rpc_err_to_manager_err)
+            .map_err(rpc_err_to_manager_err)
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
         let tx_info = self
             .client
             .get_transaction(tx_id, None)
-            .or_else(rpc_err_to_manager_err)?;
+            .map_err(rpc_err_to_manager_err)?;
         let tx = Transaction::consensus_decode(&*tx_info.hex).or(Err(Error::BitcoinError))?;
         Ok(tx)
     }
@@ -199,13 +212,15 @@ impl Wallet for BitcoinCoreProvider {
                             return Ok(0);
                         }
 
-                        rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
+                        Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
                             bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error),
-                        ))
+                        )))
                     }
-                    other => rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(other)),
+                    other => Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
+                        other,
+                    ))),
                 },
-                _ => rpc_err_to_manager_err(e),
+                _ => Err(rpc_err_to_manager_err(e)),
             },
         }
     }
@@ -215,11 +230,25 @@ impl Blockchain for BitcoinCoreProvider {
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), ManagerError> {
         self.client
             .send_raw_transaction(transaction)
-            .or_else(rpc_err_to_manager_err)?;
+            .map_err(rpc_err_to_manager_err)?;
         Ok(())
     }
 
-    fn get_network(&self) -> Network {
-        self.network
+    fn get_network(&self) -> Result<Network, ManagerError> {
+        let network = match self
+            .client
+            .get_blockchain_info()
+            .map_err(rpc_err_to_manager_err)?
+            .chain
+            .as_ref()
+        {
+            "main" => Network::Bitcoin,
+            "test" => Network::Testnet,
+            "regtest" => Network::Regtest,
+            "signet" => Network::Signet,
+            _ => return Err(ManagerError::BlockchainError),
+        };
+
+        Ok(network)
     }
 }
