@@ -1,7 +1,7 @@
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
-    EventDescriptor, OracleAnnouncement, OracleAttestationV0, OracleEventV0,
+    EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent,
 };
 use lightning::util::ser::Writeable;
 use secp256k1_zkp::key::SecretKey;
@@ -16,7 +16,7 @@ pub struct MockOracle {
     key_pair: KeyPair,
     secp: Secp256k1<All>,
     announcements: HashMap<String, OracleAnnouncement>,
-    attestations: HashMap<String, OracleAttestationV0>,
+    attestations: HashMap<String, OracleAttestation>,
     nonces: HashMap<String, Vec<SecretKey>>,
 }
 
@@ -63,7 +63,7 @@ impl Oracle for MockOracle {
         Ok(res.clone())
     }
 
-    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestationV0, DaemonError> {
+    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
         let res = self
             .attestations
             .get(event_id)
@@ -81,8 +81,8 @@ impl MockOracle {
         event_descriptor: &EventDescriptor,
     ) -> Vec<PublicKey> {
         let nb_nonces = match event_descriptor {
-            EventDescriptor::EnumEventDescriptorV0(_) => 1,
-            EventDescriptor::DigitDecompositionEventDescriptorV0(d) => d.nb_digits,
+            EventDescriptor::EnumEvent(_) => 1,
+            EventDescriptor::DigitDecompositionEvent(d) => d.nb_digits,
         };
 
         let priv_nonces: Vec<_> = (0..nb_nonces)
@@ -104,7 +104,7 @@ impl MockOracle {
     }
     pub fn add_event(&mut self, event_id: &str, event_descriptor: &EventDescriptor, maturity: u32) {
         let oracle_nonces = self.generate_nonces_for_event(event_id, event_descriptor);
-        let oracle_event = OracleEventV0 {
+        let oracle_event = OracleEvent {
             oracle_nonces,
             event_maturity_epoch: maturity,
             event_descriptor: event_descriptor.clone(),
@@ -143,7 +143,7 @@ impl MockOracle {
                 )
             })
             .collect();
-        let attestation = OracleAttestationV0 {
+        let attestation = OracleAttestation {
             oracle_public_key: self.get_public_key(),
             signatures,
             outcomes: outcomes.to_vec(),

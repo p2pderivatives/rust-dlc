@@ -32,7 +32,7 @@ mod utils;
 
 use bitcoin::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
-use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestationV0};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use error::Error;
 use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -104,7 +104,7 @@ pub trait Oracle {
     /// Returns the announcement for the event with the given id if found.
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.
-    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestationV0, Error>;
+    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, Error>;
 }
 
 /// Represents a UTXO.

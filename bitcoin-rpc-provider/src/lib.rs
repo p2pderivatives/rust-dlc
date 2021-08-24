@@ -83,7 +83,7 @@ impl BitcoinCoreProvider {
             rpc_base
         };
         let auth = Auth::UserPass(rpc_user, rpc_password);
-        let client = Client::new(rpc_url, auth)?;
+        let client = Client::new(&rpc_url, auth)?;
         Ok(BitcoinCoreProvider { client })
     }
 }

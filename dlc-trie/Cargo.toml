@@ -4,6 +4,6 @@ name = "dlc-trie"
 version = "0.0.1"
 
 [dependencies]
-bitcoin = {version = "0.26.0"}
+bitcoin = {version = "0.27"}
 dlc = {version = "0.0.1", path = "../dlc"}
 secp256k1-zkp = {version = "0.4.0", git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "add-as-ref-ecdsa-adaptor"}
