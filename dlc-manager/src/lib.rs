@@ -78,7 +78,7 @@ pub trait Blockchain {
     /// Broadcast the given transaction to the bitcoin network.
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error>;
     /// Returns the network currently used (mainnet, testnet or regtest).
-    fn get_network(&self) -> bitcoin::network::constants::Network;
+    fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.

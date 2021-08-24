@@ -259,7 +259,7 @@ where
 
         self.wallet.import_address(&Address::p2wsh(
             &dlc_transactions.funding_script_pubkey,
-            self.blockchain.get_network(),
+            self.blockchain.get_network()?,
         ))?;
 
         let fund_output_value = dlc_transactions.get_fund_output().value;
@@ -389,7 +389,7 @@ where
 
         self.wallet.import_address(&Address::p2wsh(
             &dlc_transactions.funding_script_pubkey,
-            self.blockchain.get_network(),
+            self.blockchain.get_network()?,
         ))?;
 
         let fund_output_value = dlc_transactions.get_fund_output().value;
