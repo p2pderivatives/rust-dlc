@@ -1,4 +1,4 @@
-pub fn get_majority_combination(
+pub(crate) fn get_majority_combination(
     outcomes: &[(usize, &Vec<String>)],
 ) -> Result<(Vec<String>, Vec<usize>), crate::error::Error> {
     let mut hash_set: std::collections::HashMap<Vec<String>, Vec<usize>> =

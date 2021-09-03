@@ -7,10 +7,7 @@ use dlc::{OracleInfo, Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
-use secp256k1_zkp::{
-    EcdsaAdaptorSignature,
-    All, PublicKey, Secp256k1, SecretKey,
-};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 
 /// Information about the base, number of digits and unit of a numerical event.
 #[derive(Clone, Debug)]

@@ -7,8 +7,7 @@ use dlc::OracleInfo;
 use dlc::{EnumerationPayout, Payout};
 use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
 use secp256k1_zkp::{
-    EcdsaAdaptorSignature,
-    All, Message, PublicKey, Secp256k1, SecretKey, Verification
+    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
 };
 
 /// A descriptor for a contract whose outcomes are represented as an enumeration.
