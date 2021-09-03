@@ -1197,22 +1197,23 @@ mod tests {
         let mut oracle_sks: Vec<KeyPair> = Vec::with_capacity(NB_ORACLES);
         let mut oracle_sk_nonce: Vec<Vec<[u8; 32]>> = Vec::with_capacity(NB_ORACLES);
         let mut oracle_sigs: Vec<Vec<SchnorrSignature>> = Vec::with_capacity(NB_ORACLES);
-        let messages: Vec<Vec<Vec<_>>> =
-            (0..NB_OUTCOMES)
-                .map(|x| {
-                    (0..NB_ORACLES)
-                        .map(|y| {
-                            (0..NB_DIGITS)
-                                .map(|z| {
-                                    Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&[
-                                        ((y + x + z) as u8).try_into().unwrap(),
-                                    ])
-                                })
-                                .collect()
-                        })
-                        .collect()
-                })
-                .collect();
+        let messages: Vec<Vec<Vec<_>>> = (0..NB_OUTCOMES)
+            .map(|x| {
+                (0..NB_ORACLES)
+                    .map(|y| {
+                        (0..NB_DIGITS)
+                            .map(|z| {
+                                Message::from_hashed_data::<
+                                    secp256k1_zkp::bitcoin_hashes::sha256::Hash,
+                                >(&[((y + x + z) as u8)
+                                    .try_into()
+                                    .unwrap()])
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
 
         for i in 0..NB_ORACLES {
             let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
@@ -1311,7 +1312,7 @@ mod tests {
             expected_input_order: [usize; 2],
             expected_fund_output_order: [usize; 3],
             expected_payout_order: [usize; 2],
-        };
+        }
 
         let cases = vec![
             OrderingCase {

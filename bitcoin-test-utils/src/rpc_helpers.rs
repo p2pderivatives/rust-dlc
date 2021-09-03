@@ -38,7 +38,7 @@ pub fn init_clients() -> (Client, Client, Client) {
                 if retry_count < 20 {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 } else {
-                    panic!(e);
+                    panic!("{}", e);
                 }
             }
         };

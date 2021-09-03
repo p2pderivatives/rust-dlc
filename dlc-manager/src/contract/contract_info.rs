@@ -8,10 +8,7 @@ use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_trie::combination_iterator::CombinationIterator;
 use dlc_trie::{DlcTrie, RangeInfo};
-use secp256k1_zkp::{
-    EcdsaAdaptorSignature,
-    All, PublicKey, Secp256k1, SecretKey,
-};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 
 /// Contains information about the contract conditions and oracles used.
 #[derive(Clone, Debug)]

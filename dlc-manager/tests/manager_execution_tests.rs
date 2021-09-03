@@ -33,14 +33,14 @@ use std::sync::{mpsc::channel, Arc, Mutex};
 use std::thread;
 
 macro_rules! assert_contract_state {
-    ($d:expr, $id:expr, $p:pat) => {
+    ($d:expr, $id:expr, $p:ident) => {
         let res = $d
             .lock()
             .unwrap()
             .get_store()
             .get_contract(&$id)
             .expect("Could not retrieve contract");
-        if let $p = res {
+        if let Contract::$p(_) = res {
         } else {
             panic!("Unexpected contract state {:?}", res);
         }
@@ -48,7 +48,7 @@ macro_rules! assert_contract_state {
 }
 
 macro_rules! periodic_check {
-    ($d:expr, $id:expr, $p:pat) => {
+    ($d:expr, $id:expr, $p:ident) => {
         $d.lock()
             .unwrap()
             .periodic_check()
@@ -696,19 +696,11 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let temporary_contract_id = offer_msg.get_hash().unwrap();
     bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
 
-    assert_contract_state!(
-        bob_manager_send,
-        temporary_contract_id,
-        Contract::Offered { .. }
-    );
+    assert_contract_state!(bob_manager_send, temporary_contract_id, Offered);
 
     sync_receive.recv().expect("Error synchronizing");
 
-    assert_contract_state!(
-        alice_manager_send,
-        temporary_contract_id,
-        Contract::Offered { .. }
-    );
+    assert_contract_state!(alice_manager_send, temporary_contract_id, Offered);
 
     let (contract_id, mut accept_msg) = alice_manager_send
         .lock()
@@ -716,7 +708,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         .accept_contract_offer(&temporary_contract_id)
         .expect("Error accepting contract offer");
 
-    assert_contract_state!(alice_manager_send, contract_id, Contract::Accepted { .. });
+    assert_contract_state!(alice_manager_send, contract_id, Accepted);
 
     match path {
         TestPath::BadAcceptCetSignature | TestPath::BadAcceptRefundSignature => {
@@ -737,11 +729,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             *bob_expect_error.lock().unwrap() = true;
             alice_send.send(Some(accept_msg)).unwrap();
             sync_receive.recv().expect("Error synchronizing");
-            assert_contract_state!(
-                bob_manager_send,
-                temporary_contract_id,
-                Contract::FailedAccept { .. }
-            );
+            assert_contract_state!(bob_manager_send, temporary_contract_id, FailedAccept);
         }
         TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
             *alice_expect_error.lock().unwrap() = true;
@@ -750,28 +738,28 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             sync_receive.recv().expect("Error synchronizing");
             // Alice receives sign message
             sync_receive.recv().expect("Error synchronizing");
-            assert_contract_state!(alice_manager_send, contract_id, Contract::FailedSign { .. });
+            assert_contract_state!(alice_manager_send, contract_id, FailedSign);
         }
         _ => {
             alice_send.send(Some(accept_msg)).unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
-            assert_contract_state!(bob_manager_send, contract_id, Contract::Signed { .. });
+            assert_contract_state!(bob_manager_send, contract_id, Signed);
 
             // Should not change state and should not error
-            periodic_check!(bob_manager_send, contract_id, Contract::Signed { .. });
+            periodic_check!(bob_manager_send, contract_id, Signed);
 
             sync_receive.recv().expect("Error synchronizing");
 
-            assert_contract_state!(alice_manager_send, contract_id, Contract::Signed { .. });
+            assert_contract_state!(alice_manager_send, contract_id, Signed);
 
             let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
             sink_rpc
                 .generate_to_address(6, &sink_address)
                 .expect("RPC Error");
 
-            periodic_check!(alice_manager_send, contract_id, Contract::Confirmed { .. });
-            periodic_check!(bob_manager_send, contract_id, Contract::Confirmed { .. });
+            periodic_check!(alice_manager_send, contract_id, Confirmed);
+            periodic_check!(bob_manager_send, contract_id, Confirmed);
 
             mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) + 1);
 
@@ -784,7 +772,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             match path {
                 TestPath::Close => {
-                    periodic_check!(first, contract_id, Contract::Closed { .. });
+                    periodic_check!(first, contract_id, Closed);
 
                     // Randomly check with or without having the CET mined
                     if thread_rng().next_u32() % 2 == 0 {
@@ -793,12 +781,12 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                             .expect("RPC Error");
                     }
 
-                    periodic_check!(second, contract_id, Contract::Closed { .. });
+                    periodic_check!(second, contract_id, Closed);
                 }
                 TestPath::Refund => {
-                    periodic_check!(first, contract_id, Contract::Confirmed { .. });
+                    periodic_check!(first, contract_id, Confirmed);
 
-                    periodic_check!(second, contract_id, Contract::Confirmed { .. });
+                    periodic_check!(second, contract_id, Confirmed);
 
                     mocks::mock_time::set_time(
                         ((test_params.contract_input.maturity_time
@@ -809,7 +797,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                         .generate_to_address(10, &sink_address)
                         .expect("RPC Error");
 
-                    periodic_check!(first, contract_id, Contract::Refunded { .. });
+                    periodic_check!(first, contract_id, Refunded);
 
                     // Randomly check with or without having the Refund mined.
                     if thread_rng().next_u32() % 2 == 0 {
@@ -818,7 +806,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                             .expect("RPC Error");
                     }
 
-                    periodic_check!(second, contract_id, Contract::Refunded { .. });
+                    periodic_check!(second, contract_id, Refunded);
                 }
                 _ => unreachable!(),
             }

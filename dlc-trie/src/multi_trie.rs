@@ -2,10 +2,10 @@
 //! of trie.
 
 use super::Error;
+use crate::{LookupResult, Node};
 use combination_iterator::CombinationIterator;
 use digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
 use multi_oracle::compute_outcome_combinations;
-use crate::{LookupResult, Node};
 
 #[derive(Clone, Debug)]
 /// Information stored in a node.
@@ -32,10 +32,7 @@ impl<T> MultiTrieNode<T> {
 /// Struct for iterating over the values of a MultiTrie.
 pub struct MultiTrieIterator<'a, T> {
     trie: &'a MultiTrie<T>,
-    node_stack: Vec<(
-        (usize, Vec<usize>),
-        DigitTrieIter<'a, Vec<TrieNodeInfo>>,
-    )>,
+    node_stack: Vec<((usize, Vec<usize>), DigitTrieIter<'a, Vec<TrieNodeInfo>>)>,
     trie_info_iter: Vec<(
         Vec<usize>,
         std::iter::Enumerate<std::slice::Iter<'a, TrieNodeInfo>>,
@@ -44,9 +41,7 @@ pub struct MultiTrieIterator<'a, T> {
     cur_path: Vec<(usize, Vec<usize>)>,
 }
 
-fn create_node_iterator<'a, T>(
-    node: &'a MultiTrieNode<T>,
-) -> DigitTrieIter<'a, Vec<TrieNodeInfo>> {
+fn create_node_iterator<'a, T>(node: &'a MultiTrieNode<T>) -> DigitTrieIter<'a, Vec<TrieNodeInfo>> {
     match node {
         Node::Node(d_trie) => DigitTrieIter::new(d_trie),
         _ => unreachable!(),
@@ -118,26 +113,26 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
                     self.trie_info_iter.pop();
                     self.cur_path.pop();
                 }
-                Some((i, info)) => { 
+                Some((i, info)) => {
                     if i == 0 {
                         self.cur_path
-                            .push((self.node_stack.last().unwrap().0.0, iter.0.clone()));
-                    } 
-                    match &self.trie.store[info.store_index] {
-                    Node::None => unreachable!(),
-                    Node::Node(d_trie) => {
-                        self.node_stack.push((
-                            (info.trie_index, iter.0.clone()),
-                            DigitTrieIter::new(d_trie),
-                        ));
+                            .push((self.node_stack.last().unwrap().0 .0, iter.0.clone()));
                     }
-                    Node::Leaf(d_trie) => {
-                        self.leaf_iter
-                            .push((info.trie_index, DigitTrieIter::new(d_trie)));
-                        return self.next();
+                    match &self.trie.store[info.store_index] {
+                        Node::None => unreachable!(),
+                        Node::Node(d_trie) => {
+                            self.node_stack.push((
+                                (info.trie_index, iter.0.clone()),
+                                DigitTrieIter::new(d_trie),
+                            ));
+                        }
+                        Node::Leaf(d_trie) => {
+                            self.leaf_iter
+                                .push((info.trie_index, DigitTrieIter::new(d_trie)));
+                            return self.next();
+                        }
                     }
                 }
-            }
             },
             _ => {}
         }
@@ -150,11 +145,8 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
         };
 
         match cur_iter.next() {
-            None => {
-                self.next()
-            }
+            None => self.next(),
             Some(res) => {
-
                 // Put back the node on the stack
                 self.node_stack
                     .push(((cur_trie_index, parent_path), cur_iter));
@@ -172,7 +164,7 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
 /// Struct used to store DLC outcome information for multi oracle cases.  
 #[derive(Clone)]
 pub struct MultiTrie<T> {
-    store: Vec<Node<DigitTrie<T>, DigitTrie<Vec<TrieNodeInfo>>>>,
+    store: Vec<MultiTrieNode<T>>,
     base: usize,
     nb_tries: usize,
     nb_required: usize,
@@ -729,7 +721,6 @@ mod tests {
                 res.value
             );
         }
-
     }
 
     #[test]
