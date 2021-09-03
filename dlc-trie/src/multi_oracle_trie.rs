@@ -5,7 +5,7 @@
 
 use crate::combination_iterator::CombinationIterator;
 use crate::digit_decomposition::group_by_ignoring_digits;
-use crate::digit_trie::{DigitTrie, DigitTrieIter};
+use crate::digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
 use crate::utils::get_adaptor_point_for_indexed_paths;
 use crate::DlcTrie;
 use crate::{Error, OracleInfo, RangeInfo, RangePayout};
@@ -22,6 +22,46 @@ pub struct MultiOracleTrie {
     nb_oracles: usize,
     threshold: usize,
     nb_digits: usize,
+}
+
+/// Container for a dump of a MultiOracleTrie used for serialization purpose.
+pub struct MultiOracleTrieDump {
+    /// A dump of the underlying digit trie.
+    pub digit_trie_dump: DigitTrieDump<Vec<RangeInfo>>,
+    /// The total number of oracles for this trie.
+    pub nb_oracles: usize,
+    /// The required number of oracles for this trie.
+    pub threshold: usize,
+    /// The maximum number of digits for a path in the trie.
+    pub nb_digits: usize,
+}
+
+impl MultiOracleTrie {
+    /// Dump the trie information.
+    pub fn dump(&self) -> MultiOracleTrieDump {
+        MultiOracleTrieDump {
+            digit_trie_dump: self.digit_trie.dump(),
+            nb_oracles: self.nb_oracles,
+            threshold: self.threshold,
+            nb_digits: self.nb_digits,
+        }
+    }
+
+    /// Recover a MultiOracleTrie from a dump.
+    pub fn from_dump(dump: MultiOracleTrieDump) -> MultiOracleTrie {
+        let MultiOracleTrieDump {
+            digit_trie_dump,
+            nb_oracles,
+            threshold,
+            nb_digits,
+        } = dump;
+        MultiOracleTrie {
+            digit_trie: DigitTrie::from_dump(digit_trie_dump),
+            nb_oracles,
+            threshold,
+            nb_digits,
+        }
+    }
 }
 
 impl MultiOracleTrie {

@@ -3,14 +3,17 @@
 
 use super::Error;
 use combination_iterator::CombinationIterator;
-use digit_trie::{DigitTrie, DigitTrieIter};
+use digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
 use multi_oracle::compute_outcome_combinations;
 use crate::{LookupResult, Node};
 
 #[derive(Clone, Debug)]
-struct TrieNodeInfo {
-    trie_index: usize,
-    store_index: usize,
+/// Information stored in a node.
+pub struct TrieNodeInfo {
+    /// The index of the sub-trie.
+    pub trie_index: usize,
+    /// The index of the node in the trie store.
+    pub store_index: usize,
 }
 
 type MultiTrieNode<T> = Node<DigitTrie<T>, DigitTrie<Vec<TrieNodeInfo>>>;
@@ -409,6 +412,110 @@ fn find_store_index(children: &Vec<TrieNodeInfo>, trie_index: usize) -> Option<u
     }
 
     None
+}
+
+/// Container for a dump of a MultiTrie used for serialization purpose.
+pub struct MultiTrieDump<T>
+where
+    T: Clone,
+{
+    /// The node data.
+    pub node_data: Vec<MultiTrieNodeData<T>>,
+    /// The base for which the trie was built.
+    pub base: usize,
+    /// The total number of tries.
+    pub nb_tries: usize,
+    /// The number of trie per path.
+    pub nb_required: usize,
+    /// The guaranteed support as a power of 2.
+    pub min_support_exp: usize,
+    /// The maximum support as a power of 2.
+    pub max_error_exp: usize,
+    /// The maximum number of digits for a single trie path.
+    pub nb_digits: usize,
+    /// Whether this trie maximizes outcome coverage.
+    pub maximize_coverage: bool,
+}
+
+impl<T> MultiTrie<T>
+where
+    T: Clone,
+{
+    /// Dump the content of the trie for the purpose of serialization.
+    pub fn dump(&self) -> MultiTrieDump<T> {
+        let node_data = self.store.iter().map(|x| x.get_data()).collect();
+        MultiTrieDump {
+            node_data,
+            base: self.base,
+            nb_tries: self.nb_tries,
+            nb_required: self.nb_required,
+            min_support_exp: self.min_support_exp,
+            max_error_exp: self.max_error_exp,
+            nb_digits: self.nb_digits,
+            maximize_coverage: self.maximize_coverage,
+        }
+    }
+
+    /// Restore a trie from a dump.
+    pub fn from_dump(dump: MultiTrieDump<T>) -> MultiTrie<T> {
+        let MultiTrieDump {
+            node_data,
+            base,
+            nb_tries,
+            nb_required,
+            min_support_exp,
+            max_error_exp,
+            nb_digits,
+            maximize_coverage,
+        } = dump;
+
+        let store = node_data
+            .into_iter()
+            .map(|x| MultiTrieNode::from_data(x))
+            .collect();
+
+        MultiTrie {
+            store,
+            base,
+            nb_tries,
+            nb_required,
+            min_support_exp,
+            max_error_exp,
+            nb_digits,
+            maximize_coverage,
+        }
+    }
+}
+
+/// Holds the data of a multi trie node. Used for serialization purpose.
+pub enum MultiTrieNodeData<T>
+where
+    T: Clone,
+{
+    /// A leaf in the trie.
+    Leaf(DigitTrieDump<T>),
+    /// A node in the trie.
+    Node(DigitTrieDump<Vec<TrieNodeInfo>>),
+}
+
+impl<T> MultiTrieNode<T>
+where
+    T: Clone,
+{
+    fn get_data(&self) -> MultiTrieNodeData<T> {
+        match self {
+            Node::Leaf(l) => MultiTrieNodeData::Leaf(l.dump()),
+            Node::Node(n) => MultiTrieNodeData::Node(n.dump()),
+            Node::None => unreachable!(),
+        }
+    }
+
+    fn from_data(data: MultiTrieNodeData<T>) -> MultiTrieNode<T> {
+        match data {
+            MultiTrieNodeData::Leaf(l) => Node::Leaf(DigitTrie::from_dump(l)),
+            MultiTrieNodeData::Node(n) => Node::Node(DigitTrie::from_dump(n)),
+        }
+    }
 }
 
 #[cfg(test)]

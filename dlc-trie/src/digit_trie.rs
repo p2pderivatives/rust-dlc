@@ -14,6 +14,90 @@ pub struct DigitTrie<T> {
     pub(crate) base: usize,
 }
 
+/// Container for a dump of a DigitTrie used for serialization purpose.
+pub struct DigitTrieDump<T>
+where
+    T: Clone,
+{
+    /// The data of the trie node.
+    pub node_data: Vec<DigitNodeData<T>>,
+    /// The root of the trie.
+    pub root: Option<usize>,
+    /// The base for which this trie was built for.
+    pub base: usize,
+}
+
+impl<T> DigitTrie<T>
+where
+    T: Clone,
+{
+    /// Dump the content of the trie for the purpose of serialization.
+    pub fn dump(&self) -> DigitTrieDump<T> {
+        let node_data = self.store.iter().map(|x| x.get_data()).collect();
+        DigitTrieDump {
+            root: self.root,
+            base: self.base,
+            node_data,
+        }
+    }
+
+    /// Restore a trie from a dump.
+    pub fn from_dump(dump: DigitTrieDump<T>) -> DigitTrie<T> {
+        let DigitTrieDump {
+            root,
+            base,
+            node_data,
+        } = dump;
+        let store = node_data.into_iter().map(|x| Node::from_data(x)).collect();
+        DigitTrie { store, root, base }
+    }
+}
+
+/// External representation of a node used for serialization purpose.
+pub struct DigitNodeData<T> {
+    /// The data contained in the node.
+    pub data: Option<T>,
+    /// The prefix path of the node.
+    pub prefix: Vec<usize>,
+    /// The descendants of the node.
+    pub children: Option<Vec<Option<usize>>>,
+}
+
+impl<T> Node<DigitLeaf<T>, DigitNode<T>>
+where
+    T: Clone,
+{
+    fn get_data(&self) -> DigitNodeData<T> {
+        match self {
+            Node::Leaf(l) => DigitNodeData {
+                data: Some(l.data.clone()),
+                prefix: l.prefix.clone(),
+                children: None,
+            },
+            Node::Node(n) => DigitNodeData {
+                data: n.data.clone(),
+                prefix: n.prefix.clone(),
+                children: Some(n.children.clone()),
+            },
+            Node::None => unreachable!(),
+        }
+    }
+
+    fn from_data(data: DigitNodeData<T>) -> Node<DigitLeaf<T>, DigitNode<T>> {
+        match data.children {
+            Some(c) => Node::Node(DigitNode {
+                children: c,
+                prefix: data.prefix,
+                data: data.data,
+            }),
+            None => Node::Leaf(DigitLeaf {
+                prefix: data.prefix,
+                data: data.data.unwrap(),
+            }),
+        }
+    }
+}
+
 /// Structure used to iterated through a `DigitTrie` values. The iterator performs
 /// a pre-order traversal of the trie.
 pub struct DigitTrieIter<'a, T> {

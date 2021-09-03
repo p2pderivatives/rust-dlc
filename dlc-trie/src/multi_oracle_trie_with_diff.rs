@@ -4,7 +4,7 @@
 //! between the outcomes of each oracle can be supported.
 
 use crate::digit_decomposition::group_by_ignoring_digits;
-use crate::multi_trie::{MultiTrie, MultiTrieIterator};
+use crate::multi_trie::{MultiTrie, MultiTrieDump, MultiTrieIterator};
 use crate::utils::get_adaptor_point_for_indexed_paths;
 use crate::DlcTrie;
 use crate::{Error, OracleInfo, RangeInfo, RangePayout};
@@ -149,5 +149,41 @@ impl DlcTrie for MultiOracleTrieWithDiff {
         self.iter(secp, oracle_infos, &mut callback)?;
         adaptor_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         Ok(adaptor_pairs.into_iter().map(|x| x.1).collect())
+    }
+}
+
+/// Container for a dump of a MultiOracleTrieWithDiff used for serialization purpose.
+pub struct MultiOracleTrieWithDiffDump {
+    /// The dump of the underlying MultiTrie.
+    pub multi_trie_dump: MultiTrieDump<RangeInfo>,
+    /// The base for which the trie was created for.
+    pub base: usize,
+    /// The maximum number of digits for a path in the trie.
+    pub nb_digits: usize,
+}
+
+impl MultiOracleTrieWithDiff {
+    /// Dump the content of the trie for the purpose of serialization.
+    pub fn dump(&self) -> MultiOracleTrieWithDiffDump {
+        let multi_trie_dump = self.multi_trie.dump();
+        MultiOracleTrieWithDiffDump {
+            multi_trie_dump,
+            base: self.base,
+            nb_digits: self.nb_digits,
+        }
+    }
+
+    /// Restore a trie from a dump.
+    pub fn from_dump(dump: MultiOracleTrieWithDiffDump) -> MultiOracleTrieWithDiff {
+        let MultiOracleTrieWithDiffDump {
+            multi_trie_dump,
+            base,
+            nb_digits,
+        } = dump;
+        MultiOracleTrieWithDiff {
+            multi_trie: MultiTrie::from_dump(multi_trie_dump),
+            base,
+            nb_digits,
+        }
     }
 }
