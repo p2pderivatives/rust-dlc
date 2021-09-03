@@ -16,7 +16,7 @@ extern crate serde_json;
 
 pub mod contract_msgs;
 pub mod oracle_msgs;
-mod utils;
+pub mod utils;
 
 use bitcoin::{consensus::Decodable, hash_types::Txid, OutPoint, Script, Transaction};
 use dlc::TxInputInfo;

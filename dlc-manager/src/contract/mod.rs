@@ -12,6 +12,7 @@ pub mod contract_input;
 pub mod enum_descriptor;
 pub mod numerical_descriptor;
 pub mod offered_contract;
+pub mod ser;
 pub mod signed_contract;
 pub(crate) mod utils;
 
@@ -27,7 +28,7 @@ pub enum Contract {
     /// A contract whose funding transaction was included in the blockchain.
     Confirmed(signed_contract::SignedContract),
     /// A contract for which a CET was broadcast.
-    Closed(ClosedContract),
+    Closed(signed_contract::SignedContract),
     /// A contract whose refund transaction was broadcast.
     Refunded(signed_contract::SignedContract),
     /// A contract that failed when verifying information from an accept message.
@@ -59,10 +60,10 @@ impl Contract {
         match self {
             Contract::Offered(o) => o.id,
             Contract::Accepted(o) => o.get_contract_id(),
-            Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
-                o.accepted_contract.get_contract_id()
-            }
-            Contract::Closed(c) => c.signed_contract.accepted_contract.get_contract_id(),
+            Contract::Signed(o)
+            | Contract::Confirmed(o)
+            | Contract::Refunded(o)
+            | Contract::Closed(o) => o.accepted_contract.get_contract_id(),
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.get_contract_id(),
         }
@@ -73,10 +74,10 @@ impl Contract {
         match self {
             Contract::Offered(o) => o.id,
             Contract::Accepted(o) => o.offered_contract.id,
-            Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
-                o.accepted_contract.offered_contract.id
-            }
-            Contract::Closed(o) => o.signed_contract.accepted_contract.offered_contract.id,
+            Contract::Signed(o)
+            | Contract::Confirmed(o)
+            | Contract::Refunded(o)
+            | Contract::Closed(o) => o.accepted_contract.offered_contract.id,
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.offered_contract.id,
         }
@@ -112,13 +113,6 @@ pub struct FailedSignContract {
     pub sign_message: SignDlc,
     /// The error message that was generated.
     pub error_message: String,
-}
-
-/// Information about a contract that was closed.
-#[derive(Clone)]
-pub struct ClosedContract {
-    /// The signed contract that was closed.
-    pub signed_contract: signed_contract::SignedContract,
 }
 
 /// Information about the adaptor signatures and the CET for which they are

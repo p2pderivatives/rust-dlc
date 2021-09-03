@@ -4,8 +4,8 @@ use super::{Blockchain, Oracle, Storage, Time, Wallet};
 use crate::contract::{
     accepted_contract::AcceptedContract, contract_info::ContractInfo,
     contract_input::ContractInput, contract_input::ContractInputInfo, contract_input::OracleInput,
-    offered_contract::OfferedContract, signed_contract::SignedContract, AdaptorInfo,
-    ClosedContract, Contract, FailedAcceptContract, FailedSignContract, FundingInputInfo,
+    offered_contract::OfferedContract, signed_contract::SignedContract, AdaptorInfo, Contract,
+    FailedAcceptContract, FailedSignContract, FundingInputInfo,
 };
 use crate::conversion_utils::get_tx_input_infos;
 use crate::error::Error;
@@ -917,12 +917,8 @@ where
                 self.blockchain.send_transaction(&cet)?;
             }
 
-            let closed_contract = ClosedContract {
-                signed_contract: contract.clone(),
-            };
-
             self.store
-                .update_contract(&Contract::Closed(closed_contract))?;
+                .update_contract(&Contract::Closed(contract.clone()))?;
         }
 
         Ok(())
