@@ -9,4 +9,5 @@ members = [
   "dlc-trie",
   "dlc-manager",
   "mocks",
+  "sled-storage-provider"
 ]

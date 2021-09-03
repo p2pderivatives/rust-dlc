@@ -23,7 +23,9 @@ impl MemoryStorage {
 impl Storage for MemoryStorage {
     fn get_contract(&self, id: &ContractId) -> Result<Contract, DaemonError> {
         let map = self.contracts.read().expect("Could not get read lock");
-        let c = map.get(id).ok_or(DaemonError::StorageError)?;
+        let c = map
+            .get(id)
+            .ok_or(DaemonError::StorageError("Not Found".to_string()))?;
         Ok(c.clone())
     }
 
@@ -32,7 +34,9 @@ impl Storage for MemoryStorage {
         let res = map.insert(contract.id, Contract::Offered(contract.clone()));
         match res {
             None => Ok(()),
-            Some(_) => Err(DaemonError::StorageError),
+            Some(_) => Err(DaemonError::StorageError(
+                "Contract already exists".to_string(),
+            )),
         }
     }
 
