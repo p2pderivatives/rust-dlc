@@ -18,7 +18,7 @@ pub enum Error {
     /// An error occurred in the blockchain component.
     BlockchainError,
     /// The storage component encountered an error.
-    StorageError,
+    StorageError(String),
     /// The oracle component encountered an error.
     OracleError(String),
     /// An error occurred in the DLC library.
@@ -34,7 +34,7 @@ impl fmt::Display for Error {
             Error::InvalidParameters => write!(f, "Invalid parameters were provided"),
             Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
             Error::BlockchainError => write!(f, "Blockchain error"),
-            Error::StorageError => write!(f, "Storage error"),
+            Error::StorageError(ref s) => write!(f, "Storage error {}", s),
             Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
         }

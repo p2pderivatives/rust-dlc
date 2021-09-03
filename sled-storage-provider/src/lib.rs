@@ -1,0 +1,372 @@
+//! # sled-storage-provider
+//! Storage provider for dlc-manager using sled as underlying storage.
+
+#![crate_name = "sled_storage_provider"]
+#![crate_type = "dylib"]
+#![crate_type = "rlib"]
+// Coding conventions
+#![deny(non_upper_case_globals)]
+#![deny(non_camel_case_types)]
+#![deny(non_snake_case)]
+#![deny(unused_mut)]
+#![deny(dead_code)]
+#![deny(unused_imports)]
+#![deny(missing_docs)]
+
+extern crate dlc_manager;
+extern crate sled;
+
+use dlc_manager::contract::accepted_contract::AcceptedContract;
+use dlc_manager::contract::offered_contract::OfferedContract;
+use dlc_manager::contract::ser::Serializable;
+use dlc_manager::contract::signed_contract::SignedContract;
+use dlc_manager::contract::{Contract, FailedAcceptContract, FailedSignContract};
+use dlc_manager::{error::Error, ContractId, Storage};
+use sled::Db;
+use std::convert::TryInto;
+use std::io::{BufRead, Cursor, Read};
+
+/// Implementation of Storage interface using the sled DB backend.
+pub struct SledStorageProvider {
+    db: Db,
+}
+
+macro_rules! convertible_enum {
+    (enum $name:ident {
+        $($vname:ident $(= $val:expr)?,)*
+    }) => {
+        #[derive(Debug)]
+        enum $name {
+            $($vname $(= $val)?,)*
+        }
+
+        impl From<$name> for u8 {
+            fn from(prefix: $name) -> u8 {
+                prefix as u8
+            }
+        }
+
+        impl std::convert::TryFrom<u8> for $name {
+            type Error = Error;
+
+            fn try_from(v: u8) -> Result<Self, Self::Error> {
+                match v {
+                    $(x if x == $name::$vname.into() => Ok($name::$vname),)*
+                    _ => Err(Error::StorageError("Uknown prefix".to_string())),
+                }
+            }
+        }
+    }
+}
+
+convertible_enum!(
+    enum ContractPrefix {
+        Offered = 1,
+        Accepted,
+        Signed,
+        Confirmed,
+        Closed,
+        FailedAccept,
+        FailedSign,
+        Refunded,
+    }
+);
+
+fn get_prefix(contract: &Contract) -> u8 {
+    let prefix = match contract {
+        Contract::Offered(_) => ContractPrefix::Offered,
+        Contract::Accepted(_) => ContractPrefix::Accepted,
+        Contract::Signed(_) => ContractPrefix::Signed,
+        Contract::Confirmed(_) => ContractPrefix::Confirmed,
+        Contract::Closed(_) => ContractPrefix::Closed,
+        Contract::FailedAccept(_) => ContractPrefix::FailedAccept,
+        Contract::FailedSign(_) => ContractPrefix::FailedSign,
+        Contract::Refunded(_) => ContractPrefix::Refunded,
+    };
+    prefix.into()
+}
+
+fn to_storage_error<T>(e: T) -> Error
+where
+    T: std::fmt::Display,
+{
+    Error::StorageError(e.to_string())
+}
+
+impl SledStorageProvider {
+    /// Creates a new instance of a SledStorageProvider.
+    pub fn new(path: &str) -> Result<Self, sled::Error> {
+        Ok(SledStorageProvider {
+            db: sled::open(path)?,
+        })
+    }
+
+    fn get_signed_contracts_with_prefix(&self, prefix: u8) -> Result<Vec<SignedContract>, Error> {
+        let iter = self.db.iter();
+        iter.values()
+            .filter_map(|res| {
+                let value = res.unwrap();
+                if value.subslice(0, 1)[0] == prefix {
+                    let mut cursor = Cursor::new(&value);
+                    cursor.consume(1);
+                    return Some(Ok(SignedContract::deserialize(&mut cursor).ok()?));
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
+impl Storage for SledStorageProvider {
+    fn get_contract(&self, contract_id: &ContractId) -> Result<Contract, Error> {
+        match self.db.get(contract_id).map_err(to_storage_error)? {
+            Some(res) => deserialize_contract(&res),
+            None => Err(Error::StorageError("Not Found".to_string())),
+        }
+    }
+
+    fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error> {
+        let serialized = serialize_contract(&Contract::Offered(contract.clone()))?;
+        self.db
+            .insert(&contract.id, serialized)
+            .map_err(to_storage_error)?;
+        Ok(())
+    }
+
+    fn delete_contract(&mut self, contract_id: &ContractId) -> Result<(), Error> {
+        self.db.remove(&contract_id).map_err(to_storage_error)?;
+        Ok(())
+    }
+
+    fn update_contract(&mut self, contract: &Contract) -> Result<(), Error> {
+        self.db
+            .transaction(|db| {
+                let serialized = match serialize_contract(contract) {
+                    Ok(b) => b,
+                    Err(e) => sled::transaction::abort(e)?,
+                };
+                match contract {
+                    a @ Contract::Accepted(_) | a @ Contract::Signed(_) => {
+                        db.remove(&a.get_temporary_id())?;
+                    }
+                    _ => {}
+                };
+
+                db.insert(&contract.get_id(), serialized)?;
+                Ok(())
+            })
+            .map_err(to_storage_error)?;
+        Ok(())
+    }
+
+    fn get_signed_contracts(&self) -> Result<Vec<SignedContract>, Error> {
+        self.get_signed_contracts_with_prefix(ContractPrefix::Signed.into())
+    }
+
+    fn get_confirmed_contracts(&self) -> Result<Vec<SignedContract>, Error> {
+        self.get_signed_contracts_with_prefix(ContractPrefix::Confirmed.into())
+    }
+}
+
+fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, ::std::io::Error> {
+    let serialized = match contract {
+        Contract::Offered(o) => o.serialize(),
+        Contract::Accepted(o) => o.serialize(),
+        Contract::Signed(o)
+        | Contract::Confirmed(o)
+        | Contract::Refunded(o)
+        | Contract::Closed(o) => o.serialize(),
+        Contract::FailedAccept(c) => c.serialize(),
+        Contract::FailedSign(c) => c.serialize(),
+    };
+    let mut serialized = serialized?;
+    let mut res = Vec::with_capacity(serialized.len() + 1);
+    res.push(get_prefix(contract));
+    res.append(&mut serialized);
+    Ok(res)
+}
+
+fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
+    let mut cursor = ::std::io::Cursor::new(buff);
+    let mut prefix = [0u8; 1];
+    cursor.read_exact(&mut prefix)?;
+    let contract_prefix: ContractPrefix = prefix[0].try_into()?;
+    let contract = match contract_prefix {
+        ContractPrefix::Offered => {
+            Contract::Offered(OfferedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
+        ContractPrefix::Accepted => Contract::Accepted(
+            AcceptedContract::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
+        ContractPrefix::Signed => {
+            Contract::Signed(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
+        ContractPrefix::Confirmed => {
+            Contract::Confirmed(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
+        ContractPrefix::Closed => {
+            Contract::Closed(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
+        ContractPrefix::FailedAccept => Contract::FailedAccept(
+            FailedAcceptContract::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
+        ContractPrefix::FailedSign => Contract::FailedSign(
+            FailedSignContract::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
+        ContractPrefix::Refunded => {
+            Contract::Refunded(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
+    };
+    Ok(contract)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContractPrefix as ContractType;
+    use super::*;
+    use std::fs::File;
+    use std::io::Read;
+
+    macro_rules! sled_test {
+        ($name: ident, $body: expr) => {
+            #[test]
+            fn $name() {
+                let path = format!("{}{}", "test_files/sleddb/", std::stringify!($name));
+                {
+                    let storage = SledStorageProvider::new(&path).expect("Error opening sled DB");
+                    $body(storage);
+                }
+                std::fs::remove_dir_all(path).unwrap();
+            }
+        };
+    }
+
+    fn get_contract<T>(contract: ContractType, number: Option<u32>) -> (T, Vec<u8>)
+    where
+        T: Serializable,
+    {
+        let mut serialized = Vec::new();
+        let suffix = match number {
+            Some(n) => n.to_string(),
+            None => "".to_string(),
+        };
+        let path = format!("test_files/{:?}{}", contract, suffix);
+
+        File::open(path)
+            .unwrap()
+            .read_to_end(&mut serialized)
+            .unwrap();
+        let mut cursor = std::io::Cursor::new(&serialized);
+        (T::deserialize(&mut cursor).unwrap(), serialized)
+    }
+
+    sled_test!(
+        create_contract_can_be_retrieved,
+        |mut storage: SledStorageProvider| {
+            let (contract, serialized) = get_contract(ContractType::Offered, None);
+
+            storage
+                .create_contract(&contract)
+                .expect("Error creating contract");
+
+            let retrieved = storage
+                .get_contract(&contract.id)
+                .expect("Error retrieving contract.");
+
+            if let Contract::Offered(retrieved_offer) = retrieved {
+                assert_eq!(serialized, retrieved_offer.serialize().unwrap());
+            } else {
+                unreachable!();
+            }
+        }
+    );
+
+    sled_test!(
+        update_contract_is_updated,
+        |mut storage: SledStorageProvider| {
+            let (offered_contract, _) = get_contract(ContractType::Offered, None);
+            let (accepted_contract, _) = get_contract(ContractType::Accepted, None);
+            let accepted_contract = Contract::Accepted(accepted_contract);
+
+            storage
+                .create_contract(&offered_contract)
+                .expect("Error creating contract");
+
+            storage
+                .update_contract(&accepted_contract)
+                .expect("Error updating contract.");
+            let retrieved = storage
+                .get_contract(&accepted_contract.get_id())
+                .expect("Error retrieving contract.");
+
+            if let Contract::Accepted(_) = retrieved {
+            } else {
+                unreachable!();
+            }
+        }
+    );
+
+    sled_test!(
+        delete_contract_is_deleted,
+        |mut storage: SledStorageProvider| {
+            let (contract, _) = get_contract(ContractType::Offered, None);
+            storage
+                .create_contract(&contract)
+                .expect("Error creating contract");
+
+            storage
+                .delete_contract(&contract.id)
+                .expect("Error deleting contract");
+
+            storage
+                .get_contract(&contract.id)
+                .expect_err("Contract should have been deleted");
+        }
+    );
+
+    fn insert_offered_signed_and_confirmed(storage: &mut SledStorageProvider) {
+        let (offered_contract, _) = get_contract(ContractType::Offered, None);
+        storage
+            .create_contract(&offered_contract)
+            .expect("Error creating contract");
+        for i in 0..2 {
+            let (signed_contract, _): (SignedContract, _) =
+                get_contract(ContractType::Signed, if i == 0 { None } else { Some(i) });
+            storage
+                .update_contract(&Contract::Signed(signed_contract))
+                .expect("Error inserting signed contract.");
+            let (signed_contract, _): (SignedContract, _) =
+                get_contract(ContractType::Confirmed, if i == 0 { None } else { Some(i) });
+            storage
+                .update_contract(&Contract::Confirmed(signed_contract))
+                .expect("Error inserting signed contract.");
+        }
+    }
+
+    sled_test!(
+        get_signed_contracts_only_signed,
+        |mut storage: SledStorageProvider| {
+            insert_offered_signed_and_confirmed(&mut storage);
+
+            let signed_contracts = storage
+                .get_signed_contracts()
+                .expect("Error retrieving signed contracts");
+
+            assert_eq!(2, signed_contracts.len());
+        }
+    );
+
+    sled_test!(
+        get_confirmed_contracts_only_confirmed,
+        |mut storage: SledStorageProvider| {
+            insert_offered_signed_and_confirmed(&mut storage);
+
+            let confirmed_contracts = storage
+                .get_confirmed_contracts()
+                .expect("Error retrieving signed contracts");
+
+            assert_eq!(2, confirmed_contracts.len());
+        }
+    );
+}
