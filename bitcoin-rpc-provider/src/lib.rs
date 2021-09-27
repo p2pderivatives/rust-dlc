@@ -185,7 +185,7 @@ impl Wallet for BitcoinCoreProvider {
 
     fn import_address(&self, address: &Address) -> Result<(), ManagerError> {
         self.client
-            .import_address(address, None, None)
+            .import_address(address, None, Some(false))
             .map_err(rpc_err_to_manager_err)
     }
 
