@@ -2,9 +2,10 @@
 
 use crate::ContractId;
 use bitcoin::Address;
-use dlc_messages::{AcceptDlc, FundingInput, SignDlc};
+use dlc_messages::{oracle_msgs::OracleAttestation, AcceptDlc, FundingInput, SignDlc};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
+use signed_contract::SignedContract;
 
 pub mod accepted_contract;
 pub mod contract_info;
@@ -28,7 +29,7 @@ pub enum Contract {
     /// A contract whose funding transaction was included in the blockchain.
     Confirmed(signed_contract::SignedContract),
     /// A contract for which a CET was broadcast.
-    Closed(signed_contract::SignedContract),
+    Closed(ClosedContract),
     /// A contract whose refund transaction was broadcast.
     Refunded(signed_contract::SignedContract),
     /// A contract that failed when verifying information from an accept message.
@@ -60,12 +61,12 @@ impl Contract {
         match self {
             Contract::Offered(o) => o.id,
             Contract::Accepted(o) => o.get_contract_id(),
-            Contract::Signed(o)
-            | Contract::Confirmed(o)
-            | Contract::Refunded(o)
-            | Contract::Closed(o) => o.accepted_contract.get_contract_id(),
+            Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
+                o.accepted_contract.get_contract_id()
+            }
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.get_contract_id(),
+            Contract::Closed(c) => c.signed_contract.accepted_contract.get_contract_id(),
         }
     }
 
@@ -74,12 +75,12 @@ impl Contract {
         match self {
             Contract::Offered(o) => o.id,
             Contract::Accepted(o) => o.offered_contract.id,
-            Contract::Signed(o)
-            | Contract::Confirmed(o)
-            | Contract::Refunded(o)
-            | Contract::Closed(o) => o.accepted_contract.offered_contract.id,
+            Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
+                o.accepted_contract.offered_contract.id
+            }
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.offered_contract.id,
+            Contract::Closed(c) => c.signed_contract.accepted_contract.offered_contract.id,
         }
     }
 }
@@ -113,6 +114,17 @@ pub struct FailedSignContract {
     pub sign_message: SignDlc,
     /// The error message that was generated.
     pub error_message: String,
+}
+
+#[derive(Clone)]
+/// Information about a contract that was closed by broadcasting a CET.
+pub struct ClosedContract {
+    /// The signed contract that was closed.
+    pub signed_contract: SignedContract,
+    /// The attestations that were used to decrypt the broadcast CET.
+    pub attestations: Vec<OracleAttestation>,
+    /// The index of the CET that was broadcast.
+    pub cet_index: usize,
 }
 
 /// Information about the adaptor signatures and the CET for which they are

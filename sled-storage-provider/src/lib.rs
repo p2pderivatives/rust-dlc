@@ -20,7 +20,7 @@ use dlc_manager::contract::accepted_contract::AcceptedContract;
 use dlc_manager::contract::offered_contract::OfferedContract;
 use dlc_manager::contract::ser::Serializable;
 use dlc_manager::contract::signed_contract::SignedContract;
-use dlc_manager::contract::{Contract, FailedAcceptContract, FailedSignContract};
+use dlc_manager::contract::{ClosedContract, Contract, FailedAcceptContract, FailedSignContract};
 use dlc_manager::{error::Error, ContractId, Storage};
 use sled::Db;
 use std::convert::TryInto;
@@ -173,12 +173,10 @@ fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, ::std::io::Error> 
     let serialized = match contract {
         Contract::Offered(o) => o.serialize(),
         Contract::Accepted(o) => o.serialize(),
-        Contract::Signed(o)
-        | Contract::Confirmed(o)
-        | Contract::Refunded(o)
-        | Contract::Closed(o) => o.serialize(),
+        Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => o.serialize(),
         Contract::FailedAccept(c) => c.serialize(),
         Contract::FailedSign(c) => c.serialize(),
+        Contract::Closed(c) => c.serialize(),
     };
     let mut serialized = serialized?;
     let mut res = Vec::with_capacity(serialized.len() + 1);
@@ -206,7 +204,7 @@ fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
             Contract::Confirmed(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
         ContractPrefix::Closed => {
-            Contract::Closed(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
+            Contract::Closed(ClosedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
         ContractPrefix::FailedAccept => Contract::FailedAccept(
             FailedAcceptContract::deserialize(&mut cursor).map_err(to_storage_error)?,
