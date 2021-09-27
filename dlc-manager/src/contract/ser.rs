@@ -416,7 +416,8 @@ impl_writeable_custom!(OfferedContract, {
     (fund_output_serial_id, writeable),
     (fee_rate_per_vb, writeable),
     (contract_maturity_bound, writeable),
-    (contract_timeout, writeable)
+    (contract_timeout, writeable),
+    (counter_party, writeable)
 });
 impl_writeable_external!(RangeInfo, range_info, { (cet_index, usize), (adaptor_index, usize)});
 impl_writeable_custom_enum!(AdaptorInfo,; (0, Numerical, write_multi_oracle_trie, read_multi_oracle_trie), (1, NumericalWithDifference, write_multi_oracle_trie_with_diff, read_multi_oracle_trie_with_diff); (2, Enum));

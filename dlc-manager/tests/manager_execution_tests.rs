@@ -62,7 +62,12 @@ macro_rules! receive_loop {
     ($receive:expr, $manager:expr, $send:expr, $expect_err:expr, $sync_send:expr, $rcv_callback: expr) => {
         thread::spawn(move || loop {
             match $receive.recv() {
-                Ok(Some(msg)) => match $manager.lock().unwrap().on_dlc_message(&msg) {
+                Ok(Some(msg)) => match $manager.lock().unwrap().on_dlc_message(
+                    &msg,
+                    "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+                        .parse()
+                        .unwrap(),
+                ) {
                     Ok(opt) => {
                         if *$expect_err.lock().unwrap() != false {
                             panic!("Expected error not raised");
@@ -691,7 +696,12 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let offer_msg = bob_manager_send
         .lock()
         .unwrap()
-        .send_offer(&test_params.contract_input)
+        .send_offer(
+            &test_params.contract_input,
+            "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+                .parse()
+                .unwrap(),
+        )
         .expect("Send offer error");
     let temporary_contract_id = offer_msg.get_hash().unwrap();
     bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
@@ -702,7 +712,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     assert_contract_state!(alice_manager_send, temporary_contract_id, Offered);
 
-    let (contract_id, mut accept_msg) = alice_manager_send
+    let (contract_id, _, mut accept_msg) = alice_manager_send
         .lock()
         .unwrap()
         .accept_contract_offer(&temporary_contract_id)
@@ -712,28 +722,23 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     match path {
         TestPath::BadAcceptCetSignature | TestPath::BadAcceptRefundSignature => {
-            if let Message::Accept(mut accept_dlc) = accept_msg {
-                match path {
-                    TestPath::BadAcceptCetSignature => {
-                        alter_adaptor_sig(&mut accept_dlc.cet_adaptor_signatures)
-                    }
-                    TestPath::BadAcceptRefundSignature => {
-                        accept_dlc.refund_signature =
-                            alter_refund_sig(&accept_dlc.refund_signature);
-                    }
-                    _ => {}
+            match path {
+                TestPath::BadAcceptCetSignature => {
+                    alter_adaptor_sig(&mut accept_msg.cet_adaptor_signatures)
                 }
-                accept_msg = Message::Accept(accept_dlc);
-            }
-
+                TestPath::BadAcceptRefundSignature => {
+                    accept_msg.refund_signature = alter_refund_sig(&accept_msg.refund_signature);
+                }
+                _ => {}
+            };
             *bob_expect_error.lock().unwrap() = true;
-            alice_send.send(Some(accept_msg)).unwrap();
+            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             sync_receive.recv().expect("Error synchronizing");
             assert_contract_state!(bob_manager_send, temporary_contract_id, FailedAccept);
         }
         TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
             *alice_expect_error.lock().unwrap() = true;
-            alice_send.send(Some(accept_msg)).unwrap();
+            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             // Bob receives accept message
             sync_receive.recv().expect("Error synchronizing");
             // Alice receives sign message
@@ -741,7 +746,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             assert_contract_state!(alice_manager_send, contract_id, FailedSign);
         }
         _ => {
-            alice_send.send(Some(accept_msg)).unwrap();
+            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
             assert_contract_state!(bob_manager_send, contract_id, Signed);

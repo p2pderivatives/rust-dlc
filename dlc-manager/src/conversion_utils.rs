@@ -29,7 +29,7 @@ use dlc_messages::oracle_msgs::{
 use dlc_messages::{
     AcceptDlc, CetAdaptorSignature, CetAdaptorSignatures, FundingInput, OfferDlc, SignDlc,
 };
-use std::convert::TryFrom;
+use secp256k1_zkp::PublicKey;
 use std::error;
 use std::fmt;
 
@@ -120,10 +120,11 @@ pub fn get_tx_input_infos(
     Ok((inputs, input_amount))
 }
 
-impl TryFrom<&OfferDlc> for OfferedContract {
-    type Error = Error;
-
-    fn try_from(offer_dlc: &OfferDlc) -> Result<OfferedContract, Error> {
+impl OfferedContract {
+    pub(crate) fn try_from_offer_dlc(
+        offer_dlc: &OfferDlc,
+        counter_party: PublicKey,
+    ) -> Result<OfferedContract, Error> {
         let contract_info = get_contract_info_and_announcements(offer_dlc)?;
 
         let (inputs, input_amount) = get_tx_input_infos(&offer_dlc.funding_inputs)?;
@@ -148,6 +149,7 @@ impl TryFrom<&OfferDlc> for OfferedContract {
             fund_output_serial_id: offer_dlc.fund_output_serial_id,
             funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
             total_collateral: offer_dlc.contract_info.get_total_collateral(),
+            counter_party,
         })
     }
 }

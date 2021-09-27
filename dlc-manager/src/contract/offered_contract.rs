@@ -3,6 +3,7 @@
 use super::contract_info::ContractInfo;
 use super::FundingInputInfo;
 use dlc::PartyParams;
+use secp256k1_zkp::PublicKey;
 
 /// Contains information about a contract that was offered.
 #[derive(Clone)]
@@ -19,6 +20,8 @@ pub struct OfferedContract {
     /// The set of contract information that are used to generate CET and
     /// adaptor signatures.
     pub contract_info: Vec<ContractInfo>,
+    /// The public key of the counter-party's node.
+    pub counter_party: PublicKey,
     /// The parameters of the offering party.
     pub offer_params: PartyParams,
     /// The sum of both parties collateral.
