@@ -1,5 +1,6 @@
 //! #PayoutFunction
 
+use crate::error::Error;
 use dlc::{Payout, RangePayout};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -13,20 +14,38 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct PayoutFunction {
     /// The pieces making up the function.
-    pub payout_function_pieces: Vec<PayoutFunctionPiece>,
+    pub(crate) payout_function_pieces: Vec<PayoutFunctionPiece>,
 }
 
 impl PayoutFunction {
+    /// Create a new payout function
+    pub fn new(function_pieces: Vec<PayoutFunctionPiece>) -> Result<PayoutFunction, Error> {
+        let is_continuous = function_pieces
+            .iter()
+            .zip(function_pieces.iter().skip(1))
+            .all(|(cur, next)| cur.get_last_point() == next.get_first_point());
+        if is_continuous {
+            Ok(PayoutFunction {
+                payout_function_pieces: function_pieces,
+            })
+        } else {
+            Err(Error::InvalidParameters(
+                "Function pieces are not continuous.".to_string(),
+            ))
+        }
+    }
+
     /// Generate the range payouts from the function.
     pub fn to_range_payouts(
         &self,
         total_collateral: u64,
         rounding_intervals: &RoundingIntervals,
     ) -> Vec<RangePayout> {
-        self.payout_function_pieces
-            .iter()
-            .flat_map(|x| x.to_range_payouts(total_collateral, rounding_intervals))
-            .collect()
+        let mut range_payouts = Vec::new();
+        for piece in &self.payout_function_pieces {
+            piece.to_range_payouts(total_collateral, rounding_intervals, &mut range_payouts);
+        }
+        range_payouts
     }
 }
 
@@ -50,14 +69,29 @@ impl PayoutFunctionPiece {
         &self,
         total_collateral: u64,
         rounding_intervals: &RoundingIntervals,
-    ) -> Vec<RangePayout> {
-        match &self {
+        range_payouts: &mut Vec<RangePayout>,
+    ) {
+        match self {
             PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => {
-                p.to_range_payouts(rounding_intervals, total_collateral)
+                p.to_range_payouts(rounding_intervals, total_collateral, range_payouts)
             }
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
-                h.to_range_payouts(rounding_intervals, total_collateral)
+                h.to_range_payouts(rounding_intervals, total_collateral, range_payouts)
             }
+        }
+    }
+
+    fn get_first_point(&self) -> &PayoutPoint {
+        match self {
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => &p.payout_points[0],
+            PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => &h.left_end_point,
+        }
+    }
+
+    fn get_last_point(&self) -> &PayoutPoint {
+        match self {
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => &p.payout_points.last().unwrap(),
+            PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => &h.right_end_point,
         }
     }
 }
@@ -78,25 +112,27 @@ trait Evaluable {
         &self,
         rounding_intervals: &RoundingIntervals,
         total_collateral: u64,
-    ) -> Vec<RangePayout> {
-        let mut res = Vec::new();
+        range_payouts: &mut Vec<RangePayout>,
+    ) {
         let first_outcome = self.get_first_outcome();
-        let first_payout = self.get_rounded_payout(first_outcome, rounding_intervals);
-        let mut cur_range = RangePayout {
-            start: first_outcome as usize,
-            count: 1,
-            payout: Payout {
-                offer: first_payout,
-                accept: total_collateral - first_payout,
-            },
-        };
+        let mut cur_range = range_payouts.pop().unwrap_or_else(|| {
+            let first_payout = self.get_rounded_payout(first_outcome, rounding_intervals);
+            RangePayout {
+                start: first_outcome as usize,
+                count: 1,
+                payout: Payout {
+                    offer: first_payout,
+                    accept: total_collateral - first_payout,
+                },
+            }
+        });
 
         for outcome in (first_outcome + 1)..(self.get_last_outcome() + 1) {
             let payout = self.get_rounded_payout(outcome, rounding_intervals);
             if cur_range.payout.offer == payout {
                 cur_range.count += 1;
             } else {
-                res.push(cur_range);
+                range_payouts.push(cur_range);
                 cur_range = RangePayout {
                     start: outcome as usize,
                     count: 1,
@@ -108,8 +144,7 @@ trait Evaluable {
             }
         }
 
-        res.push(cur_range);
-        res
+        range_payouts.push(cur_range);
     }
 }
 
@@ -122,7 +157,25 @@ trait Evaluable {
 )]
 pub struct PolynomialPayoutCurvePiece {
     /// The set of points to be used to interpolate the polynomial.
-    pub payout_points: Vec<PayoutPoint>,
+    pub(crate) payout_points: Vec<PayoutPoint>,
+}
+
+impl PolynomialPayoutCurvePiece {
+    /// Create a new PolynomialPayoutCurvePiece
+    pub fn new(payout_points: Vec<PayoutPoint>) -> Result<Self, Error> {
+        let is_ascending = payout_points.len() > 1
+            && payout_points
+                .iter()
+                .zip(payout_points.iter().skip(1))
+                .all(|(cur, next)| cur.event_outcome < next.event_outcome);
+        if is_ascending {
+            Ok(PolynomialPayoutCurvePiece { payout_points })
+        } else {
+            Err(Error::InvalidParameters(
+                "Payout points must have ascending event outcome value.".to_string(),
+            ))
+        }
+    }
 }
 
 impl Evaluable for PolynomialPayoutCurvePiece {
@@ -191,23 +244,61 @@ impl PayoutPoint {
 )]
 pub struct HyperbolaPayoutCurvePiece {
     /// The left end point of the piece.
-    pub left_end_point: PayoutPoint,
+    pub(crate) left_end_point: PayoutPoint,
     /// The right end point of the piece.
-    pub right_end_point: PayoutPoint,
+    pub(crate) right_end_point: PayoutPoint,
     /// Which piece to use in case of ambiguity.
-    pub use_positive_piece: bool,
+    pub(crate) use_positive_piece: bool,
     /// X coordinate of the translation point.
-    pub translate_outcome: f64,
+    pub(crate) translate_outcome: f64,
     /// Y coordinate of the translation point.
-    pub translate_payout: f64,
+    pub(crate) translate_payout: f64,
     /// a value of the transformation matrix.
-    pub a: f64,
+    pub(crate) a: f64,
     /// b value of the transformation matrix.
-    pub b: f64,
+    pub(crate) b: f64,
     /// c value of the transformation matrix.
-    pub c: f64,
+    pub(crate) c: f64,
     /// d value of the transformation matrix.
-    pub d: f64,
+    pub(crate) d: f64,
+}
+
+impl HyperbolaPayoutCurvePiece {
+    /// Create a new HyperbolaPayoutCurvePiece
+    pub fn new(
+        left_end_point: PayoutPoint,
+        right_end_point: PayoutPoint,
+        use_positive_piece: bool,
+        translate_outcome: f64,
+        translate_payout: f64,
+        a: f64,
+        b: f64,
+        c: f64,
+        d: f64,
+    ) -> Result<Self, Error> {
+        if a * b == d * c {
+            Err(Error::InvalidParameters(
+                "a * c cannot equal d * c".to_string(),
+            ))
+        } else if left_end_point.event_outcome >= right_end_point.event_outcome {
+            Err(Error::InvalidParameters(
+                "Left end point outcome must be strictly less than right end point outcome"
+                    .to_string(),
+            ))
+        } else {
+            Ok(HyperbolaPayoutCurvePiece {
+                left_end_point,
+                right_end_point,
+                use_positive_piece,
+                translate_outcome,
+                translate_payout,
+                a,
+                b,
+                c,
+                d,
+            })
+        }
+    }
 }
 
 impl Evaluable for HyperbolaPayoutCurvePiece {
@@ -374,6 +465,26 @@ mod test {
                 expected_last_payout: 10,
                 total_collateral: 10,
             },
+            TestCase {
+                payout_points: vec![
+                    PayoutPoint {
+                        event_outcome: 50000,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: 1048575,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                ],
+                expected_len: 1,
+                expected_first_start: 50000,
+                expected_first_payout: 0,
+                expected_last_start: 50000,
+                expected_last_payout: 0,
+                total_collateral: 200000000,
+            },
         ];
 
         for test_case in test_cases {
@@ -388,8 +499,12 @@ mod test {
                 }],
             };
 
-            let range_payouts =
-                polynomial.to_range_payouts(&rounding_intervals, test_case.total_collateral);
+            let mut range_payouts = Vec::new();
+            polynomial.to_range_payouts(
+                &rounding_intervals,
+                test_case.total_collateral,
+                &mut range_payouts,
+            );
             let first = range_payouts.first().unwrap();
             let last = range_payouts.last().unwrap();
 
@@ -431,6 +546,232 @@ mod test {
 
         for outcome in outcomes {
             assert_eq!(expected_payout(outcome), hyperbola.evaluate(outcome));
+        }
+    }
+
+    #[test]
+    fn payout_function_to_range_outcome_test() {
+        let payout_function = PayoutFunction::new(vec![
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 0,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: 9,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                ])
+                .unwrap(),
+            ),
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 9,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: 10,
+                        outcome_payout: 10,
+                        extra_precision: 0,
+                    },
+                ])
+                .unwrap(),
+            ),
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 10,
+                        outcome_payout: 10,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: 20,
+                        outcome_payout: 10,
+                        extra_precision: 0,
+                    },
+                ])
+                .unwrap(),
+            ),
+        ])
+        .unwrap();
+        let expected_ranges = vec![
+            RangePayout {
+                start: 0,
+                count: 10,
+                payout: Payout {
+                    offer: 0,
+                    accept: 10,
+                },
+            },
+            RangePayout {
+                start: 10,
+                count: 11,
+                payout: Payout {
+                    offer: 10,
+                    accept: 0,
+                },
+            },
+        ];
+        assert_eq!(
+            expected_ranges,
+            payout_function.to_range_payouts(
+                10,
+                &RoundingIntervals {
+                    intervals: vec![RoundingInterval {
+                        begin_interval: 0,
+                        rounding_mod: 1
+                    }]
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn polynomial_payout_curve_validity_test() {
+        let invalid = vec![
+            // Polynomial curve piece requires more than one
+            vec![PayoutPoint {
+                event_outcome: 0,
+                outcome_payout: 0,
+                extra_precision: 0,
+            }],
+            // Payout point outcomes should be increasing
+            vec![
+                PayoutPoint {
+                    event_outcome: 10,
+                    outcome_payout: 0,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 9,
+                    outcome_payout: 0,
+                    extra_precision: 0,
+                },
+            ],
+        ];
+
+        for points in invalid {
+            PolynomialPayoutCurvePiece::new(points).expect_err("Invalid pieces should error");
+        }
+    }
+
+    #[test]
+    fn hyperbola_validity_test() {
+        HyperbolaPayoutCurvePiece::new(
+            PayoutPoint {
+                event_outcome: 0,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            PayoutPoint {
+                event_outcome: 0,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            true,
+            0.0,
+            0.0,
+            1.0,
+            2.0,
+            3.0,
+            4.0,
+        )
+        .expect_err("Payout point are not increasing should error.");
+        HyperbolaPayoutCurvePiece::new(
+            PayoutPoint {
+                event_outcome: 0,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            PayoutPoint {
+                event_outcome: 1,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            true,
+            0.0,
+            0.0,
+            1.0,
+            2.0,
+            1.0,
+            2.0,
+        )
+        .expect_err("a * b == d * c should error.");
+    }
+
+    #[test]
+    fn payout_function_validity_test() {
+        let invalid = vec![
+            // Pieces should form a continuous function
+            vec![
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 0,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 9,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 11,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 19,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+            ],
+            vec![
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 0,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 9,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 10,
+                            outcome_payout: 1,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 19,
+                            outcome_payout: 1,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+            ],
+        ];
+
+        for pieces in invalid {
+            PayoutFunction::new(pieces).expect_err("Invalid pieces should error");
         }
     }
 }

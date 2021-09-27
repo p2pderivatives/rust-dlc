@@ -235,24 +235,24 @@ fn get_numerical_contract_descriptor(
     difference_params: Option<DifferenceParams>,
 ) -> ContractDescriptor {
     ContractDescriptor::Numerical(NumericalDescriptor {
-        payout_function: PayoutFunction {
-            payout_function_pieces: vec![PayoutFunctionPiece::PolynomialPayoutCurvePiece(
-                PolynomialPayoutCurvePiece {
-                    payout_points: vec![
-                        PayoutPoint {
-                            event_outcome: 0,
-                            outcome_payout: 0,
-                            extra_precision: 0,
-                        },
-                        PayoutPoint {
-                            event_outcome: max_value() as u64,
-                            outcome_payout: 200000000,
-                            extra_precision: 0,
-                        },
-                    ],
-                },
-            )],
-        },
+        payout_function: PayoutFunction::new(vec![
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 0,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: max_value() as u64,
+                        outcome_payout: 200000000,
+                        extra_precision: 0,
+                    },
+                ])
+                .unwrap(),
+            ),
+        ])
+        .unwrap(),
         rounding_intervals: RoundingIntervals {
             intervals: vec![RoundingInterval {
                 begin_interval: 0,
