@@ -2,6 +2,8 @@ use dlc::OracleInfo as DlcOracleInfo;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
 use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use utils::{
     read_schnorr_pubkey, read_schnorr_pubkeys, read_schnorr_signatures, read_schnorrsig,
     read_string, read_strings, write_schnorr_pubkey, write_schnorr_pubkeys,
@@ -9,6 +11,11 @@ use utils::{
 };
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum OracleInfo {
     Single(SingleOracleInfo),
     Multi(MultiOracleInfo),
@@ -34,6 +41,11 @@ impl_writeable_tlv_based_enum!(
 /// Structure containing information about an oracle to be used as external
 /// data source for a DLC contract.
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SingleOracleInfo {
     pub oracle_announcement: OracleAnnouncement,
 }
@@ -41,6 +53,11 @@ pub struct SingleOracleInfo {
 impl_writeable!(SingleOracleInfo, 0, { oracle_announcement });
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct MultiOracleInfo {
     pub threshold: u16,
     pub oracle_announcements: Vec<OracleAnnouncement>,
@@ -54,6 +71,11 @@ impl_writeable_tlv_based!(MultiOracleInfo, {
 });
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OracleParams {
     pub max_error_exp: u16,
     pub min_fail_exp: u16,
@@ -63,6 +85,11 @@ pub struct OracleParams {
 impl_writeable!(OracleParams, 33, {max_error_exp, min_fail_exp, maximize_coverage});
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OracleAnnouncement {
     pub announcement_signature: SchnorrSignature,
     pub oracle_public_key: SchnorrPublicKey,
@@ -102,6 +129,11 @@ impl From<&OracleAnnouncement> for DlcOracleInfo {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OracleEvent {
     pub oracle_nonces: Vec<SchnorrPublicKey>,
     pub event_maturity_epoch: u32,
@@ -136,6 +168,11 @@ impl Readable for OracleEvent {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum EventDescriptor {
     EnumEvent(EnumEventDescriptor),
     DigitDecompositionEvent(DigitDecompositionEventDescriptor),
@@ -147,6 +184,11 @@ impl_writeable_tlv_based_enum!(EventDescriptor, ;
 );
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct EnumEventDescriptor {
     pub outcomes: Vec<String>,
 }
@@ -175,6 +217,11 @@ impl Readable for EnumEventDescriptor {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct DigitDecompositionEventDescriptor {
     pub base: u64,
     pub is_signed: bool,

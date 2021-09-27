@@ -5,6 +5,8 @@ use bitcoin::Address;
 use dlc_messages::{oracle_msgs::OracleAttestation, AcceptDlc, FundingInput, SignDlc};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use signed_contract::SignedContract;
 
 pub mod accepted_contract;
@@ -87,6 +89,11 @@ impl Contract {
 
 /// Information about a funding input.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct FundingInputInfo {
     /// The funding input as used in messages.
     pub funding_input: FundingInput,
@@ -142,6 +149,11 @@ pub enum AdaptorInfo {
 
 /// The descriptor of a contract.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum ContractDescriptor {
     /// Case for enumeration outcome DLC.
     Enum(enum_descriptor::EnumDescriptor),

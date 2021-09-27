@@ -6,6 +6,11 @@ use dlc::PartyParams;
 
 /// Contains information about a contract that was offered.
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OfferedContract {
     /// The temporary id of the contract.
     pub id: [u8; 32],

@@ -19,6 +19,8 @@ extern crate bitcoin;
 extern crate core;
 extern crate secp256k1_sys;
 extern crate secp256k1_zkp;
+#[cfg(feature = "serde")]
+extern crate serde;
 
 use bitcoin::blockdata::{
     opcodes,
@@ -28,6 +30,8 @@ use bitcoin::blockdata::{
 use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verification};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod secp_utils;
@@ -69,6 +73,7 @@ const ENABLE_LOCKTIME: u32 = 0xfffffffe;
 /// the initiator of the contract while accept party represents the party
 /// accepting the contract.
 #[derive(PartialEq, Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Payout {
     /// Payout for the offering party
     pub offer: u64,
@@ -89,6 +94,7 @@ pub struct RangePayout {
 
 /// Representation of a payout for an enumeration outcome.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EnumerationPayout {
     /// The outcome value (prior to hashing)
     pub outcome: String,
@@ -132,6 +138,11 @@ impl DlcTransactions {
 
 /// Contains info about a utxo used for funding a DLC contract
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct TxInputInfo {
     /// The outpoint for the utxo
     pub outpoint: OutPoint,
@@ -187,6 +198,11 @@ impl fmt::Display for Error {
 /// party. Specifically these are the common fields between Offer and Accept
 /// messages.
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PartyParams {
     /// The public key for the fund multisig script
     pub fund_pubkey: PublicKey,

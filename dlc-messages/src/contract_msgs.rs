@@ -47,7 +47,12 @@ impl Readable for ContractOutcome {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum ContractInfo {
     SingleContractInfo(SingleContractInfo),
     DisjointContractInfo(DisjointContractInfo),
@@ -68,7 +73,12 @@ impl ContractInfo {
 }
 
 /// Structure containing the list of outcome of a DLC contract.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SingleContractInfo {
     pub total_collateral: u64,
     pub contract_info: ContractInfoInner,
@@ -76,7 +86,12 @@ pub struct SingleContractInfo {
 
 impl_writeable!(SingleContractInfo, 0, { total_collateral, contract_info });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct DisjointContractInfo {
     pub total_collateral: u64,
     pub contract_infos: Vec<ContractInfoInner>,
@@ -102,7 +117,12 @@ impl Readable for DisjointContractInfo {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct ContractInfoInner {
     pub contract_descriptor: ContractDescriptor,
     pub oracle_info: OracleInfo,
@@ -110,7 +130,12 @@ pub struct ContractInfoInner {
 
 impl_writeable!(ContractInfoInner, 0, { contract_descriptor, oracle_info });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum ContractDescriptor {
     EnumeratedContractDescriptor(EnumeratedContractDescriptor),
     NumericOutcomeContractDescriptor(NumericOutcomeContractDescriptor),
@@ -122,7 +147,12 @@ impl_writeable_tlv_based_enum!(
     (1, NumericOutcomeContractDescriptor)
 );
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct EnumeratedContractDescriptor {
     pub payouts: Vec<ContractOutcome>,
 }
@@ -143,7 +173,12 @@ impl Readable for EnumeratedContractDescriptor {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct NumericOutcomeContractDescriptor {
     pub payout_function: PayoutFunction,
     pub rounding_intervals: RoundingIntervals,
@@ -151,7 +186,12 @@ pub struct NumericOutcomeContractDescriptor {
 
 impl_writeable!(NumericOutcomeContractDescriptor, 0, { payout_function, rounding_intervals });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PayoutFunction {
     pub payout_function_pieces: Vec<PayoutFunctionPiece>,
     pub last_endpoint: PayoutPoint,
@@ -176,7 +216,12 @@ impl Readable for PayoutFunction {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PayoutFunctionPiece {
     pub left_end_point: PayoutPoint,
     pub payout_curve_piece: PayoutCurvePiece,
@@ -184,7 +229,12 @@ pub struct PayoutFunctionPiece {
 
 impl_writeable!(PayoutFunctionPiece, 0, { left_end_point, payout_curve_piece });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum PayoutCurvePiece {
     PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece),
     HyperbolaPayoutCurvePiece(HyperbolaPayoutCurvePiece),
@@ -195,7 +245,12 @@ impl_writeable_tlv_based_enum!(PayoutCurvePiece,;
   (1, HyperbolaPayoutCurvePiece)
 );
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PolynomialPayoutCurvePiece {
     pub payout_points: Vec<PayoutPoint>,
 }
@@ -214,7 +269,12 @@ impl Readable for PolynomialPayoutCurvePiece {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PayoutPoint {
     pub event_outcome: u64,
     pub outcome_payout: u64,
@@ -223,7 +283,12 @@ pub struct PayoutPoint {
 
 impl_writeable!(PayoutPoint, 64 + 64 + 16, { event_outcome, outcome_payout, extra_precision });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct HyperbolaPayoutCurvePiece {
     pub use_positive_piece: bool,
     pub translate_outcome: f64,
@@ -270,7 +335,12 @@ impl Readable for HyperbolaPayoutCurvePiece {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct RoundingInterval {
     pub begin_interval: u64,
     pub rounding_mod: u64,
@@ -278,7 +348,12 @@ pub struct RoundingInterval {
 
 impl_writeable!(RoundingInterval, 64 + 64, { begin_interval, rounding_mod });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct RoundingIntervals {
     pub intervals: Vec<RoundingInterval>,
 }
