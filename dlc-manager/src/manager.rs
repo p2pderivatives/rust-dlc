@@ -26,7 +26,6 @@ use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as Schn
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::ops::{Deref, DerefMut};
 use std::string::ToString;
 
@@ -84,10 +83,14 @@ where
     }
 
     /// Function called to pass a DlcMessage to the Manager.
-    pub fn on_dlc_message(&mut self, msg: &DlcMessage) -> Result<Option<DlcMessage>, Error> {
+    pub fn on_dlc_message(
+        &mut self,
+        msg: &DlcMessage,
+        counter_party: PublicKey,
+    ) -> Result<Option<DlcMessage>, Error> {
         match msg {
             DlcMessage::Offer(o) => {
-                self.on_offer_message(o)?;
+                self.on_offer_message(o, counter_party)?;
                 Ok(None)
             }
             DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a)?)),
@@ -190,7 +193,11 @@ where
 
     /// Function called to create a new DLC. The offered contract will be stored
     /// and an OfferDlc message returned.
-    pub fn send_offer(&mut self, contract: &ContractInput) -> Result<OfferDlc, Error> {
+    pub fn send_offer(
+        &mut self,
+        contract: &ContractInput,
+        counter_party: PublicKey,
+    ) -> Result<OfferDlc, Error> {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
         let (party_params, _, funding_inputs_info) =
             self.get_party_params(contract.offer_collateral, contract.fee_rate)?;
@@ -212,6 +219,7 @@ where
             fee_rate_per_vb: contract.fee_rate,
             contract_maturity_bound: contract.maturity_time,
             contract_timeout: contract.maturity_time + REFUND_DELAY,
+            counter_party,
         };
 
         let offer_msg: OfferDlc = (&offered_contract).into();
@@ -223,8 +231,13 @@ where
         Ok(offer_msg)
     }
 
-    fn on_offer_message(&mut self, offered_message: &OfferDlc) -> Result<(), Error> {
-        let contract: OfferedContract = offered_message.try_into()?;
+    fn on_offer_message(
+        &mut self,
+        offered_message: &OfferDlc,
+        counter_party: PublicKey,
+    ) -> Result<(), Error> {
+        let contract: OfferedContract =
+            OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
         self.store.create_contract(&contract)?;
 
         Ok(())
@@ -234,7 +247,7 @@ where
     pub fn accept_contract_offer(
         &mut self,
         contract_id: &ContractId,
-    ) -> Result<(ContractId, DlcMessage), Error> {
+    ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
         let contract = self.store.get_contract(contract_id)?;
         let offered_contract = match contract {
             Contract::Offered(offered) => offered,
@@ -331,6 +344,8 @@ where
             funding_script_pubkey,
         };
 
+        let counter_party = offered_contract.counter_party;
+
         let mut accepted_contract = AcceptedContract {
             offered_contract,
             adaptor_infos,
@@ -351,7 +366,7 @@ where
         self.store
             .update_contract(&Contract::Accepted(accepted_contract))?;
 
-        Ok((contract_id, DlcMessage::Accept(accept_msg)))
+        Ok((contract_id, counter_party, accept_msg))
     }
 
     fn on_accept_message(&mut self, accept_msg: &AcceptDlc) -> Result<DlcMessage, Error> {
