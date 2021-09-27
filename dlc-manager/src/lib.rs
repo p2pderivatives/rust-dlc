@@ -96,13 +96,17 @@ pub trait Blockchain {
 /// Storage trait provides functionalities to store and retrieve DLCs.
 pub trait Storage {
     /// Returns the contract with given id if found.
-    fn get_contract(&self, id: &ContractId) -> Result<Contract, Error>;
+    fn get_contract(&self, id: &ContractId) -> Result<Option<Contract>, Error>;
+    /// Return all contracts
+    fn get_contracts(&self) -> Result<Vec<Contract>, Error>;
     /// Create a record for the given contract.
     fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error>;
     /// Delete the record for the contract with the given id.
     fn delete_contract(&mut self, id: &ContractId) -> Result<(), Error>;
     /// Update the given contract.
     fn update_contract(&mut self, contract: &Contract) -> Result<(), Error>;
+    /// Returns the set of contracts in offered state.
+    fn get_contract_offers(&self) -> Result<Vec<OfferedContract>, Error>;
     /// Returns the set of contracts in signed state.
     fn get_signed_contracts(&self) -> Result<Vec<SignedContract>, Error>;
     /// Returns the set of confirmed contracts.

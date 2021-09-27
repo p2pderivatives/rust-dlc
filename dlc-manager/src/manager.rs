@@ -250,7 +250,8 @@ where
     ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
         let contract = self.store.get_contract(contract_id)?;
         let offered_contract = match contract {
-            Contract::Offered(offered) => offered,
+            Some(Contract::Offered(offered)) => offered,
+            None => return Err(Error::InvalidParameters("Unknown contract id.".to_string())),
             _ => return Err(Error::InvalidState),
         };
 
@@ -373,7 +374,8 @@ where
         let contract = self.store.get_contract(&accept_msg.temporary_contract_id)?;
 
         let offered_contract = match contract {
-            Contract::Offered(o) => o,
+            Some(Contract::Offered(offered)) => offered,
+            None => return Err(Error::InvalidParameters("Unknown contract id.".to_string())),
             _ => return Err(Error::InvalidState),
         };
 
@@ -605,9 +607,11 @@ where
     fn on_sign_message(&mut self, sign_message: &SignDlc) -> Result<(), Error> {
         let contract = self.store.get_contract(&sign_message.contract_id)?;
         let accepted_contract = match contract {
-            Contract::Accepted(a) => a,
+            Some(Contract::Accepted(accepted)) => accepted,
+            None => return Err(Error::InvalidParameters("Unknown contract id.".to_string())),
             _ => return Err(Error::InvalidState),
         };
+
         let offered_contract = &accepted_contract.offered_contract;
 
         let verify_result = dlc::verify_tx_input_sig(
