@@ -134,7 +134,9 @@ impl ContractInfo {
                 .iter()
                 .map(|x| {
                     x.parse::<usize>()
-                        .or(Err(crate::error::Error::InvalidParameters))
+                        .or(Err(crate::error::Error::InvalidParameters(
+                            "Invalid outcome, {} is not a valid number.".to_string(),
+                        )))
                 })
                 .collect::<Result<Vec<usize>, crate::error::Error>>()
         };
@@ -183,7 +185,7 @@ impl ContractInfo {
                             .map(|(x, path)| Ok((*x, get_digits_outcome(path)?)))
                             .collect::<Result<Vec<(usize, Vec<usize>)>, crate::error::Error>>()?,
                     )
-                    .ok_or(crate::error::Error::InvalidParameters)?;
+                    .ok_or(crate::error::Error::InvalidState)?;
                 Ok(Some((
                     res.path.iter().map(|(x, y)| (*x, y.len())).collect(),
                     res.value.clone(),

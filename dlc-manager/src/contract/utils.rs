@@ -17,7 +17,9 @@ pub(crate) fn get_majority_combination(
     }
 
     if hash_set.len() == 0 {
-        return Err(crate::error::Error::InvalidParameters);
+        return Err(crate::error::Error::InvalidParameters(
+            "No majority found.".to_string(),
+        ));
     }
 
     let mut values: Vec<_> = hash_set.into_iter().collect();

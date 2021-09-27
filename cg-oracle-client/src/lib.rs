@@ -114,7 +114,9 @@ impl CGOracleClient {
     /// oracle uses an incompatible format.
     pub fn new(host: &str) -> Result<CGOracleClient, DlcManagerError> {
         if host.len() < 1 {
-            return Err(DlcManagerError::InvalidParameters);
+            return Err(DlcManagerError::InvalidParameters(
+                "Invalid host".to_string(),
+            ));
         }
         let host = if host.chars().last().unwrap() != '/' {
             format!("{}{}", host, "/")
