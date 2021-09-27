@@ -618,3 +618,61 @@ impl From<&OracleParams> for DifferenceParams {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn payout_function_round_trip() {
+        let payout_function = PayoutFunction {
+            payout_function_pieces: vec![
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 0,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 9,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 9,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 10,
+                            outcome_payout: 10,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 10,
+                            outcome_payout: 10,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 20,
+                            outcome_payout: 10,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+            ],
+        };
+        let ser_payout_function: SerPayoutFunction = (&payout_function).into();
+        let res: PayoutFunction = (&ser_payout_function).into();
+        assert_eq!(payout_function, res);
+    }
+}
