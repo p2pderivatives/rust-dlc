@@ -11,7 +11,7 @@ use crate::contract::offered_contract::OfferedContract;
 use crate::contract::signed_contract::SignedContract;
 use crate::contract::AdaptorInfo;
 use crate::contract::{
-    ContractDescriptor, FailedAcceptContract, FailedSignContract, FundingInputInfo,
+    ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, FundingInputInfo,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
@@ -441,6 +441,11 @@ impl_writeable_custom!(SignedContract, {
     (adaptor_signatures, {option_cb, write_ecdsa_adaptor_signatures, read_ecdsa_adaptor_signatures }),
     (offer_refund_signature, writeable),
     (funding_signatures, writeable)
+});
+impl_writeable_custom!(ClosedContract, {
+    (signed_contract, writeable),
+    (attestations, vec),
+    (cet_index, usize)
 });
 impl_writeable_custom!(FailedAcceptContract, {(offered_contract, writeable), (accept_message, writeable), (error_message, string)});
 impl_writeable_custom!(FailedSignContract, {(accepted_contract, writeable), (sign_message, writeable), (error_message, string)});
