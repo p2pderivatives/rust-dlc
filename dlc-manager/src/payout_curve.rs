@@ -1,9 +1,16 @@
 //! #PayoutFunction
 
 use dlc::{Payout, RangePayout};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Contains information to compute the set of payouts based on the outcomes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PayoutFunction {
     /// The pieces making up the function.
     pub payout_function_pieces: Vec<PayoutFunctionPiece>,
@@ -24,7 +31,12 @@ impl PayoutFunction {
 }
 
 /// A piece of a payout function.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub enum PayoutFunctionPiece {
     /// A function piece represented by a polynomial.
     PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece),
@@ -102,7 +114,12 @@ trait Evaluable {
 }
 
 /// A function piece represented by a polynomial.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PolynomialPayoutCurvePiece {
     /// The set of points to be used to interpolate the polynomial.
     pub payout_points: Vec<PayoutPoint>,
@@ -144,7 +161,12 @@ impl Evaluable for PolynomialPayoutCurvePiece {
 }
 
 /// A payout point representing a payout for a given outcome.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PayoutPoint {
     /// The event outcome.
     pub event_outcome: u64,
@@ -161,7 +183,12 @@ impl PayoutPoint {
 }
 
 /// A function piece represented by a hyperbola.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct HyperbolaPayoutCurvePiece {
     /// The left end point of the piece.
     pub left_end_point: PayoutPoint,
@@ -213,6 +240,11 @@ impl Evaluable for HyperbolaPayoutCurvePiece {
 /// to reduce the number of adaptor signatures required. A `rounding_mod` value
 /// of 1 indicates that no rounding is performed.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct RoundingInterval {
     /// The start of the rounding interval.
     pub begin_interval: u64,
@@ -222,6 +254,11 @@ pub struct RoundingInterval {
 
 /// A set of rounding intervals.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct RoundingIntervals {
     /// Contains the rounding intervals.
     pub intervals: Vec<RoundingInterval>,

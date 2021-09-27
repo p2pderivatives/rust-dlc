@@ -2,9 +2,16 @@
 
 use super::ContractDescriptor;
 use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Oracle information required for the initial creation of a contract.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OracleInput {
     /// The set of public keys for each of the used oracles.
     pub public_keys: Vec<SchnorrPublicKey>,
@@ -17,6 +24,11 @@ pub struct OracleInput {
 }
 
 /// Represents the contract specifications.
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct ContractInputInfo {
     /// The contract conditions.
     pub contract_descriptor: ContractDescriptor,
@@ -24,6 +36,11 @@ pub struct ContractInputInfo {
     pub oracles: OracleInput,
 }
 
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 /// Contains all the information necessary for the initialization of a DLC.
 pub struct ContractInput {
     /// The collateral for the offering party.

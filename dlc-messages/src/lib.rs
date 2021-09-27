@@ -39,7 +39,12 @@ pub const SIGN_TYPE: u16 = 42782;
 
 /// Contains information about a specific input to be used in a funding transaction,
 /// as well as its corresponding on-chain UTXO.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct FundingInput {
     pub input_serial_id: u64,
     pub prev_tx: Vec<u8>,
@@ -70,7 +75,12 @@ impl From<&FundingInput> for TxInputInfo {
 }
 
 /// Contains an adaptor signature for a CET input and its associated DLEQ proof.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct CetAdaptorSignature {
     pub signature: EcdsaAdaptorSignature,
 }
@@ -96,7 +106,12 @@ impl Readable for CetAdaptorSignature {
 }
 
 /// Contains a list of adaptor signature for a number of CET inputs.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct CetAdaptorSignatures {
     pub ecdsa_adaptor_signatures: Vec<CetAdaptorSignature>,
 }
@@ -140,7 +155,12 @@ impl Readable for CetAdaptorSignatures {
 }
 
 /// Contains the witness elements to use to make a funding transaction input valid.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct FundingSignature {
     pub witness_elements: Vec<WitnessElement>,
 }
@@ -161,7 +181,12 @@ impl Readable for FundingSignature {
 
 /// Contains a list of witness elements to satisfy the spending conditions of
 /// funding inputs.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct FundingSignatures {
     pub funding_signatures: Vec<FundingSignature>,
 }
@@ -181,7 +206,12 @@ impl Readable for FundingSignatures {
 }
 
 /// Contains serialized data representing a single witness stack element.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct WitnessElement {
     pub witness: Vec<u8>,
 }
@@ -202,7 +232,12 @@ impl Readable for WitnessElement {
 /// Contains information about a party wishing to enter into a DLC with
 /// another party. The contained information is sufficient for any other party
 /// to create a set of transactions representing the contract and its terms.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OfferDlc {
     pub contract_flags: u8,
     pub chain_hash: [u8; 32],
@@ -301,7 +336,12 @@ impl Readable for OfferDlc {
 /// information is sufficient for the offering party to re-build the set of
 /// transactions representing the contract and its terms, and guarantees the offering
 /// party that they can safely provide signatures for their funding input.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct AcceptDlc {
     pub temporary_contract_id: [u8; 32],
     pub accept_collateral: u64,
@@ -358,7 +398,12 @@ impl Readable for AcceptDlc {
 
 /// Contains all the required signatures for the DLC transactions from the offering
 /// party.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SignDlc {
     pub contract_id: [u8; 32],
     pub cet_adaptor_signatures: CetAdaptorSignatures,

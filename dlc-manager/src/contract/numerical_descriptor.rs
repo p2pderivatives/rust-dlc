@@ -8,9 +8,16 @@ use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Information about the base, number of digits and unit of a numerical event.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct NumericalEventInfo {
     /// The base in which the event outcome will be reported.
     pub base: usize,
@@ -22,6 +29,11 @@ pub struct NumericalEventInfo {
 
 /// Information about the allowed deviation in outcome value between the oracles.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct DifferenceParams {
     /// The maximum error above which the contract should failed to close. Note
     /// that this value represents a power of two.
@@ -35,6 +47,11 @@ pub struct DifferenceParams {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 /// Contains information about a contract based on a numerical outcome.
 pub struct NumericalDescriptor {
     /// The function representing the set of payouts.

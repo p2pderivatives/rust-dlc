@@ -12,6 +12,11 @@ use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey}
 
 /// Contains information about the contract conditions and oracles used.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct ContractInfo {
     /// The descriptor for the contract
     pub contract_descriptor: ContractDescriptor,
