@@ -361,8 +361,10 @@ impl Writeable for AcceptDlc {
         self.accept_collateral.write(writer)?;
         self.funding_pubkey.write(writer)?;
         self.payout_spk.write(writer)?;
+        self.payout_serial_id.write(writer)?;
         write_vec(&self.funding_inputs, writer)?;
         self.change_spk.write(writer)?;
+        self.change_serial_id.write(writer)?;
         self.cet_adaptor_signatures.write(writer)?;
         self.refund_signature.write(writer)
     }
@@ -478,4 +480,42 @@ pub fn compute_contract_id(
     res[0] ^= ((fund_ouput_index >> 8) & 0xff) as u8;
     res[1] ^= ((fund_ouput_index >> 0) & 0xff) as u8;
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! roundtrip_test {
+        ($type: ty, $input: ident) => {
+            let msg: $type = serde_json::from_str(&$input).unwrap();
+            test_roundtrip(msg);
+        };
+    }
+
+    fn test_roundtrip<T: Writeable + Readable + PartialEq + std::fmt::Debug>(msg: T) {
+        let mut buf = Vec::new();
+        msg.write(&mut buf).expect("Error writing message");
+        let mut cursor = std::io::Cursor::new(&buf);
+        let deser = Readable::read(&mut cursor).expect("Error reading message");
+        assert_eq!(msg, deser);
+    }
+
+    #[test]
+    fn offer_msg_roundtrip() {
+        let input = include_str!("./test_inputs/offer_msg.json");
+        roundtrip_test!(OfferDlc, input);
+    }
+
+    #[test]
+    fn accept_msg_roundtrip() {
+        let input = include_str!("./test_inputs/accept_msg.json");
+        roundtrip_test!(AcceptDlc, input);
+    }
+
+    #[test]
+    fn sign_msg_roundtrip() {
+        let input = include_str!("./test_inputs/sign_msg.json");
+        roundtrip_test!(SignDlc, input);
+    }
 }

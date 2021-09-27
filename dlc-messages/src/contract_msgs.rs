@@ -281,7 +281,7 @@ pub struct PayoutPoint {
     pub extra_precision: u16,
 }
 
-impl_writeable!(PayoutPoint, 64 + 64 + 16, { event_outcome, outcome_payout, extra_precision });
+impl_writeable!(PayoutPoint, 8 + 8 + 2, { event_outcome, outcome_payout, extra_precision });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
@@ -346,7 +346,7 @@ pub struct RoundingInterval {
     pub rounding_mod: u64,
 }
 
-impl_writeable!(RoundingInterval, 64 + 64, { begin_interval, rounding_mod });
+impl_writeable!(RoundingInterval, 8 + 8, { begin_interval, rounding_mod });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(

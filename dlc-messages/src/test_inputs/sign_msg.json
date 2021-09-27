@@ -1,0 +1,185 @@
+{
+  "contractId": [
+    45,
+    250,
+    127,
+    243,
+    182,
+    92,
+    160,
+    155,
+    203,
+    66,
+    5,
+    34,
+    57,
+    91,
+    39,
+    145,
+    195,
+    145,
+    131,
+    73,
+    19,
+    137,
+    9,
+    165,
+    233,
+    106,
+    11,
+    175,
+    157,
+    6,
+    26,
+    113
+  ],
+  "cetAdaptorSignatures": {
+    "ecdsaAdaptorSignatures": [
+      {
+        "signature": "03d2a91fcfd5e7cd24760014908afb948c49e6e412b8c65b304cc295bd4133897902e7300532f787927070445788e4d82c959f5ed99611dde395c06731b50a8c3d4323d30829ac4790ecbbd550d3f217048a541f71f74535234c81660b92e23f47d8edee52a6e54af05a5ecb1846070a10f4d3f3dda1a59961022a684bfff203370a944ba11b8e093187bb29062f8d3b8a94509453dfdd90f5fe007e90f52822e0c0"
+      },
+      {
+        "signature": "03814249cd5f6adbdb322ead1fa2bb6589d345b3064f1fae2a0c299bee256f323803030cb45c3e02213ceedb816cf68c248ba89fef534381816a12244518f85502a7255105a2f5528a290f199c091ffbb420f6aff6972e7870991f577cdc54f4634a390a0ef3773a4fc40baa94f8d99158c88b70d37520a86f5c27215a1ee576c80e975e1ec54e3f3f80e1f31d53444364ed9b9f07a727cb46651e18cbb94ddaa4c2"
+      },
+      {
+        "signature": "03db5e11576925f1a29def4152c6b9ce04499e9e06ab12cc7e1b2ce2c2d5b288ff03ed8207cc1797fae123186b5c19e86a50262a6e424e4199202f2d13e84013696337ef50be517930eb2187996f3b412ff3bed5fe49613af3cc1b10c37892aa737b2e01a9063f4ed3c62f977e69fb545d6a9bdb8b695a5a38e19131db247e3f06ec727e96d361c85b171c13a28c6d8d1312487ba70b8feda2d1de1c1c72bb93db74"
+      },
+      {
+        "signature": "021625f080b425cd94f4ee6144f91982d5a3995cba2727a68fd8185bb67f6fca6c0294758b37bfc986336353e6811c9bb141577d1b6cbf14990107a3b007440e8de3aad141cb4d20de7eb0d692c454ec1238c1b06fd6f50ce69d46de222e018a5e25da61c2d8aa34d03bb4c37724650608bb3b3ffd8625d79c019d6031a12b6d15ebfc0a778ae153ea84c2958027beb2190d2cdca74f4c95f96f8c8e8cc90937b6e8"
+      },
+      {
+        "signature": "02c65106a98a97de1ca9b9e0d277c031977faff5dc33459a2360f155a92c7871e103e11410f841a437114d3c40d6e39fefb30173bd5432f345b0ad8eceb80130a72f71c948bcdb3b8f6aa1424fa58069cd9daa9c93facb7359e37d1b08e17ea14be2a6cd9bdbae766777f182ed126361f4997bf1f0b0a79b800431d44614c070622bc9fed21cdba9f4aba622166c6d81656a99a7b0b2bf95dbcb862d8eaaec6d5af5"
+      },
+      {
+        "signature": "036a912339bf7bc782bcf4fac0497fa15927b24ed4f5ceb08c5fcafd14b208aa600355913d893e6030d791d7bda07b4aa7f1be644c413487e257b46b60f17d15132427e4567b46c4e5adf16fa584a9a6ef8b66a075de308fddaa4ac6b5e85b9fe0d590649c3faf6f230f542ea9a733d8474c02300b9d1ebea948885075b817d7fd245fb5a2abb3e48e040f7f271395b019316dcb7250afba5038d6040a670cc33ff0"
+      },
+      {
+        "signature": "032b8b556cc5ac53e152496751db24f769380fa7f1e089e124377cd061fa97305e022c42883fa61f8a1bf3f519c161abcc146635b8f8e8422bd99be4ab2c957abc8e3acd7d0989736dafb2a6be5783fddf6e6a68c52e119b951483a55a650459e74c9c321e0ecf2880f484a7d8791dbe72d3ae33b6cc1913cea2f2d78f6d7faec327c2763ad978e835831173f941d8b92ff2377465f22ef6c28cdb2cd0d6655db820"
+      },
+      {
+        "signature": "03795025968cc1d28260ad594b5b7dfc705ea5fd50e2b1ece1ee3263e994d6367a033a1a9047f84552d4d065bab0750e69c0c91236d09a15ed9d51006d811b7553ff71327a3e015534a7a9a2c1c5e512344e5becf9e7c3192443ea1ac0c02697a2a1829d7c109b891b902aabce14cbf1500cf095a51d9cffa661410347f81ff1764ea36bad992c140bbf1a175d20e77533c74b7ef2982e15ba9e97afaf2c1740c546"
+      }
+    ]
+  },
+  "refundSignature": "304402203664257555b8de82bc795d6cab568bf8a10a92cb771b6531f7214a996892426602205157a3181eacfb14cbac3661df024f1bd72247638e2ac36ddb16f1ea89afb462",
+  "fundingSignatures": {
+    "fundingSignatures": [
+      {
+        "witnessElements": [
+          {
+            "witness": [
+              48,
+              68,
+              2,
+              32,
+              70,
+              73,
+              163,
+              41,
+              156,
+              54,
+              232,
+              79,
+              177,
+              239,
+              32,
+              103,
+              8,
+              201,
+              163,
+              134,
+              97,
+              89,
+              174,
+              147,
+              156,
+              37,
+              190,
+              138,
+              214,
+              106,
+              49,
+              195,
+              69,
+              84,
+              242,
+              86,
+              2,
+              32,
+              125,
+              223,
+              240,
+              188,
+              115,
+              253,
+              160,
+              184,
+              214,
+              192,
+              112,
+              215,
+              177,
+              137,
+              81,
+              174,
+              98,
+              183,
+              53,
+              93,
+              223,
+              15,
+              83,
+              110,
+              186,
+              164,
+              40,
+              233,
+              140,
+              107,
+              96,
+              63,
+              1
+            ]
+          },
+          {
+            "witness": [
+              3,
+              115,
+              186,
+              164,
+              43,
+              44,
+              115,
+              150,
+              141,
+              161,
+              57,
+              15,
+              116,
+              119,
+              234,
+              83,
+              197,
+              203,
+              151,
+              145,
+              220,
+              197,
+              212,
+              194,
+              96,
+              105,
+              169,
+              178,
+              76,
+              18,
+              129,
+              130,
+              84
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
