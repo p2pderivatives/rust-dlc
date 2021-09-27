@@ -46,6 +46,18 @@ pub trait Time {
     fn unix_time_now(&self) -> u64;
 }
 
+/// Provide current time through `SystemTime`.
+pub struct SystemTimeProvider {}
+
+impl Time for SystemTimeProvider {
+    fn unix_time_now(&self) -> u64 {
+        let now = std::time::SystemTime::now();
+        now.duration_since(std::time::UNIX_EPOCH)
+            .expect("Unexpected time error")
+            .as_secs()
+    }
+}
+
 /// Wallet trait to provide functionalities related to generating, storing and
 /// managing bitcoin addresses and UTXOs.
 pub trait Wallet {
