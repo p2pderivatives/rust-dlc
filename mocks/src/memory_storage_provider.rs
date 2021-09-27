@@ -21,12 +21,23 @@ impl MemoryStorage {
 }
 
 impl Storage for MemoryStorage {
-    fn get_contract(&self, id: &ContractId) -> Result<Contract, DaemonError> {
+    fn get_contract(&self, id: &ContractId) -> Result<Option<Contract>, DaemonError> {
         let map = self.contracts.read().expect("Could not get read lock");
-        let c = map
-            .get(id)
-            .ok_or(DaemonError::StorageError("Not Found".to_string()))?;
-        Ok(c.clone())
+        let res = match map.get(id) {
+            Some(c) => Some(c.clone()),
+            None => None,
+        };
+        Ok(res)
+    }
+
+    fn get_contracts(&self) -> Result<Vec<Contract>, DaemonError> {
+        Ok(self
+            .contracts
+            .read()
+            .expect("Could not get read lock")
+            .values()
+            .map(|x| x.clone())
+            .collect())
     }
 
     fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), DaemonError> {
@@ -83,6 +94,21 @@ impl Storage for MemoryStorage {
                 Contract::Confirmed(c) => {
                     res.push(c.clone());
                 }
+                _ => {}
+            };
+        }
+
+        Ok(res)
+    }
+
+    fn get_contract_offers(&self) -> Result<Vec<OfferedContract>, DaemonError> {
+        let map = self.contracts.read().expect("Could not get read lock");
+
+        let mut res: Vec<OfferedContract> = Vec::new();
+
+        for (_, val) in map.iter() {
+            match val {
+                Contract::Offered(c) => res.push(c.clone()),
                 _ => {}
             };
         }

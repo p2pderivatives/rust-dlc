@@ -24,7 +24,7 @@ use dlc_manager::contract::{ClosedContract, Contract, FailedAcceptContract, Fail
 use dlc_manager::{error::Error, ContractId, Storage};
 use sled::Db;
 use std::convert::TryInto;
-use std::io::{BufRead, Cursor, Read};
+use std::io::{Cursor, Read};
 
 /// Implementation of Storage interface using the sled DB backend.
 pub struct SledStorageProvider {
@@ -101,15 +101,16 @@ impl SledStorageProvider {
         })
     }
 
-    fn get_signed_contracts_with_prefix(&self, prefix: u8) -> Result<Vec<SignedContract>, Error> {
+    fn get_contracts_with_prefix<T: Serializable>(&self, prefix: u8) -> Result<Vec<T>, Error> {
         let iter = self.db.iter();
         iter.values()
             .filter_map(|res| {
                 let value = res.unwrap();
-                if value.subslice(0, 1)[0] == prefix {
-                    let mut cursor = Cursor::new(&value);
-                    cursor.consume(1);
-                    return Some(Ok(SignedContract::deserialize(&mut cursor).ok()?));
+                let mut cursor = Cursor::new(&value);
+                let mut pref = [0u8; 1];
+                cursor.read_exact(&mut pref).expect("Error reading prefix");
+                if pref[0] == prefix {
+                    return Some(Ok(T::deserialize(&mut cursor).ok()?));
                 } else {
                     None
                 }
@@ -119,11 +120,20 @@ impl SledStorageProvider {
 }
 
 impl Storage for SledStorageProvider {
-    fn get_contract(&self, contract_id: &ContractId) -> Result<Contract, Error> {
+    fn get_contract(&self, contract_id: &ContractId) -> Result<Option<Contract>, Error> {
         match self.db.get(contract_id).map_err(to_storage_error)? {
-            Some(res) => deserialize_contract(&res),
-            None => Err(Error::StorageError("Not Found".to_string())),
+            Some(res) => Ok(Some(deserialize_contract(&res)?)),
+            None => Ok(None),
         }
+    }
+
+    fn get_contracts(&self) -> Result<Vec<Contract>, Error> {
+        Ok(self
+            .db
+            .iter()
+            .values()
+            .map(|x| Ok(deserialize_contract(&x.unwrap())?))
+            .collect::<Result<Vec<Contract>, Error>>()?)
     }
 
     fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error> {
@@ -161,11 +171,15 @@ impl Storage for SledStorageProvider {
     }
 
     fn get_signed_contracts(&self) -> Result<Vec<SignedContract>, Error> {
-        self.get_signed_contracts_with_prefix(ContractPrefix::Signed.into())
+        self.get_contracts_with_prefix(ContractPrefix::Signed.into())
     }
 
     fn get_confirmed_contracts(&self) -> Result<Vec<SignedContract>, Error> {
-        self.get_signed_contracts_with_prefix(ContractPrefix::Confirmed.into())
+        self.get_contracts_with_prefix(ContractPrefix::Confirmed.into())
+    }
+
+    fn get_contract_offers(&self) -> Result<Vec<OfferedContract>, Error> {
+        self.get_contracts_with_prefix(ContractPrefix::Offered.into())
     }
 }
 
@@ -272,7 +286,7 @@ mod tests {
                 .get_contract(&contract.id)
                 .expect("Error retrieving contract.");
 
-            if let Contract::Offered(retrieved_offer) = retrieved {
+            if let Some(Contract::Offered(retrieved_offer)) = retrieved {
                 assert_eq!(serialized, retrieved_offer.serialize().unwrap());
             } else {
                 unreachable!();
@@ -298,7 +312,7 @@ mod tests {
                 .get_contract(&accepted_contract.get_id())
                 .expect("Error retrieving contract.");
 
-            if let Contract::Accepted(_) = retrieved {
+            if let Some(Contract::Accepted(_)) = retrieved {
             } else {
                 unreachable!();
             }
@@ -317,9 +331,10 @@ mod tests {
                 .delete_contract(&contract.id)
                 .expect("Error deleting contract");
 
-            storage
+            assert!(storage
                 .get_contract(&contract.id)
-                .expect_err("Contract should have been deleted");
+                .expect("Error querying contract")
+                .is_none());
         }
     );
 
@@ -365,6 +380,19 @@ mod tests {
                 .expect("Error retrieving signed contracts");
 
             assert_eq!(2, confirmed_contracts.len());
+        }
+    );
+
+    sled_test!(
+        get_offered_contracts_only_offered,
+        |mut storage: SledStorageProvider| {
+            insert_offered_signed_and_confirmed(&mut storage);
+
+            let offered_contracts = storage
+                .get_contract_offers()
+                .expect("Error retrieving signed contracts");
+
+            assert_eq!(1, offered_contracts.len());
         }
     );
 }

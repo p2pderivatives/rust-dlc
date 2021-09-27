@@ -40,7 +40,7 @@ macro_rules! assert_contract_state {
             .get_store()
             .get_contract(&$id)
             .expect("Could not retrieve contract");
-        if let Contract::$p(_) = res {
+        if let Some(Contract::$p(_)) = res {
         } else {
             panic!("Unexpected contract state {:?}", res);
         }
