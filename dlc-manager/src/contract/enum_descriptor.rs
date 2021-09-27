@@ -56,7 +56,10 @@ impl EnumDescriptor {
             .outcome_payouts
             .iter()
             .position(|x| x.outcome == outcome)
-            .ok_or(crate::error::Error::InvalidParameters)?;
+            .ok_or(crate::error::Error::InvalidParameters(format!(
+                "Outcome {} not found in the set of possible outcomes",
+                outcome
+            )))?;
 
         let combinator = CombinationIterator::new(nb_oracles, threshold);
         let mut comb_pos = 0;

@@ -167,7 +167,9 @@ where
     ) -> Result<Vec<OracleAnnouncement>, Error> {
         let mut announcements = Vec::new();
         for pubkey in &oracle_inputs.public_keys {
-            let oracle = self.oracles.get(pubkey).ok_or(Error::InvalidParameters)?;
+            let oracle = self.oracles.get(pubkey).ok_or(Error::InvalidParameters(
+                "Unknown oracle public key".to_string(),
+            ))?;
             announcements.push(oracle.get_announcement(&oracle_inputs.event_id)?.clone());
         }
 
@@ -510,13 +512,19 @@ where
                     .iter()
                     .position(|y| y == &x.funding_input.input_serial_id)
                     .ok_or(Error::InvalidState)?;
-                let tx = Transaction::consensus_decode(&*x.funding_input.prev_tx)
-                    .or(Err(Error::InvalidParameters))?;
+                let tx = Transaction::consensus_decode(&*x.funding_input.prev_tx).or(Err(
+                    Error::InvalidParameters(
+                        "Could not decode funding input previous tx parameter".to_string(),
+                    ),
+                ))?;
                 let vout = x.funding_input.prev_tx_vout;
                 let tx_out = tx
                     .output
                     .get(vout as usize)
-                    .ok_or(Error::InvalidParameters)?;
+                    .ok_or(Error::InvalidParameters(format!(
+                        "Previous tx output not found at index {}",
+                        vout
+                    )))?;
                 let witness = dlc::util::get_witness_for_p2wpkh_input(
                     &self.secp,
                     &sk,
@@ -665,13 +673,19 @@ where
                 .as_ref()
                 .ok_or(Error::InvalidState)?;
             let sk = self.wallet.get_secret_key_for_address(&address)?;
-            let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx)
-                .or(Err(Error::InvalidParameters))?;
+            let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx).or(
+                Err(Error::InvalidParameters(
+                    "Could not decode funding input previous tx parameter".to_string(),
+                )),
+            )?;
             let vout = funding_input_info.funding_input.prev_tx_vout;
             let tx_out = tx
                 .output
                 .get(vout as usize)
-                .ok_or(Error::InvalidParameters)?;
+                .ok_or(Error::InvalidParameters(format!(
+                    "Previous tx output not found at index {}",
+                    vout
+                )))?;
             dlc::util::sign_p2wpkh_input(
                 &self.secp,
                 &sk,

@@ -10,7 +10,7 @@ pub enum Error {
     /// An IO error.
     IOError(std::io::Error),
     /// Some invalid parameters were provided.
-    InvalidParameters,
+    InvalidParameters(String),
     /// An invalid state was encounter, likely to indicate a bug.
     InvalidState,
     /// An error occurred in the wallet component.
@@ -31,7 +31,7 @@ impl fmt::Display for Error {
             Error::Conversion(ref e) => write!(f, "Conversion error {}", e),
             Error::IOError(ref e) => write!(f, "IO error {}", e),
             Error::InvalidState => write!(f, "Invalid state"),
-            Error::InvalidParameters => write!(f, "Invalid parameters were provided"),
+            Error::InvalidParameters(ref s) => write!(f, "Invalid parameters were provided: {}", s),
             Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
             Error::BlockchainError => write!(f, "Blockchain error"),
             Error::StorageError(ref s) => write!(f, "Storage error {}", s),
