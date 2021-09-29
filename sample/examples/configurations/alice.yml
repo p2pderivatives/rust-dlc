@@ -1,0 +1,12 @@
+bitcoinInfo:
+  rpcUsername: testuser
+  rpcPassword: lq6zequb-gYTdF2_ZEUtr8ywTXzLYtknzWU4nV8uVoo=
+  rpcPort: 18443
+  rpcHost: localhost
+  wallet: alice
+storageDirPath: './dlc_sample_alice'
+networkConfiguration:
+  peerListeningPort: 9000
+network: regtest
+oracleConfig:
+  host: 'https://oracle.p2pderivatives.io/'
