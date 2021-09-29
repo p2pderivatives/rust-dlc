@@ -1,0 +1,22 @@
+[package]
+authors = ["Crypto Garage"]
+edition = "2018"
+name = "sample"
+version = "0.1.0"
+
+[dependencies]
+bitcoin = {version = "0.27"}
+bitcoin-rpc-provider = {version = "0.0.1", path = "../bitcoin-rpc-provider"}
+cg-oracle-client = {path = "../cg-oracle-client"}
+dlc = {path = "../dlc", features = ["use-serde"]}
+dlc-manager = {path = "../dlc-manager", features = ["use-serde"]}
+dlc-messages = {path = "../dlc-messages"}
+futures = "0.3"
+lightning = {version = "0.0.100", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-serialization-macros"}
+lightning-net-tokio = {version = "0.0.100", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-serialization-macros"}
+serde = "1.0"
+serde_json = "1.0"
+serde_yaml = "0.8"
+sled-storage-provider = {path = "../sled-storage-provider"}
+time = "0.2"
+tokio = {version = "1.5", features = ["io-util", "macros", "rt", "rt-multi-thread", "sync", "net", "time"]}
