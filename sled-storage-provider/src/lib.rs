@@ -235,10 +235,7 @@ fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::ContractPrefix as ContractType;
     use super::*;
-    use std::fs::File;
-    use std::io::Read;
 
     macro_rules! sled_test {
         ($name: ident, $body: expr) => {
@@ -254,29 +251,19 @@ mod tests {
         };
     }
 
-    fn get_contract<T>(contract: ContractType, number: Option<u32>) -> (T, Vec<u8>)
+    fn deserialize_contract<T>(serialized: &[u8]) -> T
     where
         T: Serializable,
     {
-        let mut serialized = Vec::new();
-        let suffix = match number {
-            Some(n) => n.to_string(),
-            None => "".to_string(),
-        };
-        let path = format!("test_files/{:?}{}", contract, suffix);
-
-        File::open(path)
-            .unwrap()
-            .read_to_end(&mut serialized)
-            .unwrap();
         let mut cursor = std::io::Cursor::new(&serialized);
-        (T::deserialize(&mut cursor).unwrap(), serialized)
+        T::deserialize(&mut cursor).unwrap()
     }
 
     sled_test!(
         create_contract_can_be_retrieved,
         |mut storage: SledStorageProvider| {
-            let (contract, serialized) = get_contract(ContractType::Offered, None);
+            let serialized = include_bytes!("../test_files/Offered");
+            let contract = deserialize_contract(serialized);
 
             storage
                 .create_contract(&contract)
@@ -287,7 +274,7 @@ mod tests {
                 .expect("Error retrieving contract.");
 
             if let Some(Contract::Offered(retrieved_offer)) = retrieved {
-                assert_eq!(serialized, retrieved_offer.serialize().unwrap());
+                assert_eq!(serialized[..], retrieved_offer.serialize().unwrap()[..]);
             } else {
                 unreachable!();
             }
@@ -297,8 +284,10 @@ mod tests {
     sled_test!(
         update_contract_is_updated,
         |mut storage: SledStorageProvider| {
-            let (offered_contract, _) = get_contract(ContractType::Offered, None);
-            let (accepted_contract, _) = get_contract(ContractType::Accepted, None);
+            let serialized = include_bytes!("../test_files/Offered");
+            let offered_contract = deserialize_contract(serialized);
+            let serialized = include_bytes!("../test_files/Accepted");
+            let accepted_contract = deserialize_contract(serialized);
             let accepted_contract = Contract::Accepted(accepted_contract);
 
             storage
@@ -322,7 +311,8 @@ mod tests {
     sled_test!(
         delete_contract_is_deleted,
         |mut storage: SledStorageProvider| {
-            let (contract, _) = get_contract(ContractType::Offered, None);
+            let serialized = include_bytes!("../test_files/Offered");
+            let contract = deserialize_contract(serialized);
             storage
                 .create_contract(&contract)
                 .expect("Error creating contract");
@@ -339,22 +329,33 @@ mod tests {
     );
 
     fn insert_offered_signed_and_confirmed(storage: &mut SledStorageProvider) {
-        let (offered_contract, _) = get_contract(ContractType::Offered, None);
+        let serialized = include_bytes!("../test_files/Offered");
+        let offered_contract = deserialize_contract(serialized);
         storage
             .create_contract(&offered_contract)
             .expect("Error creating contract");
-        for i in 0..2 {
-            let (signed_contract, _): (SignedContract, _) =
-                get_contract(ContractType::Signed, if i == 0 { None } else { Some(i) });
-            storage
-                .update_contract(&Contract::Signed(signed_contract))
-                .expect("Error inserting signed contract.");
-            let (signed_contract, _): (SignedContract, _) =
-                get_contract(ContractType::Confirmed, if i == 0 { None } else { Some(i) });
-            storage
-                .update_contract(&Contract::Confirmed(signed_contract))
-                .expect("Error inserting signed contract.");
-        }
+
+        let serialized = include_bytes!("../test_files/Signed");
+        let signed_contract = Contract::Signed(deserialize_contract(serialized));
+        storage
+            .update_contract(&signed_contract)
+            .expect("Error creating contract");
+        let serialized = include_bytes!("../test_files/Signed1");
+        let signed_contract = Contract::Signed(deserialize_contract(serialized));
+        storage
+            .update_contract(&signed_contract)
+            .expect("Error creating contract");
+
+        let serialized = include_bytes!("../test_files/Confirmed");
+        let confirmed_contract = Contract::Confirmed(deserialize_contract(serialized));
+        storage
+            .update_contract(&confirmed_contract)
+            .expect("Error creating contract");
+        let serialized = include_bytes!("../test_files/Confirmed1");
+        let confirmed_contract = Contract::Confirmed(deserialize_contract(serialized));
+        storage
+            .update_contract(&confirmed_contract)
+            .expect("Error creating contract");
     }
 
     sled_test!(
