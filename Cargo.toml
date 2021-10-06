@@ -3,12 +3,12 @@
 members = [
   "bitcoin-test-utils",
   "bitcoin-rpc-provider",
-  "cg-oracle-client",
+  "p2pd-oracle-client",
   "dlc",
   "dlc-messages",
   "dlc-trie",
   "dlc-manager",
   "mocks",
   "sample",
-  "sled-storage-provider"
+  "sled-storage-provider",
 ]

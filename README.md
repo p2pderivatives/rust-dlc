@@ -36,9 +36,9 @@ The [dlc-messages](./dlc-messages) crate provides data structures and serializat
 
 The [bitcoin-rpc-provider](./bitcoin-rpc-provider) crate implements interfaces required by the [dlc-manager](#dlc-manager) for interacting with the Bitcoin blockchain and proving wallet functionalities through the bitcoin-core RPC.
 
-### cg-oracle-client
+### p2pd-oracle-client
 
-The [cg-oracle-client](./cg-oracle-client) crate implements the oracle interface required by the [dlc-manager](#dlc-manager) to interact with an instance of the [P2PDerivatives oracle](https://github.com/p2pderivatives/p2pderivatives-oracle).
+The [p2pd-oracle-client](./p2pd-oracle-client) crate implements the oracle interface required by the [dlc-manager](#dlc-manager) to interact with an instance of the [P2PDerivatives oracle](https://github.com/p2pderivatives/p2pderivatives-oracle).
 
 ### sled-storage-provider
 
