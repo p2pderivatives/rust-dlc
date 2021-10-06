@@ -7,13 +7,13 @@ version = "0.1.0"
 [dependencies]
 bitcoin = {version = "0.27"}
 bitcoin-rpc-provider = {version = "0.0.1", path = "../bitcoin-rpc-provider"}
-cg-oracle-client = {path = "../cg-oracle-client"}
 dlc = {path = "../dlc", features = ["use-serde"]}
 dlc-manager = {path = "../dlc-manager", features = ["use-serde"]}
 dlc-messages = {path = "../dlc-messages"}
 futures = "0.3"
 lightning = {version = "0.0.100", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-serialization-macros"}
 lightning-net-tokio = {version = "0.0.100", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-serialization-macros"}
+p2pd-oracle-client = {path = "../p2pd-oracle-client"}
 serde = "1.0"
 serde_json = "1.0"
 serde_yaml = "0.8"

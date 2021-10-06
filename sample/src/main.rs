@@ -7,7 +7,6 @@ use disk::FilesystemLogger;
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
-use cg_oracle_client::CGOracleClient;
 use dlc_manager::{Oracle, SystemTimeProvider};
 use dlc_messages::Message as DlcMessage;
 use lightning::ln::msgs::DecodeError;
@@ -18,6 +17,7 @@ use lightning::ln::peer_handler::{
 use lightning::ln::wire::CustomMessageReader;
 use lightning::util::ser::Readable;
 use lightning_net_tokio::SocketDescriptor;
+use p2pd_oracle_client::P2PDOracleClient;
 use std::collections::hash_map::HashMap;
 use std::collections::VecDeque;
 use std::env;
@@ -36,7 +36,7 @@ pub(crate) type DlcManager = dlc_manager::manager::Manager<
     Arc<BitcoinCoreProvider>,
     Arc<BitcoinCoreProvider>,
     Box<sled_storage_provider::SledStorageProvider>,
-    Box<CGOracleClient>,
+    Box<P2PDOracleClient>,
     Arc<SystemTimeProvider>,
 >;
 
@@ -138,7 +138,7 @@ async fn main() {
     // so we need to use `spawn_blocking`.
     let oracle_host = config.oracle_config.host;
     let oracle = tokio::task::spawn_blocking(move || {
-        CGOracleClient::new(&oracle_host).expect("Error creating oracle client")
+        P2PDOracleClient::new(&oracle_host).expect("Error creating oracle client")
     })
     .await
     .unwrap();
