@@ -35,6 +35,8 @@ COPY . .
 COPY --from=cacher /app/target target
 COPY --from=cacher /usr/local/cargo /usr/local/cargo
 
+RUN apt-get install -y linux-perf linux-base
+
 RUN cargo test --no-run
 
 RUN cp -r ./sled-storage-provider/test_files ./target/debug/deps/

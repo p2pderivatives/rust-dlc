@@ -2,6 +2,7 @@
 
 use super::utils::get_majority_combination;
 use super::AdaptorInfo;
+use crate::error::Error;
 use bitcoin::{Script, Transaction};
 use dlc::OracleInfo;
 use dlc::{EnumerationPayout, Payout};
@@ -163,7 +164,7 @@ impl EnumDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), dlc::Error> {
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
         let adaptor_sigs = self.get_adaptor_signatures(
             secp,
             oracle_infos,
@@ -187,7 +188,7 @@ impl EnumDescriptor {
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
-    ) -> Result<Vec<EcdsaAdaptorSignature>, dlc::Error> {
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_sigs = Vec::new();
         let mut callback =
             |adaptor_point: &PublicKey, cet_index: usize| -> Result<(), dlc::Error> {
