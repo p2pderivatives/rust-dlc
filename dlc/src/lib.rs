@@ -561,17 +561,6 @@ pub fn make_funding_redeemscript(a: &PublicKey, b: &PublicKey) -> Script {
         .into_script()
 }
 
-fn combine_pubkeys(pubkeys: &Vec<PublicKey>) -> Result<PublicKey, Error> {
-    if pubkeys.len() < 1 {
-        return Err(Error::InvalidArgument);
-    }
-    let res = pubkeys[0];
-    Ok(pubkeys
-        .iter()
-        .skip(1)
-        .try_fold(res, |acc, pk| acc.combine(&pk))?)
-}
-
 fn get_oracle_sig_point<C: secp256k1_zkp::Verification>(
     secp: &Secp256k1<C>,
     oracle_info: &OracleInfo,
@@ -589,7 +578,9 @@ fn get_oracle_sig_point<C: secp256k1_zkp::Verification>(
             secp_utils::schnorrsig_compute_sig_point(secp, &oracle_info.public_key, nonce, msg)
         })
         .collect::<Result<Vec<PublicKey>, Error>>()?;
-    Ok(combine_pubkeys(&sig_points)?)
+    Ok(PublicKey::combine_keys(
+        &sig_points.iter().collect::<Vec<_>>(),
+    )?)
 }
 
 /// Get an adaptor point generated using the given oracle information and messages.
@@ -606,7 +597,9 @@ pub fn get_adaptor_point_from_oracle_info<C: Verification>(
     for (i, info) in oracle_infos.iter().enumerate() {
         oracle_sigpoints.push(get_oracle_sig_point(secp, &info, &msgs[i])?);
     }
-    combine_pubkeys(&oracle_sigpoints)
+    Ok(PublicKey::combine_keys(
+        &oracle_sigpoints.iter().collect::<Vec<_>>(),
+    )?)
 }
 
 /// Create an adaptor signature for the given cet using the provided adaptor point.

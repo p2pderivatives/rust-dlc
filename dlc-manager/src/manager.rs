@@ -428,7 +428,8 @@ where
             &funding_script_pubkey,
             fund_output_value,
             &accept_params.fund_pubkey,
-        );
+        )
+        .map_err(|e| e.into());
 
         self.accept_fail_on_error(&offered_contract, accept_msg, refund_verify_result)?;
 
@@ -622,7 +623,8 @@ where
             &accepted_contract.dlc_transactions.funding_script_pubkey,
             accepted_contract.dlc_transactions.get_fund_output().value,
             &offered_contract.offer_params.fund_pubkey,
-        );
+        )
+        .map_err(|e| e.into());
 
         self.sign_fail_on_error(&accepted_contract, sign_message, verify_result)?;
 
@@ -734,7 +736,7 @@ where
         &mut self,
         accepted_contract: &AcceptedContract,
         sign_message: &SignDlc,
-        result: Result<R, dlc::Error>,
+        result: Result<R, Error>,
     ) -> Result<R, Error> {
         match result {
             Err(e) => {
@@ -755,7 +757,7 @@ where
         &mut self,
         offered_contract: &OfferedContract,
         accept_message: &AcceptDlc,
-        result: Result<R, dlc::Error>,
+        result: Result<R, Error>,
     ) -> Result<R, Error> {
         match result {
             Err(e) => {

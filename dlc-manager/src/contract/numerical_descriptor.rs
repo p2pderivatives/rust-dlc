@@ -1,9 +1,10 @@
 //! #NumericalDescriptor
 
 use super::AdaptorInfo;
+use crate::error::Error;
 use crate::payout_curve::{PayoutFunction, RoundingIntervals};
 use bitcoin::{Script, Transaction};
-use dlc::{OracleInfo, Payout, RangePayout};
+use dlc::{Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
@@ -93,16 +94,16 @@ impl NumericalDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         threshold: usize,
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         cets: &[Transaction],
         adaptor_pairs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, usize), dlc::Error> {
+    ) -> Result<(AdaptorInfo, usize), Error> {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
                     self.info.base,
-                    oracle_infos.len(),
+                    precomputed_points.len(),
                     threshold,
                     self.info.nb_digits,
                     params.min_support_exp,
@@ -115,7 +116,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    oracle_infos,
+                    &precomputed_points,
                     adaptor_pairs,
                     adaptor_index_start,
                 )?;
@@ -124,7 +125,7 @@ impl NumericalDescriptor {
             None => {
                 let mut trie = MultiOracleTrie::new(
                     self.info.base,
-                    oracle_infos.len(),
+                    precomputed_points.len(),
                     threshold,
                     self.info.nb_digits,
                 );
@@ -135,7 +136,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    oracle_infos,
+                    &precomputed_points,
                     adaptor_pairs,
                     adaptor_index_start,
                 )?;
@@ -153,15 +154,15 @@ impl NumericalDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         threshold: usize,
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         cets: &[Transaction],
         adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), dlc::Error> {
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
                     self.info.base,
-                    oracle_infos.len(),
+                    precomputed_points.len(),
                     threshold,
                     self.info.nb_digits,
                     params.min_support_exp,
@@ -174,7 +175,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    oracle_infos,
+                    &precomputed_points,
                     adaptor_index_start,
                 )?;
                 Ok((
@@ -186,7 +187,7 @@ impl NumericalDescriptor {
             None => {
                 let mut trie = MultiOracleTrie::new(
                     self.info.base,
-                    oracle_infos.len(),
+                    precomputed_points.len(),
                     threshold,
                     self.info.nb_digits,
                 );
@@ -197,7 +198,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    oracle_infos,
+                    &precomputed_points,
                     adaptor_index_start,
                 )?;
                 Ok((AdaptorInfo::Numerical(trie), sigs))

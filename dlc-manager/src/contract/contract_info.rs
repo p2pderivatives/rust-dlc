@@ -3,12 +3,16 @@
 use super::utils::get_majority_combination;
 use super::AdaptorInfo;
 use super::ContractDescriptor;
+use crate::error::Error;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
-use dlc_messages::oracle_msgs::OracleAnnouncement;
+use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::combination_iterator::CombinationIterator;
 use dlc_trie::{DlcTrie, RangeInfo};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::{
+    bitcoin_hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
+    Verification,
+};
 
 /// Contains information about the contract conditions and oracles used.
 #[derive(Clone, Debug)]
@@ -52,13 +56,12 @@ impl ContractInfo {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-    ) -> Result<Vec<EcdsaAdaptorSignature>, dlc::Error> {
-        let oracle_infos = self.get_oracle_infos();
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         match adaptor_info {
             AdaptorInfo::Enum => match &self.contract_descriptor {
                 ContractDescriptor::Enum(e) => e.get_adaptor_signatures(
                     secp,
-                    &oracle_infos,
+                    &self.get_oracle_infos(),
                     self.threshold,
                     cets,
                     fund_privkey,
@@ -67,22 +70,22 @@ impl ContractInfo {
                 ),
                 _ => unreachable!(),
             },
-            AdaptorInfo::Numerical(trie) => trie.sign(
+            AdaptorInfo::Numerical(trie) => Ok(trie.sign(
                 secp,
                 fund_privkey,
                 funding_script_pubkey,
                 fund_output_value,
                 cets,
-                &oracle_infos,
-            ),
-            AdaptorInfo::NumericalWithDifference(trie) => trie.sign(
+                &self.precompute_points(secp)?,
+            )?),
+            AdaptorInfo::NumericalWithDifference(trie) => Ok(trie.sign(
                 secp,
                 fund_privkey,
                 funding_script_pubkey,
                 fund_output_value,
                 cets,
-                &oracle_infos,
-            ),
+                &self.precompute_points(secp)?,
+            )?),
         }
     }
 
@@ -98,7 +101,7 @@ impl ContractInfo {
         cets: &[Transaction],
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
-    ) -> Result<(AdaptorInfo, usize), dlc::Error> {
+    ) -> Result<(AdaptorInfo, usize), Error> {
         let oracle_infos = self.get_oracle_infos();
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.verify_and_get_adaptor_info(
@@ -119,7 +122,7 @@ impl ContractInfo {
                 funding_script_pubkey,
                 fund_output_value,
                 self.threshold,
-                &oracle_infos,
+                &self.precompute_points(secp)?,
                 cets,
                 adaptor_sigs,
                 adaptor_sig_start,
@@ -211,7 +214,7 @@ impl ContractInfo {
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
         adaptor_info: &AdaptorInfo,
-    ) -> Result<usize, dlc::Error> {
+    ) -> Result<usize, Error> {
         let oracle_infos = self.get_oracle_infos();
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.verify_adaptor_info(
@@ -225,26 +228,26 @@ impl ContractInfo {
                 adaptor_sigs,
                 adaptor_sig_start,
             )?),
-            _ => match adaptor_info {
+            ContractDescriptor::Numerical(_) => match adaptor_info {
                 AdaptorInfo::Enum => unreachable!(),
-                AdaptorInfo::Numerical(trie) => trie.verify(
+                AdaptorInfo::Numerical(trie) => Ok(trie.verify(
                     secp,
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
                     adaptor_sigs,
                     cets,
-                    &oracle_infos,
-                ),
-                AdaptorInfo::NumericalWithDifference(trie) => trie.verify(
+                    &self.precompute_points(secp)?,
+                )?),
+                AdaptorInfo::NumericalWithDifference(trie) => Ok(trie.verify(
                     secp,
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
                     adaptor_sigs,
                     cets,
-                    &oracle_infos,
-                ),
+                    &self.precompute_points(secp)?,
+                )?),
             },
         }
     }
@@ -259,18 +262,20 @@ impl ContractInfo {
         fund_output_value: u64,
         cets: &[Transaction],
         adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), dlc::Error> {
-        let oracle_infos = self.get_oracle_infos();
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
         match &self.contract_descriptor {
-            ContractDescriptor::Enum(e) => Ok(e.get_adaptor_info(
-                secp,
-                &oracle_infos,
-                self.threshold,
-                fund_priv_key,
-                funding_script_pubkey,
-                fund_output_value,
-                cets,
-            )?),
+            ContractDescriptor::Enum(e) => {
+                let oracle_infos = self.get_oracle_infos();
+                Ok(e.get_adaptor_info(
+                    secp,
+                    &oracle_infos,
+                    self.threshold,
+                    fund_priv_key,
+                    funding_script_pubkey,
+                    fund_output_value,
+                    cets,
+                )?)
+            }
             ContractDescriptor::Numerical(n) => Ok(n.get_adaptor_info(
                 secp,
                 total_collateral,
@@ -278,10 +283,54 @@ impl ContractInfo {
                 funding_script_pubkey,
                 fund_output_value,
                 self.threshold,
-                &oracle_infos,
+                &self.precompute_points(secp)?,
                 cets,
                 adaptor_index_start,
             )?),
         }
+    }
+
+    fn precompute_points<C: Verification>(
+        &self,
+        secp: &Secp256k1<C>,
+    ) -> Result<Vec<Vec<Vec<PublicKey>>>, Error> {
+        self.oracle_announcements
+            .iter()
+            .map(|x| {
+                let pubkey = &x.oracle_public_key;
+                let nonces = &x.oracle_event.oracle_nonces;
+                match &x.oracle_event.event_descriptor {
+                    EventDescriptor::DigitDecompositionEvent(d) => {
+                        let base = d.base as usize;
+                        let nb_digits = d.nb_digits as usize;
+                        if nb_digits != nonces.len() {
+                            return Err(Error::InvalidParameters(
+                                "Number of digits and nonces must be equal".to_string(),
+                            ));
+                        }
+                        let mut d_points = Vec::with_capacity(nb_digits);
+                        for i in 0..nb_digits {
+                            let mut points = Vec::with_capacity(base);
+                            for j in 0..base {
+                                let msg = Message::from_hashed_data::<sha256::Hash>(
+                                    j.to_string().as_bytes(),
+                                );
+                                let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(
+                                    secp, pubkey, &nonces[i], &msg,
+                                )?;
+                                points.push(sig_point);
+                            }
+                            d_points.push(points);
+                        }
+                        return Ok(d_points);
+                    }
+                    _ => {
+                        return Err(Error::InvalidParameters(
+                            "Expected digit decomposition event.".to_string(),
+                        ))
+                    }
+                };
+            })
+            .collect::<Result<Vec<Vec<Vec<PublicKey>>>, Error>>()
     }
 }

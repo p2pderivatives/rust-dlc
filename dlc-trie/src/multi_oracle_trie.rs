@@ -8,9 +8,9 @@ use crate::digit_decomposition::group_by_ignoring_digits;
 use crate::digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
 use crate::utils::get_adaptor_point_for_indexed_paths;
 use crate::DlcTrie;
-use crate::{Error, OracleInfo, RangeInfo, RangePayout};
+use crate::{Error, RangeInfo, RangePayout};
 use bitcoin::{Script, Transaction};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with t of n oracles where at least t oracles need to sign the
@@ -78,11 +78,10 @@ impl MultiOracleTrie {
 }
 
 impl DlcTrie for MultiOracleTrie {
-    fn generate<C: Verification, F>(
+    fn generate<F>(
         &mut self,
-        secp: &Secp256k1<C>,
         outcomes: &[RangePayout],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         callback: &mut F,
     ) -> Result<(), Error>
     where
@@ -105,10 +104,9 @@ impl DlcTrie for MultiOracleTrie {
                     let mut range_infos: Vec<RangeInfo> = Vec::new();
                     for selector in combination_iterator {
                         let adaptor_point = get_adaptor_point_for_indexed_paths(
-                            &secp,
-                            &oracle_infos,
                             &selector,
                             &std::iter::repeat(group.clone()).take(threshold).collect(),
+                            precomputed_points,
                         )?;
                         let adaptor_index = callback(cet_index, &adaptor_point)?;
                         range_infos.push(RangeInfo {
@@ -127,8 +125,7 @@ impl DlcTrie for MultiOracleTrie {
 
     fn iter<F>(
         &self,
-        secp: &Secp256k1<All>,
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         callback: &mut F,
     ) -> Result<(), Error>
     where
@@ -136,17 +133,16 @@ impl DlcTrie for MultiOracleTrie {
     {
         let trie_iter = DigitTrieIter::new(&self.digit_trie);
         let combinations: Vec<Vec<usize>> =
-            CombinationIterator::new(oracle_infos.len(), self.threshold).collect();
+            CombinationIterator::new(precomputed_points.len(), self.threshold).collect();
         for res in trie_iter {
             let path = res.path;
             for (i, selector) in combinations.iter().enumerate() {
                 let adaptor_point = get_adaptor_point_for_indexed_paths(
-                    secp,
-                    &oracle_infos,
                     &selector,
                     &std::iter::repeat(path.clone())
                         .take(self.threshold)
                         .collect(),
+                    &precomputed_points,
                 )?;
                 callback(&adaptor_point, &res.value[i])?;
             }
@@ -161,7 +157,7 @@ impl DlcTrie for MultiOracleTrie {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_pairs = Vec::new();
         let mut callback =
@@ -178,7 +174,7 @@ impl DlcTrie for MultiOracleTrie {
                 Ok(())
             };
 
-        self.iter(secp, oracle_infos, &mut callback)?;
+        self.iter(precomputed_points, &mut callback)?;
         Ok(adaptor_pairs)
     }
 }

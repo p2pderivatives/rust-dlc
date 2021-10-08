@@ -6,7 +6,6 @@ extern crate dlc;
 extern crate dlc_trie;
 extern crate secp256k1_zkp;
 
-use secp256k1_zkp::bitcoin_hashes::*;
 use bitcoin::{OutPoint, Script, SigHashType};
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::{Client, RpcApi};
@@ -15,6 +14,7 @@ use dlc::{DlcTransactions, OracleInfo, PartyParams, Payout, RangePayout, TxInput
 use dlc_trie::digit_decomposition::{decompose_value, pad_range_payouts};
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
+use secp256k1_zkp::bitcoin_hashes::*;
 use secp256k1_zkp::{
     rand::{seq::SliceRandom, thread_rng, Rng, RngCore},
     schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
@@ -300,6 +300,29 @@ fn integration_tests_decomposed_common(
     let oracle_priv_infos = get_oracle_infos(&secp, rng, nb_oracles, nb_digits);
     let oracle_infos: Vec<OracleInfo> = oracle_priv_infos.iter().map(|x| x.info.clone()).collect();
 
+    let precomputed_points = oracle_infos
+        .iter()
+        .map(|x| {
+            let pubkey = &x.public_key;
+            let nonces = &x.nonces;
+            let mut d_points = Vec::with_capacity(nb_digits);
+            for i in 0..nb_digits {
+                let mut points = Vec::with_capacity(base);
+                for j in 0..base {
+                    let msg = Message::from_hashed_data::<sha256::Hash>(j.to_string().as_bytes());
+                    let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(
+                        &secp, pubkey, &nonces[i], &msg,
+                    )
+                    .unwrap();
+                    points.push(sig_point);
+                }
+                d_points.push(points);
+            }
+            return Ok(d_points);
+        })
+        .collect::<Result<Vec<Vec<Vec<PublicKey>>>, Error>>()
+        .unwrap();
+
     let funding_script_pubkey = dlc::make_funding_redeemscript(
         &offer_params.params.fund_pubkey,
         &accept_params.params.fund_pubkey,
@@ -330,7 +353,7 @@ fn integration_tests_decomposed_common(
             fund_output_value,
             &outcomes,
             &dlc_txs.cets,
-            &oracle_infos,
+            &precomputed_points,
             0,
         )
         .expect("Error creating offer adaptor signatures.");
@@ -342,7 +365,7 @@ fn integration_tests_decomposed_common(
             &funding_script_pubkey,
             fund_output_value,
             &dlc_txs.cets,
-            &oracle_infos,
+            &precomputed_points,
         )
         .expect("Error creating accept adaptor signatures.");
 
@@ -353,7 +376,7 @@ fn integration_tests_decomposed_common(
         fund_output_value,
         &adaptor_pairs_offer,
         &dlc_txs.cets,
-        &oracle_infos,
+        &precomputed_points,
     )
     .expect("Invalid offer adaptor signatures");
 
@@ -364,7 +387,7 @@ fn integration_tests_decomposed_common(
         fund_output_value,
         &adaptor_pairs_accept,
         &dlc_txs.cets,
-        &oracle_infos,
+        &precomputed_points,
     )
     .expect("Invalid accept adaptor signatures");
 

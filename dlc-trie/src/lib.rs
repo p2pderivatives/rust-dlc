@@ -19,8 +19,8 @@ extern crate dlc;
 extern crate secp256k1_zkp;
 
 use bitcoin::{Script, Transaction};
-use dlc::{Error, OracleInfo, RangePayout};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification};
+use dlc::{Error, RangePayout};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 
 pub mod combination_iterator;
 pub mod digit_decomposition;
@@ -70,11 +70,10 @@ pub trait DlcTrie {
     /// Generate the trie using the provided outcomes and oracle information,
     /// calling the provided callback with the CET index and adaptor point for
     /// each adaptor signature.
-    fn generate<C: Verification, F>(
+    fn generate<F>(
         &mut self,
-        secp: &Secp256k1<C>,
         outcomes: &[RangePayout],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         callback: &mut F,
     ) -> Result<(), Error>
     where
@@ -84,8 +83,7 @@ pub trait DlcTrie {
     /// signature passing the corresponding adaptor point and RangeInfo.
     fn iter<F>(
         &self,
-        secp: &Secp256k1<All>,
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         callback: &mut F,
     ) -> Result<(), Error>
     where
@@ -100,7 +98,7 @@ pub trait DlcTrie {
         fund_output_value: u64,
         outcomes: &Vec<RangePayout>,
         cets: &[Transaction],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
     ) -> Result<usize, Error> {
@@ -121,7 +119,7 @@ pub trait DlcTrie {
                 )?;
                 Ok(adaptor_sig_index - 1)
             };
-        self.generate(secp, outcomes, oracle_infos, &mut verify_callback)?;
+        self.generate(outcomes, precomputed_points, &mut verify_callback)?;
         Ok(adaptor_sig_index)
     }
 
@@ -134,7 +132,7 @@ pub trait DlcTrie {
         fund_output_value: u64,
         outcomes: &Vec<RangePayout>,
         cets: &[Transaction],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         adaptor_index_start: usize,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_pairs = Vec::new();
@@ -153,7 +151,7 @@ pub trait DlcTrie {
                 adaptor_index += 1;
                 Ok(adaptor_index - 1)
             };
-        self.generate(secp, outcomes, oracle_infos, &mut sign_callback)?;
+        self.generate(outcomes, precomputed_points, &mut sign_callback)?;
         Ok(adaptor_pairs)
     }
 
@@ -167,7 +165,7 @@ pub trait DlcTrie {
         fund_output_value: u64,
         adaptor_sigs: &[EcdsaAdaptorSignature],
         cets: &[Transaction],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
     ) -> Result<usize, Error> {
         let mut max_adaptor_index = 0;
         let mut callback =
@@ -188,7 +186,7 @@ pub trait DlcTrie {
                 )
             };
 
-        self.iter(secp, oracle_infos, &mut callback)?;
+        self.iter(precomputed_points, &mut callback)?;
         Ok(max_adaptor_index + 1)
     }
 
@@ -200,6 +198,6 @@ pub trait DlcTrie {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error>;
 }

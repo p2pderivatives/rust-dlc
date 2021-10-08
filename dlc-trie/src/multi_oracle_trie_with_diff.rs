@@ -7,9 +7,9 @@ use crate::digit_decomposition::group_by_ignoring_digits;
 use crate::multi_trie::{MultiTrie, MultiTrieDump, MultiTrieIterator};
 use crate::utils::get_adaptor_point_for_indexed_paths;
 use crate::DlcTrie;
-use crate::{Error, OracleInfo, RangeInfo, RangePayout};
+use crate::{Error, RangeInfo, RangePayout};
 use bitcoin::{Script, Transaction};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification};
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with multiple oracles where some difference between the outcomes
@@ -50,11 +50,10 @@ impl MultiOracleTrieWithDiff {
 }
 
 impl DlcTrie for MultiOracleTrieWithDiff {
-    fn generate<C: Verification, F>(
+    fn generate<F>(
         &mut self,
-        secp: &Secp256k1<C>,
         outcomes: &[RangePayout],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         callback: &mut F,
     ) -> Result<(), Error>
     where
@@ -75,10 +74,9 @@ impl DlcTrie for MultiOracleTrieWithDiff {
                                      oracle_indexes: &Vec<usize>|
                  -> Result<RangeInfo, Error> {
                     let adaptor_point = get_adaptor_point_for_indexed_paths(
-                        &secp,
-                        &oracle_infos,
                         oracle_indexes,
                         paths,
+                        &precomputed_points,
                     )?;
                     let adaptor_index = callback(cet_index, &adaptor_point)?;
                     let range_info = RangeInfo {
@@ -96,8 +94,7 @@ impl DlcTrie for MultiOracleTrieWithDiff {
 
     fn iter<F>(
         &self,
-        secp: &Secp256k1<All>,
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         callback: &mut F,
     ) -> Result<(), Error>
     where
@@ -115,7 +112,7 @@ impl DlcTrie for MultiOracleTrieWithDiff {
                         (indexes, paths)
                     });
             let adaptor_point =
-                get_adaptor_point_for_indexed_paths(secp, oracle_infos, &oracle_indexes, &paths)?;
+                get_adaptor_point_for_indexed_paths(&oracle_indexes, &paths, precomputed_points)?;
             callback(&adaptor_point, &res.value)?;
         }
         Ok(())
@@ -128,7 +125,7 @@ impl DlcTrie for MultiOracleTrieWithDiff {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        oracle_infos: &[OracleInfo],
+        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_pairs = Vec::<(usize, EcdsaAdaptorSignature)>::new();
         let mut callback =
@@ -146,7 +143,7 @@ impl DlcTrie for MultiOracleTrieWithDiff {
 
                 Ok(())
             };
-        self.iter(secp, oracle_infos, &mut callback)?;
+        self.iter(precomputed_points, &mut callback)?;
         adaptor_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         Ok(adaptor_pairs.into_iter().map(|x| x.1).collect())
     }
