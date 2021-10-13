@@ -1,6 +1,8 @@
 [workspace]
 
 members = [
+  "bincode-dlc",
+  "bincode-dlc/derive",
   "bitcoin-test-utils",
   "bitcoin-rpc-provider",
   "p2pd-oracle-client",

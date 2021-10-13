@@ -398,3 +398,21 @@ impl RoundingIntervals {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn testabcd() {
+        let c = ContractOutcome {
+            outcome: "hh".to_string(),
+            local_payout: 10,
+        };
+
+        let mut buf = Vec::new();
+        c.write(&mut buf).unwrap();
+
+        println!("{:?}", buf);
+    }
+}
