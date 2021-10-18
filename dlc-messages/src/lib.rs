@@ -1,10 +1,12 @@
 //! Data structure and functions related to peer communication.
 
 extern crate bitcoin;
-#[macro_use]
-extern crate lightning;
 extern crate dlc;
+extern crate lightning;
 extern crate secp256k1_zkp;
+#[macro_use]
+pub mod ser_macros;
+pub mod ser_impls;
 
 #[cfg(test)]
 extern crate bitcoin_test_utils;
@@ -16,20 +18,19 @@ extern crate serde_json;
 
 pub mod contract_msgs;
 pub mod oracle_msgs;
-pub mod utils;
+
+pub mod serde_utils;
 
 use bitcoin::{consensus::Decodable, hash_types::Txid, OutPoint, Script, Transaction};
+use contract_msgs::ContractInfo;
 use dlc::TxInputInfo;
 use lightning::ln::msgs::DecodeError;
-use lightning::ln::wire::{write, Type};
-use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
+use lightning::ln::wire::Type;
+use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::bitcoin_hashes::*;
-use secp256k1_zkp::ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{PublicKey, Signature};
-use utils::{read_vec, write_vec};
-
-use contract_msgs::ContractInfo;
+use ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
 
 pub const OFFER_TYPE: u16 = 42778;
 
@@ -47,6 +48,13 @@ pub const SIGN_TYPE: u16 = 42782;
 )]
 pub struct FundingInput {
     pub input_serial_id: u64,
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_string"
+        )
+    )]
     pub prev_tx: Vec<u8>,
     pub prev_tx_vout: u32,
     pub sequence: u32,
@@ -54,8 +62,13 @@ pub struct FundingInput {
     pub redeem_script: Script,
 }
 
-impl_writeable!(FundingInput, 0, {
-    input_serial_id, prev_tx, prev_tx_vout, sequence, max_witness_len, redeem_script
+impl_dlc_writeable!(FundingInput, {
+    (input_serial_id, writeable),
+    (prev_tx, vec),
+    (prev_tx_vout, writeable),
+    (sequence, writeable),
+    (max_witness_len, writeable),
+    (redeem_script, writeable)
 });
 
 impl From<&FundingInput> for TxInputInfo {
@@ -85,25 +98,9 @@ pub struct CetAdaptorSignature {
     pub signature: EcdsaAdaptorSignature,
 }
 
-impl Writeable for CetAdaptorSignature {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        let mut ser_sig = [0; ECDSA_ADAPTOR_SIGNATURE_LENGTH];
-        ser_sig.copy_from_slice(&self.signature.as_ref());
-        ser_sig.write(writer)
-    }
-}
-
-impl Readable for CetAdaptorSignature {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<CetAdaptorSignature, DecodeError> {
-        let sig_buf: [u8; ECDSA_ADAPTOR_SIGNATURE_LENGTH] = Readable::read(reader)?;
-        let signature = match EcdsaAdaptorSignature::from_slice(&sig_buf) {
-            Ok(sig) => sig,
-            Err(_) => return Err(DecodeError::InvalidValue),
-        };
-
-        Ok(CetAdaptorSignature { signature })
-    }
-}
+impl_dlc_writeable!(CetAdaptorSignature, {
+     (signature, { cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature })
+});
 
 /// Contains a list of adaptor signature for a number of CET inputs.
 #[derive(Clone, Debug, PartialEq)]
@@ -129,30 +126,7 @@ impl From<Vec<EcdsaAdaptorSignature>> for CetAdaptorSignatures {
     }
 }
 
-impl Writeable for CetAdaptorSignatures {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        (BigSize(self.ecdsa_adaptor_signatures.len() as u64)).write(writer)?;
-        for ref sig in &self.ecdsa_adaptor_signatures {
-            sig.write(writer)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl Readable for CetAdaptorSignatures {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<CetAdaptorSignatures, DecodeError> {
-        let sig_count: BigSize = Readable::read(reader)?;
-        let mut sigs: Vec<CetAdaptorSignature> = Vec::with_capacity(sig_count.0 as usize);
-        for _ in 0..sig_count.0 {
-            sigs.push(Readable::read(reader)?);
-        }
-
-        Ok(CetAdaptorSignatures {
-            ecdsa_adaptor_signatures: sigs,
-        })
-    }
-}
+impl_dlc_writeable!(CetAdaptorSignatures, { (ecdsa_adaptor_signatures, vec) });
 
 /// Contains the witness elements to use to make a funding transaction input valid.
 #[derive(Clone, Debug, PartialEq)]
@@ -165,19 +139,7 @@ pub struct FundingSignature {
     pub witness_elements: Vec<WitnessElement>,
 }
 
-impl Writeable for FundingSignature {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        write_vec(&self.witness_elements, writer)
-    }
-}
-
-impl Readable for FundingSignature {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<FundingSignature, DecodeError> {
-        let witness_elements = read_vec(reader)?;
-
-        Ok(FundingSignature { witness_elements })
-    }
-}
+impl_dlc_writeable!(FundingSignature, { (witness_elements, vec) });
 
 /// Contains a list of witness elements to satisfy the spending conditions of
 /// funding inputs.
@@ -191,19 +153,7 @@ pub struct FundingSignatures {
     pub funding_signatures: Vec<FundingSignature>,
 }
 
-impl Writeable for FundingSignatures {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        write_vec(&self.funding_signatures, writer)
-    }
-}
-
-impl Readable for FundingSignatures {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<FundingSignatures, DecodeError> {
-        let funding_signatures = read_vec(reader)?;
-
-        Ok(FundingSignatures { funding_signatures })
-    }
-}
+impl_dlc_writeable!(FundingSignatures, { (funding_signatures, vec) });
 
 /// Contains serialized data representing a single witness stack element.
 #[derive(Clone, Debug, PartialEq)]
@@ -213,21 +163,17 @@ impl Readable for FundingSignatures {
     serde(rename_all = "camelCase")
 )]
 pub struct WitnessElement {
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_string"
+        )
+    )]
     pub witness: Vec<u8>,
 }
 
-impl Writeable for WitnessElement {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.witness.write(writer)
-    }
-}
-
-impl Readable for WitnessElement {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<WitnessElement, DecodeError> {
-        let witness = Readable::read(reader)?;
-        Ok(WitnessElement { witness })
-    }
-}
+impl_dlc_writeable!(WitnessElement, { (witness, vec) });
 
 /// Contains information about a party wishing to enter into a DLC with
 /// another party. The contained information is sufficient for any other party
@@ -239,7 +185,15 @@ impl Readable for WitnessElement {
     serde(rename_all = "camelCase")
 )]
 pub struct OfferDlc {
+    pub protocol_version: u32,
     pub contract_flags: u8,
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+        )
+    )]
     pub chain_hash: [u8; 32],
     pub contract_info: ContractInfo,
     pub funding_pubkey: PublicKey,
@@ -265,7 +219,7 @@ impl OfferDlc {
     /// Returns the hash of the serialized OfferDlc message.
     pub fn get_hash(&self) -> Result<[u8; 32], ::std::io::Error> {
         let mut buff = Vec::new();
-        write(self, &mut buff)?;
+        self.write(&mut buff)?;
         Ok(sha256::Hash::hash(&buff).into_inner())
     }
 
@@ -277,60 +231,23 @@ impl OfferDlc {
     }
 }
 
-impl Writeable for OfferDlc {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.contract_flags.write(writer)?;
-        self.chain_hash.write(writer)?;
-        self.contract_info.write(writer)?;
-        self.funding_pubkey.write(writer)?;
-        self.payout_spk.write(writer)?;
-        self.payout_serial_id.write(writer)?;
-        self.offer_collateral.write(writer)?;
-        write_vec(&self.funding_inputs, writer)?;
-        self.change_spk.write(writer)?;
-        self.change_serial_id.write(writer)?;
-        self.fund_output_serial_id.write(writer)?;
-        self.fee_rate_per_vb.write(writer)?;
-        self.contract_maturity_bound.write(writer)?;
-        self.contract_timeout.write(writer)
-    }
-}
-
-impl Readable for OfferDlc {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OfferDlc, DecodeError> {
-        let contract_flags = Readable::read(reader)?;
-        let chain_hash = Readable::read(reader)?;
-        let contract_info: ContractInfo = Readable::read(reader)?;
-        let funding_pubkey = Readable::read(reader)?;
-        let payout_spk = Readable::read(reader)?;
-        let payout_serial_id = Readable::read(reader)?;
-        let offer_collateral = Readable::read(reader)?;
-        let funding_inputs = read_vec(reader)?;
-        let change_spk = Readable::read(reader)?;
-        let change_serial_id = Readable::read(reader)?;
-        let fund_output_serial_id = Readable::read(reader)?;
-        let fee_rate_per_vb = Readable::read(reader)?;
-        let contract_maturity_bound = Readable::read(reader)?;
-        let contract_timeout = Readable::read(reader)?;
-
-        Ok(OfferDlc {
-            contract_flags,
-            chain_hash,
-            contract_info,
-            funding_pubkey,
-            payout_spk,
-            payout_serial_id,
-            offer_collateral,
-            funding_inputs,
-            change_spk,
-            change_serial_id,
-            fund_output_serial_id,
-            fee_rate_per_vb,
-            contract_maturity_bound,
-            contract_timeout,
-        })
-    }
-}
+impl_dlc_writeable!(OfferDlc, {
+        (protocol_version, writeable),
+        (contract_flags, writeable),
+        (chain_hash, writeable),
+        (contract_info, writeable),
+        (funding_pubkey, writeable),
+        (payout_spk, writeable),
+        (payout_serial_id, writeable),
+        (offer_collateral, writeable),
+        (funding_inputs, vec),
+        (change_spk, writeable),
+        (change_serial_id, writeable),
+        (fund_output_serial_id, writeable),
+        (fee_rate_per_vb, writeable),
+        (contract_maturity_bound, writeable),
+        (contract_timeout, writeable)
+});
 
 /// Contains information about a party wishing to accept a DLC offer. The contained
 /// information is sufficient for the offering party to re-build the set of
@@ -343,6 +260,13 @@ impl Readable for OfferDlc {
     serde(rename_all = "camelCase")
 )]
 pub struct AcceptDlc {
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+        )
+    )]
     pub temporary_contract_id: [u8; 32],
     pub accept_collateral: u64,
     pub funding_pubkey: PublicKey,
@@ -355,46 +279,22 @@ pub struct AcceptDlc {
     pub refund_signature: Signature,
 }
 
-impl Writeable for AcceptDlc {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.temporary_contract_id.write(writer)?;
-        self.accept_collateral.write(writer)?;
-        self.funding_pubkey.write(writer)?;
-        self.payout_spk.write(writer)?;
-        self.payout_serial_id.write(writer)?;
-        write_vec(&self.funding_inputs, writer)?;
-        self.change_spk.write(writer)?;
-        self.change_serial_id.write(writer)?;
-        self.cet_adaptor_signatures.write(writer)?;
-        self.refund_signature.write(writer)
-    }
-}
+impl_dlc_writeable!(AcceptDlc, {
+    (temporary_contract_id, writeable),
+    (accept_collateral, writeable),
+    (funding_pubkey, writeable),
+    (payout_spk, writeable),
+    (payout_serial_id, writeable),
+    (funding_inputs, vec),
+    (change_spk, writeable),
+    (change_serial_id, writeable),
+    (cet_adaptor_signatures, writeable),
+    (refund_signature, writeable)
+});
 
-impl Readable for AcceptDlc {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<AcceptDlc, DecodeError> {
-        let temporary_contract_id = Readable::read(reader)?;
-        let accept_collateral = Readable::read(reader)?;
-        let funding_pubkey = Readable::read(reader)?;
-        let payout_spk = Readable::read(reader)?;
-        let payout_serial_id = Readable::read(reader)?;
-        let funding_inputs = read_vec(reader)?;
-        let change_spk = Readable::read(reader)?;
-        let change_serial_id = Readable::read(reader)?;
-        let cet_adaptor_signatures = Readable::read(reader)?;
-        let refund_signature = Readable::read(reader)?;
-
-        Ok(AcceptDlc {
-            temporary_contract_id,
-            accept_collateral,
-            funding_pubkey,
-            payout_spk,
-            payout_serial_id,
-            funding_inputs,
-            change_spk,
-            change_serial_id,
-            cet_adaptor_signatures,
-            refund_signature,
-        })
+impl Type for AcceptDlc {
+    fn type_id(&self) -> u16 {
+        ACCEPT_TYPE
     }
 }
 
@@ -407,35 +307,29 @@ impl Readable for AcceptDlc {
     serde(rename_all = "camelCase")
 )]
 pub struct SignDlc {
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+        )
+    )]
     pub contract_id: [u8; 32],
     pub cet_adaptor_signatures: CetAdaptorSignatures,
     pub refund_signature: Signature,
     pub funding_signatures: FundingSignatures,
 }
 
-impl Writeable for SignDlc {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        self.contract_id.write(writer)?;
-        self.cet_adaptor_signatures.write(writer)?;
-        self.refund_signature.write(writer)?;
-        self.funding_signatures.write(writer)?;
-        Ok(())
-    }
-}
+impl_dlc_writeable!(SignDlc, {
+    (contract_id, writeable),
+    (cet_adaptor_signatures, writeable),
+    (refund_signature, writeable),
+    (funding_signatures, writeable)
+});
 
-impl Readable for SignDlc {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<SignDlc, DecodeError> {
-        let contract_id = Readable::read(reader)?;
-        let cet_adaptor_signatures = Readable::read(reader)?;
-        let refund_signature = Readable::read(reader)?;
-        let funding_signatures = Readable::read(reader)?;
-
-        Ok(SignDlc {
-            contract_id,
-            cet_adaptor_signatures,
-            refund_signature,
-            funding_signatures,
-        })
+impl Type for SignDlc {
+    fn type_id(&self) -> u16 {
+        SIGN_TYPE
     }
 }
 
@@ -450,9 +344,9 @@ pub enum Message {
 impl Type for Message {
     fn type_id(&self) -> u16 {
         match self {
-            Message::Offer(_) => OFFER_TYPE,
-            Message::Accept(_) => ACCEPT_TYPE,
-            Message::Sign(_) => SIGN_TYPE,
+            Message::Offer(o) => o.type_id(),
+            Message::Accept(a) => a.type_id(),
+            Message::Sign(s) => s.type_id(),
         }
     }
 }
