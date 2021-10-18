@@ -38,6 +38,8 @@ const BITCOIN_CHAINHASH: [u8; 32] = [
     0x28, 0xc3, 0x4f, 0x3a, 0x5e, 0x33, 0x2a, 0x1f, 0xc7, 0xb2, 0xb7, 0x3c, 0xf1, 0x88, 0x91, 0x0f,
 ];
 
+const PROTOCOL_VERSION: u32 = 1;
+
 #[derive(Debug)]
 pub enum Error {
     BitcoinEncoding(bitcoin::consensus::encode::Error),
@@ -70,6 +72,7 @@ impl From<bitcoin::consensus::encode::Error> for Error {
 impl From<&OfferedContract> for OfferDlc {
     fn from(offered_contract: &OfferedContract) -> OfferDlc {
         OfferDlc {
+            protocol_version: PROTOCOL_VERSION,
             contract_flags: 0,
             chain_hash: BITCOIN_CHAINHASH,
             contract_info: offered_contract.into(),

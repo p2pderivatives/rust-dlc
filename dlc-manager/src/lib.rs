@@ -17,6 +17,7 @@
 extern crate async_trait;
 extern crate bitcoin;
 extern crate dlc;
+#[macro_use]
 extern crate dlc_messages;
 extern crate dlc_trie;
 extern crate lightning;
