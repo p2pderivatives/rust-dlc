@@ -1,14 +1,13 @@
+use crate::ser_impls::{
+    read_i32, read_schnorr_pubkey, read_schnorr_signatures, read_schnorrsig, read_strings,
+    write_i32, write_schnorr_pubkey, write_schnorr_signatures, write_schnorrsig, write_strings,
+};
 use dlc::OracleInfo as DlcOracleInfo;
 use lightning::ln::msgs::DecodeError;
-use lightning::util::ser::{BigSize, Readable, Writeable, Writer};
+use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use utils::{
-    read_schnorr_pubkey, read_schnorr_pubkeys, read_schnorr_signatures, read_schnorrsig,
-    read_string, read_strings, write_schnorr_pubkey, write_schnorr_pubkeys,
-    write_schnorr_signatures, write_schnorrsig, write_string, write_strings,
-};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
@@ -32,10 +31,8 @@ impl<'a> OracleInfo {
     }
 }
 
-impl_writeable_tlv_based_enum!(
-    OracleInfo, ;
-    (0, Single),
-    (1, Multi)
+impl_dlc_writeable_enum!(
+    OracleInfo, (0, Single), (1, Multi);;
 );
 
 /// Structure containing information about an oracle to be used as external
@@ -50,7 +47,7 @@ pub struct SingleOracleInfo {
     pub oracle_announcement: OracleAnnouncement,
 }
 
-impl_writeable!(SingleOracleInfo, 0, { oracle_announcement });
+impl_dlc_writeable!(SingleOracleInfo, { (oracle_announcement, writeable) });
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
@@ -64,10 +61,10 @@ pub struct MultiOracleInfo {
     pub oracle_params: Option<OracleParams>,
 }
 
-impl_writeable_tlv_based!(MultiOracleInfo, {
-    (0, threshold, required),
-    (1, oracle_announcements, vec_type),
-    (2, oracle_params, option),
+impl_dlc_writeable!(MultiOracleInfo, {
+    (threshold, writeable),
+    (oracle_announcements, vec),
+    (oracle_params, option)
 });
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -82,7 +79,11 @@ pub struct OracleParams {
     pub maximize_coverage: bool,
 }
 
-impl_writeable!(OracleParams, 33, {max_error_exp, min_fail_exp, maximize_coverage});
+impl_dlc_writeable!(OracleParams, {
+    (max_error_exp, writeable),
+    (min_fail_exp, writeable),
+    (maximize_coverage, writeable)
+});
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
@@ -96,28 +97,11 @@ pub struct OracleAnnouncement {
     pub oracle_event: OracleEvent,
 }
 
-impl Writeable for OracleAnnouncement {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        write_schnorrsig(&self.announcement_signature, writer)?;
-        write_schnorr_pubkey(&self.oracle_public_key, writer)?;
-        self.oracle_event.write(writer)?;
-        Ok(())
-    }
-}
-
-impl Readable for OracleAnnouncement {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleAnnouncement, DecodeError> {
-        let announcement_signature: SchnorrSignature = read_schnorrsig(reader)?;
-        let oracle_public_key: SchnorrPublicKey = read_schnorr_pubkey(reader)?;
-        let oracle_event: OracleEvent = Readable::read(reader)?;
-
-        Ok(OracleAnnouncement {
-            announcement_signature,
-            oracle_public_key,
-            oracle_event,
-        })
-    }
-}
+impl_dlc_writeable!(OracleAnnouncement, {
+    (announcement_signature, {cb_writeable, write_schnorrsig, read_schnorrsig}),
+    (oracle_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}),
+    (oracle_event, writeable)
+});
 
 impl From<&OracleAnnouncement> for DlcOracleInfo {
     fn from(input: &OracleAnnouncement) -> DlcOracleInfo {
@@ -141,31 +125,12 @@ pub struct OracleEvent {
     pub event_id: String,
 }
 
-impl Writeable for OracleEvent {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        write_schnorr_pubkeys(&self.oracle_nonces, writer)?;
-        self.event_maturity_epoch.write(writer)?;
-        self.event_descriptor.write(writer)?;
-        write_string(&self.event_id, writer)?;
-        Ok(())
-    }
-}
-
-impl Readable for OracleEvent {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleEvent, DecodeError> {
-        let oracle_nonces: Vec<SchnorrPublicKey> = read_schnorr_pubkeys(reader)?;
-        let event_maturity_epoch: u32 = Readable::read(reader)?;
-        let event_descriptor: EventDescriptor = Readable::read(reader)?;
-        let event_id = read_string(reader)?;
-
-        Ok(OracleEvent {
-            oracle_nonces,
-            event_maturity_epoch,
-            event_descriptor,
-            event_id,
-        })
-    }
-}
+impl_dlc_writeable!(OracleEvent, {
+    (oracle_nonces, {vec_cb, write_schnorr_pubkey, read_schnorr_pubkey}),
+    (event_maturity_epoch, writeable),
+    (event_descriptor, writeable),
+    (event_id, string)
+});
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
@@ -178,10 +143,7 @@ pub enum EventDescriptor {
     DigitDecompositionEvent(DigitDecompositionEventDescriptor),
 }
 
-impl_writeable_tlv_based_enum!(EventDescriptor, ;
- (0, EnumEvent),
- (1, DigitDecompositionEvent)
-);
+impl_dlc_writeable_enum!(EventDescriptor, (0, EnumEvent), (1, DigitDecompositionEvent);;);
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
@@ -193,28 +155,9 @@ pub struct EnumEventDescriptor {
     pub outcomes: Vec<String>,
 }
 
-impl Writeable for EnumEventDescriptor {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        (self.outcomes.len() as u16).write(writer)?;
-        for outcome in &self.outcomes {
-            write_string(outcome, writer)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl Readable for EnumEventDescriptor {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<EnumEventDescriptor, DecodeError> {
-        let len: u16 = Readable::read(reader)?;
-        let mut outcomes: Vec<String> = Vec::new();
-        for _ in 0..len {
-            outcomes.push(read_string(reader)?);
-        }
-
-        Ok(EnumEventDescriptor { outcomes })
-    }
-}
+impl_dlc_writeable!(EnumEventDescriptor, {
+    (outcomes, {cb_writeable, write_strings, read_strings})
+});
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
@@ -230,41 +173,13 @@ pub struct DigitDecompositionEventDescriptor {
     pub nb_digits: u16,
 }
 
-impl Writeable for DigitDecompositionEventDescriptor {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        BigSize(self.base).write(writer)?;
-        self.is_signed.write(writer)?;
-        write_string(&self.unit, writer)?;
-        self.precision.to_be_bytes().write(writer)?;
-        self.nb_digits.write(writer)?;
-        Ok(())
-    }
-}
-
-impl Readable for DigitDecompositionEventDescriptor {
-    fn read<R: ::std::io::Read>(
-        reader: &mut R,
-    ) -> Result<DigitDecompositionEventDescriptor, DecodeError> {
-        let base: BigSize = Readable::read(reader)?;
-        let is_signed = Readable::read(reader)?;
-        let unit = read_string(reader)?;
-        let mut precision_buf = [0u8; 4];
-        for i in 0..4 {
-            precision_buf[i] = Readable::read(reader)?;
-        }
-
-        let precision = i32::from_be_bytes(precision_buf);
-        let nb_digits: u16 = Readable::read(reader)?;
-
-        Ok(DigitDecompositionEventDescriptor {
-            base: base.0,
-            is_signed,
-            unit,
-            precision,
-            nb_digits,
-        })
-    }
-}
+impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
+    (base, writeable),
+    (is_signed, writeable),
+    (unit, string),
+    (precision, {cb_writeable, write_i32, read_i32}),
+    (nb_digits, writeable)
+});
 
 #[derive(Clone)]
 pub struct OracleAttestation {
@@ -273,25 +188,8 @@ pub struct OracleAttestation {
     pub outcomes: Vec<String>,
 }
 
-impl Writeable for OracleAttestation {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        write_schnorr_pubkey(&self.oracle_public_key, writer)?;
-        write_schnorr_signatures(&self.signatures, writer)?;
-        write_strings(&self.outcomes, writer)?;
-
-        Ok(())
-    }
-}
-
-impl Readable for OracleAttestation {
-    fn read<R: ::std::io::Read>(reader: &mut R) -> Result<OracleAttestation, DecodeError> {
-        let oracle_public_key = read_schnorr_pubkey(reader)?;
-        let signatures = read_schnorr_signatures(reader)?;
-        let outcomes = read_strings(reader)?;
-        Ok(OracleAttestation {
-            oracle_public_key,
-            signatures,
-            outcomes,
-        })
-    }
-}
+impl_dlc_writeable!(OracleAttestation, {
+    (oracle_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}),
+    (signatures, {cb_writeable, write_schnorr_signatures, read_schnorr_signatures}),
+    (outcomes, {cb_writeable, write_strings, read_strings})
+});
