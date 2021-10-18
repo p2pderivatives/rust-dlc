@@ -23,14 +23,70 @@ use dlc_manager::{Oracle, Storage};
 use dlc_messages::oracle_msgs::{
     DigitDecompositionEventDescriptor, EnumEventDescriptor, EventDescriptor,
 };
+use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
 use dlc_trie::digit_decomposition::decompose_value;
+use lightning::ln::wire::Type;
+use lightning::util::ser::Writeable;
 use mocks::mock_oracle_provider::MockOracle;
 use secp256k1_zkp::rand::{seq::SliceRandom, thread_rng, RngCore};
 use secp256k1_zkp::{EcdsaAdaptorSignature, Signature};
+use serde_json::{from_str, to_writer_pretty};
 use std::collections::HashMap;
 use std::sync::{mpsc::channel, Arc, Mutex};
 use std::thread;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TestVectorPart<T> {
+    message: T,
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "dlc_messages::serde_utils::serialize_hex",
+            deserialize_with = "dlc_messages::serde_utils::deserialize_hex_string"
+        )
+    )]
+    serialized: Vec<u8>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TestVector {
+    offer_message: TestVectorPart<OfferDlc>,
+    accept_message: TestVectorPart<AcceptDlc>,
+    sign_message: TestVectorPart<SignDlc>,
+}
+
+fn write_message<T: Writeable + serde::Serialize + Type>(msg_name: &str, s: T) {
+    if std::env::var("GENERATE_TEST_VECTOR").is_ok() {
+        let mut buf = Vec::new();
+        s.type_id().write(&mut buf).unwrap();
+        s.write(&mut buf).unwrap();
+        let t = TestVectorPart {
+            message: s,
+            serialized: buf,
+        };
+        to_writer_pretty(
+            &std::fs::File::create(format!("{}.json", msg_name)).unwrap(),
+            &t,
+        )
+        .unwrap();
+    }
+}
+
+fn create_test_vector() {
+    if std::env::var("GENERATE_TEST_VECTOR").is_ok() {
+        let test_vector = TestVector {
+            offer_message: from_str(&std::fs::read_to_string("offer_message.json").unwrap())
+                .unwrap(),
+            accept_message: from_str(&std::fs::read_to_string("accept_message.json").unwrap())
+                .unwrap(),
+            sign_message: from_str(&std::fs::read_to_string("sign_message.json").unwrap()).unwrap(),
+        };
+        let file_name =
+            std::env::var("TEST_VECTOR_OUTPUT_NAME").unwrap_or("test_vector.json".to_string());
+        to_writer_pretty(std::fs::File::create(file_name).unwrap(), &test_vector).unwrap();
+    }
+}
 
 macro_rules! assert_contract_state {
     ($d:expr, $id:expr, $p:ident) => {
@@ -75,6 +131,12 @@ macro_rules! receive_loop {
                         match opt {
                             Some(msg) => {
                                 let msg = $rcv_callback(msg);
+                                match &msg {
+                                    Message::Sign(s) => {
+                                        write_message("sign_message", s.clone());
+                                    }
+                                    _ => {}
+                                }
                                 (&$send).send(Some(msg)).expect("Error sending");
                             }
                             None => {}
@@ -703,6 +765,8 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                 .unwrap(),
         )
         .expect("Send offer error");
+
+    write_message("offer_message", offer_msg.clone());
     let temporary_contract_id = offer_msg.get_hash().unwrap();
     bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
 
@@ -717,6 +781,8 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         .unwrap()
         .accept_contract_offer(&temporary_contract_id)
         .expect("Error accepting contract offer");
+
+    write_message("accept_message", accept_msg.clone());
 
     assert_contract_state!(alice_manager_send, contract_id, Accepted);
 
@@ -823,4 +889,6 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     alice_handle.join().unwrap();
     bob_handle.join().unwrap();
+
+    create_test_vector();
 }
