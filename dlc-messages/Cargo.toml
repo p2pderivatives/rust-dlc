@@ -16,7 +16,6 @@ dlc = {version = "0.1.0", path = "../dlc"}
 lightning = {version = "0.0.103"}
 secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
 serde = {version = "1.0", features = ["derive"], optional = true}
-unicode-normalization = {version = "0.1.16"}
 
 [dev-dependencies]
 bitcoin = {version = "0.27", features = ["use-serde"]}
