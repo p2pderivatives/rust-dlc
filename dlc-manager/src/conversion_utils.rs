@@ -327,6 +327,7 @@ impl From<&EnumDescriptor> for EnumeratedContractDescriptor {
 impl From<&NumericalDescriptor> for NumericOutcomeContractDescriptor {
     fn from(num_descriptor: &NumericalDescriptor) -> NumericOutcomeContractDescriptor {
         NumericOutcomeContractDescriptor {
+            num_digits: num_descriptor.info.nb_digits as u16,
             payout_function: (&num_descriptor.payout_function).into(),
             rounding_intervals: (&num_descriptor.rounding_intervals).into(),
         }
@@ -562,6 +563,7 @@ impl From<&AcceptedContract> for AcceptDlc {
                     .collect(),
             },
             refund_signature: contract.accept_refund_signature,
+            negotiation_fields: None,
         }
     }
 }
