@@ -175,6 +175,46 @@ pub struct WitnessElement {
 
 impl_dlc_writeable!(WitnessElement, { (witness, vec) });
 
+///
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub enum NegotiationFields {
+    Single(SingleNegotiationFields),
+    Disjoint(DisjointNegotiationFields),
+}
+
+impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;);
+
+///
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct SingleNegotiationFields {
+    rounding_intervals: contract_msgs::RoundingIntervals,
+}
+
+impl_dlc_writeable!(SingleNegotiationFields, { (rounding_intervals, writeable) });
+
+///
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct DisjointNegotiationFields {
+    negotiation_fields: Vec<NegotiationFields>,
+}
+
+impl_dlc_writeable!(DisjointNegotiationFields, { (negotiation_fields, vec) });
+
 /// Contains information about a party wishing to enter into a DLC with
 /// another party. The contained information is sufficient for any other party
 /// to create a set of transactions representing the contract and its terms.
@@ -277,6 +317,7 @@ pub struct AcceptDlc {
     pub change_serial_id: u64,
     pub cet_adaptor_signatures: CetAdaptorSignatures,
     pub refund_signature: Signature,
+    pub negotiation_fields: Option<NegotiationFields>,
 }
 
 impl_dlc_writeable!(AcceptDlc, {
@@ -289,7 +330,8 @@ impl_dlc_writeable!(AcceptDlc, {
     (change_spk, writeable),
     (change_serial_id, writeable),
     (cet_adaptor_signatures, writeable),
-    (refund_signature, writeable)
+    (refund_signature, writeable),
+    (negotiation_fields, option)
 });
 
 impl Type for AcceptDlc {
