@@ -15,6 +15,9 @@ macro_rules! field_write {
     ($stream: expr, $field: expr, {vec_cb, $w_cb: expr, $r_cb: expr}) => {
         $crate::ser_impls::write_vec_cb(&$field, $stream, &$w_cb)?;
     };
+    ($stream: expr, $field: expr, {vec_u16_cb, $w_cb: expr, $r_cb: expr}) => {
+        $crate::ser_impls::write_vec_u16_cb(&$field, $stream, &$w_cb)?;
+    };
     ($stream: expr, $field: expr, float) => {
         $crate::ser_impls::write_f64($field, $stream)?;
     };
@@ -45,6 +48,9 @@ macro_rules! field_read {
     };
     ($stream: expr, {vec_cb, $w_cb: expr, $r_cb: expr}) => {
         $crate::ser_impls::read_vec_cb($stream, &$r_cb)?
+    };
+    ($stream: expr, {vec_u16_cb, $w_cb: expr, $r_cb: expr}) => {
+        $crate::ser_impls::read_vec_u16_cb($stream, &$r_cb)?
     };
     ($stream: expr, float) => {
         $crate::ser_impls::read_f64($stream)?
@@ -134,6 +140,39 @@ macro_rules! impl_dlc_writeable_external_enum {
                 match id {
                     $($variant_id => {
 						Ok($st::$variant_name($variant_mod::read(r)?))
+					}),*
+					_ => {
+						Err(DecodeError::UnknownRequiredFeature)
+					},
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_dlc_writeable_enum_as_tlv {
+    ($st:ident, $(($variant_id: expr, $variant_name: ident)), *;) => {
+        impl Writeable for $st {
+			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::std::io::Error> {
+                match self {
+                    $($st::$variant_name(ref field) => {
+                        $crate::ser_impls::BigSize($variant_id as u64).write(w)?;
+                        $crate::ser_impls::BigSize(field.serialized_length() as u64).write(w)?;
+                        field.write(w)?;
+                    }),*
+                };
+				Ok(())
+            }
+        }
+
+        impl Readable for $st {
+			fn read<R: std::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
+                let id: $crate::ser_impls::BigSize = Readable::read(r)?;
+                match id.0 {
+                    $($variant_id => {
+                        let _ : $crate::ser_impls::BigSize = Readable::read(r)?;
+						Ok($st::$variant_name(Readable::read(r)?))
 					}),*
 					_ => {
 						Err(DecodeError::UnknownRequiredFeature)

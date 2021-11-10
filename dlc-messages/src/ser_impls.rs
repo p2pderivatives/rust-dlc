@@ -2,6 +2,7 @@ use bitcoin::network::constants::Network;
 use bitcoin::Address;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
+use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
 use std::convert::TryInto;
@@ -118,6 +119,30 @@ pub fn read_strings<R: ::std::io::Read>(
     let len: BigSize = lightning::util::ser::Readable::read(reader)?;
     let mut res = Vec::<String>::new();
     for _ in 0..len.0 {
+        res.push(read_string(reader)?);
+    }
+
+    Ok(res)
+}
+
+pub fn write_strings_u16<W: Writer>(
+    inputs: &Vec<String>,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    (inputs.len() as u16).write(writer)?;
+    for s in inputs {
+        write_string(&s, writer)?;
+    }
+
+    Ok(())
+}
+
+pub fn read_strings_u16<R: ::std::io::Read>(
+    reader: &mut R,
+) -> Result<Vec<String>, lightning::ln::msgs::DecodeError> {
+    let len: u16 = lightning::util::ser::Readable::read(reader)?;
+    let mut res = Vec::<String>::new();
+    for _ in 0..len {
         res.push(read_string(reader)?);
     }
 
@@ -281,6 +306,51 @@ where
     Ok(res)
 }
 
+pub fn write_vec_u16<W: Writer, T>(input: &Vec<T>, writer: &mut W) -> Result<(), ::std::io::Error>
+where
+    T: Writeable,
+{
+    write_vec_u16_cb(input, writer, &<T as Writeable>::write)
+}
+
+pub fn read_vec_u16<R: ::std::io::Read, T>(reader: &mut R) -> Result<Vec<T>, DecodeError>
+where
+    T: Readable,
+{
+    read_vec_u16_cb(reader, &Readable::read)
+}
+
+pub fn write_vec_u16_cb<W: Writer, T, F>(
+    input: &Vec<T>,
+    writer: &mut W,
+    cb: &F,
+) -> Result<(), ::std::io::Error>
+where
+    F: Fn(&T, &mut W) -> Result<(), ::std::io::Error>,
+{
+    (input.len() as u16).write(writer)?;
+    for s in input {
+        cb(s, writer)?;
+    }
+    Ok(())
+}
+
+pub fn read_vec_u16_cb<R: ::std::io::Read, T, F>(
+    reader: &mut R,
+    cb: &F,
+) -> Result<Vec<T>, DecodeError>
+where
+    F: Fn(&mut R) -> Result<T, DecodeError>,
+{
+    let len: u16 = Readable::read(reader)?;
+    let mut res = Vec::<T>::new();
+    for _ in 0..len {
+        res.push(cb(reader)?);
+    }
+
+    Ok(res)
+}
+
 pub fn write_usize<W: Writer>(i: &usize, writer: &mut W) -> Result<(), ::std::io::Error> {
     <u64 as Writeable>::write(&(*i as u64), writer)
 }
@@ -405,6 +475,26 @@ pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> 
     Ok(i32::from_be_bytes(
         v.try_into().map_err(|_| DecodeError::InvalidValue)?,
     ))
+}
+
+pub fn write_as_tlv<T: Type + Writeable, W: Writer>(
+    e: &T,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error> {
+    BigSize(e.type_id() as u64).write(writer)?;
+    BigSize(e.serialized_length() as u64).write(writer)?;
+    e.write(writer)
+}
+
+pub fn read_as_tlv<T: Type + Readable, R: ::std::io::Read>(
+    reader: &mut R,
+) -> Result<T, DecodeError> {
+    // TODO(tibo): consider checking type here.
+    // This retrieves type as BigSize. Will be u16 once specs are updated.
+    let _: BigSize = Readable::read(reader)?;
+    // This retrieves the length, will be removed once oracle specs are updated.
+    let _: BigSize = Readable::read(reader)?;
+    Readable::read(reader)
 }
 
 impl_dlc_writeable_external!(Payout, payout, { (offer, writeable), (accept, writeable) });

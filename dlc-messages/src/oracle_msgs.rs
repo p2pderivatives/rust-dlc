@@ -1,13 +1,17 @@
 use crate::ser_impls::{
-    read_i32, read_schnorr_pubkey, read_schnorr_signatures, read_schnorrsig, read_strings,
-    write_i32, write_schnorr_pubkey, write_schnorr_signatures, write_schnorrsig, write_strings,
+    read_as_tlv, read_i32, read_schnorr_pubkey, read_schnorrsig, read_strings_u16, write_as_tlv,
+    write_i32, write_schnorr_pubkey, write_schnorrsig, write_strings_u16,
 };
 use dlc::OracleInfo as DlcOracleInfo;
 use lightning::ln::msgs::DecodeError;
+use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+pub const ANNOUNCEMENT_TYPE: u16 = 55332;
+pub const ATTESTATION_TYPE: u16 = 55400;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
@@ -47,7 +51,9 @@ pub struct SingleOracleInfo {
     pub oracle_announcement: OracleAnnouncement,
 }
 
-impl_dlc_writeable!(SingleOracleInfo, { (oracle_announcement, writeable) });
+impl_dlc_writeable!(SingleOracleInfo, {
+    (oracle_announcement, {cb_writeable, write_as_tlv, read_as_tlv })
+});
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
@@ -63,7 +69,7 @@ pub struct MultiOracleInfo {
 
 impl_dlc_writeable!(MultiOracleInfo, {
     (threshold, writeable),
-    (oracle_announcements, vec),
+    (oracle_announcements, {vec_cb, write_as_tlv, read_as_tlv}),
     (oracle_params, option)
 });
 
@@ -97,10 +103,16 @@ pub struct OracleAnnouncement {
     pub oracle_event: OracleEvent,
 }
 
+impl Type for OracleAnnouncement {
+    fn type_id(&self) -> u16 {
+        ANNOUNCEMENT_TYPE
+    }
+}
+
 impl_dlc_writeable!(OracleAnnouncement, {
     (announcement_signature, {cb_writeable, write_schnorrsig, read_schnorrsig}),
     (oracle_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}),
-    (oracle_event, writeable)
+    (oracle_event, {cb_writeable, write_as_tlv, read_as_tlv})
 });
 
 impl From<&OracleAnnouncement> for DlcOracleInfo {
@@ -125,8 +137,14 @@ pub struct OracleEvent {
     pub event_id: String,
 }
 
+impl Type for OracleEvent {
+    fn type_id(&self) -> u16 {
+        55330
+    }
+}
+
 impl_dlc_writeable!(OracleEvent, {
-    (oracle_nonces, {vec_cb, write_schnorr_pubkey, read_schnorr_pubkey}),
+    (oracle_nonces, {vec_u16_cb, write_schnorr_pubkey, read_schnorr_pubkey}),
     (event_maturity_epoch, writeable),
     (event_descriptor, writeable),
     (event_id, string)
@@ -143,7 +161,7 @@ pub enum EventDescriptor {
     DigitDecompositionEvent(DigitDecompositionEventDescriptor),
 }
 
-impl_dlc_writeable_enum!(EventDescriptor, (0, EnumEvent), (1, DigitDecompositionEvent);;);
+impl_dlc_writeable_enum_as_tlv!(EventDescriptor, (55302, EnumEvent), (55306, DigitDecompositionEvent););
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
@@ -156,7 +174,7 @@ pub struct EnumEventDescriptor {
 }
 
 impl_dlc_writeable!(EnumEventDescriptor, {
-    (outcomes, {cb_writeable, write_strings, read_strings})
+    (outcomes, {cb_writeable, write_strings_u16, read_strings_u16})
 });
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -181,15 +199,21 @@ impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
     (nb_digits, writeable)
 });
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OracleAttestation {
     pub oracle_public_key: SchnorrPublicKey,
     pub signatures: Vec<SchnorrSignature>,
     pub outcomes: Vec<String>,
 }
 
+impl Type for OracleAttestation {
+    fn type_id(&self) -> u16 {
+        ATTESTATION_TYPE
+    }
+}
+
 impl_dlc_writeable!(OracleAttestation, {
     (oracle_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}),
-    (signatures, {cb_writeable, write_schnorr_signatures, read_schnorr_signatures}),
-    (outcomes, {cb_writeable, write_strings, read_strings})
+    (signatures, {vec_u16_cb, write_schnorrsig, read_schnorrsig}),
+    (outcomes, {cb_writeable, write_strings_u16, read_strings_u16})
 });
