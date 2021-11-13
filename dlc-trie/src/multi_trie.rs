@@ -1,7 +1,10 @@
 //! Data structure and functions to create, insert, lookup and iterate a trie
 //! of trie.
 
-use crate::{LookupResult, Node};
+use crate::{
+    utils::{get_max_covering_paths, pre_pad_vec},
+    LookupResult, Node, OracleNumericInfo,
+};
 use combination_iterator::CombinationIterator;
 use digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
 use dlc::Error;
@@ -17,7 +20,8 @@ pub struct TrieNodeInfo {
 }
 
 type MultiTrieNode<T> = Node<DigitTrie<T>, DigitTrie<Vec<TrieNodeInfo>>>;
-type NodeStackElement<'a> = Vec<((usize, Vec<usize>), DigitTrieIter<'a, Vec<TrieNodeInfo>>)>;
+type NodeStackElement<'a> = Vec<(IndexedPath, DigitTrieIter<'a, Vec<TrieNodeInfo>>)>;
+type IndexedPath = (usize, Vec<usize>);
 
 impl<T> MultiTrieNode<T> {
     fn new_node(base: usize) -> MultiTrieNode<T> {
@@ -31,7 +35,7 @@ impl<T> MultiTrieNode<T> {
 }
 
 /// Struct for iterating over the values of a MultiTrie.
-pub struct MultiTrieIterator<'a, T> {
+pub(crate) struct MultiTrieIterator<'a, T> {
     trie: &'a MultiTrie<T>,
     node_stack: NodeStackElement<'a>,
     trie_info_iter: Vec<(
@@ -164,46 +168,52 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
 #[derive(Clone)]
 pub struct MultiTrie<T> {
     store: Vec<MultiTrieNode<T>>,
-    base: usize,
     nb_tries: usize,
     nb_required: usize,
     min_support_exp: usize,
     max_error_exp: usize,
-    nb_digits: usize,
     maximize_coverage: bool,
+    oracle_numeric_infos: OracleNumericInfo,
 }
 
 impl<T> MultiTrie<T> {
     /// Create a new MultiTrie. Panics if `nb_required` is less or equal to
     /// zero, or if `nb_tries` is less than `nb_required`.
     pub fn new(
-        nb_tries: usize,
+        oracle_numeric_infos: &OracleNumericInfo,
         nb_required: usize,
-        base: usize,
         min_support_exp: usize,
         max_error_exp: usize,
-        nb_digits: usize,
         maximize_coverage: bool,
     ) -> MultiTrie<T> {
-        assert!(nb_required > 0 && nb_tries >= nb_required);
+        let nb_tries = oracle_numeric_infos.nb_digits.len();
+        assert!(
+            nb_required > 0
+                && nb_tries >= nb_required
+                && !oracle_numeric_infos.nb_digits.is_empty()
+        );
         let nb_roots = nb_tries - nb_required + 1;
-        let mut store = Vec::new();
 
-        if nb_required > 1 {
-            store.resize_with(nb_roots, || MultiTrieNode::new_node(base));
+        let store: Vec<_> = if nb_required > 1 {
+            (0..nb_tries)
+                .take(nb_roots)
+                .map(|_| MultiTrieNode::new_node(oracle_numeric_infos.base))
+                .collect()
         } else {
-            store.resize_with(nb_roots, || MultiTrieNode::new_leaf(base));
-        }
+            (0..nb_tries)
+                .take(nb_roots)
+                .map(|_| MultiTrieNode::new_leaf(oracle_numeric_infos.base))
+                .collect()
+        };
 
         MultiTrie {
             store,
-            base,
             nb_tries,
             nb_required,
             min_support_exp,
             max_error_exp,
-            nb_digits,
             maximize_coverage,
+            oracle_numeric_infos: oracle_numeric_infos.clone(),
         }
     }
 
@@ -212,28 +222,66 @@ impl<T> MultiTrie<T> {
         self.store.swap_remove(index)
     }
 
+    /// Insert the paths to cover outcomes outside of the range of the oracle with
+    /// minimum number of digits. Should only be called when oracles have varying
+    /// number of digits.
+    pub fn insert_max_paths<F>(&mut self, get_value: &mut F) -> Result<(), Error>
+    where
+        F: FnMut(&[Vec<usize>], &[usize]) -> Result<T, Error>,
+    {
+        let indexed_paths = get_max_covering_paths(&self.oracle_numeric_infos, self.nb_required);
+        for indexed_path in indexed_paths {
+            let (indexes, paths): (Vec<usize>, Vec<Vec<usize>>) = indexed_path.into_iter().unzip();
+            self.insert_internal(indexes[0], &paths, 0, &indexes, get_value)?;
+        }
+        Ok(())
+    }
+
     /// Insert the value returned by `get_value` at the position specified by `path`.
     pub fn insert<F>(&mut self, path: &[usize], get_value: &mut F) -> Result<(), Error>
     where
         F: FnMut(&[Vec<usize>], &[usize]) -> Result<T, Error>,
     {
-        let combinations = if self.nb_required > 1 {
-            compute_outcome_combinations(
-                self.nb_digits,
-                path,
-                self.max_error_exp,
-                self.min_support_exp,
-                self.maximize_coverage,
-                self.nb_required,
-            )
-        } else {
-            vec![vec![path.to_vec()]]
-        };
+        let combination_iter = CombinationIterator::new(self.nb_tries, self.nb_required);
+        let min_nb_digits = self.oracle_numeric_infos.get_min_nb_digits();
 
-        for combination in combinations {
-            let combination_iter = CombinationIterator::new(self.nb_tries, self.nb_required);
+        for selector in combination_iter {
+            let combinations = if self.nb_required > 1 {
+                let mut digit_infos = self
+                    .oracle_numeric_infos
+                    .nb_digits
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, x)| {
+                        if selector.contains(&i) {
+                            Some(*x)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let min_index = reorder_to_min_first(&mut digit_infos);
+                let to_pad = digit_infos[0] - min_nb_digits;
+                let padded_path = pre_pad_vec(path.to_vec(), path.len() + to_pad);
+                let mut combinations = compute_outcome_combinations(
+                    &digit_infos,
+                    &padded_path,
+                    self.max_error_exp,
+                    self.min_support_exp,
+                    self.maximize_coverage,
+                );
+                if min_index != 0 {
+                    for combination in &mut combinations {
+                        let to_reorder = combination.remove(0);
+                        combination.insert(min_index, to_reorder);
+                    }
+                }
+                combinations
+            } else {
+                vec![vec![path.to_vec()]]
+            };
 
-            for selector in combination_iter {
+            for combination in combinations {
                 self.insert_internal(selector[0], &combination, 0, &selector, get_value)?;
             }
         }
@@ -243,10 +291,10 @@ impl<T> MultiTrie<T> {
 
     fn insert_new(&mut self, is_leaf: bool) {
         let m_trie = if is_leaf {
-            let d_trie = DigitTrie::<T>::new(self.base);
+            let d_trie = DigitTrie::<T>::new(self.oracle_numeric_infos.base);
             MultiTrieNode::Leaf(d_trie)
         } else {
-            let d_trie = DigitTrie::<Vec<TrieNodeInfo>>::new(self.base);
+            let d_trie = DigitTrie::<Vec<TrieNodeInfo>>::new(self.oracle_numeric_infos.base);
             MultiTrieNode::Node(d_trie)
         };
         self.store.push(m_trie);
@@ -312,7 +360,7 @@ impl<T> MultiTrie<T> {
     pub fn look_up<'a>(
         &'a self,
         paths: &[(usize, Vec<usize>)],
-    ) -> Option<LookupResult<'a, T, (usize, Vec<usize>)>> {
+    ) -> Option<(&'a T, Vec<IndexedPath>)> {
         if paths.len() < self.nb_required {
             return None;
         }
@@ -345,7 +393,7 @@ impl<T> MultiTrie<T> {
             );
             if let Some(mut l_res) = res {
                 l_res.path.reverse();
-                return Some(l_res);
+                return Some((l_res.value, l_res.path.clone()));
             }
         }
 
@@ -402,6 +450,20 @@ fn find_store_index(children: &[TrieNodeInfo], trie_index: usize) -> Option<usiz
     None
 }
 
+fn reorder_to_min_first(oracle_digit_infos: &mut Vec<usize>) -> usize {
+    let min_index = oracle_digit_infos
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, x)| *x)
+        .unwrap()
+        .0;
+    if min_index != 0 {
+        let min_val = oracle_digit_infos.remove(min_index);
+        oracle_digit_infos.insert(0, min_val);
+    }
+    min_index
+}
+
 /// Container for a dump of a MultiTrie used for serialization purpose.
 pub struct MultiTrieDump<T>
 where
@@ -409,8 +471,6 @@ where
 {
     /// The node data.
     pub node_data: Vec<MultiTrieNodeData<T>>,
-    /// The base for which the trie was built.
-    pub base: usize,
     /// The total number of tries.
     pub nb_tries: usize,
     /// The number of trie per path.
@@ -419,10 +479,10 @@ where
     pub min_support_exp: usize,
     /// The maximum support as a power of 2.
     pub max_error_exp: usize,
-    /// The maximum number of digits for a single trie path.
-    pub nb_digits: usize,
     /// Whether this trie maximizes outcome coverage.
     pub maximize_coverage: bool,
+    /// Information about the numerical representation of oracles
+    pub oracle_numeric_infos: OracleNumericInfo,
 }
 
 impl<T> MultiTrie<T>
@@ -434,13 +494,12 @@ where
         let node_data = self.store.iter().map(|x| x.get_data()).collect();
         MultiTrieDump {
             node_data,
-            base: self.base,
             nb_tries: self.nb_tries,
             nb_required: self.nb_required,
             min_support_exp: self.min_support_exp,
             max_error_exp: self.max_error_exp,
-            nb_digits: self.nb_digits,
             maximize_coverage: self.maximize_coverage,
+            oracle_numeric_infos: self.oracle_numeric_infos.clone(),
         }
     }
 
@@ -448,13 +507,12 @@ where
     pub fn from_dump(dump: MultiTrieDump<T>) -> MultiTrie<T> {
         let MultiTrieDump {
             node_data,
-            base,
             nb_tries,
             nb_required,
             min_support_exp,
             max_error_exp,
-            nb_digits,
             maximize_coverage,
+            oracle_numeric_infos,
         } = dump;
 
         let store = node_data
@@ -464,13 +522,12 @@ where
 
         MultiTrie {
             store,
-            base,
             nb_tries,
             nb_required,
             min_support_exp,
             max_error_exp,
-            nb_digits,
             maximize_coverage,
+            oracle_numeric_infos,
         }
     }
 }
@@ -509,9 +566,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::{
+        get_variable_oracle_numeric_infos, same_num_digits_oracle_numeric_infos,
+    };
 
     fn tests_common(
-        mut m_trie: MultiTrie<usize>,
+        m_trie: &mut MultiTrie<usize>,
         path: Vec<usize>,
         good_paths: Vec<Vec<(usize, Vec<usize>)>>,
         bad_paths: Vec<Vec<(usize, Vec<usize>)>>,
@@ -522,11 +582,19 @@ mod tests {
         m_trie.insert(&path, &mut get_value).unwrap();
 
         for good_path in good_paths {
-            assert!(m_trie.look_up(&good_path).is_some());
+            assert!(
+                m_trie.look_up(&good_path).is_some(),
+                "Path {:?} not found",
+                good_path
+            );
         }
 
         for bad_path in bad_paths {
-            assert!(m_trie.look_up(&bad_path).is_none());
+            assert!(
+                m_trie.look_up(&bad_path).is_none(),
+                "Path {:?} was found",
+                bad_path
+            );
         }
 
         if let Some(expected) = expected_iter {
@@ -540,7 +608,13 @@ mod tests {
 
     #[test]
     fn multi_trie_1_of_1_test() {
-        let m_trie = MultiTrie::<usize>::new(1, 1, 2, 2, 3, 5, true);
+        let mut m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(1, 5, 2),
+            1,
+            2,
+            3,
+            true,
+        );
 
         let path = vec![0, 1, 1, 1];
 
@@ -557,12 +631,24 @@ mod tests {
 
         let expected_iter: Vec<Vec<(usize, Vec<usize>)>> = vec![vec![(0, vec![0, 1, 1, 1])]];
 
-        tests_common(m_trie, path, good_paths, bad_paths, Some(expected_iter));
+        tests_common(
+            &mut m_trie,
+            path,
+            good_paths,
+            bad_paths,
+            Some(expected_iter),
+        );
     }
 
     #[test]
     fn multi_trie_1_of_2_test() {
-        let m_trie = MultiTrie::<usize>::new(2, 1, 2, 2, 3, 5, true);
+        let mut m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(2, 5, 2),
+            1,
+            2,
+            3,
+            true,
+        );
 
         let path = vec![0, 1, 1, 1];
 
@@ -582,12 +668,24 @@ mod tests {
         let expected_iter: Vec<Vec<(usize, Vec<usize>)>> =
             vec![vec![(0, vec![0, 1, 1, 1])], vec![(1, vec![0, 1, 1, 1])]];
 
-        tests_common(m_trie, path, good_paths, bad_paths, Some(expected_iter));
+        tests_common(
+            &mut m_trie,
+            path,
+            good_paths,
+            bad_paths,
+            Some(expected_iter),
+        );
     }
 
     #[test]
     fn multi_trie_2_of_2_test() {
-        let m_trie = MultiTrie::<usize>::new(2, 2, 2, 2, 3, 5, true);
+        let mut m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(2, 5, 2),
+            2,
+            2,
+            3,
+            true,
+        );
 
         let path = vec![0, 1, 1, 1];
 
@@ -608,12 +706,24 @@ mod tests {
             vec![(0, vec![0, 1, 1, 1]), (1, vec![1, 0, 0])],
         ];
 
-        tests_common(m_trie, path, good_paths, bad_paths, Some(expected_iter));
+        tests_common(
+            &mut m_trie,
+            path,
+            good_paths,
+            bad_paths,
+            Some(expected_iter),
+        );
     }
 
     #[test]
     fn multi_trie_2_of_3_test() {
-        let m_trie = MultiTrie::<usize>::new(3, 2, 2, 2, 3, 5, true);
+        let mut m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(3, 5, 2),
+            2,
+            2,
+            3,
+            true,
+        );
 
         let path = vec![0, 1, 1, 1];
 
@@ -632,12 +742,18 @@ mod tests {
             vec![(1, vec![0, 1, 1, 1, 1]), (2, vec![1, 1, 1, 1, 1])],
         ];
 
-        tests_common(m_trie, path, good_paths, bad_paths, None);
+        tests_common(&mut m_trie, path, good_paths, bad_paths, None);
     }
 
     #[test]
     fn multi_trie_5_of_5_test() {
-        let m_trie = MultiTrie::<usize>::new(5, 5, 2, 1, 2, 3, true);
+        let mut m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(5, 3, 2),
+            5,
+            1,
+            2,
+            true,
+        );
 
         let path = vec![0, 0, 0];
 
@@ -649,12 +765,24 @@ mod tests {
             (4, vec![0]),
         ]];
 
-        tests_common(m_trie, path, good_paths.clone(), vec![], Some(good_paths));
+        tests_common(
+            &mut m_trie,
+            path,
+            good_paths.clone(),
+            vec![],
+            Some(good_paths),
+        );
     }
 
     #[test]
     fn multi_3_of_3_test_lexicographic_order() {
-        let mut m_trie = MultiTrie::<usize>::new(3, 3, 2, 1, 2, 3, true);
+        let mut m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(3, 3, 2),
+            3,
+            1,
+            2,
+            true,
+        );
 
         let inputs = vec![
             vec![0, 0],
@@ -711,7 +839,7 @@ mod tests {
 
         for res in iter {
             assert_eq!(
-                m_trie.look_up(&res.path).expect("Path not found").value,
+                m_trie.look_up(&res.path).expect("Path not found").0,
                 res.value
             );
         }
@@ -719,13 +847,194 @@ mod tests {
 
     #[test]
     fn multi_3_of_5_test_enumerate_equal_lookup() {
-        let m_trie = MultiTrie::<usize>::new(5, 3, 2, 1, 2, 3, true);
+        let m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(5, 3, 2),
+            3,
+            1,
+            2,
+            true,
+        );
         multi_enumerate_equal_lookup_common(m_trie);
     }
 
     #[test]
     fn multi_5_of_5_test_enumerate_equal_lookup() {
-        let m_trie = MultiTrie::<usize>::new(5, 5, 2, 1, 2, 3, true);
+        let m_trie = MultiTrie::<usize>::new(
+            &same_num_digits_oracle_numeric_infos(5, 3, 2),
+            5,
+            1,
+            2,
+            true,
+        );
         multi_enumerate_equal_lookup_common(m_trie);
+    }
+
+    #[test]
+    fn multi_2_of_3_diff_nb_digits_enumerate_equal_lookup() {
+        let m_trie = MultiTrie::<usize>::new(
+            &get_variable_oracle_numeric_infos(&[3, 4, 5], 2),
+            2,
+            1,
+            2,
+            true,
+        );
+        multi_enumerate_equal_lookup_common(m_trie);
+    }
+
+    struct TestCase {
+        path: Vec<usize>,
+        good_paths: Vec<Vec<(usize, Vec<usize>)>>,
+        bad_paths: Vec<Vec<(usize, Vec<usize>)>>,
+    }
+
+    #[test]
+    fn multi_trie_2_of_3_diff_nb_digits_test() {
+        let mut m_trie = MultiTrie::<usize>::new(
+            &get_variable_oracle_numeric_infos(&[5, 6, 7], 2),
+            2,
+            2,
+            3,
+            true,
+        );
+
+        let test_cases = vec![
+            TestCase {
+                path: vec![0, 1, 1, 1],
+                good_paths: vec![
+                    vec![(0, vec![0, 1, 1, 1, 1]), (1, vec![0, 0, 1, 1, 1, 1])],
+                    vec![(1, vec![0, 0, 1, 1, 1, 1]), (2, vec![0, 0, 0, 1, 1, 1, 1])],
+                    vec![(0, vec![0, 1, 1, 1, 1]), (2, vec![0, 0, 0, 1, 1, 1, 1])],
+                    vec![(0, vec![0, 1, 1, 1, 1]), (2, vec![0, 0, 1, 0, 0, 1, 1])],
+                    vec![(1, vec![0, 0, 1, 1, 1, 1]), (2, vec![0, 0, 1, 0, 0, 1, 1])],
+                    vec![(1, vec![0, 0, 1, 1, 1, 1]), (2, vec![0, 0, 1, 0, 0, 1, 1])],
+                ],
+                bad_paths: vec![
+                    vec![(0, vec![1, 1, 1, 1, 1]), (1, vec![0, 1, 1, 1, 1])],
+                    vec![(2, vec![0, 1, 1, 1, 1]), (1, vec![0, 1, 1, 1, 1])],
+                    vec![(0, vec![0, 1, 1, 1, 1]), (2, vec![1, 1, 1, 1, 1])],
+                    vec![(1, vec![0, 1, 1, 1, 1]), (2, vec![1, 1, 1, 1, 1])],
+                ],
+            },
+            TestCase {
+                path: vec![1, 1, 1],
+                good_paths: vec![
+                    vec![(0, vec![1, 1, 1, 1, 1]), (1, vec![1, 0, 0, 0, 0])],
+                    vec![(0, vec![1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 0, 0, 0, 0])],
+                    vec![(0, vec![1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 0, 0, 0, 1])],
+                    vec![(1, vec![0, 1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 0, 0, 0, 0])],
+                ],
+                bad_paths: vec![
+                    vec![(0, vec![1, 1, 1, 1, 1]), (1, vec![1, 0, 0, 1, 1, 1])],
+                    vec![(1, vec![0, 1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 1, 1, 1])],
+                    vec![(0, vec![1, 1, 1, 0, 0]), (2, vec![0, 1, 0, 0, 1, 0, 1])],
+                    vec![(0, vec![1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 1, 0, 0, 0])],
+                ],
+            },
+        ];
+
+        for case in test_cases {
+            tests_common(
+                &mut m_trie,
+                case.path,
+                case.good_paths,
+                case.bad_paths,
+                None,
+            );
+        }
+    }
+
+    #[test]
+    fn multi_trie_2_of_3_diff_nb_digits_unordered_test() {
+        let mut m_trie = MultiTrie::<usize>::new(
+            &get_variable_oracle_numeric_infos(&[6, 5, 7], 2),
+            2,
+            2,
+            3,
+            true,
+        );
+
+        let test_cases = vec![
+            TestCase {
+                path: vec![0, 1, 1, 1],
+                good_paths: vec![
+                    vec![(0, vec![0, 0, 1, 1, 1, 1]), (1, vec![0, 1, 1, 1, 1])],
+                    vec![(0, vec![0, 0, 1, 1, 1, 1]), (2, vec![0, 0, 0, 1, 1, 1, 1])],
+                    vec![(1, vec![0, 1, 1, 1, 1]), (2, vec![0, 0, 0, 1, 1, 1, 1])],
+                    vec![(1, vec![0, 1, 1, 1, 1]), (2, vec![0, 0, 1, 0, 0, 1, 1])],
+                    vec![(0, vec![0, 0, 1, 1, 1, 1]), (2, vec![0, 0, 1, 0, 0, 1, 1])],
+                    vec![(0, vec![0, 0, 1, 1, 1, 1]), (2, vec![0, 0, 1, 0, 0, 1, 1])],
+                ],
+                bad_paths: vec![
+                    vec![(1, vec![1, 1, 1, 1, 1]), (0, vec![0, 1, 1, 1, 1])],
+                    vec![(2, vec![0, 1, 1, 1, 1]), (0, vec![0, 1, 1, 1, 1])],
+                    vec![(1, vec![0, 1, 1, 1, 1]), (2, vec![1, 1, 1, 1, 1])],
+                    vec![(0, vec![0, 1, 1, 1, 1]), (2, vec![1, 1, 1, 1, 1])],
+                ],
+            },
+            TestCase {
+                path: vec![1, 1, 1],
+                good_paths: vec![
+                    vec![(0, vec![1, 0, 0, 0, 0]), (1, vec![1, 1, 1, 1, 1])],
+                    vec![(1, vec![1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 0, 0, 0, 0])],
+                    vec![(1, vec![1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 0, 0, 0, 1])],
+                    vec![(0, vec![0, 1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 0, 0, 0, 0])],
+                ],
+                bad_paths: vec![
+                    vec![(1, vec![1, 1, 1, 1, 1]), (0, vec![1, 0, 0, 1, 1, 1])],
+                    vec![(0, vec![0, 1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 1, 1, 1])],
+                    vec![(1, vec![1, 1, 1, 0, 0]), (2, vec![0, 1, 0, 0, 1, 0, 1])],
+                    vec![(1, vec![1, 1, 1, 1, 1]), (2, vec![0, 1, 0, 1, 0, 0, 0])],
+                ],
+            },
+        ];
+
+        for case in test_cases {
+            tests_common(
+                &mut m_trie,
+                case.path,
+                case.good_paths,
+                case.bad_paths,
+                None,
+            );
+        }
+    }
+
+    #[test]
+    fn ttt() {
+        let inputs = vec![
+            vec![0, 0, 0],
+            vec![0, 0, 1],
+            vec![0, 1, 0],
+            vec![0, 1, 1],
+            vec![1],
+        ];
+        let mut m_trie = MultiTrie::<usize>::new(
+            &get_variable_oracle_numeric_infos(&[4, 3], 2),
+            2,
+            1,
+            2,
+            true,
+        );
+
+        let mut counter = 0;
+        let mut get_value = |_: &[Vec<usize>], _: &[usize]| -> Result<usize, Error> {
+            let res = counter;
+            counter += 1;
+            Ok(res)
+        };
+        for input in inputs {
+            m_trie.insert(&input, &mut get_value).unwrap();
+        }
+
+        let iterator = MultiTrieIterator::new(&m_trie);
+        let mut unordered = iterator.map(|x| *x.value).collect::<Vec<_>>();
+
+        unordered.sort();
+
+        let mut prev_index = 0;
+        for i in unordered.iter().skip(1) {
+            assert_eq!(*i, prev_index + 1);
+            prev_index += 1;
+        }
     }
 }

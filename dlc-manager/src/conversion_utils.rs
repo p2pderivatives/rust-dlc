@@ -2,7 +2,7 @@ use crate::contract::{
     accepted_contract::AcceptedContract,
     contract_info::ContractInfo,
     enum_descriptor::EnumDescriptor,
-    numerical_descriptor::{DifferenceParams, NumericalDescriptor, NumericalEventInfo},
+    numerical_descriptor::{DifferenceParams, NumericalDescriptor},
     offered_contract::OfferedContract,
     signed_contract::SignedContract,
     ContractDescriptor, FundingInputInfo,
@@ -13,22 +13,26 @@ use crate::payout_curve::{
 };
 use bitcoin::{consensus::encode::Decodable, OutPoint, Transaction};
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
-use dlc_messages::contract_msgs::{
-    ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
-    ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
-    HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece, NumericOutcomeContractDescriptor,
-    PayoutCurvePiece as SerPayoutCurvePiece, PayoutFunction as SerPayoutFunction,
-    PayoutFunctionPiece as SerPayoutFunctionPiece, PayoutPoint as SerPayoutPoint,
-    PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
-    RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
-    SingleContractInfo,
-};
 use dlc_messages::oracle_msgs::{
-    EventDescriptor, MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
+    MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
+};
+use dlc_messages::{
+    contract_msgs::{
+        ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
+        ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
+        HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece,
+        NumericOutcomeContractDescriptor, PayoutCurvePiece as SerPayoutCurvePiece,
+        PayoutFunction as SerPayoutFunction, PayoutFunctionPiece as SerPayoutFunctionPiece,
+        PayoutPoint as SerPayoutPoint, PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
+        RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
+        SingleContractInfo,
+    },
+    oracle_msgs::EventDescriptor,
 };
 use dlc_messages::{
     AcceptDlc, CetAdaptorSignature, CetAdaptorSignatures, FundingInput, OfferDlc, SignDlc,
 };
+use dlc_trie::OracleNumericInfo;
 use secp256k1_zkp::PublicKey;
 use std::error;
 use std::fmt;
@@ -218,19 +222,34 @@ fn get_contract_info_and_announcements(offer_dlc: &OfferDlc) -> Result<Vec<Contr
                 if announcements.is_empty() {
                     return Err(Error::InvalidParameters);
                 }
-                let info = match &announcements[0].oracle_event.event_descriptor {
-                    EventDescriptor::EnumEvent(_) => return Err(Error::InvalidParameters),
-                    EventDescriptor::DigitDecompositionEvent(d) => NumericalEventInfo {
-                        base: d.base as usize,
-                        nb_digits: d.nb_digits as usize,
-                        unit: d.unit.clone(),
-                    },
+                let expected_base = if let EventDescriptor::DigitDecompositionEvent(d) =
+                    &announcements[0].oracle_event.event_descriptor
+                {
+                    d.base
+                } else {
+                    return Err(Error::InvalidParameters);
                 };
+                let nb_digits = announcements
+                    .iter()
+                    .map(|x| match &x.oracle_event.event_descriptor {
+                        EventDescriptor::DigitDecompositionEvent(d) => {
+                            if d.base == expected_base {
+                                Ok(d.nb_digits as usize)
+                            } else {
+                                Err(Error::InvalidParameters)
+                            }
+                        }
+                        _ => Err(Error::InvalidParameters),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 let descriptor = ContractDescriptor::Numerical(NumericalDescriptor {
                     payout_function: (&numeric.payout_function).into(),
                     rounding_intervals: (&numeric.rounding_intervals).into(),
-                    info,
                     difference_params,
+                    oracle_numeric_infos: OracleNumericInfo {
+                        base: expected_base as usize,
+                        nb_digits,
+                    },
                 });
                 (descriptor, announcements, threshold)
             }
@@ -324,7 +343,6 @@ impl From<&EnumDescriptor> for EnumeratedContractDescriptor {
 impl From<&NumericalDescriptor> for NumericOutcomeContractDescriptor {
     fn from(num_descriptor: &NumericalDescriptor) -> NumericOutcomeContractDescriptor {
         NumericOutcomeContractDescriptor {
-            num_digits: num_descriptor.info.nb_digits as u16,
             payout_function: (&num_descriptor.payout_function).into(),
             rounding_intervals: (&num_descriptor.rounding_intervals).into(),
         }

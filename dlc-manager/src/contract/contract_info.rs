@@ -1,13 +1,11 @@
 //! #ContractInfo
 
-use super::utils::get_majority_combination;
 use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
-use dlc_trie::combination_iterator::CombinationIterator;
 use dlc_trie::{DlcTrie, RangeInfo};
 use secp256k1_zkp::{
     bitcoin_hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
@@ -138,20 +136,7 @@ impl ContractInfo {
         adaptor_info: &AdaptorInfo,
         outcomes: &[(usize, &Vec<String>)],
         adaptor_sig_start: usize,
-    ) -> Result<Option<(OracleIndexAndPrefixLength, RangeInfo)>, crate::error::Error> {
-        let get_digits_outcome = |input: &[String]| -> Result<Vec<usize>, crate::error::Error> {
-            input
-                .iter()
-                .map(|x| {
-                    x.parse::<usize>().map_err(|_| {
-                        crate::error::Error::InvalidParameters(
-                            "Invalid outcome, {} is not a valid number.".to_string(),
-                        )
-                    })
-                })
-                .collect::<Result<Vec<usize>, crate::error::Error>>()
-        };
-
+    ) -> Option<(OracleIndexAndPrefixLength, RangeInfo)> {
         match adaptor_info {
             AdaptorInfo::Enum => match &self.contract_descriptor {
                 ContractDescriptor::Enum(e) => e.get_range_info_for_outcome(
@@ -163,44 +148,19 @@ impl ContractInfo {
                 _ => unreachable!(),
             },
             AdaptorInfo::Numerical(n) => {
-                let (s_outcomes, actual_combination) = get_majority_combination(outcomes)?;
-                let digits_outcome = get_digits_outcome(&s_outcomes)?;
-
-                let res = n
-                    .digit_trie
-                    .look_up(&digits_outcome)
-                    .ok_or(crate::error::Error::InvalidState)?;
-
-                let sufficient_combination: Vec<_> = actual_combination
-                    .into_iter()
-                    .take(self.threshold)
-                    .collect();
-                let position =
-                    CombinationIterator::new(self.oracle_announcements.len(), self.threshold)
-                        .get_index_for_combination(&sufficient_combination)
-                        .ok_or(crate::error::Error::InvalidState)?;
-                Ok(Some((
-                    sufficient_combination
-                        .iter()
-                        .map(|x| (*x, res[0].path.len()))
-                        .collect(),
-                    res[0].value[position].clone(),
-                )))
+                let res = n.look_up(&outcomes_to_digits(outcomes))?;
+                Some((
+                    res.1.iter().map(|(x, y)| (*x, y.len())).collect(),
+                    res.0.clone(),
+                ))
             }
             AdaptorInfo::NumericalWithDifference(n) => {
-                let res = n
-                    .multi_trie
-                    .look_up(
-                        &outcomes
-                            .iter()
-                            .map(|(x, path)| Ok((*x, get_digits_outcome(path)?)))
-                            .collect::<Result<Vec<(usize, Vec<usize>)>, crate::error::Error>>()?,
-                    )
-                    .ok_or(crate::error::Error::InvalidState)?;
-                Ok(Some((
-                    res.path.iter().map(|(x, y)| (*x, y.len())).collect(),
-                    res.value.clone(),
-                )))
+                let res = n.multi_trie.look_up(&outcomes_to_digits(outcomes))?;
+
+                Some((
+                    res.1.iter().map(|(x, y)| (*x, y.len())).collect(),
+                    res.0.clone(),
+                ))
             }
         }
     }
@@ -334,4 +294,24 @@ impl ContractInfo {
             })
             .collect::<Result<Vec<Vec<Vec<PublicKey>>>, Error>>()
     }
+}
+
+fn get_digits_outcome(input: &[String]) -> Result<Vec<usize>, crate::error::Error> {
+    input
+        .iter()
+        .map(|x| {
+            x.parse::<usize>().map_err(|_| {
+                crate::error::Error::InvalidParameters(
+                    "Invalid outcome, {} is not a valid number.".to_string(),
+                )
+            })
+        })
+        .collect::<Result<Vec<usize>, crate::error::Error>>()
+}
+
+fn outcomes_to_digits(outcomes: &[(usize, &Vec<String>)]) -> Vec<(usize, Vec<usize>)> {
+    outcomes
+        .iter()
+        .filter_map(|(x, path)| Some((*x, get_digits_outcome(path).ok()?)))
+        .collect()
 }

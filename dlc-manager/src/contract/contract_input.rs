@@ -24,6 +24,7 @@ pub struct OracleInput {
 }
 
 /// Represents the contract specifications.
+#[derive(Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
@@ -36,6 +37,7 @@ pub struct ContractInputInfo {
     pub oracles: OracleInput,
 }
 
+#[derive(Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),

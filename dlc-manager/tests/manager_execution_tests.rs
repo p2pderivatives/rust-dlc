@@ -11,7 +11,7 @@ use dlc::{EnumerationPayout, Payout};
 use dlc_manager::contract::{
     contract_input::{ContractInput, ContractInputInfo, OracleInput},
     enum_descriptor::EnumDescriptor,
-    numerical_descriptor::{DifferenceParams, NumericalDescriptor, NumericalEventInfo},
+    numerical_descriptor::{DifferenceParams, NumericalDescriptor},
     Contract, ContractDescriptor,
 };
 use dlc_manager::manager::Manager;
@@ -25,7 +25,7 @@ use dlc_messages::oracle_msgs::{
 };
 use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
-use dlc_trie::digit_decomposition::decompose_value;
+use dlc_trie::{digit_decomposition::decompose_value, OracleNumericInfo};
 use lightning::ln::wire::Type;
 use lightning::util::ser::Writeable;
 use mocks::mock_oracle_provider::MockOracle;
@@ -192,6 +192,10 @@ fn max_value() -> u32 {
     BASE.pow(NB_DIGITS as u32) - 1
 }
 
+fn max_value_from_digits(nb_digits: usize) -> u32 {
+    BASE.pow(nb_digits as u32) - 1
+}
+
 fn select_active_oracles(nb_oracles: usize, threshold: usize) -> Vec<usize> {
     let nb_active_oracles = if threshold == nb_oracles {
         threshold
@@ -205,6 +209,7 @@ fn select_active_oracles(nb_oracles: usize, threshold: usize) -> Vec<usize> {
     oracle_indexes
 }
 
+#[derive(Debug)]
 struct TestParams {
     oracles: Vec<MockOracle>,
     contract_input: ContractInput,
@@ -301,6 +306,7 @@ fn get_enum_test_params(
 }
 
 fn get_numerical_contract_descriptor(
+    oracle_numeric_infos: OracleNumericInfo,
     difference_params: Option<DifferenceParams>,
 ) -> ContractDescriptor {
     ContractDescriptor::Numerical(NumericalDescriptor {
@@ -328,7 +334,9 @@ fn get_numerical_contract_descriptor(
                         extra_precision: 0,
                     },
                     PayoutPoint {
-                        event_outcome: max_value() as u64,
+                        event_outcome: max_value_from_digits(
+                            oracle_numeric_infos.get_min_nb_digits(),
+                        ) as u64,
                         outcome_payout: 200000000,
                         extra_precision: 0,
                     },
@@ -343,23 +351,19 @@ fn get_numerical_contract_descriptor(
                 rounding_mod: ROUNDING_MOD,
             }],
         },
-        info: NumericalEventInfo {
-            base: BASE as usize,
-            nb_digits: NB_DIGITS as usize,
-            unit: "sats/sec".to_owned(),
-        },
+        oracle_numeric_infos,
         difference_params,
     })
 }
 
-fn get_digit_decomposition_oracle() -> MockOracle {
+fn get_digit_decomposition_oracle(nb_digits: u16) -> MockOracle {
     let mut oracle = MockOracle::new();
     let event = DigitDecompositionEventDescriptor {
         base: BASE as u64,
         is_signed: false,
         unit: "sats/sec".to_owned(),
         precision: 0,
-        nb_digits: NB_DIGITS as u16,
+        nb_digits,
     };
 
     oracle.add_event(
@@ -371,41 +375,66 @@ fn get_digit_decomposition_oracle() -> MockOracle {
 }
 
 fn get_digit_decomposition_oracles(
-    nb_oracles: usize,
+    oracle_numeric_infos: &OracleNumericInfo,
     threshold: usize,
     with_diff: bool,
+    use_max_value: bool,
 ) -> Vec<MockOracle> {
-    let mut oracles: Vec<_> = (0..nb_oracles)
-        .map(|_| get_digit_decomposition_oracle())
+    let mut oracles: Vec<_> = oracle_numeric_infos
+        .nb_digits
+        .iter()
+        .map(|x| get_digit_decomposition_oracle(*x as u16))
         .collect();
-    let outcome_value = (thread_rng().next_u32() % max_value()) as usize;
-    let oracle_indexes = select_active_oracles(nb_oracles, threshold);
+    let outcome_value = if use_max_value {
+        max_value_from_digits(oracle_numeric_infos.get_min_nb_digits()) as usize
+    } else {
+        (thread_rng().next_u32() % max_value()) as usize
+    };
+    let oracle_indexes = select_active_oracles(oracle_numeric_infos.nb_digits.len(), threshold);
 
     for (i, index) in oracle_indexes.iter().enumerate() {
-        let cur_outcome: usize = if i == 0 || !with_diff {
+        let cur_outcome: usize = if !use_max_value && (i == 0 || !with_diff) {
             outcome_value
         } else {
-            let mut delta = (thread_rng().next_u32() % BASE.pow(MIN_SUPPORT_EXP as u32)) as i32;
-            delta = if thread_rng().next_u32() % 2 == 1 {
-                -delta
-            } else {
-                delta
-            };
+            if !use_max_value {
+                let mut delta = (thread_rng().next_u32() % BASE.pow(MIN_SUPPORT_EXP as u32)) as i32;
+                delta = if thread_rng().next_u32() % 2 == 1 {
+                    -delta
+                } else {
+                    delta
+                };
 
-            let tmp_outcome = (outcome_value as i32) + delta;
-            if tmp_outcome < 0 {
-                0
-            } else if tmp_outcome > (max_value() as i32) {
-                max_value() as usize
+                let tmp_outcome = (outcome_value as i32) + delta;
+                if tmp_outcome < 0 {
+                    0
+                } else if tmp_outcome
+                    > (max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as i32)
+                {
+                    max_value() as usize
+                } else {
+                    tmp_outcome as usize
+                }
             } else {
-                tmp_outcome as usize
+                let max_value =
+                    max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as usize;
+                if max_value == outcome_value {
+                    outcome_value
+                } else {
+                    outcome_value
+                        + 1
+                        + (thread_rng().next_u32() as usize % (max_value - outcome_value))
+                }
             }
         };
 
-        let outcomes: Vec<_> = decompose_value(cur_outcome, BASE as usize, NB_DIGITS as usize)
-            .iter()
-            .map(|x| x.to_string())
-            .collect();
+        let outcomes: Vec<_> = decompose_value(
+            cur_outcome,
+            BASE as usize,
+            oracle_numeric_infos.nb_digits[*index],
+        )
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
 
         oracles
             .get_mut(*index)
@@ -417,12 +446,14 @@ fn get_digit_decomposition_oracles(
 }
 
 fn get_numerical_test_params(
-    nb_oracles: usize,
+    oracle_numeric_infos: &OracleNumericInfo,
     threshold: usize,
     with_diff: bool,
     contract_descriptor: ContractDescriptor,
+    use_max_value: bool,
 ) -> TestParams {
-    let oracles = get_digit_decomposition_oracles(nb_oracles, threshold, with_diff);
+    let oracles =
+        get_digit_decomposition_oracles(oracle_numeric_infos, threshold, with_diff, use_max_value);
     let contract_info = ContractInputInfo {
         oracles: OracleInput {
             public_keys: oracles.iter().map(|x| x.get_public_key()).collect(),
@@ -449,11 +480,47 @@ fn get_numerical_test_params(
 fn numerical_common(
     nb_oracles: usize,
     threshold: usize,
-    with_diff: bool,
-    contract_descriptor: ContractDescriptor,
+    difference_params: Option<DifferenceParams>,
 ) {
+    let oracle_numeric_infos = get_same_num_digits_oracle_numeric_infos(nb_oracles);
+    let with_diff = difference_params.is_some();
+    let contract_descriptor =
+        get_numerical_contract_descriptor(oracle_numeric_infos.clone(), difference_params);
     manager_execution_test(
-        get_numerical_test_params(nb_oracles, threshold, with_diff, contract_descriptor),
+        get_numerical_test_params(
+            &oracle_numeric_infos,
+            threshold,
+            with_diff,
+            contract_descriptor,
+            false,
+        ),
+        TestPath::Close,
+    );
+}
+
+fn numerical_common_diff_nb_digits(
+    nb_oracles: usize,
+    threshold: usize,
+    difference_params: Option<DifferenceParams>,
+    use_max_value: bool,
+) {
+    let with_diff = difference_params.is_some();
+    let oracle_numeric_infos = get_variable_oracle_numeric_infos(
+        &(0..nb_oracles)
+            .map(|_| (NB_DIGITS + (thread_rng().next_u32() % 6)) as usize)
+            .collect::<Vec<_>>(),
+    );
+    let contract_descriptor =
+        get_numerical_contract_descriptor(oracle_numeric_infos.clone(), difference_params);
+
+    manager_execution_test(
+        get_numerical_test_params(
+            &oracle_numeric_infos,
+            threshold,
+            with_diff,
+            contract_descriptor,
+            use_max_value,
+        ),
         TestPath::Close,
     );
 }
@@ -464,6 +531,7 @@ fn get_enum_and_numerical_test_params(
     with_diff: bool,
     difference_params: Option<DifferenceParams>,
 ) -> TestParams {
+    let oracle_numeric_infos = get_same_num_digits_oracle_numeric_infos(nb_oracles);
     let enum_oracles = get_enum_oracles(nb_oracles, threshold);
     let enum_contract_descriptor = get_enum_contract_descriptor();
     let enum_contract_info = ContractInputInfo {
@@ -474,8 +542,12 @@ fn get_enum_and_numerical_test_params(
         },
         contract_descriptor: enum_contract_descriptor,
     };
-    let numerical_oracles = get_digit_decomposition_oracles(nb_oracles, threshold, with_diff);
-    let numerical_contract_descriptor = get_numerical_contract_descriptor(difference_params);
+    let numerical_oracles =
+        get_digit_decomposition_oracles(&oracle_numeric_infos, threshold, with_diff, false);
+    let numerical_contract_descriptor = get_numerical_contract_descriptor(
+        get_same_num_digits_oracle_numeric_infos(nb_oracles),
+        difference_params,
+    );
     let numerical_contract_info = ContractInputInfo {
         oracles: OracleInput {
             public_keys: numerical_oracles
@@ -511,55 +583,56 @@ fn get_enum_and_numerical_test_params(
     }
 }
 
+fn get_same_num_digits_oracle_numeric_infos(nb_oracles: usize) -> OracleNumericInfo {
+    OracleNumericInfo {
+        nb_digits: std::iter::repeat(NB_DIGITS as usize)
+            .take(nb_oracles)
+            .collect(),
+        base: BASE as usize,
+    }
+}
+
+fn get_variable_oracle_numeric_infos(nb_digits: &[usize]) -> OracleNumericInfo {
+    OracleNumericInfo {
+        base: BASE as usize,
+        nb_digits: nb_digits.to_vec(),
+    }
+}
+
 #[test]
 #[ignore]
 fn single_oracle_numerical_test() {
-    numerical_common(1, 1, false, get_numerical_contract_descriptor(None));
+    numerical_common(1, 1, None);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_test() {
-    numerical_common(3, 3, false, get_numerical_contract_descriptor(None));
+    numerical_common(3, 3, None);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_test() {
-    numerical_common(5, 2, false, get_numerical_contract_descriptor(None));
+    numerical_common(5, 2, None);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_with_diff_test() {
-    numerical_common(
-        3,
-        3,
-        true,
-        get_numerical_contract_descriptor(Some(get_difference_params())),
-    );
+    numerical_common(3, 3, Some(get_difference_params()));
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_with_diff_test() {
-    numerical_common(
-        5,
-        2,
-        true,
-        get_numerical_contract_descriptor(Some(get_difference_params())),
-    );
+    numerical_common(5, 2, Some(get_difference_params()));
 }
 
 #[test]
 #[ignore]
 fn three_of_five_oracle_numerical_with_diff_test() {
-    numerical_common(
-        5,
-        3,
-        true,
-        get_numerical_contract_descriptor(Some(get_difference_params())),
-    );
+    numerical_common(5, 3, Some(get_difference_params()));
 }
 
 #[test]
@@ -659,6 +732,72 @@ fn enum_single_oracle_bad_sign_refund_sig_test() {
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadSignRefundSignature,
     );
+}
+
+#[test]
+#[ignore]
+fn two_of_two_oracle_numerical_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(2, 2, None, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(5, 2, None, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), false);
+}
+
+#[test]
+#[ignore]
+fn three_of_three_oracle_numerical_with_diff_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(3, 3, Some(get_difference_params()), false);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), false);
+}
+
+#[test]
+#[ignore]
+fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), true);
+}
+
+#[test]
+#[ignore]
+fn two_of_three_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(3, 2, Some(get_difference_params()), true);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true);
+}
+
+#[test]
+#[ignore]
+fn two_of_two_oracle_numerical_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(2, 2, None, true);
+}
+
+#[test]
+#[ignore]
+fn two_of_three_oracle_numerical_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(3, 2, None, true);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(5, 2, None, true);
 }
 
 fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {

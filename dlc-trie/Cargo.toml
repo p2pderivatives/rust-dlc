@@ -9,9 +9,11 @@ version = "0.1.0"
 
 [features]
 parallel = ["rayon"]
+use-serde = ["serde", "dlc/use-serde"]
 
 [dependencies]
 bitcoin = {version = "0.27"}
 dlc = {version = "0.1.0", path = "../dlc"}
 rayon = {version = "1.5", optional = true}
 secp256k1-zkp = {version = "0.5.0"}
+serde = {version = "1.0", optional = true, default_features = false, features = ["derive"]}

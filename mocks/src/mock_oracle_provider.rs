@@ -11,7 +11,7 @@ use secp256k1_zkp::{All, Message, Secp256k1};
 
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MockOracle {
     key_pair: KeyPair,
     secp: Secp256k1<All>,
