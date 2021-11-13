@@ -4,9 +4,7 @@
 use crate::contract::accepted_contract::AcceptedContract;
 use crate::contract::contract_info::ContractInfo;
 use crate::contract::enum_descriptor::EnumDescriptor;
-use crate::contract::numerical_descriptor::{
-    DifferenceParams, NumericalDescriptor, NumericalEventInfo,
-};
+use crate::contract::numerical_descriptor::{DifferenceParams, NumericalDescriptor};
 use crate::contract::offered_contract::OfferedContract;
 use crate::contract::signed_contract::SignedContract;
 use crate::contract::AdaptorInfo;
@@ -26,7 +24,7 @@ use dlc_trie::digit_trie::{DigitNodeData, DigitTrieDump};
 use dlc_trie::multi_oracle_trie::{MultiOracleTrie, MultiOracleTrieDump};
 use dlc_trie::multi_oracle_trie_with_diff::{MultiOracleTrieWithDiff, MultiOracleTrieWithDiffDump};
 use dlc_trie::multi_trie::{MultiTrieDump, MultiTrieNodeData, TrieNodeInfo};
-use dlc_trie::RangeInfo;
+use dlc_trie::{OracleNumericInfo, RangeInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use std::io::Read;
@@ -65,10 +63,9 @@ impl_dlc_writeable_enum!(
 );
 impl_dlc_writeable!(RoundingInterval, { (begin_interval, writeable), (rounding_mod, writeable) });
 impl_dlc_writeable!(PayoutFunction, { (payout_function_pieces, vec) });
-impl_dlc_writeable!(NumericalDescriptor, { (payout_function, writeable), (rounding_intervals, writeable), (info, writeable), (difference_params, option) });
+impl_dlc_writeable!(NumericalDescriptor, { (payout_function, writeable), (rounding_intervals, writeable), (difference_params, option), (oracle_numeric_infos, {cb_writeable, oracle_params::write, oracle_params::read}) });
 impl_dlc_writeable!(PolynomialPayoutCurvePiece, { (payout_points, vec) });
 impl_dlc_writeable!(RoundingIntervals, { (intervals, vec) });
-impl_dlc_writeable!(NumericalEventInfo, { (base, usize), (nb_digits, usize), (unit, string) });
 impl_dlc_writeable!(DifferenceParams, { (max_error_exp, usize), (min_support_exp, usize), (maximize_coverage, writeable) });
 impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
     (left_end_point, writeable),
@@ -138,15 +135,16 @@ impl_dlc_writeable!(FailedSignContract, {(accepted_contract, writeable), (sign_m
 impl_dlc_writeable_external!(DigitTrieDump<Vec<RangeInfo> >, digit_trie_dump_vec_range, { (node_data, {vec_cb, write_digit_node_data_vec_range, read_digit_node_data_vec_range}), (root, {option_cb, write_usize, read_usize}), (base, usize)});
 impl_dlc_writeable_external!(DigitTrieDump<RangeInfo>, digit_trie_dump_range, { (node_data, {vec_cb, write_digit_node_data_range, read_digit_node_data_range}), (root, {option_cb, write_usize, read_usize}), (base, usize)});
 impl_dlc_writeable_external!(DigitTrieDump<Vec<TrieNodeInfo> >, digit_trie_dump_trie, { (node_data, {vec_cb, write_digit_node_data_trie, read_digit_node_data_trie}), (root, {option_cb, write_usize, read_usize}), (base, usize)});
-impl_dlc_writeable_external!(MultiOracleTrieDump, multi_oracle_trie_dump, { (digit_trie_dump, {cb_writeable, digit_trie_dump_vec_range::write, digit_trie_dump_vec_range::read}), (nb_oracles, usize), (threshold, usize), (nb_digits, usize) });
+impl_dlc_writeable_external!(MultiOracleTrieDump, multi_oracle_trie_dump, { (digit_trie_dump, {cb_writeable, digit_trie_dump_vec_range::write, digit_trie_dump_vec_range::read}), (threshold, usize), (oracle_numeric_infos, {cb_writeable, oracle_params::write, oracle_params::read}), (extra_cover_trie_dump, {option_cb, multi_trie_dump::write, multi_trie_dump::read}) });
+impl_dlc_writeable_external!(OracleNumericInfo, oracle_params, { (base, usize), (nb_digits, {vec_cb, write_usize, read_usize}) });
 impl_dlc_writeable_external_enum!(
     MultiTrieNodeData<RangeInfo>,
     multi_trie_node_data,
     (0, Leaf, digit_trie_dump_range),
     (1, Node, digit_trie_dump_trie)
 );
-impl_dlc_writeable_external!(MultiTrieDump<RangeInfo>, multi_trie_dump, { (node_data, {vec_cb, multi_trie_node_data::write, multi_trie_node_data::read}), (base, usize), (nb_tries, usize), (nb_required, usize), (min_support_exp, usize), (max_error_exp, usize), (nb_digits, usize), (maximize_coverage, writeable) });
-impl_dlc_writeable_external!(MultiOracleTrieWithDiffDump, multi_oracle_trie_with_diff_dump, { (multi_trie_dump, {cb_writeable, multi_trie_dump::write, multi_trie_dump::read}), (base, usize), (nb_digits, usize) });
+impl_dlc_writeable_external!(MultiTrieDump<RangeInfo>, multi_trie_dump, { (node_data, {vec_cb, multi_trie_node_data::write, multi_trie_node_data::read}), (nb_tries, usize), (nb_required, usize), (min_support_exp, usize), (max_error_exp, usize), (maximize_coverage, writeable), (oracle_numeric_infos, {cb_writeable, oracle_params::write, oracle_params::read}) });
+impl_dlc_writeable_external!(MultiOracleTrieWithDiffDump, multi_oracle_trie_with_diff_dump, { (multi_trie_dump, {cb_writeable, multi_trie_dump::write, multi_trie_dump::read}), (oracle_numeric_infos, {cb_writeable, oracle_params::write, oracle_params::read}) });
 impl_dlc_writeable_external!(TrieNodeInfo, trie_node_info, { (trie_index, usize), (store_index, usize) });
 
 fn write_digit_node_data_trie<W: Writer>(

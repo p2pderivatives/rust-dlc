@@ -115,12 +115,11 @@ impl_dlc_writeable!(EnumeratedContractDescriptor, { (payouts, vec) });
     serde(rename_all = "camelCase")
 )]
 pub struct NumericOutcomeContractDescriptor {
-    pub num_digits: u16,
     pub payout_function: PayoutFunction,
     pub rounding_intervals: RoundingIntervals,
 }
 
-impl_dlc_writeable!(NumericOutcomeContractDescriptor, { (num_digits, writeable), (payout_function, writeable), (rounding_intervals, writeable) });
+impl_dlc_writeable!(NumericOutcomeContractDescriptor, { (payout_function, writeable), (rounding_intervals, writeable) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(

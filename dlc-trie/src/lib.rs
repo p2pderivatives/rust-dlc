@@ -17,12 +17,16 @@ extern crate dlc;
 #[cfg(feature = "parallel")]
 extern crate rayon;
 extern crate secp256k1_zkp;
+#[cfg(feature = "use-serde")]
+extern crate serde;
 
 use bitcoin::{Script, Transaction};
 use dlc::{Error, RangePayout};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+#[cfg(feature = "use-serde")]
+use serde::{Deserialize, Serialize};
 
 pub mod combination_iterator;
 pub mod digit_decomposition;
@@ -31,7 +35,11 @@ pub mod multi_oracle;
 pub mod multi_oracle_trie;
 pub mod multi_oracle_trie_with_diff;
 pub mod multi_trie;
-pub mod utils;
+#[cfg(test)]
+mod test_utils;
+mod utils;
+
+pub(crate) type IndexedPath = (usize, Vec<usize>);
 
 /// Structure containing a reference to a looked-up value and the
 /// path at which it was found.
@@ -64,6 +72,35 @@ pub struct RangeInfo {
     pub cet_index: usize,
     /// an adaptor signature index
     pub adaptor_index: usize,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "use-serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// Information about the base and number of digits used by the oracle.
+pub struct OracleNumericInfo {
+    /// The base in which the oracle will represent the outcome value.
+    pub base: usize,
+    /// The number of digits that each oracle will use to represent the outcome value.
+    pub nb_digits: Vec<usize>,
+}
+
+impl OracleNumericInfo {
+    /// Return the minimum number of digits supported by an oracle in the group.
+    pub fn get_min_nb_digits(&self) -> usize {
+        *self.nb_digits.iter().min().unwrap()
+    }
+
+    /// Returns whether oracles have varying number of digits.
+    pub fn has_diff_nb_digits(&self) -> bool {
+        self.nb_digits
+            .iter()
+            .skip(1)
+            .any(|x| *x != self.nb_digits[0])
+    }
 }
 
 /// A common trait for trie data structures that store DLC adaptor signature

@@ -3,6 +3,26 @@
 
 use digit_decomposition::{compose_value, decompose_value};
 
+use crate::utils::pre_pad_vec;
+
+fn adjust_prefix_size(
+    prefix: &[usize],
+    nb_digits: usize,
+    suffix_len: usize,
+) -> Result<Vec<usize>, ()> {
+    let expected_len = nb_digits - suffix_len;
+    match prefix.len() {
+        len if len <= expected_len => Ok(pre_pad_vec(prefix.to_vec(), expected_len)),
+        len => {
+            let mut res = prefix.to_vec();
+            if !res.drain(..len - expected_len).all(|x| x == 0) {
+                return Err(());
+            }
+            Ok(res)
+        }
+    }
+}
+
 /// Returns the interval represented by the given prefix in the given base with
 /// the given number of digits.
 fn compute_interval_from_prefix(
@@ -41,12 +61,12 @@ fn compute_min_support_covering_prefix(
     start: usize,
     end: usize,
     min_support: usize,
-    nb_digits: usize,
+    min_nb_digits: usize,
 ) -> Vec<usize> {
     let left_bound = start - min_support;
     let right_bound = end + min_support;
-    let left_bound = decompose_value(left_bound, 2, nb_digits);
-    let right_bound = decompose_value(right_bound, 2, nb_digits);
+    let left_bound = decompose_value(left_bound, 2, min_nb_digits);
+    let right_bound = decompose_value(right_bound, 2, min_nb_digits);
 
     left_bound
         .into_iter()
@@ -95,12 +115,23 @@ fn compute_right_covering_prefix(
 fn single_covering_prefix_combinations(
     main_outcome_prefix: &[usize],
     secondary_outcomes_prefix: &[usize],
-    nb_oracles: usize,
+    oracle_digits_infos: &[usize],
+    suffix_len: usize,
 ) -> Vec<Vec<usize>> {
-    let mut secondary = (0..nb_oracles - 1)
-        .map(|_| secondary_outcomes_prefix.to_vec())
+    let mut secondary = oracle_digits_infos
+        .iter()
+        .skip(1)
+        .map(|nb_digits| {
+            adjust_prefix_size(
+                secondary_outcomes_prefix,
+                *nb_digits,
+                main_outcome_prefix.len() - secondary_outcomes_prefix.len() + suffix_len,
+            )
+            .unwrap()
+        })
         .collect::<Vec<Vec<_>>>();
-    let mut res = vec![main_outcome_prefix.to_vec()];
+    let mut res =
+        vec![adjust_prefix_size(main_outcome_prefix, oracle_digits_infos[0], suffix_len).unwrap()];
     res.append(&mut secondary);
     res
 }
@@ -110,13 +141,15 @@ fn single_covering_prefix_combinations(
 fn double_covering_restricted_prefix_combinations(
     main_outcome_prefix: &[usize],
     other_interval_prefix: &[usize],
-    nb_oracles: usize,
+    oracle_digits_infos: &[usize],
+    suffix_len: usize,
 ) -> Vec<Vec<Vec<usize>>> {
     let mut combinations = double_covering_prefix_combinations(
         main_outcome_prefix,
         main_outcome_prefix,
         other_interval_prefix,
-        nb_oracles,
+        oracle_digits_infos,
+        suffix_len,
     );
 
     if main_outcome_prefix > other_interval_prefix {
@@ -134,8 +167,10 @@ fn double_covering_prefix_combinations(
     main_outcome_prefix: &[usize],
     left_interval_prefix: &[usize],
     right_interval_prefix: &[usize],
-    nb_oracles: usize,
+    oracle_digits_infos: &[usize],
+    suffix_len: usize,
 ) -> Vec<Vec<Vec<usize>>> {
+    let nb_oracles = oracle_digits_infos.len();
     let mut res = Vec::with_capacity(nb_oracles);
     let (first, second) = if left_interval_prefix <= right_interval_prefix {
         (left_interval_prefix, right_interval_prefix)
@@ -154,7 +189,17 @@ fn double_covering_prefix_combinations(
         }
         mid_res.push(main_outcome_prefix.to_vec());
         mid_res.reverse();
-        res.push(mid_res);
+        let trimmed = mid_res
+            .into_iter()
+            .zip(oracle_digits_infos)
+            .map(|(x, y)| {
+                adjust_prefix_size(&x, *y, main_outcome_prefix.len() + suffix_len - x.len())
+            })
+            .collect::<Result<Vec<Vec<usize>>, ()>>();
+
+        if let Ok(mid_res) = trimmed {
+            res.push(mid_res)
+        }
     }
 
     res
@@ -162,95 +207,128 @@ fn double_covering_prefix_combinations(
 
 /// Compute the outcome combinations required to cover intervals that will
 /// satisfy the specified min support and max error parameters.
+/// Expect that the first element of oracle_numeric_infos is the one with smallest
+/// `num_digits`.
+/// Throws if oracle_numeric_infos has less than 2 elements or max_error_exp is
+/// not greater than min_support_exp.
 pub fn compute_outcome_combinations(
-    nb_digits: usize,
+    oracle_digits_infos: &[usize],
     main_outcome_prefix: &[usize],
     max_error_exp: usize,
     min_support_exp: usize,
     maximize_coverage: bool,
-    nb_oracles: usize,
 ) -> Vec<Vec<Vec<usize>>> {
+    let nb_oracles = oracle_digits_infos.len();
     assert!(nb_oracles > 1 && max_error_exp > min_support_exp);
 
-    let max_num: usize = (1 << nb_digits) - 1;
+    let min_num_digits = oracle_digits_infos[0];
+    let (min_num_digits, max_num, main_outcome_prefix) = if oracle_digits_infos
+        .iter()
+        .skip(1)
+        .all(|x| x == &min_num_digits)
+    {
+        (
+            min_num_digits,
+            (1 << min_num_digits) - 1,
+            main_outcome_prefix.to_vec(),
+        )
+    } else {
+        let mut new_main_outcome_prefix = vec![0];
+        new_main_outcome_prefix.extend_from_slice(main_outcome_prefix);
+        (
+            min_num_digits + 1,
+            (1 << (min_num_digits + 1)) - 1,
+            new_main_outcome_prefix,
+        )
+    };
     let max_error: usize = 1 << max_error_exp;
     let half_max_error: usize = max_error >> 1;
     let min_support: usize = 1 << min_support_exp;
-    let suffix_len = nb_digits - main_outcome_prefix.len();
+    let suffix_len = min_num_digits - main_outcome_prefix.len();
 
-    let (start, end) = compute_interval_from_prefix(main_outcome_prefix, nb_digits, 2);
+    let (start, end) = compute_interval_from_prefix(&main_outcome_prefix, min_num_digits, 2);
 
     // interval length is strictly smaller than max_error
     if suffix_len < max_error_exp {
         let start_max_error_suffix = start & ((1 << max_error_exp) - 1);
         let left_bound = (start >> max_error_exp) << max_error_exp;
         let right_bound = left_bound | (max_error - 1);
-        let error_interval_prefix = num_to_vec(left_bound, nb_digits, max_error_exp, 2);
+        let error_interval_prefix = num_to_vec(left_bound, min_num_digits, max_error_exp, 2);
 
         // interval length is less than or equal to min_support
         if start_max_error_suffix >= min_support && end <= right_bound - min_support {
             let support_interval_prefix = if maximize_coverage {
                 error_interval_prefix
             } else {
-                compute_min_support_covering_prefix(start, end, min_support, nb_digits)
+                compute_min_support_covering_prefix(start, end, min_support, min_num_digits)
             };
 
             return vec![single_covering_prefix_combinations(
-                main_outcome_prefix,
+                &main_outcome_prefix,
                 &support_interval_prefix,
-                nb_oracles,
+                oracle_digits_infos,
+                suffix_len,
             )];
         } else if start_max_error_suffix < min_support {
             let right_interval_prefix = if maximize_coverage {
                 error_interval_prefix
             } else {
-                compute_right_covering_prefix(end, max_error_exp, min_support, nb_digits)
+                compute_right_covering_prefix(end, max_error_exp, min_support, min_num_digits)
             };
 
             return if left_bound == 0 {
                 vec![single_covering_prefix_combinations(
-                    main_outcome_prefix,
+                    &main_outcome_prefix,
                     &right_interval_prefix,
-                    nb_oracles,
+                    oracle_digits_infos,
+                    suffix_len,
                 )]
             } else {
                 let left_interval_prefix = if maximize_coverage {
-                    num_to_vec(left_bound - half_max_error, nb_digits, max_error_exp - 1, 2)
+                    num_to_vec(
+                        left_bound - half_max_error,
+                        min_num_digits,
+                        max_error_exp - 1,
+                        2,
+                    )
                 } else {
-                    compute_left_covering_prefix(start, max_error_exp, min_support, nb_digits)
+                    compute_left_covering_prefix(start, max_error_exp, min_support, min_num_digits)
                 };
                 double_covering_prefix_combinations(
-                    main_outcome_prefix,
+                    &main_outcome_prefix,
                     &right_interval_prefix,
                     &left_interval_prefix,
-                    nb_oracles,
+                    oracle_digits_infos,
+                    suffix_len,
                 )
             };
         } else if end > right_bound - min_support {
             let left_interval_prefix = if maximize_coverage {
                 error_interval_prefix
             } else {
-                compute_left_covering_prefix(start, max_error_exp, min_support, nb_digits)
+                compute_left_covering_prefix(start, max_error_exp, min_support, min_num_digits)
             };
 
             return if right_bound == max_num {
                 vec![single_covering_prefix_combinations(
-                    main_outcome_prefix,
+                    &main_outcome_prefix,
                     &left_interval_prefix,
-                    nb_oracles,
+                    oracle_digits_infos,
+                    suffix_len,
                 )]
             } else {
                 let right_interval_prefix = if maximize_coverage {
-                    num_to_vec(right_bound + 1, nb_digits, max_error_exp - 1, 2)
+                    num_to_vec(right_bound + 1, min_num_digits, max_error_exp - 1, 2)
                 } else {
-                    compute_right_covering_prefix(end, max_error_exp, min_support, nb_digits)
+                    compute_right_covering_prefix(end, max_error_exp, min_support, min_num_digits)
                 };
 
                 double_covering_prefix_combinations(
-                    main_outcome_prefix,
+                    &main_outcome_prefix,
                     &left_interval_prefix,
                     &right_interval_prefix,
-                    nb_oracles,
+                    oracle_digits_infos,
+                    suffix_len,
                 )
             };
         } else {
@@ -262,49 +340,57 @@ pub fn compute_outcome_combinations(
 
     if start != 0 {
         let right_interval_prefix = if maximize_coverage {
-            num_to_vec(start, nb_digits, max_error_exp - 1, 2)
+            num_to_vec(start, min_num_digits, max_error_exp - 1, 2)
         } else {
-            num_to_vec(start, nb_digits, min_support_exp, 2)
+            num_to_vec(start, min_num_digits, min_support_exp, 2)
         };
 
         let left_interval_prefix = if maximize_coverage {
-            num_to_vec(start - half_max_error, nb_digits, max_error_exp - 1, 2)
+            num_to_vec(start - half_max_error, min_num_digits, max_error_exp - 1, 2)
         } else {
-            num_to_vec(start - min_support, nb_digits, min_support_exp, 2)
+            num_to_vec(start - min_support, min_num_digits, min_support_exp, 2)
         };
 
         let mut combination = double_covering_restricted_prefix_combinations(
             &right_interval_prefix,
             &left_interval_prefix,
-            nb_oracles,
+            oracle_digits_infos,
+            min_num_digits - right_interval_prefix.len(),
         );
 
         res.append(&mut combination);
     }
 
     res.push(single_covering_prefix_combinations(
-        main_outcome_prefix,
-        main_outcome_prefix,
-        nb_oracles,
+        &main_outcome_prefix,
+        &main_outcome_prefix,
+        oracle_digits_infos,
+        suffix_len,
     ));
 
     if end != max_num {
         let right_interval_prefix = if maximize_coverage {
-            num_to_vec(end - half_max_error + 1, nb_digits, max_error_exp - 1, 2)
+            num_to_vec(
+                end - half_max_error + 1,
+                min_num_digits,
+                max_error_exp - 1,
+                2,
+            )
         } else {
-            num_to_vec(end - min_support + 1, nb_digits, min_support_exp, 2)
+            num_to_vec(end - min_support + 1, min_num_digits, min_support_exp, 2)
         };
 
         let left_interval_prefix = if maximize_coverage {
-            num_to_vec(end + 1, nb_digits, max_error_exp - 1, 2)
+            num_to_vec(end + 1, min_num_digits, max_error_exp - 1, 2)
         } else {
-            num_to_vec(end + 1, nb_digits, min_support_exp, 2)
+            num_to_vec(end + 1, min_num_digits, min_support_exp, 2)
         };
 
         let mut combination = double_covering_restricted_prefix_combinations(
             &right_interval_prefix,
             &left_interval_prefix,
-            nb_oracles,
+            oracle_digits_infos,
+            min_num_digits - right_interval_prefix.len(),
         );
         res.append(&mut combination);
     }
@@ -315,29 +401,30 @@ pub fn compute_outcome_combinations(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::{
+        get_variable_oracle_numeric_infos, same_num_digits_oracle_numeric_infos,
+    };
     use secp256k1_zkp::rand::{thread_rng, RngCore};
 
     fn compute_covering_cets_min_and_max(
-        nb_digits: usize,
+        oracle_digits_infos: &[usize],
         main_outcome_prefix: &[usize],
         max_error_exp: usize,
         min_support_exp: usize,
     ) -> (Vec<(Vec<usize>, Vec<usize>)>, Vec<(Vec<usize>, Vec<usize>)>) {
         let covering_max = compute_outcome_combinations(
-            nb_digits,
+            oracle_digits_infos,
             main_outcome_prefix,
             max_error_exp,
             min_support_exp,
             true,
-            2,
         );
         let covering_min = compute_outcome_combinations(
-            nb_digits,
+            oracle_digits_infos,
             main_outcome_prefix,
             max_error_exp,
             min_support_exp,
             false,
-            2,
         );
 
         assert!(covering_max.iter().all(|x| x.len() == 2));
@@ -482,7 +569,7 @@ mod tests {
     fn compute_outcome_combination_tests() {
         for case in test_cases() {
             let (max, min) = compute_covering_cets_min_and_max(
-                case.nb_digits,
+                &same_num_digits_oracle_numeric_infos(2, case.nb_digits, 2).nb_digits,
                 &case.main_outcome_prefix,
                 case.max_error_exp,
                 case.min_support_exp,
@@ -496,7 +583,13 @@ mod tests {
     fn compute_outcome_three_oracles() {
         let prefix = vec![0, 1, 0];
 
-        let res = compute_outcome_combinations(3, &prefix, 2, 1, true, 3);
+        let res = compute_outcome_combinations(
+            &same_num_digits_oracle_numeric_infos(3, 3, 2).nb_digits,
+            &prefix,
+            2,
+            1,
+            true,
+        );
 
         let expected = vec![
             vec![vec![0, 1, 0], vec![0], vec![0]],
@@ -528,7 +621,7 @@ mod tests {
         let max_val = (1 << nb_digits) - 1;
 
         let (cover_max, cover_min) = compute_covering_cets_min_and_max(
-            nb_digits,
+            &same_num_digits_oracle_numeric_infos(2, nb_digits, 2).nb_digits,
             &main_outcome_prefix,
             max_error_exp,
             min_support_exp,
@@ -659,5 +752,87 @@ mod tests {
             min_cover_interval_right - right >= min_support || min_cover_interval_right == max_val
         );
         assert!(min_cover_interval_right - right < max_error);
+    }
+
+    struct VariableLengthTestCase {
+        main_outcome_prefix: Vec<usize>,
+        nb_digits: Vec<usize>,
+        max_error_exp: usize,
+        min_support_exp: usize,
+        expected_max: Vec<(Vec<usize>, Vec<usize>)>,
+        expected_min: Vec<(Vec<usize>, Vec<usize>)>,
+    }
+
+    impl From<TestCase> for VariableLengthTestCase {
+        fn from(test_case: TestCase) -> VariableLengthTestCase {
+            let to_add = ((thread_rng().next_u32() % 10) + 1) as usize;
+
+            let extend = |y: &[usize]| {
+                let mut new_y = Vec::with_capacity(y.len() + to_add);
+                new_y.resize(to_add, 0);
+                new_y.extend(y.iter());
+                new_y
+            };
+
+            let expected_max = test_case
+                .expected_max
+                .iter()
+                .map(|(x, y)| (x.clone(), extend(y)))
+                .collect();
+
+            let expected_min = test_case
+                .expected_min
+                .iter()
+                .map(|(x, y)| (x.clone(), extend(y)))
+                .collect();
+
+            VariableLengthTestCase {
+                main_outcome_prefix: test_case.main_outcome_prefix,
+                nb_digits: vec![test_case.nb_digits, test_case.nb_digits + to_add],
+                max_error_exp: test_case.max_error_exp,
+                min_support_exp: test_case.min_support_exp,
+                expected_max,
+                expected_min,
+            }
+        }
+    }
+
+    fn variable_len_test_cases() -> Vec<VariableLengthTestCase> {
+        let black_list = vec![5, 7];
+        let mut test_cases = test_cases()
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !black_list.contains(i))
+            .map(|(_, x)| x.into())
+            .collect::<Vec<VariableLengthTestCase>>();
+        test_cases.append(&mut vec![VariableLengthTestCase {
+            main_outcome_prefix: vec![1, 1, 1, 1],
+            nb_digits: vec![4, 5],
+            max_error_exp: 2,
+            min_support_exp: 1,
+            expected_max: vec![
+                (vec![1, 1, 1, 1], vec![0, 1, 1]),
+                (vec![1, 1, 1, 1], vec![1, 0, 0, 0]),
+            ],
+            expected_min: vec![
+                (vec![1, 1, 1, 1], vec![0, 1, 1]),
+                (vec![1, 1, 1, 1], vec![1, 0, 0, 0]),
+            ],
+        }]);
+        test_cases
+    }
+
+    #[test]
+    fn variable_nb_digit_tests() {
+        for case in variable_len_test_cases() {
+            let (max, min) = compute_covering_cets_min_and_max(
+                &get_variable_oracle_numeric_infos(&case.nb_digits, 2).nb_digits,
+                &case.main_outcome_prefix,
+                case.max_error_exp,
+                case.min_support_exp,
+            );
+            assert_eq!(case.expected_max, max);
+            assert_eq!(case.expected_min, min);
+        }
     }
 }

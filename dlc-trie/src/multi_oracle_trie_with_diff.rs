@@ -5,9 +5,9 @@
 
 use crate::digit_decomposition::group_by_ignoring_digits;
 use crate::multi_trie::{MultiTrie, MultiTrieDump, MultiTrieIterator};
+use crate::utils::get_value_callback;
 
-use crate::RangeInfo;
-use crate::{DlcTrie, TrieIterInfo};
+use crate::{DlcTrie, OracleNumericInfo, RangeInfo, TrieIterInfo};
 use dlc::{Error, RangePayout};
 
 /// Data structure used to store adaptor signature information for numerical
@@ -17,34 +17,35 @@ use dlc::{Error, RangePayout};
 pub struct MultiOracleTrieWithDiff {
     /// The underlying trie of trie
     pub multi_trie: MultiTrie<RangeInfo>,
-    base: usize,
-    nb_digits: usize,
+    /// Information on the numeric representation used by each oracle.
+    pub oracle_numeric_infos: OracleNumericInfo,
 }
 
 impl MultiOracleTrieWithDiff {
     /// Create a new MultiOracleTrieWithDiff
     pub fn new(
-        base: usize,
-        nb_oracles: usize,
+        oracle_numeric_infos: &OracleNumericInfo,
         threshold: usize,
-        nb_digits: usize,
         min_support_exp: usize,
         max_error_exp: usize,
-    ) -> Self {
+    ) -> Result<Self, Error> {
+        let nb_oracles = oracle_numeric_infos.nb_digits.len();
+        let is_valid =
+            nb_oracles >= 1 && threshold <= nb_oracles && min_support_exp < max_error_exp;
+        if !is_valid {
+            return Err(Error::InvalidArgument);
+        }
         let multi_trie = MultiTrie::new(
-            nb_oracles,
+            oracle_numeric_infos,
             threshold,
-            base,
             min_support_exp,
             max_error_exp,
-            nb_digits,
             true,
         );
-        MultiOracleTrieWithDiff {
+        Ok(MultiOracleTrieWithDiff {
             multi_trie,
-            base,
-            nb_digits,
-        }
+            oracle_numeric_infos: oracle_numeric_infos.clone(),
+        })
     }
 }
 
@@ -61,28 +62,38 @@ impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDif
             let groups = group_by_ignoring_digits(
                 outcome.start,
                 outcome.start + outcome.count - 1,
-                self.base,
-                self.nb_digits,
+                self.oracle_numeric_infos.base,
+                self.oracle_numeric_infos.get_min_nb_digits(),
             );
             for group in groups {
                 let mut get_value =
                     |paths: &[Vec<usize>], oracle_indexes: &[usize]| -> Result<RangeInfo, Error> {
-                        let range_info = RangeInfo {
+                        get_value_callback(
+                            paths,
+                            oracle_indexes,
                             cet_index,
-                            adaptor_index,
-                        };
-                        let iter_info = TrieIterInfo {
-                            value: range_info.clone(),
-                            indexes: oracle_indexes.to_vec(),
-                            paths: paths.to_vec(),
-                        };
-                        trie_infos.push(iter_info);
-                        adaptor_index += 1;
-                        Ok(range_info)
+                            &mut adaptor_index,
+                            &mut trie_infos,
+                        )
                     };
                 self.multi_trie.insert(&group, &mut get_value)?;
             }
         }
+
+        if self.oracle_numeric_infos.has_diff_nb_digits() {
+            let mut get_value =
+                |paths: &[Vec<usize>], oracle_indexes: &[usize]| -> Result<RangeInfo, Error> {
+                    get_value_callback(
+                        paths,
+                        oracle_indexes,
+                        outcomes.len() - 1,
+                        &mut adaptor_index,
+                        &mut trie_infos,
+                    )
+                };
+            self.multi_trie.insert_max_paths(&mut get_value)?;
+        }
+
         Ok(trie_infos)
     }
 
@@ -98,10 +109,8 @@ impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDif
 pub struct MultiOracleTrieWithDiffDump {
     /// The dump of the underlying MultiTrie.
     pub multi_trie_dump: MultiTrieDump<RangeInfo>,
-    /// The base for which the trie was created for.
-    pub base: usize,
-    /// The maximum number of digits for a path in the trie.
-    pub nb_digits: usize,
+    /// Information about numerical representation used by oracles.
+    pub oracle_numeric_infos: OracleNumericInfo,
 }
 
 impl MultiOracleTrieWithDiff {
@@ -110,8 +119,7 @@ impl MultiOracleTrieWithDiff {
         let multi_trie_dump = self.multi_trie.dump();
         MultiOracleTrieWithDiffDump {
             multi_trie_dump,
-            base: self.base,
-            nb_digits: self.nb_digits,
+            oracle_numeric_infos: self.oracle_numeric_infos.clone(),
         }
     }
 
@@ -119,13 +127,11 @@ impl MultiOracleTrieWithDiff {
     pub fn from_dump(dump: MultiOracleTrieWithDiffDump) -> MultiOracleTrieWithDiff {
         let MultiOracleTrieWithDiffDump {
             multi_trie_dump,
-            base,
-            nb_digits,
+            oracle_numeric_infos,
         } = dump;
         MultiOracleTrieWithDiff {
             multi_trie: MultiTrie::from_dump(multi_trie_dump),
-            base,
-            nb_digits,
+            oracle_numeric_infos,
         }
     }
 }
@@ -156,5 +162,118 @@ impl<'a> Iterator for MultiOracleTrieWithDiffIter<'a> {
             paths,
             value: res.value.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dlc::{Payout, RangePayout};
+
+    use crate::{test_utils::get_variable_oracle_numeric_infos, DlcTrie};
+
+    use super::MultiOracleTrieWithDiff;
+    #[test]
+    fn test_is_ordered() {
+        let range_payouts = vec![
+            RangePayout {
+                start: 0,
+                count: 1,
+                payout: Payout {
+                    offer: 0,
+                    accept: 200000000,
+                },
+            },
+            RangePayout {
+                start: 1,
+                count: 1,
+                payout: Payout {
+                    offer: 40000000,
+                    accept: 160000000,
+                },
+            },
+            RangePayout {
+                start: 2,
+                count: 1,
+                payout: Payout {
+                    offer: 80000000,
+                    accept: 120000000,
+                },
+            },
+            RangePayout {
+                start: 3,
+                count: 1,
+                payout: Payout {
+                    offer: 120000000,
+                    accept: 80000000,
+                },
+            },
+            RangePayout {
+                start: 4,
+                count: 1,
+                payout: Payout {
+                    offer: 160000000,
+                    accept: 40000000,
+                },
+            },
+            RangePayout {
+                start: 5,
+                count: 1019,
+                payout: Payout {
+                    offer: 200000000,
+                    accept: 0,
+                },
+            },
+        ];
+
+        let oracle_numeric_infos = get_variable_oracle_numeric_infos(&[13, 12], 2);
+        let mut multi_oracle_trie =
+            MultiOracleTrieWithDiff::new(&oracle_numeric_infos, 2, 1, 2).unwrap();
+        let info = multi_oracle_trie.generate(0, &range_payouts).unwrap();
+        let mut indexes: Vec<_> = info
+            .into_iter()
+            .map(|info| info.value.adaptor_index)
+            .collect();
+
+        let lookup_res = multi_oracle_trie
+            .multi_trie
+            .look_up(&[
+                (0, vec![0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0]),
+                (1, vec![0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0]),
+            ])
+            .expect("Could not find");
+
+        indexes.sort();
+
+        let mut prev_index = 0;
+        for i in indexes.iter().skip(1) {
+            assert_eq!(*i, prev_index + 1);
+            prev_index += 1;
+        }
+
+        let mut indexes: Vec<_> = multi_oracle_trie
+            .iter()
+            .map(|info| info.value.adaptor_index)
+            .collect();
+
+        indexes.sort();
+
+        let mut prev_index = 0;
+        for i in indexes.iter().skip(1) {
+            assert_eq!(*i, prev_index + 1);
+            prev_index += 1;
+        }
+
+        let iter_res = multi_oracle_trie
+            .iter()
+            .find(|x| x.value.adaptor_index == 22)
+            .unwrap();
+        assert_eq!(
+            &lookup_res
+                .1
+                .iter()
+                .map(|(_, x)| x.clone())
+                .collect::<Vec<_>>(),
+            &iter_res.paths
+        );
     }
 }

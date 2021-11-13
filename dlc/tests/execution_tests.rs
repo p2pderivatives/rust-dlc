@@ -334,13 +334,17 @@ fn integration_tests_decomposed_common(
     .value;
 
     let mut trie = MultiOracleTrieWithDiff::new(
-        base,
-        nb_oracles,
+        &dlc_trie::OracleNumericInfo {
+            base,
+            nb_digits: std::iter::repeat(nb_digits)
+                .take(nb_oracles)
+                .collect::<Vec<_>>(),
+        },
         nb_required,
-        nb_digits,
         min_support_exp,
         max_error_exp,
-    );
+    )
+    .unwrap();
 
     let adaptor_pairs_offer = trie
         .generate_sign(
@@ -463,8 +467,8 @@ fn integration_tests_decomposed_common(
         .multi_trie
         .look_up(&paths)
         .expect("Could not find given paths");
-    let outcome_range_info = outcome_info.value;
-    let outcome_path = outcome_info.path;
+    let outcome_range_info = outcome_info.0;
+    let outcome_path = outcome_info.1;
 
     let final_oracle_signatures = oracle_signatures
         .into_iter()

@@ -11,7 +11,6 @@ use dlc::TxInputInfo;
 use dlc_manager::contract::contract_info::ContractInfo;
 use dlc_manager::contract::numerical_descriptor::DifferenceParams;
 use dlc_manager::contract::numerical_descriptor::NumericalDescriptor;
-use dlc_manager::contract::numerical_descriptor::NumericalEventInfo;
 use dlc_manager::contract::ContractDescriptor;
 use dlc_manager::payout_curve::PayoutFunction;
 use dlc_manager::payout_curve::PayoutFunctionPiece;
@@ -124,10 +123,11 @@ fn create_contract_descriptor() -> ContractDescriptor {
                 rounding_mod: ROUNDING_MOD,
             }],
         },
-        info: NumericalEventInfo {
+        oracle_numeric_infos: dlc_trie::OracleNumericInfo {
             base: BASE as usize,
-            nb_digits: NB_DIGITS as usize,
-            unit: "sats/sec".to_owned(),
+            nb_digits: std::iter::repeat(NB_DIGITS)
+                .take(NB_ORACLES)
+                .collect::<Vec<_>>(),
         },
         difference_params,
     })

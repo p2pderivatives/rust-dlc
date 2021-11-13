@@ -875,7 +875,7 @@ where
             .iter()
             .map(|(i, x)| (*i, &x.outcomes))
             .collect::<Vec<(usize, &Vec<String>)>>();
-        let info_opt = contract_info.get_range_info_for_outcome(adaptor_info, &outcomes, 0)?;
+        let info_opt = contract_info.get_range_info_for_outcome(adaptor_info, &outcomes, 0);
         if let Some((sig_infos, range_info)) = info_opt {
             let sigs: Vec<Vec<SchnorrSignature>> = attestations
                 .iter()

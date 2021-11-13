@@ -11,7 +11,7 @@ version = "0.1.0"
 [features]
 fuzztarget = ["rand_chacha", "bitcoin/fuzztarget"]
 parallel = ["dlc-trie/parallel"]
-use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde"]
+use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde", "dlc-trie/use-serde"]
 
 [dependencies]
 async-trait = "0.1.50"
@@ -31,9 +31,11 @@ bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 criterion = "0.3"
+dlc-messages = {path = "../dlc-messages", features = ["serde"]}
 env_logger = "0.8.4"
 mocks = {path = "../mocks"}
-secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std", "global-context"]}
+secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std", "global-context", "use-serde"]}
+serde = "1.0"
 serde_json = "1.0"
 
 [[bench]]

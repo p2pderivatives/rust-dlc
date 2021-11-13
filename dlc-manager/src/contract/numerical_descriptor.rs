@@ -7,26 +7,10 @@ use bitcoin::{Script, Transaction};
 use dlc::{Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
-use dlc_trie::DlcTrie;
+use dlc_trie::{DlcTrie, OracleNumericInfo};
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
-/// Information about the base, number of digits and unit of a numerical event.
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
-pub struct NumericalEventInfo {
-    /// The base in which the event outcome will be reported.
-    pub base: usize,
-    /// The number of digits that will be used to represent the outcome.
-    pub nb_digits: usize,
-    /// The unit of the event outcome.
-    pub unit: String,
-}
 
 /// Information about the allowed deviation in outcome value between the oracles.
 #[derive(Clone, Debug)]
@@ -60,12 +44,12 @@ pub struct NumericalDescriptor {
     /// Rounding intervals enabling reducing the precision of the payout values
     /// which in turns reduces the number of required adaptor signatures.
     pub rounding_intervals: RoundingIntervals,
-    /// Information about the event itself.
-    pub info: NumericalEventInfo,
     /// Information about the allowed differences in outcome value between oracles.
     /// If None, a quorum of oracle needs to sign the same value for the contract
     /// to be closeable.
     pub difference_params: Option<DifferenceParams>,
+    /// Information about base and number of digits for each oracle.
+    pub oracle_numeric_infos: OracleNumericInfo,
 }
 
 impl NumericalDescriptor {
@@ -102,13 +86,11 @@ impl NumericalDescriptor {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
-                    self.info.base,
-                    precomputed_points.len(),
+                    &self.oracle_numeric_infos,
                     threshold,
-                    self.info.nb_digits,
                     params.min_support_exp,
                     params.max_error_exp,
-                );
+                )?;
                 let index = multi_trie.generate_verify(
                     secp,
                     fund_pubkey,
@@ -123,12 +105,7 @@ impl NumericalDescriptor {
                 Ok((AdaptorInfo::NumericalWithDifference(multi_trie), index))
             }
             None => {
-                let mut trie = MultiOracleTrie::new(
-                    self.info.base,
-                    precomputed_points.len(),
-                    threshold,
-                    self.info.nb_digits,
-                );
+                let mut trie = MultiOracleTrie::new(&self.oracle_numeric_infos, threshold)?;
                 let index = trie.generate_verify(
                     secp,
                     fund_pubkey,
@@ -161,13 +138,11 @@ impl NumericalDescriptor {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
-                    self.info.base,
-                    precomputed_points.len(),
+                    &self.oracle_numeric_infos,
                     threshold,
-                    self.info.nb_digits,
                     params.min_support_exp,
                     params.max_error_exp,
-                );
+                )?;
                 let adaptor_pairs = multi_trie.generate_sign(
                     secp,
                     fund_priv_key,
@@ -185,12 +160,7 @@ impl NumericalDescriptor {
             }
 
             None => {
-                let mut trie = MultiOracleTrie::new(
-                    self.info.base,
-                    precomputed_points.len(),
-                    threshold,
-                    self.info.nb_digits,
-                );
+                let mut trie = MultiOracleTrie::new(&self.oracle_numeric_infos, threshold)?;
                 let sigs = trie.generate_sign(
                     secp,
                     fund_priv_key,

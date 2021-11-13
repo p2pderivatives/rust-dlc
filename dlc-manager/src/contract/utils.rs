@@ -1,6 +1,6 @@
 pub(crate) fn get_majority_combination(
     outcomes: &[(usize, &Vec<String>)],
-) -> Result<(Vec<String>, Vec<usize>), crate::error::Error> {
+) -> Option<(Vec<String>, Vec<usize>)> {
     let mut hash_set: std::collections::HashMap<Vec<String>, Vec<usize>> =
         std::collections::HashMap::new();
 
@@ -17,12 +17,10 @@ pub(crate) fn get_majority_combination(
     }
 
     if hash_set.is_empty() {
-        return Err(crate::error::Error::InvalidParameters(
-            "No majority found.".to_string(),
-        ));
+        return None;
     }
 
     let mut values: Vec<_> = hash_set.into_iter().collect();
     values.sort_by(|x, y| x.1.len().partial_cmp(&y.1.len()).unwrap());
-    Ok(values.remove(values.len() - 1))
+    Some(values.remove(values.len() - 1))
 }
