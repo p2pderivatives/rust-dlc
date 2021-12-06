@@ -1,6 +1,10 @@
 [package]
 authors = ["Crypto Garage"]
+description = "Structs and serialization for the Discreet Log Contract (DLC) protocol."
+homepage = "https://github.com/p2pderivatives/rust-dlc"
+license-file = "../LICENSE"
 name = "dlc-messages"
+repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-messages"
 version = "0.1.0"
 
 [features]

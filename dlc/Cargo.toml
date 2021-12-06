@@ -1,6 +1,10 @@
 [package]
 authors = ["Crypto Garage"]
+description = "Creation, signing and verification of Discreet Log Contracts (DLC) transactions."
+homepage = "https://github.com/p2pderivatives/rust-dlc"
+license-file = "../LICENSE"
 name = "dlc"
+repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc"
 version = "0.1.0"
 
 [dependencies]

@@ -1,10 +1,10 @@
 [package]
 authors = ["Crypto Garage"]
-description = "This crate provides the representation of DLC messages and functions to enable their serialization."
+description = "Oracle interface implementation for the p2pderivatives oracle."
 homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "p2pd-oracle-client"
-repository = "https://github.com/p2pderivatives/rust-dlc"
+repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/p2pd-oracle-client"
 version = "0.1.0"
 
 [dependencies]
