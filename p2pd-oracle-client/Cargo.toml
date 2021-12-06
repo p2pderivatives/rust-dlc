@@ -12,7 +12,7 @@ chrono = {version = "0.4.19", features = ["serde"]}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {path = "../dlc-messages", features = ["use-serde"]}
 reqwest = {version = "0.11", features = ["blocking", "json"]}
-secp256k1-zkp = {version = "0.4.0", git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "rust-dlc-version"}
+secp256k1-zkp = {version = "0.5.0"}
 serde = {version = "*", features = ["derive"]}
 
 [dev-dependencies]
