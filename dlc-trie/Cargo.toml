@@ -1,6 +1,10 @@
 [package]
 authors = ["Crypto Garage"]
+description = "Data structures for storage and retrival of numerical Discreet Log Contracts (DLC)."
+homepage = "https://github.com/p2pderivatives/rust-dlc"
+license-file = "../LICENSE"
 name = "dlc-trie"
+repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-trie"
 version = "0.1.0"
 
 [dependencies]

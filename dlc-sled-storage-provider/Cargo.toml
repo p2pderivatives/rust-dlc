@@ -1,5 +1,10 @@
 [package]
+authors = ["Crypto Garage"]
+description = "Sled backend for persisting Discreet Log Contracts (DLC)."
+homepage = "https://github.com/p2pderivatives/rust-dlc"
+license-file = "../LICENSE"
 name = "dlc-sled-storage-provider"
+repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-sled-storage-provider"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
