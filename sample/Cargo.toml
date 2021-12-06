@@ -6,7 +6,7 @@ version = "0.1.0"
 
 [dependencies]
 bitcoin = {version = "0.27"}
-bitcoin-rpc-provider = {version = "0.0.1", path = "../bitcoin-rpc-provider"}
+bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
 dlc = {path = "../dlc", features = ["use-serde"]}
 dlc-manager = {path = "../dlc-manager", features = ["use-serde"]}
 dlc-messages = {path = "../dlc-messages"}

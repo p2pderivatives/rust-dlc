@@ -5,8 +5,8 @@ name = "mocks"
 version = "0.1.0"
 
 [dependencies]
-dlc = {version = "0.0.1", path = "../dlc"}
+dlc = {version = "0.1.0", path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
-dlc-messages = {version = "0.0.1", path = "../dlc-messages"}
+dlc-messages = {version = "0.1.0", path = "../dlc-messages"}
 lightning = {version = "0.0.100", git = "https://github.com/p2pderivatives/rust-lightning", branch = "dlc-serialization-macros"}
 secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
