@@ -1,9 +1,9 @@
 [package]
 authors = ["Crypto Garage"]
 name = "dlc-trie"
-version = "0.0.1"
+version = "0.1.0"
 
 [dependencies]
 bitcoin = {version = "0.27"}
-dlc = {version = "0.0.1", path = "../dlc"}
+dlc = {version = "0.1.0", path = "../dlc"}
 secp256k1-zkp = {version = "0.5.0"}
