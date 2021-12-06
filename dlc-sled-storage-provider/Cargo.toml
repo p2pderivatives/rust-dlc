@@ -1,9 +1,9 @@
 [package]
-name = "sled-storage-provider"
+name = "dlc-sled-storage-provider"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dlc-manager = {path="../dlc-manager"}
+dlc-manager = {path = "../dlc-manager"}
 sled = "0.34"

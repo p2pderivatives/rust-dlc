@@ -1,7 +1,7 @@
-//! # sled-storage-provider
+//! # dlc-sled-storage-provider
 //! Storage provider for dlc-manager using sled as underlying storage.
 
-#![crate_name = "sled_storage_provider"]
+#![crate_name = "dlc_sled_storage_provider"]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 // Coding conventions

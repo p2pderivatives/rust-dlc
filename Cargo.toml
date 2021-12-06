@@ -10,5 +10,5 @@ members = [
   "dlc-manager",
   "mocks",
   "sample",
-  "sled-storage-provider",
+  "dlc-sled-storage-provider",
 ]
