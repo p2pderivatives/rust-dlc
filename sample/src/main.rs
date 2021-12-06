@@ -35,7 +35,7 @@ pub(crate) type PeerManager = LdkPeerManager<
 pub(crate) type DlcManager = dlc_manager::manager::Manager<
     Arc<BitcoinCoreProvider>,
     Arc<BitcoinCoreProvider>,
-    Box<sled_storage_provider::SledStorageProvider>,
+    Box<dlc_sled_storage_provider::SledStorageProvider>,
     Box<P2PDOracleClient>,
     Arc<SystemTimeProvider>,
 >;
@@ -150,7 +150,7 @@ async fn main() {
         bitcoind_provider.clone(),
         bitcoind_provider.clone(),
         Box::new(
-            sled_storage_provider::SledStorageProvider::new(&config.storage_dir_path)
+            dlc_sled_storage_provider::SledStorageProvider::new(&config.storage_dir_path)
                 .expect("Error creating storage."),
         ),
         oracles,
