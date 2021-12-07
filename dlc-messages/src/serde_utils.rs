@@ -1,4 +1,3 @@
-#[cfg(feature = "serde")]
 pub fn serialize_hex<S>(hex: &[u8], s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
@@ -15,7 +14,6 @@ where
     }
 }
 
-#[cfg(feature = "serde")]
 pub fn deserialize_hex_array<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
     D: serde::de::Deserializer<'de>,
@@ -30,7 +28,6 @@ where
     }
 }
 
-#[cfg(feature = "serde")]
 pub fn deserialize_hex_string<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
     D: serde::de::Deserializer<'de>,
