@@ -5,11 +5,10 @@
 
 use crate::digit_decomposition::group_by_ignoring_digits;
 use crate::multi_trie::{MultiTrie, MultiTrieDump, MultiTrieIterator};
-use crate::utils::get_adaptor_point_for_indexed_paths;
-use crate::DlcTrie;
-use crate::{Error, RangeInfo, RangePayout};
-use bitcoin::{Script, Transaction};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+
+use crate::RangeInfo;
+use crate::{DlcTrie, TrieIterInfo};
+use dlc::{Error, RangePayout};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with multiple oracles where some difference between the outcomes
@@ -49,17 +48,15 @@ impl MultiOracleTrieWithDiff {
     }
 }
 
-impl DlcTrie for MultiOracleTrieWithDiff {
-    fn generate<F>(
+impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDiff {
+    fn generate(
         &mut self,
+        adaptor_index_start: usize,
         outcomes: &[RangePayout],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-        callback: &mut F,
-    ) -> Result<(), Error>
-    where
-        F: FnMut(usize, &PublicKey) -> Result<usize, Error>,
-    {
+    ) -> Result<Vec<TrieIterInfo>, Error> {
         let mut cet_index = 0;
+        let mut adaptor_index = adaptor_index_start;
+        let mut trie_infos = Vec::new();
 
         for outcome in outcomes {
             let groups = group_by_ignoring_digits(
@@ -73,79 +70,31 @@ impl DlcTrie for MultiOracleTrieWithDiff {
                 let mut get_value = |paths: &Vec<Vec<usize>>,
                                      oracle_indexes: &Vec<usize>|
                  -> Result<RangeInfo, Error> {
-                    let adaptor_point = get_adaptor_point_for_indexed_paths(
-                        oracle_indexes,
-                        paths,
-                        &precomputed_points,
-                    )?;
-                    let adaptor_index = callback(cet_index, &adaptor_point)?;
                     let range_info = RangeInfo {
                         cet_index,
                         adaptor_index,
                     };
+                    let iter_info = TrieIterInfo {
+                        value: range_info.clone(),
+                        indexes: oracle_indexes.clone(),
+                        paths: paths.clone(),
+                    };
+                    trie_infos.push(iter_info);
+                    adaptor_index += 1;
                     Ok(range_info)
                 };
                 self.multi_trie.insert(&group, &mut get_value)?;
             }
             cet_index += 1;
         }
-        Ok(())
+        Ok(trie_infos)
     }
 
-    fn iter<F>(
-        &self,
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-        callback: &mut F,
-    ) -> Result<(), Error>
-    where
-        F: FnMut(&PublicKey, &RangeInfo) -> Result<(), Error>,
-    {
-        let m_trie_iter = MultiTrieIterator::new(&self.multi_trie);
-
-        for res in m_trie_iter {
-            let (oracle_indexes, paths) =
-                res.path
-                    .iter()
-                    .fold((Vec::new(), Vec::new()), |(mut indexes, mut paths), x| {
-                        indexes.push(x.0);
-                        paths.push(x.1.clone());
-                        (indexes, paths)
-                    });
-            let adaptor_point =
-                get_adaptor_point_for_indexed_paths(&oracle_indexes, &paths, precomputed_points)?;
-            callback(&adaptor_point, &res.value)?;
+    fn iter(&'a self) -> MultiOracleTrieWithDiffIter<'a> {
+        let multi_trie_iterator = MultiTrieIterator::new(&self.multi_trie);
+        MultiOracleTrieWithDiffIter {
+            multi_trie_iterator,
         }
-        Ok(())
-    }
-
-    fn sign(
-        &self,
-        secp: &Secp256k1<All>,
-        fund_privkey: &SecretKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: u64,
-        cets: &[Transaction],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
-        let mut adaptor_pairs = Vec::<(usize, EcdsaAdaptorSignature)>::new();
-        let mut callback =
-            |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {
-                let adaptor_pair = dlc::create_cet_adaptor_sig_from_point(
-                    &secp,
-                    &cets[range_info.cet_index],
-                    &adaptor_point,
-                    fund_privkey,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                )?;
-
-                adaptor_pairs.push((range_info.adaptor_index, adaptor_pair));
-
-                Ok(())
-            };
-        self.iter(precomputed_points, &mut callback)?;
-        adaptor_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        Ok(adaptor_pairs.into_iter().map(|x| x.1).collect())
     }
 }
 
@@ -182,5 +131,34 @@ impl MultiOracleTrieWithDiff {
             base,
             nb_digits,
         }
+    }
+}
+
+/// Iterator for a MultiOracleTrieWithDiff trie.
+pub struct MultiOracleTrieWithDiffIter<'a> {
+    multi_trie_iterator: MultiTrieIterator<'a, RangeInfo>,
+}
+
+impl<'a> Iterator for MultiOracleTrieWithDiffIter<'a> {
+    type Item = TrieIterInfo;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = match self.multi_trie_iterator.next() {
+            None => return None,
+            Some(res) => res,
+        };
+        let (indexes, paths) =
+            res.path
+                .iter()
+                .fold((Vec::new(), Vec::new()), |(mut indexes, mut paths), x| {
+                    indexes.push(x.0);
+                    paths.push(x.1.clone());
+                    (indexes, paths)
+                });
+        Some(TrieIterInfo {
+            indexes,
+            paths,
+            value: res.value.clone(),
+        })
     }
 }

@@ -6,11 +6,8 @@
 use crate::combination_iterator::CombinationIterator;
 use crate::digit_decomposition::group_by_ignoring_digits;
 use crate::digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
-use crate::utils::get_adaptor_point_for_indexed_paths;
-use crate::DlcTrie;
-use crate::{Error, RangeInfo, RangePayout};
-use bitcoin::{Script, Transaction};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+use crate::{DlcTrie, LookupResult, RangeInfo, TrieIterInfo};
+use dlc::{Error, RangePayout};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with t of n oracles where at least t oracles need to sign the
@@ -77,19 +74,17 @@ impl MultiOracleTrie {
     }
 }
 
-impl DlcTrie for MultiOracleTrie {
-    fn generate<F>(
+impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
+    fn generate(
         &mut self,
+        adaptor_index_start: usize,
         outcomes: &[RangePayout],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-        callback: &mut F,
-    ) -> Result<(), Error>
-    where
-        F: FnMut(usize, &PublicKey) -> Result<usize, Error>,
-    {
+    ) -> Result<Vec<TrieIterInfo>, Error> {
         let mut cet_index = 0;
         let threshold = self.threshold;
         let nb_oracles = self.nb_oracles;
+        let mut adaptor_index = adaptor_index_start;
+        let mut trie_infos = Vec::new();
         for outcome in outcomes {
             let groups = group_by_ignoring_digits(
                 outcome.start,
@@ -103,16 +98,18 @@ impl DlcTrie for MultiOracleTrie {
                     let combination_iterator = CombinationIterator::new(nb_oracles, threshold);
                     let mut range_infos: Vec<RangeInfo> = Vec::new();
                     for selector in combination_iterator {
-                        let adaptor_point = get_adaptor_point_for_indexed_paths(
-                            &selector,
-                            &std::iter::repeat(group.clone()).take(threshold).collect(),
-                            precomputed_points,
-                        )?;
-                        let adaptor_index = callback(cet_index, &adaptor_point)?;
-                        range_infos.push(RangeInfo {
+                        let range_info = RangeInfo {
                             cet_index,
                             adaptor_index,
-                        });
+                        };
+                        adaptor_index += 1;
+                        let trie_info = TrieIterInfo {
+                            indexes: selector,
+                            paths: std::iter::repeat(group.clone()).take(threshold).collect(),
+                            value: range_info.clone(),
+                        };
+                        trie_infos.push(trie_info);
+                        range_infos.push(range_info);
                     }
                     Ok(range_infos)
                 };
@@ -120,61 +117,62 @@ impl DlcTrie for MultiOracleTrie {
             }
             cet_index += 1;
         }
-        Ok(())
+        Ok(trie_infos)
     }
 
-    fn iter<F>(
-        &self,
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-        callback: &mut F,
-    ) -> Result<(), Error>
-    where
-        F: FnMut(&PublicKey, &RangeInfo) -> Result<(), Error>,
-    {
-        let trie_iter = DigitTrieIter::new(&self.digit_trie);
-        let combinations: Vec<Vec<usize>> =
-            CombinationIterator::new(precomputed_points.len(), self.threshold).collect();
-        for res in trie_iter {
-            let path = res.path;
-            for (i, selector) in combinations.iter().enumerate() {
-                let adaptor_point = get_adaptor_point_for_indexed_paths(
-                    &selector,
-                    &std::iter::repeat(path.clone())
-                        .take(self.threshold)
-                        .collect(),
-                    &precomputed_points,
-                )?;
-                callback(&adaptor_point, &res.value[i])?;
-            }
+    fn iter(&'a self) -> MultiOracleTrieIter {
+        let digit_trie_iterator = DigitTrieIter::new(&self.digit_trie);
+        MultiOracleTrieIter {
+            digit_trie_iterator,
+            cur_res: None,
+            cur_index: 0,
+            combination_iter: CombinationIterator::new(self.nb_oracles, self.threshold),
         }
-        Ok(())
     }
+}
 
-    fn sign(
-        &self,
-        secp: &Secp256k1<All>,
-        fund_privkey: &SecretKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: u64,
-        cets: &[Transaction],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
-        let mut adaptor_pairs = Vec::new();
-        let mut callback =
-            |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {
-                let adaptor_pair = dlc::create_cet_adaptor_sig_from_point(
-                    &secp,
-                    &cets[range_info.cet_index],
-                    &adaptor_point,
-                    fund_privkey,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                )?;
-                adaptor_pairs.push(adaptor_pair);
-                Ok(())
-            };
+/// Iterator for a MultiOracleTrie.
+pub struct MultiOracleTrieIter<'a> {
+    digit_trie_iterator: DigitTrieIter<'a, Vec<RangeInfo>>,
+    cur_res: Option<LookupResult<'a, Vec<RangeInfo>, usize>>,
+    cur_index: usize,
+    combination_iter: CombinationIterator,
+}
 
-        self.iter(precomputed_points, &mut callback)?;
-        Ok(adaptor_pairs)
+impl<'a> Iterator for MultiOracleTrieIter<'a> {
+    type Item = TrieIterInfo;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &self.cur_res {
+            None => self.cur_res = self.digit_trie_iterator.next(),
+            _ => {}
+        };
+        let res = match &self.cur_res {
+            None => return None,
+            Some(res) => res,
+        };
+
+        let indexes = match self.combination_iter.next() {
+            Some(selector) => selector,
+            None => {
+                self.cur_res = None;
+                self.cur_index = 0;
+                self.combination_iter = CombinationIterator::new(
+                    self.combination_iter.nb_elements,
+                    self.combination_iter.nb_selected,
+                );
+                return self.next();
+            }
+        };
+        let paths = &std::iter::repeat(res.path.clone())
+            .take(self.combination_iter.nb_selected)
+            .collect::<Vec<Vec<_>>>();
+        let value = res.value[self.cur_index].clone();
+        self.cur_index += 1;
+        Some(TrieIterInfo {
+            indexes,
+            paths: paths.clone(),
+            value,
+        })
     }
 }

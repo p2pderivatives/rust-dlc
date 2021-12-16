@@ -33,7 +33,7 @@ pub mod utils;
 
 /// Structure containing a reference to a looked-up value and the
 /// path at which it was found.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LookupResult<'a, TValue, TPath> {
     /// The path at which the `value` was found.
     pub path: Vec<TPath>,
@@ -66,32 +66,22 @@ pub struct RangeInfo {
 
 /// A common trait for trie data structures that store DLC adaptor signature
 /// information.
-pub trait DlcTrie {
+pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
     /// Generate the trie using the provided outcomes and oracle information,
     /// calling the provided callback with the CET index and adaptor point for
     /// each adaptor signature.
-    fn generate<F>(
-        &mut self,
+    fn generate(
+        &'a mut self,
+        adaptor_index_start: usize,
         outcomes: &[RangePayout],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-        callback: &mut F,
-    ) -> Result<(), Error>
-    where
-        F: FnMut(usize, &PublicKey) -> Result<usize, Error>;
+    ) -> Result<Vec<TrieIterInfo>, Error>;
 
-    /// Iterate through the trie calling the provided callback for each adaptor
-    /// signature passing the corresponding adaptor point and RangeInfo.
-    fn iter<F>(
-        &self,
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-        callback: &mut F,
-    ) -> Result<(), Error>
-    where
-        F: FnMut(&PublicKey, &RangeInfo) -> Result<(), Error>;
+    /// Returns an iterator to this trie.
+    fn iter(&'a self) -> TrieIterator;
 
     /// Generate the trie while verifying the provided adaptor signatures.
     fn generate_verify(
-        &mut self,
+        &'a mut self,
         secp: &Secp256k1<secp256k1_zkp::All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
@@ -102,30 +92,22 @@ pub trait DlcTrie {
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
     ) -> Result<usize, Error> {
-        let mut adaptor_sig_index = adaptor_index_start;
-        let mut verify_callback =
-            |cet_index: usize, adaptor_point: &PublicKey| -> Result<usize, crate::Error> {
-                let adaptor_sig = adaptor_sigs[adaptor_sig_index];
-                let cet = &cets[cet_index];
-                adaptor_sig_index += 1;
-                dlc::verify_cet_adaptor_sig_from_point(
-                    secp,
-                    &adaptor_sig,
-                    cet,
-                    &adaptor_point,
-                    &fund_pubkey,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                )?;
-                Ok(adaptor_sig_index - 1)
-            };
-        self.generate(outcomes, precomputed_points, &mut verify_callback)?;
-        Ok(adaptor_sig_index)
+        let trie_info = self.generate(adaptor_index_start, outcomes)?;
+        verify_helper(
+            secp,
+            cets,
+            adaptor_sigs,
+            fund_pubkey,
+            funding_script_pubkey,
+            fund_output_value,
+            precomputed_points,
+            trie_info.into_iter(),
+        )
     }
 
     /// Generate the trie while creating the set of adaptor signatures.
     fn generate_sign(
-        &mut self,
+        &'a mut self,
         secp: &Secp256k1<All>,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
@@ -135,30 +117,22 @@ pub trait DlcTrie {
         precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
         adaptor_index_start: usize,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
-        let mut adaptor_pairs = Vec::new();
-        let mut adaptor_index = adaptor_index_start;
-        let mut sign_callback =
-            |cet_index: usize, adaptor_point: &PublicKey| -> Result<usize, crate::Error> {
-                let adaptor_pair = dlc::create_cet_adaptor_sig_from_point(
-                    &secp,
-                    &cets[cet_index],
-                    &adaptor_point,
-                    fund_privkey,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                )?;
-                adaptor_pairs.push(adaptor_pair);
-                adaptor_index += 1;
-                Ok(adaptor_index - 1)
-            };
-        self.generate(outcomes, precomputed_points, &mut sign_callback)?;
-        Ok(adaptor_pairs)
+        let trie_info = self.generate(adaptor_index_start, outcomes)?;
+        sign_helper(
+            secp,
+            cets,
+            fund_privkey,
+            funding_script_pubkey,
+            fund_output_value,
+            precomputed_points,
+            trie_info.into_iter(),
+        )
     }
 
     /// Verify that the provided signatures are valid with respect to the
     /// information stored in the trie.
     fn verify(
-        &self,
+        &'a self,
         secp: &Secp256k1<All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
@@ -167,37 +141,108 @@ pub trait DlcTrie {
         cets: &[Transaction],
         precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
     ) -> Result<usize, Error> {
-        let mut max_adaptor_index = 0;
-        let mut callback =
-            |adaptor_point: &PublicKey, range_info: &RangeInfo| -> Result<(), Error> {
-                let adaptor_sig = adaptor_sigs[range_info.adaptor_index];
-                let cet = &cets[range_info.cet_index];
-                if range_info.adaptor_index > max_adaptor_index {
-                    max_adaptor_index = range_info.adaptor_index;
-                }
-                dlc::verify_cet_adaptor_sig_from_point(
-                    secp,
-                    &adaptor_sig,
-                    cet,
-                    &adaptor_point,
-                    &fund_pubkey,
-                    &funding_script_pubkey,
-                    fund_output_value,
-                )
-            };
-
-        self.iter(precomputed_points, &mut callback)?;
-        Ok(max_adaptor_index + 1)
+        Ok(verify_helper(
+            secp,
+            cets,
+            adaptor_sigs,
+            fund_pubkey,
+            funding_script_pubkey,
+            fund_output_value,
+            precomputed_points,
+            self.iter(),
+        )?)
     }
 
     /// Produce the set of adaptor signatures for the trie.
     fn sign(
-        &self,
+        &'a self,
         secp: &Secp256k1<All>,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
         precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error>;
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+        let trie_info = self.iter();
+        sign_helper(
+            secp,
+            cets,
+            fund_privkey,
+            funding_script_pubkey,
+            fund_output_value,
+            precomputed_points,
+            trie_info,
+        )
+    }
+}
+
+#[derive(Debug)]
+/// Holds information provided when iterating a DlcTrie.
+pub struct TrieIterInfo {
+    indexes: Vec<usize>,
+    paths: Vec<Vec<usize>>,
+    value: RangeInfo,
+}
+
+fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
+    secp: &Secp256k1<All>,
+    cets: &[Transaction],
+    fund_privkey: &SecretKey,
+    funding_script_pubkey: &Script,
+    fund_output_value: u64,
+    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    trie_info: T,
+) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+    let mut unsorted = trie_info
+        .map(|x| {
+            let adaptor_point = utils::get_adaptor_point_for_indexed_paths(
+                &x.indexes,
+                &x.paths,
+                precomputed_points,
+            )?;
+            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
+                &secp,
+                &cets[x.value.cet_index],
+                &adaptor_point,
+                fund_privkey,
+                &funding_script_pubkey,
+                fund_output_value,
+            )?;
+            Ok((x.value.adaptor_index, adaptor_sig))
+        })
+        .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
+    unsorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    Ok(unsorted.into_iter().map(|(_, y)| y).collect())
+}
+
+fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
+    secp: &Secp256k1<All>,
+    cets: &[Transaction],
+    adaptor_sigs: &[EcdsaAdaptorSignature],
+    fund_pubkey: &PublicKey,
+    funding_script_pubkey: &Script,
+    fund_output_value: u64,
+    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    trie_info: T,
+) -> Result<usize, Error> {
+    let mut max_adaptor_index = 0;
+    for x in trie_info {
+        let adaptor_point =
+            utils::get_adaptor_point_for_indexed_paths(&x.indexes, &x.paths, precomputed_points)?;
+        let adaptor_sig = adaptor_sigs[x.value.adaptor_index];
+        let cet = &cets[x.value.cet_index];
+        if x.value.adaptor_index > max_adaptor_index {
+            max_adaptor_index = x.value.adaptor_index;
+        }
+        dlc::verify_cet_adaptor_sig_from_point(
+            secp,
+            &adaptor_sig,
+            cet,
+            &adaptor_point,
+            &fund_pubkey,
+            &funding_script_pubkey,
+            fund_output_value,
+        )?;
+    }
+    Ok(max_adaptor_index)
 }
