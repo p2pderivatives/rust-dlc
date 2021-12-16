@@ -1,8 +1,8 @@
 //! # DigitTrie
 //! Data structure to store and lookup digit decomposition data.
 
-use super::Error;
 use crate::{LookupResult, Node};
+use dlc::Error;
 
 /// Structure to store data inserted and looked-up based on digit paths.
 #[derive(Clone)]

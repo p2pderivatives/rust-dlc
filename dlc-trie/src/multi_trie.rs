@@ -1,10 +1,10 @@
 //! Data structure and functions to create, insert, lookup and iterate a trie
 //! of trie.
 
-use super::Error;
 use crate::{LookupResult, Node};
 use combination_iterator::CombinationIterator;
 use digit_trie::{DigitTrie, DigitTrieDump, DigitTrieIter};
+use dlc::Error;
 use multi_oracle::compute_outcome_combinations;
 
 #[derive(Clone, Debug)]

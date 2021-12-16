@@ -6,8 +6,8 @@
 /// of n elements.
 pub struct CombinationIterator {
     selector: Vec<usize>,
-    nb_selected: usize,
-    nb_elements: usize,
+    pub(crate) nb_selected: usize,
+    pub(crate) nb_elements: usize,
     is_init: bool,
 }
 
