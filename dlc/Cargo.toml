@@ -14,6 +14,8 @@ secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand-std"]}
 serde = {version = "1.0", default-features = false, optional = true}
 
 [features]
+# for benchmarks
+unstable = []
 use-serde = ["serde", "bitcoin/use-serde", "secp256k1-zkp/use-serde"]
 
 [dev-dependencies]
@@ -22,4 +24,5 @@ bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 dlc-trie = {path = "../dlc-trie"}
-secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std", "serde"]}
+rayon = "1.5"
+secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std", "serde", "global-context"]}
