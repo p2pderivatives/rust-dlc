@@ -16,10 +16,14 @@
 
 extern crate bitcoin;
 extern crate dlc;
+#[cfg(feature = "parallel")]
+extern crate rayon;
 extern crate secp256k1_zkp;
 
 use bitcoin::{Script, Transaction};
 use dlc::{Error, RangePayout};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
 
 pub mod combination_iterator;
@@ -184,6 +188,7 @@ pub struct TrieIterInfo {
     value: RangeInfo,
 }
 
+#[cfg(not(feature = "parallel"))]
 fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
     secp: &Secp256k1<All>,
     cets: &[Transaction],
@@ -215,6 +220,41 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
     Ok(unsorted.into_iter().map(|(_, y)| y).collect())
 }
 
+#[cfg(feature = "parallel")]
+fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
+    secp: &Secp256k1<All>,
+    cets: &[Transaction],
+    fund_privkey: &SecretKey,
+    funding_script_pubkey: &Script,
+    fund_output_value: u64,
+    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    trie_info: T,
+) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+    let trie_info: Vec<TrieIterInfo> = trie_info.collect();
+    let mut unsorted = trie_info
+        .par_iter()
+        .map(|x| {
+            let adaptor_point = utils::get_adaptor_point_for_indexed_paths(
+                &x.indexes,
+                &x.paths,
+                precomputed_points,
+            )?;
+            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
+                &secp,
+                &cets[x.value.cet_index],
+                &adaptor_point,
+                fund_privkey,
+                &funding_script_pubkey,
+                fund_output_value,
+            )?;
+            Ok((x.value.adaptor_index, adaptor_sig))
+        })
+        .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
+    unsorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    Ok(unsorted.into_iter().map(|(_, y)| y).collect())
+}
+
+#[cfg(not(feature = "parallel"))]
 fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
     secp: &Secp256k1<All>,
     cets: &[Transaction],
@@ -244,5 +284,40 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
             fund_output_value,
         )?;
     }
-    Ok(max_adaptor_index)
+    Ok(max_adaptor_index + 1)
+}
+
+#[cfg(feature = "parallel")]
+fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
+    secp: &Secp256k1<All>,
+    cets: &[Transaction],
+    adaptor_sigs: &[EcdsaAdaptorSignature],
+    fund_pubkey: &PublicKey,
+    funding_script_pubkey: &Script,
+    fund_output_value: u64,
+    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    trie_info: T,
+) -> Result<usize, Error> {
+    let trie_info: Vec<TrieIterInfo> = trie_info.collect();
+    let max_adaptor_index = trie_info
+        .iter()
+        .max_by(|x, y| x.value.adaptor_index.cmp(&y.value.adaptor_index))
+        .unwrap();
+    trie_info.par_iter().try_for_each(|x| {
+        let adaptor_point =
+            utils::get_adaptor_point_for_indexed_paths(&x.indexes, &x.paths, precomputed_points)?;
+        let adaptor_sig = adaptor_sigs[x.value.adaptor_index];
+        let cet = &cets[x.value.cet_index];
+        dlc::verify_cet_adaptor_sig_from_point(
+            secp,
+            &adaptor_sig,
+            cet,
+            &adaptor_point,
+            &fund_pubkey,
+            &funding_script_pubkey,
+            fund_output_value,
+        )
+    })?;
+
+    Ok(max_adaptor_index.value.adaptor_index + 1)
 }

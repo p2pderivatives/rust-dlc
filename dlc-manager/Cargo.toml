@@ -21,6 +21,7 @@ serde = {version = "1.0", optional = true}
 
 [features]
 # for benchmarks
+parallel = ["dlc-trie/parallel"]
 unstable = []
 use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde"]
 
