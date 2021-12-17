@@ -151,7 +151,7 @@ macro_rules! receive_loop {
                 Ok(None) | Err(_) => return,
             };
             $sync_send.send(()).expect("Error syncing");
-        });
+        })
     };
 }
 
@@ -162,6 +162,8 @@ const BASE: u32 = 2;
 const EVENT_MATURITY: u32 = 1623133104;
 const EVENT_ID: &str = "Test";
 const COLLATERAL: u64 = 100000000;
+const MID_POINT: u64 = 5;
+const ROUNDING_MOD: u64 = 1;
 
 #[derive(Eq, PartialEq, Clone)]
 enum TestPath {
@@ -311,6 +313,21 @@ fn get_numerical_contract_descriptor(
                         extra_precision: 0,
                     },
                     PayoutPoint {
+                        event_outcome: MID_POINT,
+                        outcome_payout: 200000000,
+                        extra_precision: 0,
+                    },
+                ])
+                .unwrap(),
+            ),
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: MID_POINT,
+                        outcome_payout: 200000000,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
                         event_outcome: max_value() as u64,
                         outcome_payout: 200000000,
                         extra_precision: 0,
@@ -323,7 +340,7 @@ fn get_numerical_contract_descriptor(
         rounding_intervals: RoundingIntervals {
             intervals: vec![RoundingInterval {
                 begin_interval: 0,
-                rounding_mod: 1,
+                rounding_mod: ROUNDING_MOD,
             }],
         },
         info: NumericalEventInfo {
