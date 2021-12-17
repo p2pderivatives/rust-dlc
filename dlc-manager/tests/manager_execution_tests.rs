@@ -155,7 +155,7 @@ macro_rules! receive_loop {
     };
 }
 
-const NB_DIGITS: u32 = 3;
+const NB_DIGITS: u32 = 10;
 const MIN_SUPPORT_EXP: usize = 1;
 const MAX_ERROR_EXP: usize = 2;
 const BASE: u32 = 2;
