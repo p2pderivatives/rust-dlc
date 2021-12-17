@@ -22,7 +22,6 @@ serde = {version = "1.0", optional = true}
 [features]
 # for benchmarks
 parallel = ["dlc-trie/parallel"]
-unstable = []
 use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde"]
 
 [dev-dependencies]
@@ -30,7 +29,12 @@ bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
 bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
+criterion = "0.3"
 env_logger = "0.8.4"
 mocks = {path = "../mocks"}
 secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std", "global-context"]}
 serde_json = "1.0"
+
+[[bench]]
+harness = false
+name = "benchmarks"
