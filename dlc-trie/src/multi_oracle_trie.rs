@@ -91,8 +91,7 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
                 outcome.start + outcome.count - 1,
                 self.digit_trie.base,
                 self.nb_digits,
-            )
-            .unwrap();
+            );
             for group in groups {
                 let mut get_value = |_: Option<Vec<RangeInfo>>| -> Result<Vec<RangeInfo>, Error> {
                     let combination_iterator = CombinationIterator::new(nb_oracles, threshold);
