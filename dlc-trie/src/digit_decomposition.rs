@@ -1,16 +1,6 @@
 //! Utility functions to decompose numeric outcome values
 
-use dlc::{Error, Payout, RangePayout};
-
-/// Describes an interval that starts at `prefix || start` and terminates at `prefix || end`.
-struct PrefixInterval {
-    /// The prefix common to all numbers within the interval.
-    prefix: Vec<usize>,
-    /// The suffix of the first number in the interval.
-    start: Vec<usize>,
-    /// The suffix of the last number in the interval.
-    end: Vec<usize>,
-}
+use dlc::{Payout, RangePayout};
 
 /// Decompose a numeric value into digits in the specified base. If the decomposed
 /// value contains less than `nb_digits`, zeroes will be prepended to reach `nb_digits`
@@ -82,97 +72,28 @@ pub fn pad_range_payouts(
     outcomes
 }
 
-/// Returns the interval [start, end] as a `PrefixInterval`, which will contain
-/// the common prefix to all numbers in the interval as well as the start and end
-/// suffixes decomposed in the specified base, and zero padded to `nb_digits` if
-/// necessary.
-fn separate_prefix(
-    start: usize,
-    end: usize,
-    base: usize,
-    nb_digits: usize,
-) -> Result<PrefixInterval, Error> {
-    let start_digits = decompose_value(start, base, nb_digits);
-    let end_digits = decompose_value(end, base, nb_digits);
-    let mut prefix = Vec::new();
-
+/// Takes away the common prefix of start and end and returns it.
+#[inline]
+fn take_prefix(start: &mut Vec<usize>, end: &mut Vec<usize>) -> Vec<usize> {
+    if start == end {
+        end.clear();
+        return start.drain(0..).collect();
+    }
     let mut i = 0;
-    while i < nb_digits && start_digits[i] == end_digits[i] {
-        prefix.push(start_digits[i]);
+    while start[i] == end[i] {
         i += 1;
     }
-    let start = start_digits.into_iter().skip(prefix.len()).collect();
 
-    let end = end_digits.into_iter().skip(prefix.len()).collect();
-
-    Ok(PrefixInterval { prefix, start, end })
+    start.drain(0..i);
+    end.drain(0..i).collect()
 }
 
-/// Removes the trailing digits from `digits` that are equal to `num`.
-fn remove_tail_if_equal(mut digits: Vec<usize>, num: usize) -> Vec<usize> {
-    let mut i = digits.len();
-    while i > 1 && digits[i - 1] == num {
-        i -= 1;
+/// Remove the trailing digits of `v` if equal to `to_remove`.
+#[inline]
+fn remove_tail(v: &mut Vec<usize>, to_remove: usize) {
+    while v.len() > 1 && v[v.len() - 1] == to_remove {
+        v.pop();
     }
-    digits.truncate(i);
-    digits
-}
-
-/// Compute the groupings for the end of the interval.
-fn back_groupings(digits: Vec<usize>, base: usize) -> Vec<Vec<usize>> {
-    let digits = remove_tail_if_equal(digits, base - 1);
-    if digits.len() == 0 {
-        return vec![vec![base - 1]];
-    }
-    let mut prefix = vec![digits[0]];
-    let mut res: Vec<Vec<usize>> = Vec::new();
-    for digit in digits.iter().skip(1) {
-        let mut last = 0;
-        let digit = digit.clone();
-        while last < digit {
-            let mut new_res = prefix.clone();
-            new_res.push(last);
-            res.push(new_res);
-            last += 1;
-        }
-        prefix.push(digit);
-    }
-    res.push(digits);
-    res
-}
-
-/// Compute the groupings for the beginning of the interval.
-fn front_groupings(digits: Vec<usize>, base: usize) -> Vec<Vec<usize>> {
-    let digits = remove_tail_if_equal(digits, 0);
-    if digits.len() == 0 {
-        return vec![vec![0]];
-    }
-    let mut prefix = digits.clone();
-    let mut res: Vec<Vec<usize>> = vec![digits.clone()];
-    for digit in digits.into_iter().skip(1).rev() {
-        prefix.pop();
-        let mut last = digit + 1;
-        while last < base {
-            let mut new_res = prefix.clone();
-            new_res.push(last);
-            res.push(new_res);
-            last += 1;
-        }
-    }
-
-    res
-}
-
-/// Compute the groupings for the middle of the interval.
-fn middle_grouping(first_digit_start: usize, first_digit_end: usize) -> Vec<Vec<usize>> {
-    let mut res: Vec<Vec<usize>> = Vec::new();
-    let mut first_digit_start = first_digit_start + 1;
-    while first_digit_start < first_digit_end {
-        res.push(vec![first_digit_start]);
-        first_digit_start += 1;
-    }
-
-    res
 }
 
 /// Returns the set of decomposed prefixes that cover the range [start, end].
@@ -180,45 +101,96 @@ pub fn group_by_ignoring_digits(
     start: usize,
     end: usize,
     base: usize,
-    num_digits: usize,
-) -> Result<Vec<Vec<usize>>, Error> {
-    let prefix_range = separate_prefix(start, end, base, num_digits)?;
-    let start_is_all_zeros = prefix_range.start.iter().all(|x| *x == 0);
-    let end_is_all_max = prefix_range.end.iter().all(|x| *x == base - 1);
+    nb_digits: usize,
+) -> Vec<Vec<usize>> {
+    let mut ds = decompose_value(start as usize, base as usize, nb_digits as usize);
+    let mut de = decompose_value(end as usize, base as usize, nb_digits as usize);
 
-    if start == end || start_is_all_zeros && end_is_all_max && prefix_range.prefix.len() > 0 {
-        return Ok(vec![prefix_range.prefix]);
+    // We take the common prefix of start and end and save it, so we are guaranteed that ds[0] != de[0].
+    let prefix = take_prefix(&mut ds, &mut de);
+
+    // If start is all 0 and end is all base - 1, the prefix is enough to cover the interval.
+    if (ds.is_empty() && de.is_empty())
+        || (ds.iter().all(|x| *x == 0) && de.iter().all(|x| *x == base - 1))
+    {
+        return vec![prefix];
     }
-    let mut res: Vec<Vec<usize>> = Vec::new();
-    if prefix_range.prefix.len() == num_digits - 1 {
-        for i in prefix_range.start[prefix_range.start.len() - 1]
-            ..prefix_range.end[prefix_range.end.len() - 1] + 1
-        {
-            let mut new_res = prefix_range.prefix.clone();
-            new_res.push(i);
-            res.push(new_res)
+
+    // We can remove the trailing 0s from the start and trailing base - 1 from the end
+    // as they will be covered the interval represented by the digits in front of them.
+    remove_tail(&mut ds, 0);
+    remove_tail(&mut de, base - 1);
+
+    // We initialize the stack with the start digits.
+    let mut stack = ds.clone();
+    let mut list = Vec::new();
+
+    // This will generate all the prefixes for the interval [start, start[0]..base - 1]. E.g.
+    // if start is 1234 in base 10, this will generate for [1234, 1999].
+    while stack.len() != 1 {
+        let i = stack.len() - 1;
+        // Once the last digit of the stack is base - 1, we can save the prefix and pop a digit.
+        // E.g. if we have our stack as [1, 2, 3, 9], next is [1, 2, 4, 0], but we don't need the last 0
+        // as we can cover with [1, 2, 4].
+        if stack[i] == base - 1 {
+            list.push(stack.clone());
+            stack.pop();
+            // We can remove any base - 1 digits at this point. E.g. if we had [1, 2, 9, 9] above,
+            // now we have [1, 2, 9], next is [1, 3, 0], but similarly as above we can get rid of
+            // the trailing zero.
+            remove_tail(&mut stack, base - 1);
+            // We increment the last digit (e.g. move from [1, 2] to [1, 3] in the example above).
+            let j = stack.len() - 1;
+            stack[j] += 1;
+        } else if stack[i] == 0 {
+            // We can always get rid of trailing zeros (up to the first digit). E.g. if we have
+            // out stack as [1, 3, 0, 0], [1, 3] is enough to cover the interval
+            remove_tail(&mut stack, 0);
+        } else {
+            // We save the stack an increment the last digit. E.g. if we had [1, 2, 3, 4], we save it
+            // and move to [1, 2, 3, 5].
+            list.push(stack.clone());
+            stack[i] += 1;
         }
-    } else {
-        let mut front = front_groupings(prefix_range.start.clone(), base);
-        let mut middle = middle_grouping(prefix_range.start[0], prefix_range.end[0]);
-        let mut back = back_groupings(prefix_range.end.clone(), base);
-        res.append(&mut front);
-        res.append(&mut middle);
-        res.append(&mut back);
-        res = res
-            .into_iter()
-            .map(|x| {
-                prefix_range
-                    .prefix
-                    .iter()
-                    .cloned()
-                    .chain(x.into_iter())
-                    .collect()
-            })
-            .collect();
+        assert!(stack.iter().all(|x| x < &base));
     }
 
-    Ok(res)
+    // All the single digits in ]start[0]; end[0][ are sufficient to cover their respective intervals.
+    // E.g. with start = 1234 and end = 4567, 2___ and 3___ are enough to cover between 2000 and 3999.
+    while stack[0] != de[0] {
+        list.push(stack.clone());
+        stack[0] += 1;
+    }
+
+    // We take care of the interval [end[0]..0; end]. E.g. if end is 4567 that's [4000; 4567].
+    while stack != de {
+        let i = stack.len() - 1;
+        // If stack has common prefix with end, we need to push a zero. E.g. if stack is [4], we
+        // want then have stack as [4, 0], so we will cover [4000; 4499] with (40, 41, 42, 43).
+        if stack[i] == de[i] {
+            stack.push(0);
+        } else {
+            // We save the stack and increment the last digit. E.g. if we have [4, 0], we move to [4, 1].
+            list.push(stack.clone());
+            stack[i] += 1;
+        }
+    }
+
+    // We need to include end (previous condition exit when stack is equal to end).
+    list.push(de);
+
+    // We add the common prefix of start and end if there was one and return our list of prefixes.
+    if !prefix.is_empty() {
+        list.into_iter()
+            .map(|mut x| {
+                let mut p = prefix.clone();
+                p.append(&mut x);
+                p
+            })
+            .collect()
+    } else {
+        list
+    }
 }
 
 #[cfg(test)]
@@ -413,24 +385,6 @@ mod tests {
                     vec![2, 9],
                     vec![3],
                     vec![4],
-                ],
-            },
-            GroupingTestCase {
-                start_index: 0,
-                end_index: 99,
-                base: 10,
-                nb_digits: 2,
-                expected: vec![
-                    vec![0],
-                    vec![1],
-                    vec![2],
-                    vec![3],
-                    vec![4],
-                    vec![5],
-                    vec![6],
-                    vec![7],
-                    vec![8],
-                    vec![9],
                 ],
             },
             GroupingTestCase {
@@ -670,7 +624,6 @@ mod tests {
                     test_case.base,
                     test_case.nb_digits
                 )
-                .unwrap()
             );
         }
     }

@@ -64,8 +64,7 @@ impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDif
                 outcome.start + outcome.count - 1,
                 self.base,
                 self.nb_digits,
-            )
-            .unwrap();
+            );
             for group in groups {
                 let mut get_value = |paths: &Vec<Vec<usize>>,
                                      oracle_indexes: &Vec<usize>|
