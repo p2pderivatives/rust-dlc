@@ -8,6 +8,11 @@ name = "dlc-manager"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-manager"
 version = "0.1.0"
 
+[features]
+fuzztarget = ["rand_chacha", "bitcoin/fuzztarget", "lightning/fuzztarget"]
+parallel = ["dlc-trie/parallel"]
+use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde"]
+
 [dependencies]
 async-trait = "0.1.50"
 bitcoin = {version = "0.27"}
@@ -16,13 +21,9 @@ dlc-messages = {version = "0.1.0", path = "../dlc-messages"}
 dlc-trie = {version = "0.1.0", path = "../dlc-trie"}
 lightning = {version = "0.0.103"}
 log = "0.4.14"
+rand_chacha = {version = "0.3.1", optional = true}
 secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
 serde = {version = "1.0", optional = true}
-
-[features]
-# for benchmarks
-parallel = ["dlc-trie/parallel"]
-use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde"]
 
 [dev-dependencies]
 bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}

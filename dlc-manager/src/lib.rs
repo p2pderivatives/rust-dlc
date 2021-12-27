@@ -22,6 +22,8 @@ extern crate dlc_messages;
 extern crate dlc_trie;
 extern crate lightning;
 extern crate log;
+#[cfg(feature = "fuzztarget")]
+extern crate rand_chacha;
 extern crate secp256k1_zkp;
 
 pub mod contract;
