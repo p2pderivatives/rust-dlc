@@ -8,6 +8,8 @@ use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
 use std::convert::TryInto;
 use std::io::Read;
 
+const MAX_VEC_SIZE: u64 = 1000000;
+
 /// Taken from rust-lightning: https://github.com/rust-bitcoin/rust-lightning/blob/v0.0.101/lightning/src/util/ser.rs#L295
 ///
 /// Lightning TLV uses a custom variable-length integer called BigSize. It is similar to Bitcoin's
@@ -86,6 +88,11 @@ pub fn write_string<W: Writer>(input: &str, writer: &mut W) -> Result<(), ::std:
 
 pub fn read_string<R: ::std::io::Read>(reader: &mut R) -> Result<String, DecodeError> {
     let len: BigSize = Readable::read(reader)?;
+
+    if len.0 > MAX_VEC_SIZE {
+        return Err(DecodeError::InvalidValue);
+    }
+
     let mut buf = Vec::with_capacity(len.0 as usize);
 
     for _ in 0..len.0 {
@@ -117,6 +124,9 @@ pub fn read_strings<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<Vec<String>, lightning::ln::msgs::DecodeError> {
     let len: BigSize = lightning::util::ser::Readable::read(reader)?;
+    if len.0 > MAX_VEC_SIZE {
+        return Err(DecodeError::InvalidValue);
+    }
     let mut res = Vec::<String>::new();
     for _ in 0..len.0 {
         res.push(read_string(reader)?);
@@ -298,6 +308,9 @@ where
     F: Fn(&mut R) -> Result<T, DecodeError>,
 {
     let len: BigSize = Readable::read(reader)?;
+    if len.0 > MAX_VEC_SIZE {
+        return Err(DecodeError::InvalidValue);
+    }
     let mut res = Vec::<T>::new();
     for _ in 0..len.0 {
         res.push(cb(reader)?);
