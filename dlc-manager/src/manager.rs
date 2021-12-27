@@ -9,6 +9,7 @@ use crate::contract::{
 };
 use crate::conversion_utils::get_tx_input_infos;
 use crate::error::Error;
+use crate::utils::get_new_serial_id;
 use crate::ContractId;
 use bitcoin::{
     consensus::{Decodable, Encodable},
@@ -21,7 +22,6 @@ use dlc_messages::{
     SignDlc, WitnessElement,
 };
 use log::{error, warn};
-use secp256k1_zkp::rand::{thread_rng, RngCore};
 use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
@@ -106,17 +106,15 @@ where
         own_collateral: u64,
         fee_rate: u64,
     ) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error> {
-        let mut rng = thread_rng();
-
         let funding_privkey = self.wallet.get_new_secret_key()?;
         let funding_pubkey = PublicKey::from_secret_key(&self.secp, &funding_privkey);
 
         let payout_addr = self.wallet.get_new_address()?;
         let payout_spk = payout_addr.script_pubkey();
-        let payout_serial_id = rng.next_u64();
+        let payout_serial_id = get_new_serial_id();
         let change_addr = self.wallet.get_new_address()?;
         let change_spk = change_addr.script_pubkey();
-        let change_serial_id = rng.next_u64();
+        let change_serial_id = get_new_serial_id();
 
         let appr_required_amount = own_collateral + crate::utils::get_half_common_fee(fee_rate);
         let utxos = self
@@ -135,7 +133,7 @@ where
             // TODO(tibo): this assumes P2WPKH with low R
             let max_witness_len = 107;
             let funding_input = FundingInput {
-                input_serial_id: rng.next_u64(),
+                input_serial_id: get_new_serial_id(),
                 prev_tx: writer,
                 prev_tx_vout,
                 sequence,
@@ -202,7 +200,7 @@ where
         let (party_params, _, funding_inputs_info) =
             self.get_party_params(contract.offer_collateral, contract.fee_rate)?;
 
-        let fund_output_serial_id = thread_rng().next_u64();
+        let fund_output_serial_id = get_new_serial_id();
         let contract_info = contract
             .contract_infos
             .iter()

@@ -21,6 +21,10 @@ For example within the `dlc-manager` folder:
 cargo test --ignored two_of_five_oracle_numerical_test
 ```
 
+## Running fuzz tests
+
+Some fuzz testing are implemented, check [the documentation](../fuzz/Readme.md) for details.
+
 ## Generating code coverage report
 
 Start by building the docker image using:
