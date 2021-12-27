@@ -51,7 +51,7 @@ macro_rules! convertible_enum {
 
             fn try_from(v: u8) -> Result<Self, Self::Error> {
                 match v {
-                    $(x if x == $name::$vname.into() => Ok($name::$vname),)*
+                    $(x if x == u8::from($name::$vname) => Ok($name::$vname),)*
                     _ => Err(Error::StorageError("Uknown prefix".to_string())),
                 }
             }
