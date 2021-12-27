@@ -51,4 +51,4 @@ The [sled-storage-provider](./sled-storage-provider) crate implements the storag
 
 ### Testing related crates
 
-The [bitcoin-test-utils](./bitcoin-test-utils) and [mocks](./mocks) crates are used for testing purpose and are not intended to be used externally.
+The [bitcoin-test-utils](./bitcoin-test-utils), [fuzz](./fuzz) and [mocks](./mocks) crates are used for testing purpose and are not intended to be used externally.
