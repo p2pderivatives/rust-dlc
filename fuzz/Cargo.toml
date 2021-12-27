@@ -1,0 +1,16 @@
+[package]
+edition = "2021"
+name = "dlc-fuzz"
+publish = false
+version = "0.1.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+dlc-messages = {path = "../dlc-messages"}
+honggfuzz = "0.5"
+lightning = {version = "0.0.103", features = ["fuzztarget"]}
+
+[workspace]
+members = ["."]
