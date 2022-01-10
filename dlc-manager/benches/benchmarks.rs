@@ -175,15 +175,13 @@ fn create_contract_info() -> ContractInfo {
 }
 
 fn create_txinputinfo_vec() -> Vec<TxInputInfo> {
-    let mut inputs = Vec::new();
     let tx_input_info = TxInputInfo {
         outpoint: OutPoint::default(),
         redeem_script: Script::new(),
         max_witness_len: 108,
         serial_id: 2,
     };
-    inputs.push(tx_input_info);
-    inputs
+    vec![tx_input_info]
 }
 
 fn create_transactions(payouts: &[Payout]) -> DlcTransactions {
