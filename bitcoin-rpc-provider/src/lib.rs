@@ -6,13 +6,15 @@ extern crate bitcoincore_rpc_json;
 extern crate dlc_manager;
 extern crate rust_bitcoin_coin_selection;
 
+use bitcoin::consensus::encode::Error as EncodeError;
 use bitcoin::secp256k1::rand::thread_rng;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{
-    consensus::Decodable, network::constants::Network, PrivateKey, Script, Transaction, Txid,
+    consensus::Decodable, network::constants::Network, Amount, PrivateKey, Script, Transaction,
+    Txid,
 };
 use bitcoin::{Address, OutPoint, TxOut};
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+use bitcoincore_rpc::{json, Auth, Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
 use dlc_manager::{Blockchain, Utxo, Wallet};
@@ -39,6 +41,12 @@ impl From<bitcoincore_rpc::Error> for Error {
 impl From<Error> for ManagerError {
     fn from(e: Error) -> ManagerError {
         ManagerError::WalletError(Box::new(e))
+    }
+}
+
+impl From<EncodeError> for Error {
+    fn from(_e: EncodeError) -> Error {
+        Error::BitcoinError
     }
 }
 
@@ -101,6 +109,10 @@ fn rpc_err_to_manager_err(e: bitcoincore_rpc::Error) -> ManagerError {
     Error::RpcError(e).into()
 }
 
+fn enc_err_to_manager_err(_e: EncodeError) -> ManagerError {
+    Error::BitcoinError.into()
+}
+
 impl Wallet for BitcoinCoreProvider {
     fn get_new_address(&self) -> Result<Address, ManagerError> {
         self.client
@@ -132,15 +144,42 @@ impl Wallet for BitcoinCoreProvider {
         };
         let address =
             Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
-        self.get_secret_key_for_address(&address)
-    }
 
-    fn get_secret_key_for_address(&self, address: &Address) -> Result<SecretKey, ManagerError> {
         let pk = self
             .client
-            .dump_private_key(address)
+            .dump_private_key(&address)
             .map_err(rpc_err_to_manager_err)?;
         Ok(pk.key)
+    }
+
+    fn sign_tx_input(
+        &self,
+        tx: &mut Transaction,
+        input_index: usize,
+        tx_out: &TxOut,
+        redeem_script: Option<Script>,
+    ) -> Result<(), ManagerError> {
+        let outpoint = &tx.input[input_index].previous_output;
+
+        let input = json::SignRawTransactionInput {
+            txid: outpoint.txid,
+            vout: outpoint.vout,
+            script_pub_key: tx_out.script_pubkey.clone(),
+            redeem_script,
+            amount: Some(Amount::from_sat(tx_out.value)),
+        };
+
+        let sign_result = self
+            .client
+            .sign_raw_transaction_with_wallet(&*tx, Some(&[input]), None)
+            .map_err(rpc_err_to_manager_err)?;
+        let signed_tx =
+            Transaction::consensus_decode(&*sign_result.hex).map_err(enc_err_to_manager_err)?;
+
+        tx.input[input_index].script_sig = signed_tx.input[input_index].script_sig.clone();
+        tx.input[input_index].witness = signed_tx.input[input_index].witness.clone();
+
+        Ok(())
     }
 
     fn get_utxos_for_amount(

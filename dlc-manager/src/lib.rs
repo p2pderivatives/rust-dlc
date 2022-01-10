@@ -71,8 +71,16 @@ pub trait Wallet {
     fn get_new_secret_key(&self) -> Result<SecretKey, Error>;
     /// Get the secret key associated with the provided public key.
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, Error>;
-    /// Get the secret key associated with the provided address.
-    fn get_secret_key_for_address(&self, address: &Address) -> Result<SecretKey, Error>;
+
+    /// Signs a transaction input
+    fn sign_tx_input(
+        &self,
+        tx: &mut Transaction,
+        input_index: usize,
+        tx_out: &TxOut,
+        redeem_script: Option<Script>,
+    ) -> Result<(), Error>;
+
     /// Get a set of UTXOs to fund the given amount.
     fn get_utxos_for_amount(
         &self,
