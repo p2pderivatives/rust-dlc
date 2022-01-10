@@ -412,7 +412,7 @@ where
         let fund_output_value = dlc_transactions.get_fund_output().value;
 
         let DlcTransactions {
-            fund,
+            mut fund,
             mut cets,
             refund,
             funding_script_pubkey,
@@ -518,12 +518,11 @@ where
             .collect();
         input_serial_ids.sort();
 
-        let funding_signatures: Vec<_> = offered_contract
+        // Vec<Witness>
+        let witnesses: Vec<Vec<Vec<u8>>> = offered_contract
             .funding_inputs_info
             .iter()
             .map(|x| {
-                let address = x.address.as_ref().ok_or(Error::InvalidState)?;
-                let sk = self.wallet.get_secret_key_for_address(&address)?;
                 let input_index = input_serial_ids
                     .iter()
                     .position(|y| y == &x.funding_input.input_serial_id)
@@ -541,14 +540,17 @@ where
                         "Previous tx output not found at index {}",
                         vout
                     )))?;
-                let witness = dlc::util::get_witness_for_p2wpkh_input(
-                    &self.secp,
-                    &sk,
-                    &fund,
-                    input_index,
-                    bitcoin::SigHashType::All,
-                    tx_out.value,
-                );
+
+                self.wallet
+                    .sign_tx_input(&mut fund, input_index, tx_out, None)?;
+
+                Ok(fund.input[input_index].witness.clone())
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let funding_signatures: Vec<FundingSignature> = witnesses
+            .into_iter()
+            .map(|witness| {
                 let witness_elements = witness
                     .into_iter()
                     .map(|z| WitnessElement { witness: z })
@@ -687,11 +689,6 @@ where
                 .iter()
                 .position(|x| x == &funding_input_info.funding_input.input_serial_id)
                 .ok_or(Error::InvalidState)?;
-            let address = funding_input_info
-                .address
-                .as_ref()
-                .ok_or(Error::InvalidState)?;
-            let sk = self.wallet.get_secret_key_for_address(&address)?;
             let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx).or(
                 Err(Error::InvalidParameters(
                     "Could not decode funding input previous tx parameter".to_string(),
@@ -705,14 +702,9 @@ where
                     "Previous tx output not found at index {}",
                     vout
                 )))?;
-            dlc::util::sign_p2wpkh_input(
-                &self.secp,
-                &sk,
-                &mut fund_tx,
-                input_index,
-                bitcoin::SigHashType::All,
-                tx_out.value,
-            );
+
+            self.wallet
+                .sign_tx_input(&mut fund_tx, input_index, tx_out, None)?;
         }
 
         let signed_contract = SignedContract {
