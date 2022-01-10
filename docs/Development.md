@@ -9,7 +9,7 @@ In the main directory, you can run `cargo test --all-features` to run all the un
 
 ## Running integration tests (requires docker)
 
-In the `dlc` or `dlc-manager` directory, run `../script/start_node.sh` to start a bitcoind instance.
+In the `dlc` or `dlc-manager` directory, run `../scripts/start_node.sh` to start a bitcoind instance.
 
 Then run
 ```
