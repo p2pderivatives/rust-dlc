@@ -204,7 +204,9 @@ impl<'a, T> Iterator for DigitTrieIter<'a, T> {
         let (cur_index, mut cur_child) = match popped {
             None => return None,
             Some((cur_index, cur_child)) => match cur_index {
-                None => return None,
+                None => {
+                    return self.next();
+                }
                 Some(cur_index) => (cur_index, cur_child),
             },
         };
@@ -728,6 +730,36 @@ mod tests {
             }
 
             assert_eq!(test_case.len(), count);
+        }
+    }
+
+    #[test]
+    fn digit_trie_iterate_gets_all_inserted_values() {
+        let mut digit_trie = DigitTrie::new(2);
+        let paths = vec![vec![0, 0], vec![0, 1], vec![1, 0, 0], vec![0, 1, 0]];
+        let mut counter = 0;
+        let mut get_value = |_: Option<usize>| -> Result<usize, Error> {
+            let res = counter;
+            counter += 1;
+            Ok(res)
+        };
+
+        for path in &paths {
+            digit_trie.insert(path, &mut get_value).unwrap();
+        }
+
+        let iter = DigitTrieIter::new(&digit_trie);
+
+        let mut unordered = iter.map(|x| *x.value).collect::<Vec<_>>();
+
+        assert_eq!(paths.len(), unordered.len());
+
+        unordered.sort();
+
+        let mut prev_index = 0;
+        for i in unordered.iter().skip(1) {
+            assert_eq!(*i, prev_index + 1);
+            prev_index += 1;
         }
     }
 }

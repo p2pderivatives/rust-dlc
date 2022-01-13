@@ -8,3 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `parallel` feature for computing anticipation points in parallel.
+
+### Fixed
+- iteration of DigitTrie sometimes omitting values.
