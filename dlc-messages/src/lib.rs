@@ -26,6 +26,7 @@ extern crate serde;
 #[cfg(test)]
 extern crate serde_json;
 
+pub mod channel;
 pub mod contract_msgs;
 pub mod message_handler;
 pub mod oracle_msgs;
@@ -38,6 +39,11 @@ use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
 use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
+use channel::{
+    AcceptChannel, CollaborativeCloseOffer, OfferChannel, RenewChannelAccept, RenewChannelConfirm,
+    RenewChannelFinalize, RenewChannelOffer, SettleChannelAccept, SettleChannelConfirm,
+    SettleChannelFinalize, SettleChannelOffer, SignChannel,
+};
 use contract_msgs::ContractInfo;
 use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
@@ -48,14 +54,38 @@ use secp256k1_zkp::{EcdsaAdaptorSignature, Signing};
 use secp256k1_zkp::{PublicKey, Signature};
 use segmentation::{SegmentChunk, SegmentStart};
 
-/// The type prefix for an [`OfferDlc`] message.
-pub const OFFER_TYPE: u16 = 42778;
+macro_rules! impl_type {
+    ($const_name: ident, $type_name: ident, $type_val: expr) => {
+        /// The type prefix for an [`$type_name`] message.
+        pub const $const_name: u16 = $type_val;
 
-/// The type prefix for an [`AcceptDlc`] message.
-pub const ACCEPT_TYPE: u16 = 42780;
+        impl Type for $type_name {
+            fn type_id(&self) -> u16 {
+                $const_name
+            }
+        }
+    };
+}
 
-/// The type prefix for a [`SignDlc`] message.
-pub const SIGN_TYPE: u16 = 42782;
+impl_type!(OFFER_TYPE, OfferDlc, 42778);
+impl_type!(ACCEPT_TYPE, AcceptDlc, 42780);
+impl_type!(SIGN_TYPE, SignDlc, 42782);
+impl_type!(OFFER_CHANNEL_TYPE, OfferChannel, 43000);
+impl_type!(ACCEPT_CHANNEL_TYPE, AcceptChannel, 43002);
+impl_type!(SIGN_CHANNEL_TYPE, SignChannel, 43004);
+impl_type!(SETTLE_CHANNEL_OFFER_TYPE, SettleChannelOffer, 43006);
+impl_type!(SETTLE_CHANNEL_ACCEPT_TYPE, SettleChannelAccept, 43008);
+impl_type!(SETTLE_CHANNEL_CONFIRM_TYPE, SettleChannelConfirm, 43010);
+impl_type!(SETTLE_CHANNEL_FINALIZE_TYPE, SettleChannelFinalize, 43012);
+impl_type!(RENEW_CHANNEL_OFFER_TYPE, RenewChannelOffer, 43014);
+impl_type!(RENEW_CHANNEL_ACCEPT_TYPE, RenewChannelAccept, 43016);
+impl_type!(RENEW_CHANNEL_CONFIRM_TYPE, RenewChannelConfirm, 43018);
+impl_type!(RENEW_CHANNEL_FINALIZE_TYPE, RenewChannelFinalize, 43020);
+impl_type!(
+    COLLABORATIVE_CLOSE_OFFER_TYPE,
+    CollaborativeCloseOffer,
+    43022
+);
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
@@ -217,7 +247,7 @@ pub enum NegotiationFields {
     Disjoint(DisjointNegotiationFields),
 }
 
-impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;);
+impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;;);
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
@@ -294,12 +324,6 @@ pub struct OfferDlc {
     pub cet_locktime: u32,
     /// The lock time for the refund transactions.
     pub refund_locktime: u32,
-}
-
-impl Type for OfferDlc {
-    fn type_id(&self) -> u16 {
-        OFFER_TYPE
-    }
 }
 
 impl OfferDlc {
@@ -420,12 +444,6 @@ impl_dlc_writeable!(AcceptDlc, {
     (negotiation_fields, option)
 });
 
-impl Type for AcceptDlc {
-    fn type_id(&self) -> u16 {
-        ACCEPT_TYPE
-    }
-}
-
 /// Contains all the required signatures for the DLC transactions from the offering
 /// party.
 #[derive(Clone, Debug, PartialEq)]
@@ -459,39 +477,64 @@ impl_dlc_writeable!(SignDlc, {
     (funding_signatures, writeable)
 });
 
-impl Type for SignDlc {
-    fn type_id(&self) -> u16 {
-        SIGN_TYPE
-    }
-}
-
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum Message {
     Offer(OfferDlc),
     Accept(AcceptDlc),
     Sign(SignDlc),
+    OfferChannel(OfferChannel),
+    AcceptChannel(AcceptChannel),
+    SignChannel(SignChannel),
+    SettleOffer(SettleChannelOffer),
+    SettleAccept(SettleChannelAccept),
+    SettleConfirm(SettleChannelConfirm),
+    SettleFinalize(SettleChannelFinalize),
+    RenewChannelOffer(RenewChannelOffer),
+    RenewChannelAccept(RenewChannelAccept),
+    RenewChannelConfirm(RenewChannelConfirm),
+    RenewChannelFinalize(RenewChannelFinalize),
+    CollaborativeCloseOffer(CollaborativeCloseOffer),
 }
 
-impl Type for Message {
-    fn type_id(&self) -> u16 {
-        match self {
-            Message::Offer(o) => o.type_id(),
-            Message::Accept(a) => a.type_id(),
-            Message::Sign(s) => s.type_id(),
-        }
-    }
+macro_rules! impl_type_writeable_for_enum {
+    ($type_name: ident, {$($variant_name: ident),*}) => {
+       impl Type for $type_name {
+           fn type_id(&self) -> u16 {
+               match self {
+                   $($type_name::$variant_name(v) => v.type_id(),)*
+               }
+           }
+       }
+
+       impl Writeable for $type_name {
+            fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
+                match self {
+                   $($type_name::$variant_name(v) => v.write(writer),)*
+                }
+            }
+       }
+    };
 }
 
-impl Writeable for Message {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        match self {
-            Message::Offer(o) => o.write(writer),
-            Message::Accept(a) => a.write(writer),
-            Message::Sign(s) => s.write(writer),
-        }
-    }
-}
+impl_type_writeable_for_enum!(Message,
+{
+    Offer,
+    Accept,
+    Sign,
+    OfferChannel,
+    AcceptChannel,
+    SignChannel,
+    SettleOffer,
+    SettleAccept,
+    SettleConfirm,
+    SettleFinalize,
+    RenewChannelOffer,
+    RenewChannelAccept,
+    RenewChannelConfirm,
+    RenewChannelFinalize,
+    CollaborativeCloseOffer
+});
 
 #[derive(Debug, Clone)]
 /// Wrapper for DLC related message and segmentation related messages.
@@ -515,25 +558,7 @@ impl Display for WireMessage {
     }
 }
 
-impl Type for WireMessage {
-    fn type_id(&self) -> u16 {
-        match self {
-            WireMessage::Message(m) => m.type_id(),
-            WireMessage::SegmentStart(s) => s.type_id(),
-            WireMessage::SegmentChunk(s) => s.type_id(),
-        }
-    }
-}
-
-impl Writeable for WireMessage {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        match self {
-            WireMessage::Message(m) => m.write(writer),
-            WireMessage::SegmentStart(s) => s.write(writer),
-            WireMessage::SegmentChunk(s) => s.write(writer),
-        }
-    }
-}
+impl_type_writeable_for_enum!(WireMessage, { Message, SegmentStart, SegmentChunk });
 
 #[cfg(test)]
 mod tests {

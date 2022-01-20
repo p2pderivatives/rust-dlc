@@ -14,6 +14,7 @@
 
 extern crate bitcoin;
 extern crate core;
+extern crate miniscript;
 extern crate secp256k1_sys;
 extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
@@ -31,6 +32,7 @@ use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verific
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub mod channel;
 pub mod secp_utils;
 pub mod util;
 
@@ -58,13 +60,6 @@ const TX_INPUT_BASE_WEIGHT: usize = 164;
 /// The witness size of a P2WPKH input
 /// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>
 pub const P2WPKH_WITNESS_SIZE: usize = 107;
-
-// Setting the nSequence for every input of a transaction to this value disables
-// both RBF and nLockTime usage.
-const DISABLE_LOCKTIME: u32 = 0xffffffff;
-// Setting the nSequence for every input of a transaction to this value disables
-// RBF but enables nLockTime usage.
-const ENABLE_LOCKTIME: u32 = 0xfffffffe;
 
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
@@ -134,7 +129,7 @@ impl DlcTransactions {
 }
 
 /// Contains info about a utxo used for funding a DLC contract
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
@@ -194,7 +189,7 @@ impl fmt::Display for Error {
 /// Contains the parameters required for creating DLC transactions for a single
 /// party. Specifically these are the common fields between Offer and Accept
 /// messages.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
@@ -225,9 +220,10 @@ impl PartyParams {
     /// The change output value already accounts for the required fees.
     /// If input amount (sum of all input values) is lower than the sum of the collateral
     /// plus the required fees, an error is returned.
-    pub fn get_change_output_and_fees(
+    pub(crate) fn get_change_output_and_fees(
         &self,
         fee_rate_per_vb: u64,
+        extra_fee: u64,
     ) -> Result<(TxOut, u64, u64), Error> {
         let inputs_weight: usize = self
             .inputs
@@ -260,7 +256,7 @@ impl PartyParams {
         let output_spk_weight = self.payout_script_pubkey.len() * 4;
         let total_cet_weight = this_party_cet_base_weight + output_spk_weight;
         let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb);
-        let required_input_funds = self.collateral + fund_fee + cet_or_refund_fee;
+        let required_input_funds = self.collateral + fund_fee + cet_or_refund_fee + extra_fee;
         if self.input_amount < required_input_funds {
             return Err(Error::InvalidArgument);
         }
@@ -303,29 +299,62 @@ pub fn create_dlc_transactions(
     cet_lock_time: u32,
     fund_output_serial_id: u64,
 ) -> Result<DlcTransactions, Error> {
+    let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
+        offer_params,
+        accept_params,
+        fee_rate_per_vb,
+        fund_lock_time,
+        fund_output_serial_id,
+        0,
+    )?;
+    let fund_outpoint = OutPoint {
+        txid: fund_tx.txid(),
+        vout: util::get_output_for_script_pubkey(&fund_tx, &funding_script_pubkey.to_v0_p2wsh())
+            .expect("to find the funding script pubkey")
+            .0 as u32,
+    };
+    let (cets, refund_tx) = create_cets_and_refund_tx(
+        offer_params,
+        accept_params,
+        fund_outpoint,
+        payouts,
+        refund_lock_time,
+        cet_lock_time,
+        None,
+    )?;
+
+    Ok(DlcTransactions {
+        fund: fund_tx,
+        cets,
+        refund: refund_tx,
+        funding_script_pubkey,
+    })
+}
+
+pub(crate) fn create_fund_transaction_with_fees(
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    fee_rate_per_vb: u64,
+    fund_lock_time: u32,
+    fund_output_serial_id: u64,
+    extra_fee: u64,
+) -> Result<(Transaction, Script), Error> {
     let total_collateral = offer_params.collateral + accept_params.collateral;
 
-    let has_proper_outcomes = payouts
-        .iter()
-        .all(|o| o.offer + o.accept == total_collateral);
-
-    if !has_proper_outcomes {
-        return Err(Error::InvalidArgument);
-    }
-
     let (offer_change_output, offer_fund_fee, offer_cet_fee) =
-        offer_params.get_change_output_and_fees(fee_rate_per_vb)?;
+        offer_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
     let (accept_change_output, accept_fund_fee, accept_cet_fee) =
-        accept_params.get_change_output_and_fees(fee_rate_per_vb)?;
+        accept_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
 
     let fund_output_value = offer_params.input_amount + accept_params.input_amount
         - offer_change_output.value
         - accept_change_output.value
         - offer_fund_fee
-        - accept_fund_fee;
+        - accept_fund_fee
+        - extra_fee;
 
     assert_eq!(
-        total_collateral + offer_cet_fee + accept_cet_fee,
+        total_collateral + offer_cet_fee + accept_cet_fee + extra_fee,
         fund_output_value
     );
 
@@ -336,17 +365,10 @@ pub fn create_dlc_transactions(
             + accept_change_output.value
             + offer_fund_fee
             + accept_fund_fee
+            + extra_fee
     );
 
-    fn get_sequence(lock_time: u32) -> u32 {
-        if lock_time == 0 {
-            DISABLE_LOCKTIME
-        } else {
-            ENABLE_LOCKTIME
-        }
-    }
-
-    let fund_sequence = get_sequence(fund_lock_time);
+    let fund_sequence = util::get_sequence(fund_lock_time);
     let (offer_tx_ins, offer_inputs_serial_ids) =
         offer_params.get_unsigned_tx_inputs_and_serial_ids(fund_sequence);
     let (accept_tx_ins, accept_inputs_serial_ids) =
@@ -370,23 +392,37 @@ pub fn create_dlc_transactions(
         fund_lock_time,
     );
 
-    let (fund_vout, _) =
-        util::get_output_for_script_pubkey(&fund_tx, &funding_script_pubkey.to_v0_p2wsh()).unwrap();
+    Ok((fund_tx, funding_script_pubkey))
+}
 
-    let fund_outpoint = OutPoint {
-        txid: fund_tx.txid(),
-        vout: fund_vout as u32,
-    };
+pub(crate) fn create_cets_and_refund_tx(
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    prev_outpoint: OutPoint,
+    payouts: &[Payout],
+    refund_lock_time: u32,
+    cet_lock_time: u32,
+    cet_nsequence: Option<u32>,
+) -> Result<(Vec<Transaction>, Transaction), Error> {
+    let total_collateral = offer_params.collateral + accept_params.collateral;
 
-    let fund_tx_in = TxIn {
-        previous_output: fund_outpoint,
+    let has_proper_outcomes = payouts
+        .iter()
+        .all(|o| o.offer + o.accept == total_collateral);
+
+    if !has_proper_outcomes {
+        return Err(Error::InvalidArgument);
+    }
+
+    let cet_input = TxIn {
+        previous_output: prev_outpoint,
         witness: Vec::new(),
         script_sig: Script::new(),
-        sequence: get_sequence(cet_lock_time),
+        sequence: cet_nsequence.unwrap_or_else(|| util::get_sequence(cet_lock_time)),
     };
 
     let cets = create_cets(
-        &fund_tx_in,
+        &cet_input,
         &offer_params.payout_script_pubkey,
         offer_params.payout_serial_id,
         &accept_params.payout_script_pubkey,
@@ -405,19 +441,21 @@ pub fn create_dlc_transactions(
         script_pubkey: accept_params.payout_script_pubkey.clone(),
     };
 
+    let refund_input = TxIn {
+        previous_output: prev_outpoint,
+        witness: Vec::new(),
+        script_sig: Script::new(),
+        sequence: util::ENABLE_LOCKTIME,
+    };
+
     let refund_tx = create_refund_transaction(
         offer_refund_output,
         accept_refund_ouput,
-        fund_tx_in,
+        refund_input,
         refund_lock_time,
     );
 
-    Ok(DlcTransactions {
-        fund: fund_tx,
-        cets,
-        refund: refund_tx,
-        funding_script_pubkey,
-    })
+    Ok((cets, refund_tx))
 }
 
 /// Create a contract execution transaction
@@ -718,7 +756,7 @@ pub fn sign_cet<C: secp256k1_zkp::Signing>(
     funding_sk: &SecretKey,
     other_pk: &PublicKey,
     funding_script_pubkey: &Script,
-    fund_output: u64,
+    fund_output_value: u64,
 ) -> Result<(), Error> {
     let adaptor_secret = signatures_to_secret(oracle_signatures)?;
     let adapted_sig = adaptor_signature.decrypt(&adaptor_secret)?;
@@ -730,7 +768,7 @@ pub fn sign_cet<C: secp256k1_zkp::Signing>(
         other_pk,
         funding_sk,
         funding_script_pubkey,
-        fund_output,
+        fund_output_value,
         0,
     );
 
@@ -1129,7 +1167,8 @@ mod tests {
 
         // Act
 
-        let (change_out, fund_fee, cet_fee) = party_params.get_change_output_and_fees(4).unwrap();
+        let (change_out, fund_fee, cet_fee) =
+            party_params.get_change_output_and_fees(4, 0).unwrap();
 
         // Assert
         assert!(change_out.value > 0 && fund_fee > 0 && cet_fee > 0);
@@ -1141,7 +1180,7 @@ mod tests {
         let (party_params, _) = get_party_params(100000, 100000, None);
 
         // Act
-        let res = party_params.get_change_output_and_fees(4);
+        let res = party_params.get_change_output_and_fees(4, 0);
 
         // Assert
         assert!(res.is_err());

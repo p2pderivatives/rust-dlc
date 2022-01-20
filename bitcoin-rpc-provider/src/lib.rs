@@ -291,4 +291,18 @@ impl Blockchain for BitcoinCoreProvider {
 
         Ok(network)
     }
+
+    fn get_blockchain_height(&self) -> Result<u64, ManagerError> {
+        self.client
+            .get_block_count()
+            .map_err(rpc_err_to_manager_err)
+    }
+
+    fn get_block_at_height(&self, height: u64) -> Result<bitcoin::Block, ManagerError> {
+        let hash = self
+            .client
+            .get_block_hash(height)
+            .map_err(rpc_err_to_manager_err)?;
+        self.client.get_block(&hash).map_err(rpc_err_to_manager_err)
+    }
 }

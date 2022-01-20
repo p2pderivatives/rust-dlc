@@ -13,23 +13,23 @@ use crate::{
         signed_contract::SignedContract, FundingInputInfo,
     },
     error::Error,
-    Signer,
+    ChannelId, Signer,
 };
 
 /// Creates an [`AcceptedContract`] and produces
 /// the accepting party's cet adaptor signatures.
 pub fn accept_contract(
     secp: &Secp256k1<All>,
-    offered_contract: OfferedContract,
-    accept_params: PartyParams,
-    funding_inputs: Vec<FundingInputInfo>,
+    offered_contract: &OfferedContract,
+    accept_params: &PartyParams,
+    funding_inputs: &[FundingInputInfo],
     fund_secret_key: &SecretKey,
 ) -> Result<(AcceptedContract, Vec<EcdsaAdaptorSignature>), crate::Error> {
     let total_collateral = offered_contract.total_collateral;
 
     let dlc_transactions = dlc::create_dlc_transactions(
         &offered_contract.offer_params,
-        &accept_params,
+        accept_params,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
         offered_contract.contract_timeout,
         offered_contract.fee_rate_per_vb,
@@ -48,19 +48,19 @@ pub fn accept_contract(
         fund_secret_key,
         fund_output_value,
         None,
-        dlc_transactions,
+        &dlc_transactions,
     )
 }
 
 pub(crate) fn accept_contract_internal(
     secp: &Secp256k1<All>,
-    offered_contract: OfferedContract,
-    accept_params: PartyParams,
-    funding_inputs: Vec<FundingInputInfo>,
+    offered_contract: &OfferedContract,
+    accept_params: &PartyParams,
+    funding_inputs: &[FundingInputInfo],
     adaptor_secret_key: &SecretKey,
     input_value: u64,
     input_script_pubkey: Option<Script>,
-    dlc_transactions: DlcTransactions,
+    dlc_transactions: &DlcTransactions,
 ) -> Result<(AcceptedContract, Vec<EcdsaAdaptorSignature>), crate::Error> {
     let total_collateral = offered_contract.total_collateral;
 
@@ -68,6 +68,7 @@ pub(crate) fn accept_contract_internal(
         input_script_pubkey.unwrap_or_else(|| dlc_transactions.funding_script_pubkey.clone());
 
     let cet_input = dlc_transactions.cets[0].input[0].clone();
+
     let (adaptor_info, adaptor_sig) = offered_contract.contract_info[0].get_adaptor_info(
         secp,
         offered_contract.total_collateral,
@@ -82,10 +83,12 @@ pub(crate) fn accept_contract_internal(
 
     let DlcTransactions {
         fund,
-        mut cets,
+        cets,
         refund,
         funding_script_pubkey,
     } = dlc_transactions;
+
+    let mut cets = cets.clone();
 
     for contract_info in offered_contract.contract_info.iter().skip(1) {
         let payouts = contract_info.get_payouts(total_collateral)?;
@@ -118,7 +121,7 @@ pub(crate) fn accept_contract_internal(
 
     let refund_signature = dlc::util::get_raw_sig_for_tx_input(
         secp,
-        &refund,
+        refund,
         0,
         &input_script_pubkey,
         input_value,
@@ -126,19 +129,19 @@ pub(crate) fn accept_contract_internal(
     );
 
     let dlc_transactions = DlcTransactions {
-        fund,
+        fund: fund.clone(),
         cets,
-        refund,
-        funding_script_pubkey,
+        refund: refund.clone(),
+        funding_script_pubkey: funding_script_pubkey.clone(),
     };
 
     let accepted_contract = AcceptedContract {
-        offered_contract,
+        offered_contract: offered_contract.clone(),
         adaptor_infos,
         // Drop own adaptor signatures as no point keeping them.
         adaptor_signatures: None,
-        accept_params,
-        funding_inputs,
+        accept_params: accept_params.clone(),
+        funding_inputs: funding_inputs.to_vec(),
         dlc_transactions,
         accept_refund_signature: refund_signature,
     };
@@ -151,8 +154,8 @@ pub(crate) fn accept_contract_internal(
 pub fn verify_accepted_and_sign_contract<S: Deref>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
-    accept_params: PartyParams,
-    funding_inputs_info: Vec<FundingInputInfo>,
+    accept_params: &PartyParams,
+    funding_inputs_info: &[FundingInputInfo],
     refund_signature: &Signature,
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     signer: S,
@@ -164,7 +167,7 @@ where
 
     let dlc_transactions = dlc::create_dlc_transactions(
         &offered_contract.offer_params,
-        &accept_params,
+        accept_params,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
         offered_contract.contract_timeout,
         offered_contract.fee_rate_per_vb,
@@ -187,15 +190,16 @@ where
         signer,
         None,
         None,
-        dlc_transactions,
+        &dlc_transactions,
+        None,
     )
 }
 
 pub(crate) fn verify_accepted_and_sign_contract_internal<S: Deref>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
-    accept_params: PartyParams,
-    funding_inputs_info: Vec<FundingInputInfo>,
+    accept_params: &PartyParams,
+    funding_inputs_info: &[FundingInputInfo],
     refund_signature: &Signature,
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     input_value: u64,
@@ -203,17 +207,21 @@ pub(crate) fn verify_accepted_and_sign_contract_internal<S: Deref>(
     signer: S,
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
-    dlc_transactions: DlcTransactions,
+    dlc_transactions: &DlcTransactions,
+    channel_id: Option<ChannelId>,
 ) -> Result<(SignedContract, Vec<EcdsaAdaptorSignature>), Error>
 where
     S::Target: Signer,
 {
     let DlcTransactions {
-        mut fund,
-        mut cets,
+        fund,
+        cets,
         refund,
         funding_script_pubkey,
     } = dlc_transactions;
+
+    let mut fund = fund.clone();
+    let mut cets = cets.clone();
 
     let input_script_pubkey = input_script_pubkey.unwrap_or_else(|| funding_script_pubkey.clone());
     let counter_adaptor_pk = counter_adaptor_pk.unwrap_or(accept_params.fund_pubkey);
@@ -221,7 +229,7 @@ where
     dlc::verify_tx_input_sig(
         secp,
         refund_signature,
-        &refund,
+        refund,
         0,
         &input_script_pubkey,
         input_value,
@@ -263,7 +271,7 @@ where
             secp,
             offered_contract.total_collateral,
             &accept_params.fund_pubkey,
-            &funding_script_pubkey,
+            funding_script_pubkey,
             input_value,
             &tmp_cets,
             cet_adaptor_signatures,
@@ -349,7 +357,7 @@ where
 
     let offer_refund_signature = dlc::util::get_raw_sig_for_tx_input(
         secp,
-        &refund,
+        refund,
         0,
         &input_script_pubkey,
         input_value,
@@ -359,14 +367,14 @@ where
     let dlc_transactions = DlcTransactions {
         fund,
         cets,
-        refund,
-        funding_script_pubkey,
+        refund: refund.clone(),
+        funding_script_pubkey: funding_script_pubkey.clone(),
     };
 
     let accepted_contract = AcceptedContract {
         offered_contract: offered_contract.clone(),
-        accept_params,
-        funding_inputs: funding_inputs_info,
+        accept_params: accept_params.clone(),
+        funding_inputs: funding_inputs_info.to_vec(),
         adaptor_infos,
         adaptor_signatures: Some(cet_adaptor_signatures.to_vec()),
         accept_refund_signature: *refund_signature,
@@ -378,6 +386,7 @@ where
         adaptor_signatures: None,
         offer_refund_signature,
         funding_signatures: FundingSignatures { funding_signatures },
+        channel_id,
     };
 
     Ok((signed_contract, own_signatures))
@@ -396,6 +405,7 @@ pub fn verify_signed_contract<S: Deref>(
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
     signer: S,
+    channel_id: Option<ChannelId>,
 ) -> Result<(SignedContract, Transaction), Error>
 where
     S::Target: Signer,
@@ -500,6 +510,7 @@ where
         adaptor_signatures: Some(cet_adaptor_signatures.to_vec()),
         offer_refund_signature: *refund_signature,
         funding_signatures: funding_signatures.clone(),
+        channel_id,
     };
 
     Ok((signed_contract, fund_tx))

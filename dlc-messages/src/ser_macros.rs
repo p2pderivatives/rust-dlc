@@ -197,14 +197,24 @@ macro_rules! impl_dlc_writeable_enum_as_tlv {
 /// Implements the [`lightning::util::ser::Writeable`] trait for an enum.
 #[macro_export]
 macro_rules! impl_dlc_writeable_enum {
-    ($st:ident, $(($variant_id: expr, $variant_name: ident)), *; $(($external_variant_id: expr, $external_variant_name: ident, $write_cb: expr, $read_cb: expr)), *; $(($simple_variant_id: expr, $simple_variant_name: ident)), *) => {
+    ($st:ident, $(($tuple_variant_id: expr, $tuple_variant_name: ident)), *;
+    $(($variant_id: expr, $variant_name: ident, {$(($field: ident, $fieldty: tt)),*})), *;
+    $(($external_variant_id: expr, $external_variant_name: ident, $write_cb: expr, $read_cb: expr)), *;
+    $(($simple_variant_id: expr, $simple_variant_name: ident)), *) => {
         impl Writeable for $st {
 			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::std::io::Error> {
                 match self {
-                    $($st::$variant_name(ref field) => {
-                        let id : u8 = $variant_id;
+                    $($st::$tuple_variant_name(ref field) => {
+                        let id : u8 = $tuple_variant_id;
                         id.write(w)?;
                         field.write(w)?;
+                    }),*
+                    $($st::$variant_name { $(ref $field),* } => {
+                        let id : u8 = $variant_id;
+                        id.write(w)?;
+                        $(
+                            field_write!(w, $field, $fieldty);
+                        )*
                     }),*
                     $($st::$external_variant_name(ref field) => {
                         let id : u8 = $external_variant_id;
@@ -224,9 +234,16 @@ macro_rules! impl_dlc_writeable_enum {
 			fn read<R: std::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
                 let id: u8 = Readable::read(r)?;
                 match id {
-                    $($variant_id => {
-						Ok($st::$variant_name(Readable::read(r)?))
+                    $($tuple_variant_id => {
+						Ok($st::$tuple_variant_name(Readable::read(r)?))
 					}),*
+                    $($variant_id => {
+                        Ok($st::$variant_name {
+                            $(
+                                $field: field_read!(r, $fieldty)
+                            ),*
+                        })
+                    }),*
                     $($external_variant_id => {
 						Ok($st::$external_variant_name($read_cb(r)?))
 					}),*

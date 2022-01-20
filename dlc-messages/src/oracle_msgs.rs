@@ -74,7 +74,7 @@ impl OracleInfo {
 }
 
 impl_dlc_writeable_enum!(
-    OracleInfo, (0, Single), (1, Multi);;
+    OracleInfo, (0, Single), (1, Multi);;;
 );
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -303,8 +303,8 @@ impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
     (nb_digits, writeable)
 });
 
-#[derive(Clone, Debug)]
 /// An attestation from an oracle providing signatures over an outcome value.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OracleAttestation {
     /// The public key of the oracle.
     pub oracle_public_key: SchnorrPublicKey,

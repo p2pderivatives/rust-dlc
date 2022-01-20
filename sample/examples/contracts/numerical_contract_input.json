@@ -67,12 +67,11 @@
               }
             ]
           },
-          "info": {
+          "differenceParams": null,
+          "oracleNumericInfos": {
             "base": 2,
-            "nbDigits": 20,
-            "unit": "sats/sec"
-          },
-          "differenceParams": null
+            "nbDigits": [20]
+          }
         }
       },
       "oracles": {

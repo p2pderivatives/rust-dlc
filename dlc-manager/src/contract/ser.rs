@@ -59,7 +59,7 @@ impl_dlc_writeable!(PayoutPoint, { (event_outcome, writeable), (outcome_payout, 
 impl_dlc_writeable_enum!(
     PayoutFunctionPiece,
     (0, PolynomialPayoutCurvePiece),
-    (1, HyperbolaPayoutCurvePiece);;
+    (1, HyperbolaPayoutCurvePiece);;;
 );
 impl_dlc_writeable!(RoundingInterval, { (begin_interval, writeable), (rounding_mod, writeable) });
 impl_dlc_writeable!(PayoutFunction, { (payout_function_pieces, vec) });
@@ -78,7 +78,7 @@ impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
     (c, float),
     (d, float)
 });
-impl_dlc_writeable_enum!(ContractDescriptor, (0, Enum), (1, Numerical);;);
+impl_dlc_writeable_enum!(ContractDescriptor, (0, Enum), (1, Numerical);;;);
 impl_dlc_writeable!(ContractInfo, { (contract_descriptor, writeable), (oracle_announcements, vec), (threshold, usize)});
 impl_dlc_writeable!(FundingInputInfo, { (funding_input, writeable), (address, {option_cb, dlc_messages::ser_impls::write_address, dlc_messages::ser_impls::read_address}) });
 impl_dlc_writeable!(EnumDescriptor, {
@@ -101,7 +101,7 @@ impl_dlc_writeable!(OfferedContract, {
     (counter_party, writeable)
 });
 impl_dlc_writeable_external!(RangeInfo, range_info, { (cet_index, usize), (adaptor_index, usize)});
-impl_dlc_writeable_enum!(AdaptorInfo,; (0, Numerical, write_multi_oracle_trie, read_multi_oracle_trie), (1, NumericalWithDifference, write_multi_oracle_trie_with_diff, read_multi_oracle_trie_with_diff); (2, Enum));
+impl_dlc_writeable_enum!(AdaptorInfo,;; (0, Numerical, write_multi_oracle_trie, read_multi_oracle_trie), (1, NumericalWithDifference, write_multi_oracle_trie_with_diff, read_multi_oracle_trie_with_diff); (2, Enum));
 impl_dlc_writeable_external!(
     DlcTransactions, dlc_transactions,
     { (fund, writeable),
@@ -122,7 +122,8 @@ impl_dlc_writeable!(SignedContract, {
     (accepted_contract, writeable),
     (adaptor_signatures, {option_cb, write_ecdsa_adaptor_signatures, read_ecdsa_adaptor_signatures }),
     (offer_refund_signature, writeable),
-    (funding_signatures, writeable)
+    (funding_signatures, writeable),
+    (channel_id, option)
 });
 impl_dlc_writeable!(ClosedContract, {
     (signed_contract, writeable),

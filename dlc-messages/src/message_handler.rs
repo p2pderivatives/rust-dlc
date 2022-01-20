@@ -81,6 +81,43 @@ impl MessageHandler {
     }
 }
 
+macro_rules! handle_read_dlc_messages {
+    ($msg_type:ident, $buffer:ident, $(($type_id:ident, $variant:ident)),*) => {{
+        let decoded = match $msg_type {
+            $(
+                $crate::$type_id => Message::$variant(Readable::read(&mut $buffer)?),
+            )*
+            _ => return Ok(None),
+        };
+        Ok(Some(WireMessage::Message(decoded)))
+    }};
+}
+
+fn read_dlc_message<R: ::std::io::Read>(
+    msg_type: u16,
+    mut buffer: &mut R,
+) -> Result<Option<WireMessage>, DecodeError> {
+    handle_read_dlc_messages!(
+        msg_type,
+        buffer,
+        (OFFER_TYPE, Offer),
+        (ACCEPT_TYPE, Accept),
+        (SIGN_TYPE, Sign),
+        (OFFER_CHANNEL_TYPE, OfferChannel),
+        (ACCEPT_CHANNEL_TYPE, AcceptChannel),
+        (SIGN_CHANNEL_TYPE, SignChannel),
+        (SETTLE_CHANNEL_OFFER_TYPE, SettleOffer),
+        (SETTLE_CHANNEL_ACCEPT_TYPE, SettleAccept),
+        (SETTLE_CHANNEL_CONFIRM_TYPE, SettleConfirm),
+        (SETTLE_CHANNEL_FINALIZE_TYPE, SettleFinalize),
+        (RENEW_CHANNEL_OFFER_TYPE, RenewChannelOffer),
+        (RENEW_CHANNEL_ACCEPT_TYPE, RenewChannelAccept),
+        (RENEW_CHANNEL_CONFIRM_TYPE, RenewChannelConfirm),
+        (RENEW_CHANNEL_FINALIZE_TYPE, RenewChannelFinalize),
+        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
+    )
+}
+
 /// Implementation of the `CustomMessageReader` trait is required to decode
 /// custom messages in the LDK.
 impl CustomMessageReader for MessageHandler {
@@ -91,18 +128,13 @@ impl CustomMessageReader for MessageHandler {
         mut buffer: &mut R,
     ) -> Result<Option<WireMessage>, DecodeError> {
         let decoded = match msg_type {
-            crate::OFFER_TYPE => WireMessage::Message(Message::Offer(Readable::read(&mut buffer)?)),
-            crate::ACCEPT_TYPE => {
-                WireMessage::Message(Message::Accept(Readable::read(&mut buffer)?))
-            }
-            crate::SIGN_TYPE => WireMessage::Message(Message::Sign(Readable::read(&mut buffer)?)),
             crate::segmentation::SEGMENT_START_TYPE => {
                 WireMessage::SegmentStart(Readable::read(&mut buffer)?)
             }
             crate::segmentation::SEGMENT_CHUNK_TYPE => {
                 WireMessage::SegmentChunk(Readable::read(&mut buffer)?)
             }
-            _ => return Ok(None),
+            _ => return read_dlc_message(msg_type, buffer),
         };
 
         Ok(Some(decoded))
@@ -288,11 +320,16 @@ mod tests {
     #[test]
     fn is_empty_after_clearing_msg_events_test() {
         let input = include_str!("./test_inputs/accept_msg.json");
+        println!("AJSSA");
         let msg: AcceptDlc = serde_json::from_str(&input).unwrap();
         let handler = MessageHandler::new();
+        println!("AJSSA");
         handler.send_message(some_pk(), Message::Accept(msg));
+        println!("AJSSA");
         handler.get_and_clear_pending_msg();
+        println!("AJSSA");
         assert!(!handler.has_pending_messages());
+        println!("AJSSA");
     }
 
     #[test]

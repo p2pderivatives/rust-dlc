@@ -12,7 +12,7 @@ else
    CMD=podman
 fi
 
-export TEST_BIN=manager_execution_tests
+export TEST_BIN=$1
 LIST=$(bash ${PWD}/scripts/generate_test_list.sh $TEST_BIN)
 
 echo $LIST
