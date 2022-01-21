@@ -31,6 +31,7 @@ bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 criterion = "0.3"
+dlc-manager = {path = ".", features = ["use-serde"]}
 dlc-messages = {path = "../dlc-messages", features = ["serde"]}
 env_logger = "0.8.4"
 mocks = {path = "../mocks"}

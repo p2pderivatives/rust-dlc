@@ -1,0 +1,162 @@
+{
+  "id": [
+    155,
+    212,
+    62,
+    219,
+    175,
+    95,
+    42,
+    204,
+    223,
+    54,
+    197,
+    38,
+    211,
+    63,
+    152,
+    35,
+    68,
+    201,
+    208,
+    36,
+    124,
+    66,
+    82,
+    30,
+    41,
+    1,
+    4,
+    234,
+    154,
+    144,
+    105,
+    176
+  ],
+  "isOfferParty": false,
+  "contractInfo": [
+    {
+      "contractDescriptor": {
+        "enum": {
+          "outcomePayouts": [
+            {
+              "outcome": "a",
+              "payout": {
+                "offer": 200000000,
+                "accept": 0
+              }
+            },
+            {
+              "outcome": "b",
+              "payout": {
+                "offer": 0,
+                "accept": 200000000
+              }
+            },
+            {
+              "outcome": "c",
+              "payout": {
+                "offer": 200000000,
+                "accept": 0
+              }
+            },
+            {
+              "outcome": "d",
+              "payout": {
+                "offer": 0,
+                "accept": 200000000
+              }
+            }
+          ]
+        }
+      },
+      "oracleAnnouncements": [
+        {
+          "announcementSignature": "afc2705c66bb8402c615ba757a02e11acd844a2275cbfb59dbe3b8046832c44ba7f4bd5c2147f6798cf01d1828d633ff8652d0a32a7b9fe37fd599b51a2757af",
+          "oraclePublicKey": "db0b565c927bd86c5877cb6f56fb3281100eaf88b99a8d5f0717565429e4774d",
+          "oracleEvent": {
+            "oracleNonces": [
+              "2bd5c8e9703d13d094131acd9af1f062d6aab5ac9de4550dcaecf2a1de8d12aa"
+            ],
+            "eventMaturityEpoch": 1623133104,
+            "eventDescriptor": {
+              "enumEvent": {
+                "outcomes": ["a", "b", "c", "d"]
+              }
+            },
+            "eventId": "Test"
+          }
+        },
+        {
+          "announcementSignature": "b399ebc42a8ccea43058615aeed21ed6edddb35ec6de92628286532d9fb8b44924771e6c4e228aa3d0928df640b695670d2a0fdda86dc8fe8e3fe1f0638e3c81",
+          "oraclePublicKey": "9776b9399283a4f12fa61cb65a5e43bbf483f0d3d6b3c689d02648af503003be",
+          "oracleEvent": {
+            "oracleNonces": [
+              "ca65995f15e6cbf3cf6c64576f037f3939b981538020c868a06b869c9e2399d3"
+            ],
+            "eventMaturityEpoch": 1623133104,
+            "eventDescriptor": {
+              "enumEvent": {
+                "outcomes": ["a", "b", "c", "d"]
+              }
+            },
+            "eventId": "Test"
+          }
+        },
+        {
+          "announcementSignature": "7fd48768a78ffaaf2d16cc5a47c7224c745f2560c63af0d1e67d0ccecaeb07e80d906fa9df389ec4782b52c4c9410745eaf01fa5a143146bf3855e3695d35516",
+          "oraclePublicKey": "3de8d1ec423c641d2aecf3f39808a942bb2eb371a04a00323a927ec607b015ff",
+          "oracleEvent": {
+            "oracleNonces": [
+              "a49b73a5260e01713f14474ac140476ae30fbbfd5134341db6e6654eb845eb71"
+            ],
+            "eventMaturityEpoch": 1623133104,
+            "eventDescriptor": {
+              "enumEvent": {
+                "outcomes": ["a", "b", "d"]
+              }
+            },
+            "eventId": "Test"
+          }
+        }
+      ],
+      "threshold": 3
+    }
+  ],
+  "counterParty": "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166",
+  "offerParams": {
+    "fundPubkey": "0315b3963f5f1043fd9945e3eeb729ecb379f07892a64a9c450c966db6853714b1",
+    "changeScriptPubkey": "00148332f8eea19820571c912f425531a238cb8fc526",
+    "changeSerialId": 15247286615727438658,
+    "payoutScriptPubkey": "0014ed53d0938791fc51cdb61330c417e7205c9437d5",
+    "payoutSerialId": 9358551406094833867,
+    "inputs": [
+      {
+        "outpoint": "120103080fcd221520a537cca2764064387f39939ebb692c748c870c0b17a61d:0",
+        "maxWitnessLen": 107,
+        "redeemScript": "",
+        "serialId": 2904786313666239109
+      }
+    ],
+    "inputAmount": 5000000000,
+    "collateral": 100000000
+  },
+  "totalCollateral": 200000000,
+  "fundingInputsInfo": [
+    {
+      "fundingInput": {
+        "inputSerialId": 2904786313666239109,
+        "prevTx": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff03520101ffffffff0200f2052a01000000160014ce51088548a1bc02dc108da8ce5f5383c9309e630000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
+        "prevTxVout": 0,
+        "sequence": 4294967295,
+        "maxWitnessLen": 107,
+        "redeemScript": ""
+      },
+      "address": null
+    }
+  ],
+  "fundOutputSerialId": 12412566359681147037,
+  "feeRatePerVb": 2,
+  "contractMaturityBound": 1623133104,
+  "contractTimeout": 1623737904
+}

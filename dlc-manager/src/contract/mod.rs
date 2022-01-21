@@ -1,14 +1,20 @@
 //! Module containing structures and functions related to contracts.
 
+use crate::error::Error;
 use crate::ContractId;
 use bitcoin::Address;
-use dlc_messages::{oracle_msgs::OracleAttestation, AcceptDlc, FundingInput, SignDlc};
+use dlc_messages::{
+    oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation},
+    AcceptDlc, FundingInput, SignDlc,
+};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use secp256k1_zkp::PublicKey;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use signed_contract::SignedContract;
+
+use self::utils::unordered_equal;
 
 pub mod accepted_contract;
 pub mod contract_info;
@@ -187,6 +193,59 @@ impl ContractDescriptor {
         match self {
             ContractDescriptor::Enum(_) => None,
             ContractDescriptor::Numerical(n) => n.difference_params.clone(),
+        }
+    }
+
+    /// Validate that all possible outcomes that can be attested by the oracle(s)
+    /// have a single associated payout.
+    pub fn validate(
+        &self,
+        announcements: &Vec<OracleAnnouncement>,
+    ) -> Result<(), crate::error::Error> {
+        let first = announcements
+            .first()
+            .expect("to have at least one element.");
+        match &first.oracle_event.event_descriptor {
+            EventDescriptor::EnumEvent(ee) => {
+                for announcement in announcements {
+                    match &announcement.oracle_event.event_descriptor {
+                        EventDescriptor::EnumEvent(enum_desc) => {
+                            if !unordered_equal(&ee.outcomes, &enum_desc.outcomes) {
+                                return Err(Error::InvalidParameters(
+                                    "Oracles don't have same enum outcomes.".to_string(),
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(Error::InvalidParameters(
+                                "Expected enum event descriptor.".to_string(),
+                            ))
+                        }
+                    }
+                }
+                match self {
+                    ContractDescriptor::Enum(ed) => ed.validate(ee),
+                    _ => Err(Error::InvalidParameters(
+                        "Event descriptor from contract and oracle differ.".to_string(),
+                    )),
+                }
+            }
+            EventDescriptor::DigitDecompositionEvent(_) => match self {
+                ContractDescriptor::Numerical(n) => {
+                    let min_nb_digits = n.oracle_numeric_infos.get_min_nb_digits();
+                    let max_value = n
+                        .oracle_numeric_infos
+                        .base
+                        .checked_pow(min_nb_digits as u32)
+                        .ok_or_else(|| {
+                            Error::InvalidParameters("Could not compute max value".to_string())
+                        })?;
+                    n.validate(max_value as u64)
+                }
+                _ => Err(Error::InvalidParameters(
+                    "Event descriptor from contract and oracle differ.".to_string(),
+                )),
+            },
         }
     }
 }

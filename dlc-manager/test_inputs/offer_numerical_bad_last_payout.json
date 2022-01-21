@@ -1,0 +1,162 @@
+{
+  "id": [
+    9,
+    164,
+    248,
+    98,
+    221,
+    224,
+    186,
+    237,
+    180,
+    155,
+    198,
+    201,
+    213,
+    182,
+    7,
+    99,
+    192,
+    179,
+    34,
+    214,
+    206,
+    92,
+    177,
+    1,
+    209,
+    63,
+    226,
+    247,
+    31,
+    128,
+    33,
+    115
+  ],
+  "isOfferParty": false,
+  "contractInfo": [
+    {
+      "contractDescriptor": {
+        "numerical": {
+          "payoutFunction": {
+            "payoutFunctionPieces": [
+              {
+                "polynomialPayoutCurvePiece": {
+                  "payoutPoints": [
+                    {
+                      "eventOutcome": 0,
+                      "outcomePayout": 0,
+                      "extraPrecision": 0
+                    },
+                    {
+                      "eventOutcome": 5,
+                      "outcomePayout": 200000000,
+                      "extraPrecision": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "polynomialPayoutCurvePiece": {
+                  "payoutPoints": [
+                    {
+                      "eventOutcome": 5,
+                      "outcomePayout": 200000000,
+                      "extraPrecision": 0
+                    },
+                    {
+                      "eventOutcome": 1018,
+                      "outcomePayout": 200000000,
+                      "extraPrecision": 0
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "roundingIntervals": {
+            "intervals": [
+              {
+                "beginInterval": 0,
+                "roundingMod": 1
+              }
+            ]
+          },
+          "differenceParams": null,
+          "oracleNumericInfos": {
+            "base": 2,
+            "nbDigits": [10]
+          }
+        }
+      },
+      "oracleAnnouncements": [
+        {
+          "announcementSignature": "706e97a76e5e4c25e2f1c180f7f6b5596304ae1c84c602cb3cb97c5b878ede942e6e4e9cabadb9f3b7ec5eb0370d92b2e8f0b3df05530b111cc69a633bf16908",
+          "oraclePublicKey": "8a629938a0b7700ae7357c5d4447453aa502d4b644f8c62baad5d406d58b7f6f",
+          "oracleEvent": {
+            "oracleNonces": [
+              "7bc4eae76b8fa69d241b812e681f535dc93ba171c6d752813ac7710cb401b81b",
+              "d01ea767509b40360e7a2b3ac1e4caf7c114760ab5e2091de426a6942a55fffc",
+              "021d1d3b4e33876fc37fe106354a4109dcc064f24aae36d752e303f54ee0436d",
+              "f7cedc1b24d697098484210110e07ee891569ee678c6616eb70990807e8a38ba",
+              "b2d587c50e7dbcb0c975595835d966141f396ae849f8745f19cc877099842899",
+              "9973eafc9436c8fe772e6ba86d35a189a0da03d0d05ae6299d1322ff755932b7",
+              "d6d2333c3be484672b0ac3c8b4b407db08aa6a2c634240d77fbb39191e7f4658",
+              "bd65cb669dd9eb467fd748a84f097165210e587a97677fb925be0f45d8d9e142",
+              "b04bb0e368aaae1657f8ec7b50a9411dd96fdd763fb6732a83df52a95848b2cc",
+              "51ada014e7194a596efab67568da0d0f622950517f3807a6ec555fcbebfceecd"
+            ],
+            "eventMaturityEpoch": 1623133104,
+            "eventDescriptor": {
+              "digitDecompositionEvent": {
+                "base": 2,
+                "isSigned": false,
+                "unit": "sats/sec",
+                "precision": 0,
+                "nbDigits": 10
+              }
+            },
+            "eventId": "Test"
+          }
+        }
+      ],
+      "threshold": 1
+    }
+  ],
+  "counterParty": "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166",
+  "offerParams": {
+    "fundPubkey": "02d962a5e200e3c4cd9d425212d87cf92924d875126f9f6168b3757c6cb2ec419b",
+    "changeScriptPubkey": "001479ee50e61e88a21baa2b5124b881c188bdf63c37",
+    "changeSerialId": 13956474821580554639,
+    "payoutScriptPubkey": "0014ed9c3ca30e6ff4b93c86ab4c7ea5a8efde31b874",
+    "payoutSerialId": 14595850945083503669,
+    "inputs": [
+      {
+        "outpoint": "cac38ae578ed4ce3f32f60b25fa44768bb29c200beb2be80854b56802fbdc10f:0",
+        "maxWitnessLen": 107,
+        "redeemScript": "",
+        "serialId": 4408916189615191417
+      }
+    ],
+    "inputAmount": 5000000000,
+    "collateral": 100000000
+  },
+  "totalCollateral": 200000000,
+  "fundingInputsInfo": [
+    {
+      "fundingInput": {
+        "inputSerialId": 4408916189615191417,
+        "prevTx": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff03520101ffffffff0200f2052a01000000160014b586157864b9427a2083a765b2b3a927ade49e170000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
+        "prevTxVout": 0,
+        "sequence": 4294967295,
+        "maxWitnessLen": 107,
+        "redeemScript": ""
+      },
+      "address": null
+    }
+  ],
+  "fundOutputSerialId": 16475280753107887427,
+  "feeRatePerVb": 2,
+  "contractMaturityBound": 1623133104,
+  "contractTimeout": 1623737904
+}

@@ -37,3 +37,60 @@ pub struct OfferedContract {
     /// The time at which the contract becomes refundable.
     pub contract_timeout: u32,
 }
+
+impl OfferedContract {
+    /// Validate that the contract info covers all the possible outcomes that
+    /// can be attested by the oracle(s).
+    pub fn validate(&self) -> Result<(), crate::error::Error> {
+        for info in &self.contract_info {
+            info.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn validate_offer_test_common(input: &str) {
+        let offer: OfferedContract = serde_json::from_str(input).unwrap();
+        assert!(offer.validate().is_err());
+    }
+
+    #[test]
+    fn offer_enum_missing_payout() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_enum_missing_payout.json"
+        ));
+    }
+
+    #[test]
+    fn offer_enum_oracle_with_diff_payout() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_enum_oracle_with_diff_payout.json"
+        ));
+    }
+
+    #[test]
+    fn offer_numerical_bad_first_payout() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_numerical_bad_first_payout.json"
+        ));
+    }
+
+    #[test]
+    fn offer_numerical_bad_last_payout() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_numerical_bad_last_payout.json"
+        ));
+    }
+
+    #[test]
+    fn offer_numerical_non_continuous() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_numerical_non_continuous.json"
+        ));
+    }
+}
