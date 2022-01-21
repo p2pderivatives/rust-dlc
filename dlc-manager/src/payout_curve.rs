@@ -19,20 +19,78 @@ pub struct PayoutFunction {
     pub(crate) payout_function_pieces: Vec<PayoutFunctionPiece>,
 }
 
+fn is_continuous(function_pieces: &[PayoutFunctionPiece]) -> bool {
+    function_pieces
+        .iter()
+        .zip(function_pieces.iter().skip(1))
+        .all(|(cur, next)| cur.get_last_point() == next.get_first_point())
+}
+
 impl PayoutFunction {
     /// Create a new payout function
     pub fn new(function_pieces: Vec<PayoutFunctionPiece>) -> Result<PayoutFunction, Error> {
-        let is_continuous = function_pieces
-            .iter()
-            .zip(function_pieces.iter().skip(1))
-            .all(|(cur, next)| cur.get_last_point() == next.get_first_point());
-        if is_continuous {
+        if !function_pieces.is_empty() && is_continuous(&function_pieces) {
             Ok(PayoutFunction {
                 payout_function_pieces: function_pieces,
             })
         } else {
             Err(Error::InvalidParameters(
                 "Function pieces are not continuous.".to_string(),
+            ))
+        }
+    }
+
+    /// Validate that the payout function is continuous and covers the interval [0, max_value]
+    pub fn validate(&self, max_value: u64) -> Result<(), Error> {
+        if !is_continuous(&self.payout_function_pieces) {
+            return Err(Error::InvalidParameters(
+                "Payout function is not continuous.".to_string(),
+            ));
+        }
+
+        let covers = {
+            let first = self
+                .payout_function_pieces
+                .first()
+                .expect("to have at least one piece");
+            let starts_at_zero = match first {
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => {
+                    p.payout_points
+                        .first()
+                        .expect("to have at least a point")
+                        .event_outcome
+                        == 0
+                }
+                PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
+                    h.left_end_point.event_outcome == 0
+                }
+            };
+
+            let last = self
+                .payout_function_pieces
+                .last()
+                .expect("to have at least one piece");
+            let finishes_at_max = match last {
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => {
+                    p.payout_points
+                        .last()
+                        .expect("to have at least a point")
+                        .event_outcome
+                        == max_value
+                }
+                PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
+                    h.right_end_point.event_outcome == max_value
+                }
+            };
+
+            starts_at_zero && finishes_at_max
+        };
+
+        if covers {
+            Ok(())
+        } else {
+            Err(Error::InvalidParameters(
+                "Payout function doesn't cover all the possible outcomes.".to_string(),
             ))
         }
     }

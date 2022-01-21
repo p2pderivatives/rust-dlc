@@ -4,11 +4,12 @@ use crate::ser_impls::{
     read_as_tlv, read_i32, read_schnorr_pubkey, read_schnorrsig, read_strings_u16, write_as_tlv,
     write_i32, write_schnorr_pubkey, write_schnorrsig, write_strings_u16,
 };
-use dlc::OracleInfo as DlcOracleInfo;
+use dlc::{Error, OracleInfo as DlcOracleInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
+use secp256k1_zkp::{Message, Secp256k1, Signing};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +41,35 @@ impl<'a> OracleInfo {
                 &multi.oracle_announcements[0].oracle_event.event_descriptor
             }
         }
+    }
+}
+
+impl OracleInfo {
+    /// Returns the closest maturity date amongst all events
+    pub fn get_closest_maturity_date(&self) -> u32 {
+        match self {
+            OracleInfo::Single(s) => s.oracle_announcement.oracle_event.event_maturity_epoch,
+            OracleInfo::Multi(m) => m
+                .oracle_announcements
+                .iter()
+                .map(|x| x.oracle_event.event_maturity_epoch)
+                .min()
+                .expect("to have at least one event"),
+        }
+    }
+
+    /// Checks that the info satisfies the validity conditions.
+    pub fn validate<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
+        match self {
+            OracleInfo::Single(s) => s.oracle_announcement.validate(secp)?,
+            OracleInfo::Multi(m) => {
+                for o in &m.oracle_announcements {
+                    o.validate(secp)?;
+                }
+            }
+        };
+
+        Ok(())
     }
 }
 
@@ -135,6 +165,20 @@ impl Type for OracleAnnouncement {
     }
 }
 
+impl OracleAnnouncement {
+    /// Returns whether the announcement satisfy validity checks.
+    pub fn validate<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
+        let mut event_hex = Vec::new();
+        self.oracle_event
+            .write(&mut event_hex)
+            .expect("Error writing oracle event");
+        let msg =
+            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
+        secp.schnorrsig_verify(&self.announcement_signature, &msg, &self.oracle_public_key)?;
+        self.oracle_event.validate()
+    }
+}
+
 impl_dlc_writeable!(OracleAnnouncement, {
     (announcement_signature, {cb_writeable, write_schnorrsig, read_schnorrsig}),
     (oracle_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}),
@@ -167,6 +211,22 @@ pub struct OracleEvent {
     pub event_descriptor: EventDescriptor,
     /// The id of the event.
     pub event_id: String,
+}
+
+impl OracleEvent {
+    /// Returns whether the event passes validity checks.
+    pub fn validate(&self) -> Result<(), Error> {
+        let expected_nb_nonces = match &self.event_descriptor {
+            EventDescriptor::EnumEvent(_) => 1,
+            EventDescriptor::DigitDecompositionEvent(d) => d.nb_digits as usize,
+        };
+
+        if expected_nb_nonces == self.oracle_nonces.len() {
+            Ok(())
+        } else {
+            Err(Error::InvalidArgument)
+        }
+    }
 }
 
 impl Type for OracleEvent {
@@ -265,3 +325,125 @@ impl_dlc_writeable!(OracleAttestation, {
     (signatures, {vec_u16_cb, write_schnorrsig, read_schnorrsig}),
     (outcomes, {cb_writeable, write_strings_u16, read_strings_u16})
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secp256k1_zkp::schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey};
+    use secp256k1_zkp::{rand::thread_rng, Message, SECP256K1};
+
+    fn enum_descriptor() -> EnumEventDescriptor {
+        EnumEventDescriptor {
+            outcomes: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+        }
+    }
+
+    fn digit_descriptor() -> DigitDecompositionEventDescriptor {
+        DigitDecompositionEventDescriptor {
+            base: 2,
+            is_signed: false,
+            unit: "kg/sats".to_string(),
+            precision: 1,
+            nb_digits: 10,
+        }
+    }
+
+    fn some_schnorr_pubkey() -> SchnorrPublicKey {
+        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        SchnorrPublicKey::from_keypair(SECP256K1, &key_pair)
+    }
+
+    fn digit_event(nb_nonces: usize) -> OracleEvent {
+        OracleEvent {
+            oracle_nonces: (0..nb_nonces).map(|_| some_schnorr_pubkey()).collect(),
+            event_maturity_epoch: 10,
+            event_descriptor: EventDescriptor::DigitDecompositionEvent(digit_descriptor()),
+            event_id: "test".to_string(),
+        }
+    }
+
+    fn enum_event(nb_nonces: usize) -> OracleEvent {
+        OracleEvent {
+            oracle_nonces: (0..nb_nonces).map(|_| some_schnorr_pubkey()).collect(),
+            event_maturity_epoch: 10,
+            event_descriptor: EventDescriptor::EnumEvent(enum_descriptor()),
+            event_id: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn valid_oracle_announcement_passes_validation_test() {
+        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let oracle_pubkey = SchnorrPublicKey::from_keypair(SECP256K1, &key_pair);
+        let events = [digit_event(10), enum_event(1)];
+        for event in events {
+            let mut event_hex = Vec::new();
+            event
+                .write(&mut event_hex)
+                .expect("Error writing oracle event");
+            let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
+                &event_hex,
+            );
+            let sig = SECP256K1.schnorrsig_sign(&msg, &key_pair);
+            let valid_announcement = OracleAnnouncement {
+                announcement_signature: sig,
+                oracle_public_key: oracle_pubkey,
+                oracle_event: event,
+            };
+
+            valid_announcement
+                .validate(SECP256K1)
+                .expect("a valid announcement.");
+        }
+    }
+
+    #[test]
+    fn invalid_oracle_announcement_fails_validation_test() {
+        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let oracle_pubkey = SchnorrPublicKey::from_keypair(SECP256K1, &key_pair);
+        let events = [digit_event(9), enum_event(2)];
+        for event in events {
+            let mut event_hex = Vec::new();
+            event
+                .write(&mut event_hex)
+                .expect("Error writing oracle event");
+            let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
+                &event_hex,
+            );
+            let sig = SECP256K1.schnorrsig_sign(&msg, &key_pair);
+            let invalid_announcement = OracleAnnouncement {
+                announcement_signature: sig,
+                oracle_public_key: oracle_pubkey,
+                oracle_event: event,
+            };
+
+            invalid_announcement
+                .validate(SECP256K1)
+                .expect_err("invalid announcement should fail validation.");
+        }
+    }
+
+    #[test]
+    fn invalid_oracle_announcement_signature_fails_validation_test() {
+        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let oracle_pubkey = SchnorrPublicKey::from_keypair(SECP256K1, &key_pair);
+        let event = digit_event(10);
+        let mut event_hex = Vec::new();
+        event
+            .write(&mut event_hex)
+            .expect("Error writing oracle event");
+        let msg =
+            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
+        let sig = SECP256K1.schnorrsig_sign(&msg, &key_pair);
+        let mut sig_hex = sig.as_ref().clone();
+        sig_hex[10] += 1;
+        let sig = SchnorrSignature::from_slice(&sig_hex).unwrap();
+        let invalid_announcement = OracleAnnouncement {
+            announcement_signature: sig,
+            oracle_public_key: oracle_pubkey,
+            oracle_event: event,
+        };
+
+        assert!(invalid_announcement.validate(SECP256K1).is_err());
+    }
+}

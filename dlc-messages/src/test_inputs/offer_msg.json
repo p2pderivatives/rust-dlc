@@ -8,7 +8,7 @@
       "contractInfo": {
         "contractDescriptor": {
           "numericOutcomeContractDescriptor": {
-            "numDigits": 3,
+            "numDigits": 10,
             "payoutFunction": {
               "payoutFunctionPieces": [
                 {
@@ -19,13 +19,31 @@
                   },
                   "payoutCurvePiece": {
                     "polynomialPayoutCurvePiece": {
+                      "payoutPoints": [
+                        {
+                          "eventOutcome": 3,
+                          "outcomePayout": 100000000,
+                          "extraPrecision": 0
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "endPoint": {
+                    "eventOutcome": 5,
+                    "outcomePayout": 200000000,
+                    "extraPrecision": 0
+                  },
+                  "payoutCurvePiece": {
+                    "polynomialPayoutCurvePiece": {
                       "payoutPoints": []
                     }
                   }
                 }
               ],
               "lastEndpoint": {
-                "eventOutcome": 7,
+                "eventOutcome": 1023,
                 "outcomePayout": 200000000,
                 "extraPrecision": 0
               }
@@ -41,148 +59,59 @@
           }
         },
         "oracleInfo": {
-          "multi": {
-            "threshold": 2,
-            "oracleAnnouncements": [
-              {
-                "announcementSignature": "4e63749d070f5bc8cda89dd3127cfd5467521bb359007f4a495c47b847de2eadbf476c046a14d4ef7b48fd2e23063815ce3a9dd746b1aef86c40288c734441d8",
-                "oraclePublicKey": "1ce034c4556d658eb9434321ae8476b9bcd31978158789e999de86e2d8ca1cbf",
-                "oracleEvent": {
-                  "oracleNonces": [
-                    "dff53067387e7f2cb4e3a1a5f0fc7a6fc1b9f5725141f4aa2d73bee8f7ffb270",
-                    "1680db06f45cacc9c74df38c021314f1334bf5c84711a917766e618bd8043c35",
-                    "f26bf4152409dee66a2e573285a5fabf9ca7f8d65b71896acc176b864a585684"
-                  ],
-                  "eventMaturityEpoch": 1623133104,
-                  "eventDescriptor": {
-                    "digitDecompositionEvent": {
-                      "base": 2,
-                      "isSigned": false,
-                      "unit": "sats/sec",
-                      "precision": 0,
-                      "nbDigits": 3
-                    }
-                  },
-                  "eventId": "Test"
-                }
-              },
-              {
-                "announcementSignature": "056d77fdcc1390b5bc1e967594a8fae40d6bad90f67e21fa7ad8aa522978d9923f4b59f674e5ad8b4d49dc3e4eddc16d61bbd3a59068161a0275437cdaffda0e",
-                "oraclePublicKey": "aac044cf3bc290785b4549ae69ce38ea2f7be6a2305b6888b35c04a40707d03b",
-                "oracleEvent": {
-                  "oracleNonces": [
-                    "435efc1c7b4c3d9d443dae831784460bee32faf1b29f38e81aeeaf6065473bf0",
-                    "9e9c0facee77a47b7a100042e23f37c646ac73b0e5acae840d54bc37a1affda9",
-                    "3c97fdb9b229b823d5aed73c6fcdcd9bde1874f50bcbd3d91a718f8572accd00"
-                  ],
-                  "eventMaturityEpoch": 1623133104,
-                  "eventDescriptor": {
-                    "digitDecompositionEvent": {
-                      "base": 2,
-                      "isSigned": false,
-                      "unit": "sats/sec",
-                      "precision": 0,
-                      "nbDigits": 3
-                    }
-                  },
-                  "eventId": "Test"
-                }
-              },
-              {
-                "announcementSignature": "45528148a6dbcf2c95b417eb7c4e11493309964ee47848aff4ef8b4e2bf86efa0606ddd00b2e891cd3b579934b1bcf1ec3e4a573e109e423e30f74ef37a55543",
-                "oraclePublicKey": "e19c2fa86144168a431e8c2bb2f83a45539697f89badc5c8b1f26d3e498a2de9",
-                "oracleEvent": {
-                  "oracleNonces": [
-                    "4e54602f24ac549d2a1469ee32d96e03ddc3107ce87aedbdda31a5b8c16cf623",
-                    "713b7daa41d43623497009871760290fec3877c6bdf8c9ad047d6f5b57956cf2",
-                    "2b4bcb97bdf6b1f0563445f50d58204e7d0b7e7acab5195a25d0374a7d2fa045"
-                  ],
-                  "eventMaturityEpoch": 1623133104,
-                  "eventDescriptor": {
-                    "digitDecompositionEvent": {
-                      "base": 2,
-                      "isSigned": false,
-                      "unit": "sats/sec",
-                      "precision": 0,
-                      "nbDigits": 3
-                    }
-                  },
-                  "eventId": "Test"
-                }
-              },
-              {
-                "announcementSignature": "45355cbac1658dbe965fd3218d77a07ae7272ceff69ba8a78136527aac731721604e68bf2a633d3441ec61d7632fcf55d1ce745778ac275475abe3be9543655c",
-                "oraclePublicKey": "435fb72de7ccc3030d247d8bc8ebc8e5089eee654c7a93a1a9c5c87888ffedf5",
-                "oracleEvent": {
-                  "oracleNonces": [
-                    "b73d2112bb55131901fd27340f62bff38746e77989bae462c1c8c576367cdaad",
-                    "b1d0c25d3c8edbfb0d4debf326ea8513e44902f946a94eccedc931d15644ea63",
-                    "3badb808afa69928a0c515da25fb51d31f52bade4fee1ce0ee1970b7a401bc88"
-                  ],
-                  "eventMaturityEpoch": 1623133104,
-                  "eventDescriptor": {
-                    "digitDecompositionEvent": {
-                      "base": 2,
-                      "isSigned": false,
-                      "unit": "sats/sec",
-                      "precision": 0,
-                      "nbDigits": 3
-                    }
-                  },
-                  "eventId": "Test"
-                }
-              },
-              {
-                "announcementSignature": "d5fa419062c0cd5abbda7a629b97883ee358c4cf2f38170b009908d5a8048758be527f2cbf362c715e7690a84335745a01d83ad22fe3e38945b2fdb6fe79179c",
-                "oraclePublicKey": "1ae20145c840429d2bd7ecf6b0466809e6b11879711f5679c98270731b10f57b",
-                "oracleEvent": {
-                  "oracleNonces": [
-                    "78137a0e99faf464e956caf45ade90ca9aeb11803b0eb444f9be3dc8e71ca4e5",
-                    "b3f2e5529053a163986120430538ea45fa102103bc1e824999d6bea8cae81d1c",
-                    "0d9f23ea90ebc781fefa1cd849171a204119ad6f6ecbacc4bd0071dd5d00d640"
-                  ],
-                  "eventMaturityEpoch": 1623133104,
-                  "eventDescriptor": {
-                    "digitDecompositionEvent": {
-                      "base": 2,
-                      "isSigned": false,
-                      "unit": "sats/sec",
-                      "precision": 0,
-                      "nbDigits": 3
-                    }
-                  },
-                  "eventId": "Test"
-                }
+          "single": {
+            "oracleAnnouncement": {
+              "announcementSignature": "b93b42b338d4a0e2e70563afca4bd9ee82d735b6d864a399302794e13e891458e2e3526048fe44337f7eee0b3b81a6a5b2e5ff555269bb8902315a7ba19d233b",
+              "oraclePublicKey": "721bb54bd975dc7292e6f5591cd54633e2dec25d5879d56feda0266b79756712",
+              "oracleEvent": {
+                "oracleNonces": [
+                  "1819b3504ff14bd2e8466b9347aa8a68f2c5a279b92282abc5229f164185ecde",
+                  "8ad97f88c6362f1396e2f8134ac2bfea5381db2348eadbbe4df88495bc81d930",
+                  "04b45d3689b08a750ed41d746055fd27695b6ace4139c34b9b761457acab24b1",
+                  "c47890697b5a2fc96e3cbd7e2866b3d1f612ca43bc39b3992beba15e5f8b0350",
+                  "ff8faba5179a8a10605472350066942e503b7f9b78fb7074af00a63afca1f8f1",
+                  "229bb52baa244088ef823743aa5dbcd79a162553f2e71b18717674bac6c06ee9",
+                  "1fd82d84a2ab0c801b301af0153341d80953db3a123bf2e5511f37c9711e0c02",
+                  "08a586fd931dbbb5b4163575029e8f7ca49ebd150502e0553955497f9d9b3a99",
+                  "9a9dd83bcd0a75b3db69f86a52920f4e3ea1ae7a62efbfe268ed3e6342767482",
+                  "1c6f4e7988901482105d157c766aa6d186ef30f1b25728018901bcb2d367ff78"
+                ],
+                "eventMaturityEpoch": 1623133104,
+                "eventDescriptor": {
+                  "digitDecompositionEvent": {
+                    "base": 2,
+                    "isSigned": false,
+                    "unit": "sats/sec",
+                    "precision": 0,
+                    "nbDigits": 10
+                  }
+                },
+                "eventId": "Test"
               }
-            ],
-            "oracleParams": {
-              "maxErrorExp": 2,
-              "minFailExp": 1,
-              "maximizeCoverage": false
             }
           }
         }
       }
     }
   },
-  "fundingPubkey": "02c4d17bf3b34dadcf41087555a9e1a8e25488b887a3fd5054a50626551d527972",
-  "payoutSpk": "001406a40a2b4e1f9147253d152591a775e967c5cf79",
-  "payoutSerialId": 252186332017857439,
+  "fundingPubkey": "0248bffb13fe8ab26d646f07e59f5adfaf3f972f7d42378fb13cf615134c5d7b9e",
+  "payoutSpk": "0014d15dfb0771b78bb6b924adb901912aabfe406a4b",
+  "payoutSerialId": 6840251947373216588,
   "offerCollateral": 100000000,
   "fundingInputs": [
     {
-      "inputSerialId": 13569040116894650994,
-      "prevTx": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff03520101ffffffff0200f2052a01000000160014742cc15ec8ed0ae855b8eb6eee26c45eb8a92a350000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
+      "inputSerialId": 3508648781486015333,
+      "prevTx": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff03520101ffffffff0200f2052a010000001600140587ea85fb3511b9bbc73318c9b4cd9207f7f0100000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
       "prevTxVout": 0,
       "sequence": 4294967295,
       "maxWitnessLen": 107,
       "redeemScript": ""
     }
   ],
-  "changeSpk": "0014d11fe7a27d71aeffa03a4728b7113e6fddcf388f",
-  "changeSerialId": 11140405215526910653,
-  "fundOutputSerialId": 6702025607611355199,
+  "changeSpk": "0014f3f1af2d5d878384b459eb3eec524558212bf5a0",
+  "changeSerialId": 10866115613233714871,
+  "fundOutputSerialId": 12398658605784792011,
   "feeRatePerVb": 2,
-  "contractMaturityBound": 1623133104,
-  "contractTimeout": 1623737904
+  "cetLocktime": 1623133104,
+  "refundLocktime": 1623737904
 }

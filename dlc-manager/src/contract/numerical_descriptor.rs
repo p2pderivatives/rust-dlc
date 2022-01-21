@@ -60,6 +60,12 @@ impl NumericalDescriptor {
             .to_range_payouts(total_collateral, &self.rounding_intervals)
     }
 
+    /// Validate that the descriptor covers all possible outcomes of the given
+    /// digit decomposition event descriptor.
+    pub fn validate(&self, max_value: u64) -> Result<(), Error> {
+        self.payout_function.validate(max_value)
+    }
+
     /// Returns the set of payouts for the descriptor generated from the payout
     /// function.
     pub fn get_payouts(&self, total_collateral: u64) -> Result<Vec<Payout>, Error> {

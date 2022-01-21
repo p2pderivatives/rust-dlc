@@ -13,21 +13,18 @@ use crate::payout_curve::{
 };
 use bitcoin::{consensus::encode::Decodable, OutPoint, Transaction};
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
-use dlc_messages::oracle_msgs::{
-    MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
+use dlc_messages::contract_msgs::{
+    ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
+    ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
+    HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece, NumericOutcomeContractDescriptor,
+    PayoutCurvePiece as SerPayoutCurvePiece, PayoutFunction as SerPayoutFunction,
+    PayoutFunctionPiece as SerPayoutFunctionPiece, PayoutPoint as SerPayoutPoint,
+    PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
+    RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
+    SingleContractInfo,
 };
-use dlc_messages::{
-    contract_msgs::{
-        ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
-        ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
-        HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece,
-        NumericOutcomeContractDescriptor, PayoutCurvePiece as SerPayoutCurvePiece,
-        PayoutFunction as SerPayoutFunction, PayoutFunctionPiece as SerPayoutFunctionPiece,
-        PayoutPoint as SerPayoutPoint, PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
-        RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
-        SingleContractInfo,
-    },
-    oracle_msgs::EventDescriptor,
+use dlc_messages::oracle_msgs::{
+    EventDescriptor, MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
 };
 use dlc_messages::{
     AcceptDlc, CetAdaptorSignature, CetAdaptorSignatures, FundingInput, OfferDlc, SignDlc,
@@ -91,8 +88,8 @@ impl From<&OfferedContract> for OfferDlc {
                 .collect(),
             change_spk: offered_contract.offer_params.change_script_pubkey.clone(),
             change_serial_id: offered_contract.offer_params.change_serial_id,
-            contract_maturity_bound: offered_contract.contract_maturity_bound,
-            contract_timeout: offered_contract.contract_timeout,
+            cet_locktime: offered_contract.contract_maturity_bound,
+            refund_locktime: offered_contract.contract_timeout,
             fee_rate_per_vb: offered_contract.fee_rate_per_vb,
             fund_output_serial_id: offered_contract.fund_output_serial_id,
         }
@@ -150,8 +147,8 @@ impl OfferedContract {
                 inputs,
                 input_amount,
             },
-            contract_maturity_bound: offer_dlc.contract_maturity_bound,
-            contract_timeout: offer_dlc.contract_timeout,
+            contract_maturity_bound: offer_dlc.cet_locktime,
+            contract_timeout: offer_dlc.refund_locktime,
             fee_rate_per_vb: offer_dlc.fee_rate_per_vb,
             fund_output_serial_id: offer_dlc.fund_output_serial_id,
             funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
@@ -196,6 +193,16 @@ fn get_contract_info_and_announcements(offer_dlc: &OfferDlc) -> Result<Vec<Contr
                         multi.oracle_announcements
                     }
                 };
+
+                if announcements
+                    .iter()
+                    .any(|x| match &x.oracle_event.event_descriptor {
+                        EventDescriptor::EnumEvent(_) => false,
+                        EventDescriptor::DigitDecompositionEvent(_) => true,
+                    })
+                {
+                    return Err(Error::InvalidParameters);
+                }
 
                 (descriptor, announcements, threshold)
             }

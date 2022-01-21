@@ -262,6 +262,7 @@ where
         offered_message: &OfferDlc,
         counter_party: PublicKey,
     ) -> Result<(), Error> {
+        offered_message.validate(&self.secp, REFUND_DELAY, REFUND_DELAY * 2)?;
         let contract: OfferedContract =
             OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
         self.store.create_contract(&contract)?;

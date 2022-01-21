@@ -47,6 +47,22 @@ impl ContractInfo {
             ContractInfo::DisjointContractInfo(v1) => v1.total_collateral,
         }
     }
+
+    /// Return the smallet maturity date amongst all events and oracle announcements
+    /// used in the contract.
+    pub fn get_closest_maturity_date(&self) -> u32 {
+        match self {
+            ContractInfo::SingleContractInfo(s) => {
+                s.contract_info.oracle_info.get_closest_maturity_date()
+            }
+            ContractInfo::DisjointContractInfo(d) => d
+                .contract_infos
+                .iter()
+                .map(|x| x.oracle_info.get_closest_maturity_date())
+                .min()
+                .expect("to have at least one element"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
