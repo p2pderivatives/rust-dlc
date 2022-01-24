@@ -7,7 +7,7 @@ pub const ACCEPT_PARTY: &str = "bob";
 pub const SINK: &str = "sink";
 
 fn rpc_base() -> String {
-    let host = env::var("BITCOIND_HOST").unwrap_or("localhost".to_owned());
+    let host = env::var("BITCOIND_HOST").unwrap_or_else(|_| "localhost".to_owned());
     format!("http://{}:18443", host)
 }
 
@@ -18,7 +18,7 @@ pub fn get_new_wallet_rpc(
 ) -> Result<Client, bitcoincore_rpc::Error> {
     default_rpc.create_wallet(wallet_name, Some(false), None, None, None)?;
     let rpc_url = format!("{}/wallet/{}", rpc_base(), wallet_name);
-    Ok(Client::new(&rpc_url, auth)?)
+    Client::new(&rpc_url, auth)
 }
 
 pub fn init_clients() -> (Client, Client, Client) {
@@ -45,7 +45,7 @@ pub fn init_clients() -> (Client, Client, Client) {
     };
 
     let accept_rpc = get_new_wallet_rpc(&rpc, ACCEPT_PARTY, auth.clone()).unwrap();
-    let sink_rpc = get_new_wallet_rpc(&rpc, SINK, auth.clone()).unwrap();
+    let sink_rpc = get_new_wallet_rpc(&rpc, SINK, auth).unwrap();
 
     let offer_address = offer_rpc
         .get_new_address(None, Some(AddressType::Bech32))

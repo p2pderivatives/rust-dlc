@@ -17,6 +17,7 @@ pub struct TrieNodeInfo {
 }
 
 type MultiTrieNode<T> = Node<DigitTrie<T>, DigitTrie<Vec<TrieNodeInfo>>>;
+type NodeStackElement<'a> = Vec<((usize, Vec<usize>), DigitTrieIter<'a, Vec<TrieNodeInfo>>)>;
 
 impl<T> MultiTrieNode<T> {
     fn new_node(base: usize) -> MultiTrieNode<T> {
@@ -32,7 +33,7 @@ impl<T> MultiTrieNode<T> {
 /// Struct for iterating over the values of a MultiTrie.
 pub struct MultiTrieIterator<'a, T> {
     trie: &'a MultiTrie<T>,
-    node_stack: Vec<((usize, Vec<usize>), DigitTrieIter<'a, Vec<TrieNodeInfo>>)>,
+    node_stack: NodeStackElement<'a>,
     trie_info_iter: Vec<(
         Vec<usize>,
         std::iter::Enumerate<std::slice::Iter<'a, TrieNodeInfo>>,
@@ -41,14 +42,14 @@ pub struct MultiTrieIterator<'a, T> {
     cur_path: Vec<(usize, Vec<usize>)>,
 }
 
-fn create_node_iterator<'a, T>(node: &'a MultiTrieNode<T>) -> DigitTrieIter<'a, Vec<TrieNodeInfo>> {
+fn create_node_iterator<T>(node: &MultiTrieNode<T>) -> DigitTrieIter<Vec<TrieNodeInfo>> {
     match node {
         Node::Node(d_trie) => DigitTrieIter::new(d_trie),
         _ => unreachable!(),
     }
 }
 
-fn create_leaf_iterator<'a, T>(node: &'a MultiTrieNode<T>) -> DigitTrieIter<'a, T> {
+fn create_leaf_iterator<T>(node: &MultiTrieNode<T>) -> DigitTrieIter<T> {
     match node {
         Node::Leaf(d_trie) => DigitTrieIter::new(d_trie),
         _ => unreachable!(),
@@ -87,8 +88,8 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut leaf_iter = self.leaf_iter.last_mut();
-        match &mut leaf_iter {
-            Some(ref mut iter) => match iter.1.next() {
+        if let Some(ref mut iter) = &mut leaf_iter {
+            match iter.1.next() {
                 Some(res) => {
                     let mut path = self.cur_path.clone();
                     path.push((iter.0, res.path));
@@ -101,14 +102,13 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
                     self.leaf_iter.pop();
                     return self.next();
                 }
-            },
-            _ => {}
+            }
         };
 
         let mut trie_info_iter = self.trie_info_iter.last_mut();
 
-        match &mut trie_info_iter {
-            Some(ref mut iter) => match iter.1.next() {
+        if let Some(ref mut iter) = &mut trie_info_iter {
+            match iter.1.next() {
                 None => {
                     self.trie_info_iter.pop();
                     self.cur_path.pop();
@@ -133,8 +133,7 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
                         }
                     }
                 }
-            },
-            _ => {}
+            }
         }
 
         let res = self.node_stack.pop();
@@ -216,12 +215,12 @@ impl<T> MultiTrie<T> {
     /// Insert the value returned by `get_value` at the position specified by `path`.
     pub fn insert<F>(&mut self, path: &[usize], get_value: &mut F) -> Result<(), Error>
     where
-        F: FnMut(&Vec<Vec<usize>>, &Vec<usize>) -> Result<T, Error>,
+        F: FnMut(&[Vec<usize>], &[usize]) -> Result<T, Error>,
     {
         let combinations = if self.nb_required > 1 {
             compute_outcome_combinations(
                 self.nb_digits,
-                &path,
+                path,
                 self.max_error_exp,
                 self.min_support_exp,
                 self.maximize_coverage,
@@ -256,13 +255,13 @@ impl<T> MultiTrie<T> {
     fn insert_internal<F>(
         &mut self,
         cur_node_index: usize,
-        paths: &Vec<Vec<usize>>,
+        paths: &[Vec<usize>],
         path_index: usize,
-        trie_indexes: &Vec<usize>,
+        trie_indexes: &[usize],
         get_value: &mut F,
     ) -> Result<(), Error>
     where
-        F: FnMut(&Vec<Vec<usize>>, &Vec<usize>) -> Result<T, Error>,
+        F: FnMut(&[Vec<usize>], &[usize]) -> Result<T, Error>,
     {
         assert!(path_index < paths.len());
         let cur_node = self.swap_remove(cur_node_index);
@@ -341,15 +340,12 @@ impl<T> MultiTrie<T> {
                         }
                         None
                     })
-                    .collect(),
+                    .collect::<Vec<_>>(),
                 0,
             );
-            match res {
-                Some(mut l_res) => {
-                    l_res.path.reverse();
-                    return Some(l_res);
-                }
-                _ => {}
+            if let Some(mut l_res) = res {
+                l_res.path.reverse();
+                return Some(l_res);
             }
         }
 
@@ -359,7 +355,7 @@ impl<T> MultiTrie<T> {
     fn look_up_internal<'a>(
         &'a self,
         cur_node: &'a MultiTrieNode<T>,
-        paths: &Vec<&(usize, Vec<usize>)>,
+        paths: &[&(usize, Vec<usize>)],
         path_index: usize,
     ) -> Option<LookupResult<'a, T, (usize, Vec<usize>)>> {
         assert!(path_index < paths.len());
@@ -384,7 +380,7 @@ impl<T> MultiTrie<T> {
                         if let Some(mut child_l_res) =
                             self.look_up_internal(next_node, paths, path_index + 1)
                         {
-                            child_l_res.path.push((trie_index, l_res.path.clone()));
+                            child_l_res.path.push((trie_index, l_res.path));
                             return Some(child_l_res);
                         }
                     }
@@ -396,7 +392,7 @@ impl<T> MultiTrie<T> {
     }
 }
 
-fn find_store_index(children: &Vec<TrieNodeInfo>, trie_index: usize) -> Option<usize> {
+fn find_store_index(children: &[TrieNodeInfo], trie_index: usize) -> Option<usize> {
     for info in children {
         if trie_index == info.trie_index {
             return Some(info.store_index);
@@ -521,7 +517,7 @@ mod tests {
         bad_paths: Vec<Vec<(usize, Vec<usize>)>>,
         expected_iter: Option<Vec<Vec<(usize, Vec<usize>)>>>,
     ) {
-        let mut get_value = |_: &Vec<Vec<usize>>, _: &Vec<usize>| -> Result<usize, Error> { Ok(2) };
+        let mut get_value = |_: &[Vec<usize>], _: &[usize]| -> Result<usize, Error> { Ok(2) };
 
         m_trie.insert(&path, &mut get_value).unwrap();
 
@@ -671,11 +667,10 @@ mod tests {
 
         let mut counter = 0;
 
-        let mut get_value =
-            |_: &Vec<std::vec::Vec<usize>>, _: &Vec<usize>| -> Result<usize, Error> {
-                counter += 1;
-                Ok(counter - 1)
-            };
+        let mut get_value = |_: &[std::vec::Vec<usize>], _: &[usize]| -> Result<usize, Error> {
+            counter += 1;
+            Ok(counter - 1)
+        };
 
         for input in inputs {
             m_trie
@@ -701,11 +696,10 @@ mod tests {
 
         let mut counter = 0;
 
-        let mut get_value =
-            |_: &Vec<std::vec::Vec<usize>>, _: &Vec<usize>| -> Result<usize, Error> {
-                counter += 1;
-                Ok(counter - 1)
-            };
+        let mut get_value = |_: &[Vec<usize>], _: &[usize]| -> Result<usize, Error> {
+            counter += 1;
+            Ok(counter - 1)
+        };
 
         for input in inputs {
             m_trie

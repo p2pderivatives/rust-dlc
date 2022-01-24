@@ -6,13 +6,13 @@ use secp256k1_zkp::PublicKey;
 /// the oracle info at the provided indexes only. The paths are converted to
 /// strings and hashed to be used as messages in adaptor signature creation.
 pub(crate) fn get_adaptor_point_for_indexed_paths(
-    indexes: &Vec<usize>,
-    paths: &Vec<Vec<usize>>,
-    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    indexes: &[usize],
+    paths: &[Vec<usize>],
+    precomputed_points: &[Vec<Vec<PublicKey>>],
 ) -> Result<PublicKey, super::Error> {
     debug_assert!(indexes.len() == paths.len());
     debug_assert!(precomputed_points.len() >= indexes.len());
-    if indexes.len() < 1 {
+    if indexes.is_empty() {
         return Err(super::Error::InvalidArgument);
     }
 

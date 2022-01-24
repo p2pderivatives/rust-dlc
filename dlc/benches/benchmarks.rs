@@ -119,8 +119,8 @@ mod benches {
     fn funding_script_pubkey() -> Script {
         let seckey = SecretKey::new(&mut thread_rng());
         make_funding_redeemscript(
-            &PublicKey::from_secret_key(&SECP256K1, &seckey),
-            &PublicKey::from_secret_key(&SECP256K1, &seckey),
+            &PublicKey::from_secret_key(SECP256K1, &seckey),
+            &PublicKey::from_secret_key(SECP256K1, &seckey),
         )
     }
 
@@ -135,7 +135,7 @@ mod benches {
         b.iter(|| {
             black_box(
                 create_cet_adaptor_sig_from_oracle_info(
-                    &SECP256K1,
+                    SECP256K1,
                     &cet,
                     &oracle_infos,
                     &seckey,
@@ -153,14 +153,14 @@ mod benches {
     fn bench_create_single_adaptor_sig_from_aggregated_point(b: &mut Bencher) {
         let seckey = SecretKey::new(&mut thread_rng());
         let cet = cet();
-        let adaptor_point = &PublicKey::from_secret_key(&SECP256K1, &seckey);
+        let adaptor_point = &PublicKey::from_secret_key(SECP256K1, &seckey);
 
         b.iter(|| {
             black_box(
                 create_cet_adaptor_sig_from_point(
-                    &SECP256K1,
+                    SECP256K1,
                     &cet,
-                    &adaptor_point,
+                    adaptor_point,
                     &seckey,
                     &funding_script_pubkey(),
                     cet.output[0].value,
@@ -249,27 +249,27 @@ mod benches {
     }
 
     fn compute_all_aggregated_points_base(
-        msgs: &Vec<Vec<Vec<Message>>>,
-        oracle_infos: &Vec<OracleInfo>,
+        msgs: &[Vec<Vec<Message>>],
+        oracle_infos: &[OracleInfo],
     ) -> Vec<PublicKey> {
         msgs.iter()
-            .map(|m| get_adaptor_point_from_oracle_info(SECP256K1, &oracle_infos, m).unwrap())
+            .map(|m| get_adaptor_point_from_oracle_info(SECP256K1, oracle_infos, m).unwrap())
             .collect::<Vec<PublicKey>>()
     }
 
     fn compute_all_aggregated_points_precompute(
-        oracle_infos: &Vec<OracleInfo>,
-        msgs: &Vec<Vec<Message>>,
+        oracle_infos: &[OracleInfo],
+        msgs: &[Vec<Message>],
     ) -> Vec<PublicKey> {
         let precomputed_points = get_precomputed_points(oracle_infos, msgs);
         let mut all_adaptor_points: Vec<PublicKey> = Vec::new();
         let nb_outcomes = ALL_BASE.pow(ALL_NB_NONCES as u32);
         for i in 0..nb_outcomes {
             let mut to_combine = Vec::with_capacity(ALL_NB_NONCES * ALL_NB_ORACLES);
-            for k in 0..oracle_infos.len() {
+            for precomputed in &precomputed_points {
                 for j in 0..ALL_NB_NONCES {
                     let x = i / (ALL_BASE.pow((ALL_NB_NONCES - j - 1) as u32)) % ALL_BASE;
-                    to_combine.push(&precomputed_points[k][x][j]);
+                    to_combine.push(&precomputed[x][j]);
                 }
             }
             all_adaptor_points.push(PublicKey::combine_keys(&to_combine).unwrap());
@@ -278,30 +278,29 @@ mod benches {
     }
 
     fn compute_all_aggregated_points_precompute_parallelize(
-        oracle_infos: &Vec<OracleInfo>,
-        msgs: &Vec<Vec<Message>>,
+        oracle_infos: &[OracleInfo],
+        msgs: &[Vec<Message>],
     ) -> Vec<PublicKey> {
         let precomputed_points = get_precomputed_points(oracle_infos, msgs);
         let nb_outcomes = ALL_BASE.pow(ALL_NB_NONCES as u32);
-        let all_adaptor_points = (0..nb_outcomes)
+        (0..nb_outcomes)
             .into_par_iter()
             .map(|i| {
                 let mut to_combine = Vec::with_capacity(ALL_NB_NONCES * ALL_NB_ORACLES);
-                for k in 0..oracle_infos.len() {
+                for precomputed in &precomputed_points {
                     for j in 0..ALL_NB_NONCES {
                         let x = i / (ALL_BASE.pow((ALL_NB_NONCES - j - 1) as u32)) % ALL_BASE;
-                        to_combine.push(&precomputed_points[k][x][j]);
+                        to_combine.push(&precomputed[x][j]);
                     }
                 }
                 PublicKey::combine_keys(&to_combine).unwrap()
             })
-            .collect();
-        all_adaptor_points
+            .collect()
     }
 
     fn compute_all_aggregated_points_precompute_memoize(
-        oracle_infos: &Vec<OracleInfo>,
-        msgs: &Vec<Vec<Message>>,
+        oracle_infos: &[OracleInfo],
+        msgs: &[Vec<Message>],
     ) -> Vec<PublicKey> {
         let mut all_adaptor_points: Vec<PublicKey> = Vec::new();
         let pre_computed_points = get_precomputed_points(oracle_infos, msgs);
@@ -332,8 +331,8 @@ mod benches {
     }
 
     fn compute_all_aggregated_points_precompute_memoize2(
-        oracle_infos: &Vec<OracleInfo>,
-        msgs: &Vec<Vec<Message>>,
+        oracle_infos: &[OracleInfo],
+        msgs: &[Vec<Message>],
     ) -> Vec<PublicKey> {
         let mut all_adaptor_points: Vec<PublicKey> = Vec::new();
         let pre_computed_points = get_precomputed_points(oracle_infos, msgs);
@@ -342,8 +341,8 @@ mod benches {
     }
 
     fn get_precomputed_points(
-        oracle_infos: &Vec<OracleInfo>,
-        msgs: &Vec<Vec<Message>>,
+        oracle_infos: &[OracleInfo],
+        msgs: &[Vec<Message>],
     ) -> Vec<Vec<Vec<PublicKey>>> {
         oracle_infos
             .iter()
@@ -354,7 +353,7 @@ mod benches {
                             .zip(info.nonces.iter())
                             .map(|(m, n)| {
                                 secp_utils::schnorrsig_compute_sig_point(
-                                    &SECP256K1,
+                                    SECP256K1,
                                     &info.public_key,
                                     n,
                                     m,
@@ -371,7 +370,7 @@ mod benches {
     fn memoize_recursive(
         index: usize,
         prev: Option<PublicKey>,
-        nonces_sig_points: &Vec<Vec<PublicKey>>,
+        nonces_sig_points: &[Vec<PublicKey>],
         res: &mut Vec<PublicKey>,
     ) {
         assert!(index < nonces_sig_points[0].len());
@@ -391,7 +390,7 @@ mod benches {
     fn memoize_recursive2(
         index: usize,
         prev: Option<PublicKey>,
-        nonces_sig_points: &Vec<Vec<Vec<PublicKey>>>,
+        nonces_sig_points: &[Vec<Vec<PublicKey>>],
         res: &mut Vec<PublicKey>,
     ) {
         assert!(index < nonces_sig_points[0][0].len());

@@ -119,9 +119,7 @@ impl From<Vec<EcdsaAdaptorSignature>> for CetAdaptorSignatures {
         CetAdaptorSignatures {
             ecdsa_adaptor_signatures: signatures
                 .iter()
-                .map(|x| CetAdaptorSignature {
-                    signature: x.clone(),
-                })
+                .map(|x| CetAdaptorSignature { signature: *x })
                 .collect(),
         }
     }
@@ -415,7 +413,7 @@ pub fn compute_contract_id(
         res[i] = fund_tx_id[31 - i] ^ temporary_contract_id[i];
     }
     res[0] ^= ((fund_ouput_index >> 8) & 0xff) as u8;
-    res[1] ^= ((fund_ouput_index >> 0) & 0xff) as u8;
+    res[1] ^= (fund_ouput_index & 0xff) as u8;
     res
 }
 

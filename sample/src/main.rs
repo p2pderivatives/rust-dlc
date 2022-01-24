@@ -98,7 +98,7 @@ impl CustomMessageHandler for DlcMessageHandler {
         msg: DlcMessage,
         org: &PublicKey,
     ) -> Result<(), lightning::ln::msgs::LightningError> {
-        self.msg_received.lock().unwrap().push((org.clone(), msg));
+        self.msg_received.lock().unwrap().push((*org, msg));
         Ok(())
     }
 
@@ -109,14 +109,14 @@ impl CustomMessageHandler for DlcMessageHandler {
 
 #[tokio::main]
 async fn main() {
-    let args = env::args();
+    let mut args = env::args();
     if args.len() != 2 {
         println!("This application requires a single argument corresponding to the path to a configuration file.");
         return;
     }
 
     // Parse application configuration
-    let config = cli::parse_config(&args.skip(1).next().unwrap()).expect("Error parsing arguments");
+    let config = cli::parse_config(&args.nth(1).unwrap()).expect("Error parsing arguments");
     fs::create_dir_all(&config.storage_dir_path).expect("Error creating storage directory.");
     let offers_path = format!("{}/{}", config.storage_dir_path, "offers");
     fs::create_dir_all(&offers_path).expect("Error creating offered contract directory");

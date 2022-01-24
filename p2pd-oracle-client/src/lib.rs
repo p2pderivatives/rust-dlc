@@ -2,8 +2,6 @@
 //! Http client wrapper for the Crypto Garage DLC oracle
 
 #![crate_name = "p2pd_oracle_client"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 // Coding conventions
 #![deny(non_upper_case_globals)]
 #![deny(non_camel_case_types)]
@@ -78,12 +76,12 @@ fn get<T>(path: &str) -> Result<T, DlcManagerError>
 where
     T: serde::de::DeserializeOwned,
 {
-    Ok(reqwest::blocking::get(path)
+    reqwest::blocking::get(path)
         .map_err(|x| {
             dlc_manager::error::Error::IOError(std::io::Error::new(std::io::ErrorKind::Other, x))
         })?
         .json::<T>()
-        .map_err(|e| dlc_manager::error::Error::OracleError(e.to_string()))?)
+        .map_err(|e| dlc_manager::error::Error::OracleError(e.to_string()))
 }
 
 fn pubkey_path(host: &str) -> String {
@@ -113,12 +111,12 @@ impl P2PDOracleClient {
     /// host. Returns an error if the host could not be reached. Panics if the
     /// oracle uses an incompatible format.
     pub fn new(host: &str) -> Result<P2PDOracleClient, DlcManagerError> {
-        if host.len() < 1 {
+        if host.is_empty() {
             return Err(DlcManagerError::InvalidParameters(
                 "Invalid host".to_string(),
             ));
         }
-        let host = if host.chars().last().unwrap() != '/' {
+        let host = if !host.ends_with('/') {
             format!("{}{}", host, "/")
         } else {
             host.to_string()
@@ -197,7 +195,7 @@ impl Oracle for P2PDOracleClient {
 
         Ok(OracleAttestation {
             oracle_public_key: self.public_key,
-            signatures: signatures,
+            signatures,
             outcomes: values,
         })
     }

@@ -68,8 +68,8 @@ fn compute_left_covering_prefix(
     let (prefix, suffix) = left_bound.split_at(nb_digits - max_error_exp);
 
     prefix
-        .into_iter()
-        .chain(suffix.into_iter().take_while(|x| **x == 1))
+        .iter()
+        .chain(suffix.iter().take_while(|x| **x == 1))
         .cloned()
         .collect()
 }
@@ -86,8 +86,8 @@ fn compute_right_covering_prefix(
     let (prefix, suffix) = left_bound.split_at(nb_digits - max_error_exp);
 
     prefix
-        .into_iter()
-        .chain(suffix.into_iter().take_while(|x| **x == 0))
+        .iter()
+        .chain(suffix.iter().take_while(|x| **x == 0))
         .cloned()
         .collect()
 }
@@ -247,7 +247,7 @@ pub fn compute_outcome_combinations(
                 };
 
                 double_covering_prefix_combinations(
-                    &main_outcome_prefix,
+                    main_outcome_prefix,
                     &left_interval_prefix,
                     &right_interval_prefix,
                     nb_oracles,
@@ -548,14 +548,14 @@ mod tests {
             .iter()
             .map(|(a, b)| {
                 (
-                    compute_interval_from_prefix(&a, nb_digits, 2),
-                    compute_interval_from_prefix(&b, nb_digits, 2),
+                    compute_interval_from_prefix(a, nb_digits, 2),
+                    compute_interval_from_prefix(b, nb_digits, 2),
                 )
             })
             .collect();
         let cover_intervals_min: Vec<(usize, usize)> = cover_max
             .iter()
-            .map(|(_, b)| compute_interval_from_prefix(&b, nb_digits, 2))
+            .map(|(_, b)| compute_interval_from_prefix(b, nb_digits, 2))
             .collect();
 
         for (
@@ -576,7 +576,6 @@ mod tests {
 
             let assert_valid_cover = |cover_left: usize, cover_right: usize, max_coverage: bool| {
                 if primary_left == cover_left && primary_right == cover_right {
-                    return;
                 } else if primary_left >= cover_left && primary_right <= cover_right {
                     if max_coverage {
                         assert_eq!(cover_right - cover_left + 1, max_error);
@@ -585,7 +584,7 @@ mod tests {
                             primary_right % max_error,
                             max_error - (primary_left % max_error),
                         );
-                        assert!(cover_right - cover_left + 1 <= 2 * side_to_boundary);
+                        assert!(cover_right - cover_left < 2 * side_to_boundary);
                         assert!(cover_right - cover_left + 1 >= side_to_boundary);
                     }
 

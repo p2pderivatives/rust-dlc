@@ -41,7 +41,7 @@ pub fn get_raw_sig_for_tx_input<C: Signing>(
     sk: &SecretKey,
 ) -> Signature {
     let sig_hash_msg = get_sig_hash_msg(tx, input_index, script_pubkey, value);
-    secp.sign_low_r(&sig_hash_msg, &sk)
+    secp.sign_low_r(&sig_hash_msg, sk)
 }
 
 /// Returns a DER encoded signature with appended sighash for the specified input
@@ -81,7 +81,7 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
 }
 
 pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> u64 {
-    return (f64::ceil((weight as f64) / 4.0) as u64) * fee_rate;
+    (f64::ceil((weight as f64) / 4.0) as u64) * fee_rate
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {
@@ -121,10 +121,10 @@ pub fn get_witness_for_p2wpkh_input<C: Signing>(
     value: u64,
 ) -> Vec<Vec<u8>> {
     let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type);
-    let mut wit: Vec<Vec<u8>> = Vec::new();
-    wit.push(full_sig);
-    wit.push(PublicKey::from_secret_key(secp, sk).serialize().to_vec());
-    wit
+    vec![
+        full_sig,
+        PublicKey::from_secret_key(secp, sk).serialize().to_vec(),
+    ]
 }
 
 /// Generates a signature for a given p2wsh transaction input using the given secret
@@ -151,7 +151,7 @@ pub fn sign_multi_sig_input<C: Signing>(
         sk,
     );
 
-    let own_pk = &PublicKey::from_secret_key(&secp, sk);
+    let own_pk = &PublicKey::from_secret_key(secp, sk);
 
     let other_finalized_sig = finalize_sig(other_sig, SigHashType::All);
 
@@ -181,7 +181,7 @@ pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
 }
 
 /// Sorts the given inputs in following the order of the ids.
-pub(crate) fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &Vec<u64>) -> Vec<T> {
+pub(crate) fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &[u64]) -> Vec<T> {
     debug_assert!(inputs.len() == ids.len());
     let mut combined: Vec<(&u64, T)> = ids.iter().zip(inputs.into_iter()).collect();
     combined.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());

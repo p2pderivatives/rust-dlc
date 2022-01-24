@@ -129,7 +129,7 @@ fn create_contract_descriptor() -> ContractDescriptor {
             nb_digits: NB_DIGITS as usize,
             unit: "sats/sec".to_owned(),
         },
-        difference_params: difference_params,
+        difference_params,
     })
 }
 
@@ -233,7 +233,7 @@ pub fn sign_bench(c: &mut Criterion) {
             black_box(
                 contract_info
                     .get_adaptor_info(
-                        &SECP256K1,
+                        SECP256K1,
                         TOTAL_COLLATERAL,
                         &seckey,
                         &dlc_transactions.funding_script_pubkey,
@@ -257,7 +257,7 @@ pub fn verify_bench(c: &mut Criterion) {
     let pubkey = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &seckey);
     let adaptor_info = contract_info
         .get_adaptor_info(
-            &SECP256K1,
+            SECP256K1,
             TOTAL_COLLATERAL,
             &seckey,
             &dlc_transactions.funding_script_pubkey,
@@ -272,7 +272,7 @@ pub fn verify_bench(c: &mut Criterion) {
             black_box(
                 contract_info
                     .verify_adaptor_info(
-                        &SECP256K1,
+                        SECP256K1,
                         &pubkey,
                         &dlc_transactions.funding_script_pubkey,
                         fund_output_value,

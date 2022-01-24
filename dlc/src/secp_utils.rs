@@ -2,13 +2,13 @@
 //! rust-secp256k1 or rust-secp256k1-zkp.
 
 use crate::Error;
-use secp256k1_zkp::bitcoin_hashes::Hash;
-use secp256k1_zkp::bitcoin_hashes::*;
 use core::ptr;
 use secp256k1_sys::{
     types::{c_int, c_uchar, c_void},
     CPtr,
 };
+use secp256k1_zkp::bitcoin_hashes::Hash;
+use secp256k1_zkp::bitcoin_hashes::*;
 use secp256k1_zkp::{
     schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
     Message, PublicKey, Secp256k1, Signing, Verification,
@@ -86,7 +86,7 @@ extern "C" fn constant_nonce_fn(
     unsafe {
         ptr::copy_nonoverlapping(data as *const c_uchar, nonce32, 32);
     }
-    return 1;
+    1
 }
 
 fn create_schnorr_hash(
@@ -97,7 +97,7 @@ fn create_schnorr_hash(
     let mut buf = Vec::<u8>::new();
     buf.extend(&nonce.serialize());
     buf.extend(&pubkey.serialize());
-    buf.extend(msg.as_ref().iter().cloned().collect::<Vec<u8>>());
+    buf.extend(msg.as_ref().to_vec());
     BIP340Hash::hash(&buf).into_inner().to_vec()
 }
 

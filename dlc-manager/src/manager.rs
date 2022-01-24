@@ -168,9 +168,10 @@ where
     ) -> Result<Vec<OracleAnnouncement>, Error> {
         let mut announcements = Vec::new();
         for pubkey in &oracle_inputs.public_keys {
-            let oracle = self.oracles.get(pubkey).ok_or(Error::InvalidParameters(
-                "Unknown oracle public key".to_string(),
-            ))?;
+            let oracle = self
+                .oracles
+                .get(pubkey)
+                .ok_or_else(|| Error::InvalidParameters("Unknown oracle public key".to_string()))?;
             announcements.push(oracle.get_announcement(&oracle_inputs.event_id)?.clone());
         }
 
@@ -435,7 +436,7 @@ where
             .cet_adaptor_signatures
             .ecdsa_adaptor_signatures
             .iter()
-            .map(|x| x.signature.clone())
+            .map(|x| x.signature)
             .collect();
 
         let adaptor_verify_result = offered_contract.contract_info[0].verify_and_get_adaptor_info(
@@ -516,7 +517,7 @@ where
             .chain(accept_msg.funding_inputs.iter())
             .map(|x| x.input_serial_id)
             .collect();
-        input_serial_ids.sort();
+        input_serial_ids.sort_unstable();
 
         // Vec<Witness>
         let witnesses: Vec<Vec<Vec<u8>>> = offered_contract
@@ -527,19 +528,19 @@ where
                     .iter()
                     .position(|y| y == &x.funding_input.input_serial_id)
                     .ok_or(Error::InvalidState)?;
-                let tx = Transaction::consensus_decode(&*x.funding_input.prev_tx).or(Err(
-                    Error::InvalidParameters(
-                        "Could not decode funding input previous tx parameter".to_string(),
-                    ),
-                ))?;
+                let tx =
+                    Transaction::consensus_decode(&*x.funding_input.prev_tx).map_err(|_| {
+                        Error::InvalidParameters(
+                            "Could not decode funding input previous tx parameter".to_string(),
+                        )
+                    })?;
                 let vout = x.funding_input.prev_tx_vout;
-                let tx_out = tx
-                    .output
-                    .get(vout as usize)
-                    .ok_or(Error::InvalidParameters(format!(
+                let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
+                    Error::InvalidParameters(format!(
                         "Previous tx output not found at index {}",
                         vout
-                    )))?;
+                    ))
+                })?;
 
                 self.wallet
                     .sign_tx_input(&mut fund, input_index, tx_out, None)?;
@@ -559,7 +560,7 @@ where
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
-        input_serial_ids.sort();
+        input_serial_ids.sort_unstable();
 
         let offer_refund_signature = dlc::util::get_raw_sig_for_tx_input(
             &self.secp,
@@ -583,8 +584,8 @@ where
             funding_inputs: accept_msg.funding_inputs.iter().map(|x| x.into()).collect(),
             adaptor_infos,
             adaptor_signatures: Some(adaptor_signatures),
-            accept_refund_signature: accept_msg.refund_signature.clone(),
-            dlc_transactions: dlc_transactions.clone(),
+            accept_refund_signature: accept_msg.refund_signature,
+            dlc_transactions,
         };
 
         let mut signed_contract = SignedContract {
@@ -663,7 +664,7 @@ where
             .chain(accepted_contract.funding_inputs.iter())
             .map(|x| x.funding_input.input_serial_id)
             .collect();
-        input_serials.sort();
+        input_serials.sort_unstable();
 
         let mut fund_tx = accepted_contract.dlc_transactions.fund.clone();
 
@@ -689,19 +690,16 @@ where
                 .iter()
                 .position(|x| x == &funding_input_info.funding_input.input_serial_id)
                 .ok_or(Error::InvalidState)?;
-            let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx).or(
-                Err(Error::InvalidParameters(
-                    "Could not decode funding input previous tx parameter".to_string(),
-                )),
-            )?;
+            let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx)
+                .map_err(|_| {
+                    Error::InvalidParameters(
+                        "Could not decode funding input previous tx parameter".to_string(),
+                    )
+                })?;
             let vout = funding_input_info.funding_input.prev_tx_vout;
-            let tx_out = tx
-                .output
-                .get(vout as usize)
-                .ok_or(Error::InvalidParameters(format!(
-                    "Previous tx output not found at index {}",
-                    vout
-                )))?;
+            let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
+                Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
+            })?;
 
             self.wallet
                 .sign_tx_input(&mut fund_tx, input_index, tx_out, None)?;
@@ -737,7 +735,7 @@ where
                         sign_message: sign_message.clone(),
                         error_message: e.to_string(),
                     }))?;
-                Err(e.into())
+                Err(e)
             }
             Ok(val) => Ok(val),
         }
@@ -758,7 +756,7 @@ where
                         accept_message: accept_message.clone(),
                         error_message: e.to_string(),
                     }))?;
-                Err(e.into())
+                Err(e)
             }
             Ok(val) => Ok(val),
         }
@@ -786,13 +784,12 @@ where
 
     fn check_signed_contracts(&mut self) -> Result<(), Error> {
         for c in self.store.get_signed_contracts()? {
-            match self.check_signed_contract(&c) {
-                Err(e) => error!(
+            if let Err(e) = self.check_signed_contract(&c) {
+                error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
                     e
-                ),
-                _ => {}
+                )
             }
         }
 
@@ -801,13 +798,12 @@ where
 
     fn check_confirmed_contracts(&mut self) -> Result<(), Error> {
         for c in self.store.get_confirmed_contracts()? {
-            match self.check_confirmed_contract(&c) {
-                Err(e) => error!(
+            if let Err(e) = self.check_confirmed_contract(&c) {
+                error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
                     e
-                ),
-                _ => {}
+                )
             }
         }
 
@@ -987,10 +983,10 @@ where
                 dlc::util::sign_multi_sig_input(
                     &self.secp,
                     &mut refund,
-                    &other_sig,
+                    other_sig,
                     other_fund_pubkey,
                     &fund_priv_key,
-                    &funding_script_pubkey,
+                    funding_script_pubkey,
                     fund_output_value,
                     0,
                 );

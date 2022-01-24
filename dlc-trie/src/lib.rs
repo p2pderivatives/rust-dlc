@@ -2,8 +2,6 @@
 //! Package for storing and retrieving DLC data using tries.
 
 #![crate_name = "dlc_trie"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 // Coding conventions
 #![forbid(unsafe_code)]
 #![deny(non_upper_case_globals)]
@@ -90,9 +88,9 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
-        outcomes: &Vec<RangePayout>,
+        outcomes: &[RangePayout],
         cets: &[Transaction],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
     ) -> Result<usize, Error> {
@@ -116,9 +114,9 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
-        outcomes: &Vec<RangePayout>,
+        outcomes: &[RangePayout],
         cets: &[Transaction],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
         adaptor_index_start: usize,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let trie_info = self.generate(adaptor_index_start, outcomes)?;
@@ -143,9 +141,9 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         fund_output_value: u64,
         adaptor_sigs: &[EcdsaAdaptorSignature],
         cets: &[Transaction],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
     ) -> Result<usize, Error> {
-        Ok(verify_helper(
+        verify_helper(
             secp,
             cets,
             adaptor_sigs,
@@ -154,7 +152,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
             fund_output_value,
             precomputed_points,
             self.iter(),
-        )?)
+        )
     }
 
     /// Produce the set of adaptor signatures for the trie.
@@ -165,7 +163,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let trie_info = self.iter();
         sign_helper(
@@ -195,7 +193,7 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
     fund_privkey: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     let mut unsorted = trie_info
@@ -206,11 +204,11 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
                 precomputed_points,
             )?;
             let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                &secp,
+                secp,
                 &cets[x.value.cet_index],
                 &adaptor_point,
                 fund_privkey,
-                &funding_script_pubkey,
+                funding_script_pubkey,
                 fund_output_value,
             )?;
             Ok((x.value.adaptor_index, adaptor_sig))
@@ -227,7 +225,7 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
     fund_privkey: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     let trie_info: Vec<TrieIterInfo> = trie_info.collect();
@@ -240,11 +238,11 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
                 precomputed_points,
             )?;
             let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                &secp,
+                secp,
                 &cets[x.value.cet_index],
                 &adaptor_point,
                 fund_privkey,
-                &funding_script_pubkey,
+                funding_script_pubkey,
                 fund_output_value,
             )?;
             Ok((x.value.adaptor_index, adaptor_sig))
@@ -262,7 +260,7 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
     fund_pubkey: &PublicKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<usize, Error> {
     let mut max_adaptor_index = 0;
@@ -279,8 +277,8 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
             &adaptor_sig,
             cet,
             &adaptor_point,
-            &fund_pubkey,
-            &funding_script_pubkey,
+            fund_pubkey,
+            funding_script_pubkey,
             fund_output_value,
         )?;
     }
@@ -295,7 +293,7 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
     fund_pubkey: &PublicKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+    precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<usize, Error> {
     let trie_info: Vec<TrieIterInfo> = trie_info.collect();
@@ -313,8 +311,8 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
             &adaptor_sig,
             cet,
             &adaptor_point,
-            &fund_pubkey,
-            &funding_script_pubkey,
+            fund_pubkey,
+            funding_script_pubkey,
             fund_output_value,
         )
     })?;
