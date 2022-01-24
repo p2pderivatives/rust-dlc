@@ -54,11 +54,10 @@ impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDif
         adaptor_index_start: usize,
         outcomes: &[RangePayout],
     ) -> Result<Vec<TrieIterInfo>, Error> {
-        let mut cet_index = 0;
         let mut adaptor_index = adaptor_index_start;
         let mut trie_infos = Vec::new();
 
-        for outcome in outcomes {
+        for (cet_index, outcome) in outcomes.iter().enumerate() {
             let groups = group_by_ignoring_digits(
                 outcome.start,
                 outcome.start + outcome.count - 1,
@@ -66,25 +65,23 @@ impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDif
                 self.nb_digits,
             );
             for group in groups {
-                let mut get_value = |paths: &Vec<Vec<usize>>,
-                                     oracle_indexes: &Vec<usize>|
-                 -> Result<RangeInfo, Error> {
-                    let range_info = RangeInfo {
-                        cet_index,
-                        adaptor_index,
+                let mut get_value =
+                    |paths: &[Vec<usize>], oracle_indexes: &[usize]| -> Result<RangeInfo, Error> {
+                        let range_info = RangeInfo {
+                            cet_index,
+                            adaptor_index,
+                        };
+                        let iter_info = TrieIterInfo {
+                            value: range_info.clone(),
+                            indexes: oracle_indexes.to_vec(),
+                            paths: paths.to_vec(),
+                        };
+                        trie_infos.push(iter_info);
+                        adaptor_index += 1;
+                        Ok(range_info)
                     };
-                    let iter_info = TrieIterInfo {
-                        value: range_info.clone(),
-                        indexes: oracle_indexes.clone(),
-                        paths: paths.clone(),
-                    };
-                    trie_infos.push(iter_info);
-                    adaptor_index += 1;
-                    Ok(range_info)
-                };
                 self.multi_trie.insert(&group, &mut get_value)?;
             }
-            cet_index += 1;
         }
         Ok(trie_infos)
     }

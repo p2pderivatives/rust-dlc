@@ -76,9 +76,9 @@ impl From<&OfferedContract> for OfferDlc {
             contract_flags: 0,
             chain_hash: BITCOIN_CHAINHASH,
             contract_info: offered_contract.into(),
-            funding_pubkey: offered_contract.offer_params.fund_pubkey.clone(),
+            funding_pubkey: offered_contract.offer_params.fund_pubkey,
             payout_spk: offered_contract.offer_params.payout_script_pubkey.clone(),
-            payout_serial_id: offered_contract.offer_params.payout_serial_id.clone(),
+            payout_serial_id: offered_contract.offer_params.payout_serial_id,
             offer_collateral: offered_contract.offer_params.collateral,
             funding_inputs: offered_contract
                 .funding_inputs_info
@@ -137,7 +137,7 @@ impl OfferedContract {
             is_offer_party: false,
             contract_info,
             offer_params: PartyParams {
-                fund_pubkey: offer_dlc.funding_pubkey.clone(),
+                fund_pubkey: offer_dlc.funding_pubkey,
                 change_script_pubkey: offer_dlc.change_spk.clone(),
                 change_serial_id: offer_dlc.change_serial_id,
                 payout_script_pubkey: offer_dlc.payout_spk.clone(),
@@ -215,7 +215,7 @@ fn get_contract_info_and_announcements(offer_dlc: &OfferDlc) -> Result<Vec<Contr
                         multi.oracle_announcements.clone()
                     }
                 };
-                if announcements.len() < 1 {
+                if announcements.is_empty() {
                     return Err(Error::InvalidParameters);
                 }
                 let info = match &announcements[0].oracle_event.event_descriptor {
@@ -257,7 +257,7 @@ impl From<&OfferedContract> for SerContractInfo {
                 oracle_info: o,
             })
             .collect();
-        return if contract_infos.len() == 1 {
+        if contract_infos.len() == 1 {
             SerContractInfo::SingleContractInfo(SingleContractInfo {
                 total_collateral: offered_contract.total_collateral,
                 contract_info: contract_infos.remove(0),
@@ -267,7 +267,7 @@ impl From<&OfferedContract> for SerContractInfo {
                 total_collateral: offered_contract.total_collateral,
                 contract_infos,
             })
-        };
+        }
     }
 }
 
@@ -281,22 +281,19 @@ impl From<&OfferedContract> for Vec<SerOracleInfo> {
                     oracle_announcement: announcements[0].clone(),
                 }));
             } else {
-                match &contract_info.contract_descriptor {
-                    ContractDescriptor::Numerical(n) => {
-                        if let Some(params) = &n.difference_params {
-                            infos.push(SerOracleInfo::Multi(MultiOracleInfo {
-                                threshold: contract_info.threshold as u16,
-                                oracle_announcements: announcements.clone(),
-                                oracle_params: Some(OracleParams {
-                                    max_error_exp: params.max_error_exp as u16,
-                                    min_fail_exp: params.min_support_exp as u16,
-                                    maximize_coverage: params.maximize_coverage,
-                                }),
-                            }));
-                            continue;
-                        }
+                if let ContractDescriptor::Numerical(n) = &contract_info.contract_descriptor {
+                    if let Some(params) = &n.difference_params {
+                        infos.push(SerOracleInfo::Multi(MultiOracleInfo {
+                            threshold: contract_info.threshold as u16,
+                            oracle_announcements: announcements.clone(),
+                            oracle_params: Some(OracleParams {
+                                max_error_exp: params.max_error_exp as u16,
+                                min_fail_exp: params.min_support_exp as u16,
+                                maximize_coverage: params.maximize_coverage,
+                            }),
+                        }));
+                        continue;
                     }
-                    _ => {}
                 }
                 infos.push(SerOracleInfo::Multi(MultiOracleInfo {
                     threshold: contract_info.threshold as u16,
@@ -580,12 +577,10 @@ impl From<&SignedContract> for SignDlc {
                     .as_ref()
                     .unwrap()
                     .iter()
-                    .map(|x| CetAdaptorSignature {
-                        signature: x.clone(),
-                    })
+                    .map(|x| CetAdaptorSignature { signature: *x })
                     .collect(),
             },
-            refund_signature: contract.offer_refund_signature.clone(),
+            refund_signature: contract.offer_refund_signature,
             funding_signatures: contract.funding_signatures.clone(),
         }
     }

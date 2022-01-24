@@ -20,14 +20,16 @@ impl MemoryStorage {
     }
 }
 
+impl Default for MemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Storage for MemoryStorage {
     fn get_contract(&self, id: &ContractId) -> Result<Option<Contract>, DaemonError> {
         let map = self.contracts.read().expect("Could not get read lock");
-        let res = match map.get(id) {
-            Some(c) => Some(c.clone()),
-            None => None,
-        };
-        Ok(res)
+        Ok(map.get(id).cloned())
     }
 
     fn get_contracts(&self) -> Result<Vec<Contract>, DaemonError> {
@@ -36,7 +38,7 @@ impl Storage for MemoryStorage {
             .read()
             .expect("Could not get read lock")
             .values()
-            .map(|x| x.clone())
+            .cloned()
             .collect())
     }
 
@@ -75,10 +77,9 @@ impl Storage for MemoryStorage {
         let mut res: Vec<SignedContract> = Vec::new();
 
         for (_, val) in map.iter() {
-            match val {
-                Contract::Signed(c) => res.push(c.clone()),
-                _ => {}
-            };
+            if let Contract::Signed(c) = val {
+                res.push(c.clone());
+            }
         }
 
         Ok(res)
@@ -90,12 +91,9 @@ impl Storage for MemoryStorage {
         let mut res: Vec<SignedContract> = Vec::new();
 
         for (_, val) in map.iter() {
-            match val {
-                Contract::Confirmed(c) => {
-                    res.push(c.clone());
-                }
-                _ => {}
-            };
+            if let Contract::Confirmed(c) = val {
+                res.push(c.clone());
+            }
         }
 
         Ok(res)
@@ -107,10 +105,9 @@ impl Storage for MemoryStorage {
         let mut res: Vec<OfferedContract> = Vec::new();
 
         for (_, val) in map.iter() {
-            match val {
-                Contract::Offered(c) => res.push(c.clone()),
-                _ => {}
-            };
+            if let Contract::Offered(c) = val {
+                res.push(c.clone());
+            }
         }
 
         Ok(res)

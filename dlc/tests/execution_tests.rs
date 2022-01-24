@@ -20,10 +20,9 @@ use secp256k1_zkp::{
     schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
     EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Signing,
 };
-use std::convert::TryInto;
 
 const BTC_TO_SAT: u64 = 100000000;
-const PARTY_COLLATERAL: u64 = 1 * BTC_TO_SAT;
+const PARTY_COLLATERAL: u64 = BTC_TO_SAT;
 
 const FUND_LOCK_TIME: u32 = 1000;
 const CET_LOCK_TIME: u32 = FUND_LOCK_TIME + 1000;
@@ -83,8 +82,7 @@ fn get_base_test_msgs(
                                 + x
                                 + z)
                                 as u8)
-                                .try_into()
-                                .unwrap()])
+                                ])
                         })
                         .collect()
                 })
@@ -95,8 +93,8 @@ fn get_base_test_msgs(
 
 fn get_oracle_sigs<C: Signing>(
     secp: &Secp256k1<C>,
-    oracle_infos: &Vec<OraclePrivInfo>,
-    messages: &Vec<Vec<Vec<Message>>>,
+    oracle_infos: &[OraclePrivInfo],
+    messages: &[Vec<Vec<Message>>],
     outcome_index: usize,
 ) -> Vec<Vec<SchnorrSignature>> {
     let mut oracle_sigs: Vec<Vec<SchnorrSignature>> = Vec::with_capacity(oracle_infos.len());
@@ -131,8 +129,8 @@ fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
             let mut sk_nonce = [0u8; 32];
             rng.fill_bytes(&mut sk_nonce);
             let oracle_r_kp =
-                secp256k1_zkp::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
-            let nonce = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
+                secp256k1_zkp::schnorrsig::KeyPair::from_seckey_slice(secp, &sk_nonce).unwrap();
+            let nonce = SchnorrPublicKey::from_keypair(secp, &oracle_r_kp);
             nonces.push(nonce);
             sk_nonces.push(sk_nonce);
         }
@@ -168,7 +166,7 @@ fn init() -> (Client, Client, Client) {
     (offer_rpc, accept_rpc, sink_rpc)
 }
 
-fn generate_dlc_parameters<'a, C: secp256k1_zkp::Signing>(
+fn generate_dlc_parameters<C: secp256k1_zkp::Signing>(
     rpc: Client,
     secp: &secp256k1_zkp::Secp256k1<C>,
     collateral: u64,
@@ -306,19 +304,18 @@ fn integration_tests_decomposed_common(
             let pubkey = &x.public_key;
             let nonces = &x.nonces;
             let mut d_points = Vec::with_capacity(nb_digits);
-            for i in 0..nb_digits {
+            for nonce in nonces {
                 let mut points = Vec::with_capacity(base);
                 for j in 0..base {
                     let msg = Message::from_hashed_data::<sha256::Hash>(j.to_string().as_bytes());
-                    let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(
-                        &secp, pubkey, &nonces[i], &msg,
-                    )
-                    .unwrap();
+                    let sig_point =
+                        dlc::secp_utils::schnorrsig_compute_sig_point(&secp, pubkey, nonce, &msg)
+                            .unwrap();
                     points.push(sig_point);
                 }
                 d_points.push(points);
             }
-            return Ok(d_points);
+            Ok(d_points)
         })
         .collect::<Result<Vec<Vec<Vec<PublicKey>>>, Error>>()
         .unwrap();
@@ -401,7 +398,7 @@ fn integration_tests_decomposed_common(
     let mut oracle_indexes: Vec<usize> = (0..nb_oracles).collect();
     oracle_indexes.shuffle(&mut rng);
     oracle_indexes = oracle_indexes.into_iter().take(nb_active_oracles).collect();
-    oracle_indexes.sort();
+    oracle_indexes.sort_unstable();
 
     let decomposed_outcome = decompose_value(outcome, base, nb_digits);
     let mut oracle_signatures: Vec<(usize, Vec<SchnorrSignature>)> = vec![(
@@ -507,7 +504,10 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1_zkp::All> {
     let rng = &mut thread_rng();
     let oracle_priv_infos = get_oracle_infos(&secp, rng, nb_oracles, nb_digits);
     let oracle_signatures = get_oracle_sigs(&secp, &oracle_priv_infos, &messages, outcome_index);
-    let oracle_infos = oracle_priv_infos.into_iter().map(|x| x.info).collect();
+    let oracle_infos = oracle_priv_infos
+        .into_iter()
+        .map(|x| x.info)
+        .collect::<Vec<_>>();
     let (offer_rpc, accept_rpc, sink_rpc) = init();
 
     let offer_params = generate_dlc_parameters(offer_rpc, &secp, PARTY_COLLATERAL);
@@ -561,7 +561,7 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1_zkp::All> {
         assert!(offer_cets_sigs.iter().enumerate().all(|(i, z)| {
             dlc::verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &z,
+                z,
                 &dlc_txs.cets[i],
                 &oracle_infos,
                 &offer_params.params.fund_pubkey,
@@ -575,7 +575,7 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1_zkp::All> {
         assert!(accept_cets_sigs.iter().enumerate().all(|(i, z)| {
             dlc::verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &z,
+                z,
                 &dlc_txs.cets[i],
                 &oracle_infos,
                 &accept_params.params.fund_pubkey,
@@ -642,7 +642,7 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
         )
         .collect();
 
-    input_serial_ids.sort();
+    input_serial_ids.sort_unstable();
 
     dlc::util::sign_p2wpkh_input(
         &test_params.secp,

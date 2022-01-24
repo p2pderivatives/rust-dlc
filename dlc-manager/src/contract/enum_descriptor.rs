@@ -1,5 +1,6 @@
 //! #EnumDescriptor
 
+use super::contract_info::OracleIndexAndPrefixLength;
 use super::utils::get_majority_combination;
 use super::AdaptorInfo;
 use crate::error::Error;
@@ -41,13 +42,13 @@ impl EnumDescriptor {
         threshold: usize,
         outcomes: &[(usize, &Vec<String>)],
         adaptor_sig_start: usize,
-    ) -> Result<Option<(Vec<(usize, usize)>, RangeInfo)>, crate::error::Error> {
+    ) -> Result<Option<(OracleIndexAndPrefixLength, RangeInfo)>, crate::error::Error> {
         if outcomes.len() < threshold {
             return Ok(None);
         }
 
         let filtered_outcomes: Vec<(usize, &Vec<String>)> = outcomes
-            .into_iter()
+            .iter()
             .filter(|x| x.1.len() == 1)
             .cloned()
             .collect();
@@ -64,10 +65,12 @@ impl EnumDescriptor {
             .outcome_payouts
             .iter()
             .position(|x| x.outcome == outcome)
-            .ok_or(crate::error::Error::InvalidParameters(format!(
-                "Outcome {} not found in the set of possible outcomes",
-                outcome
-            )))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidParameters(format!(
+                    "Outcome {} not found in the set of possible outcomes",
+                    outcome
+                ))
+            })?;
 
         let combinator = CombinationIterator::new(nb_oracles, threshold);
         let mut comb_pos = 0;
@@ -113,7 +116,7 @@ impl EnumDescriptor {
                     secp,
                     &sig,
                     &cets[cet_index],
-                    &adaptor_point,
+                    adaptor_point,
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
@@ -195,7 +198,7 @@ impl EnumDescriptor {
                 let sig = dlc::create_cet_adaptor_sig_from_point(
                     secp,
                     &cets[cet_index],
-                    &adaptor_point,
+                    adaptor_point,
                     fund_privkey,
                     funding_script_pubkey,
                     fund_output_value,
@@ -248,7 +251,7 @@ impl EnumDescriptor {
                 let adaptor_point = dlc::get_adaptor_point_from_oracle_info(
                     secp,
                     &cur_oracle_infos,
-                    &outcome_messages,
+                    outcome_messages,
                 )?;
                 callback(&adaptor_point, i)?;
             }

@@ -14,6 +14,7 @@ pub mod rpc_helpers;
 /// Utility function used to parse hex into a target u8 buffer. Returns
 /// the number of bytes converted or an error if it encounters an invalid
 /// character or unexpected end of string.
+#[allow(clippy::result_unit_err)] // This is just a test util
 pub fn from_hex(hex: &str, target: &mut [u8]) -> Result<usize, ()> {
     if hex.len() % 2 == 1 || hex.len() > target.len() * 2 {
         return Err(());
@@ -43,7 +44,7 @@ pub fn from_hex(hex: &str, target: &mut [u8]) -> Result<usize, ()> {
 pub fn str_to_hex(hex_str: &str) -> Vec<u8> {
     let mut hex = Vec::<u8>::new();
     hex.resize(hex_str.len() / 2, 0);
-    from_hex(&hex_str, &mut hex).unwrap();
+    from_hex(hex_str, &mut hex).unwrap();
     hex
 }
 

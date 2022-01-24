@@ -39,7 +39,7 @@ impl AcceptedContract {
             .as_ref()
             .iter()
             .zip(
-                std::iter::repeat(&(0 as u8))
+                std::iter::repeat(&(0_u8))
                     .take(28)
                     .chain((fund_output_index as u32).to_be_bytes().iter()),
             )
@@ -49,9 +49,7 @@ impl AcceptedContract {
 
         let mut contract_id = [0u8; 32];
 
-        for i in 0..32 {
-            contract_id[i] = contract_id_vec[i];
-        }
+        contract_id[..32].clone_from_slice(&contract_id_vec[..32]);
 
         contract_id
     }

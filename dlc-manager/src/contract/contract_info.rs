@@ -14,6 +14,8 @@ use secp256k1_zkp::{
     Verification,
 };
 
+pub(super) type OracleIndexAndPrefixLength = Vec<(usize, usize)>;
+
 /// Contains information about the contract conditions and oracles used.
 #[derive(Clone, Debug)]
 #[cfg_attr(
@@ -136,15 +138,16 @@ impl ContractInfo {
         adaptor_info: &AdaptorInfo,
         outcomes: &[(usize, &Vec<String>)],
         adaptor_sig_start: usize,
-    ) -> Result<Option<(Vec<(usize, usize)>, RangeInfo)>, crate::error::Error> {
+    ) -> Result<Option<(OracleIndexAndPrefixLength, RangeInfo)>, crate::error::Error> {
         let get_digits_outcome = |input: &[String]| -> Result<Vec<usize>, crate::error::Error> {
             input
                 .iter()
                 .map(|x| {
-                    x.parse::<usize>()
-                        .or(Err(crate::error::Error::InvalidParameters(
+                    x.parse::<usize>().map_err(|_| {
+                        crate::error::Error::InvalidParameters(
                             "Invalid outcome, {} is not a valid number.".to_string(),
-                        )))
+                        )
+                    })
                 })
                 .collect::<Result<Vec<usize>, crate::error::Error>>()
         };
@@ -309,27 +312,25 @@ impl ContractInfo {
                             ));
                         }
                         let mut d_points = Vec::with_capacity(nb_digits);
-                        for i in 0..nb_digits {
+                        for nonce in nonces {
                             let mut points = Vec::with_capacity(base);
                             for j in 0..base {
                                 let msg = Message::from_hashed_data::<sha256::Hash>(
                                     j.to_string().as_bytes(),
                                 );
                                 let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(
-                                    secp, pubkey, &nonces[i], &msg,
+                                    secp, pubkey, nonce, &msg,
                                 )?;
                                 points.push(sig_point);
                             }
                             d_points.push(points);
                         }
-                        return Ok(d_points);
+                        Ok(d_points)
                     }
-                    _ => {
-                        return Err(Error::InvalidParameters(
-                            "Expected digit decomposition event.".to_string(),
-                        ))
-                    }
-                };
+                    _ => Err(Error::InvalidParameters(
+                        "Expected digit decomposition event.".to_string(),
+                    )),
+                }
             })
             .collect::<Result<Vec<Vec<Vec<PublicKey>>>, Error>>()
     }

@@ -80,12 +80,11 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
         adaptor_index_start: usize,
         outcomes: &[RangePayout],
     ) -> Result<Vec<TrieIterInfo>, Error> {
-        let mut cet_index = 0;
         let threshold = self.threshold;
         let nb_oracles = self.nb_oracles;
         let mut adaptor_index = adaptor_index_start;
         let mut trie_infos = Vec::new();
-        for outcome in outcomes {
+        for (cet_index, outcome) in outcomes.iter().enumerate() {
             let groups = group_by_ignoring_digits(
                 outcome.start,
                 outcome.start + outcome.count - 1,
@@ -114,7 +113,6 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
                 };
                 self.digit_trie.insert(&group, &mut get_value)?;
             }
-            cet_index += 1;
         }
         Ok(trie_infos)
     }
@@ -142,10 +140,9 @@ impl<'a> Iterator for MultiOracleTrieIter<'a> {
     type Item = TrieIterInfo;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.cur_res {
-            None => self.cur_res = self.digit_trie_iterator.next(),
-            _ => {}
-        };
+        if self.cur_res.is_none() {
+            self.cur_res = self.digit_trie_iterator.next();
+        }
         let res = match &self.cur_res {
             None => return None,
             Some(res) => res,

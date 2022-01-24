@@ -16,7 +16,7 @@ pub(crate) fn get_majority_combination(
         }
     }
 
-    if hash_set.len() == 0 {
+    if hash_set.is_empty() {
         return Err(crate::error::Error::InvalidParameters(
             "No majority found.".to_string(),
         ));

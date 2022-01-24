@@ -193,7 +193,7 @@ fn is_prefix_of(prefix: &[usize], value: &[usize]) -> bool {
         }
     }
 
-    return true;
+    true
 }
 
 /// Implementation of the `Iterator` trait for `DigitTrieIter`
@@ -218,7 +218,7 @@ impl<'a, T> Iterator for DigitTrieIter<'a, T> {
                 path: self
                     .cur_prefix
                     .iter()
-                    .filter(|x| x.len() > 0)
+                    .filter(|x| !x.is_empty())
                     .flatten()
                     .chain(digit_leaf.prefix.iter())
                     .cloned()
@@ -241,7 +241,7 @@ impl<'a, T> Iterator for DigitTrieIter<'a, T> {
                                     path: self
                                         .cur_prefix
                                         .iter()
-                                        .filter(|x| x.len() > 0)
+                                        .filter(|x| !x.is_empty())
                                         .flatten()
                                         .chain(digit_node.prefix.iter())
                                         .cloned()
@@ -294,7 +294,7 @@ impl<T> DigitTrie<T> {
     where
         F: FnMut(Option<T>) -> Result<T, Error>,
     {
-        if path.len() < 1 || path.iter().any(|x| x > &self.base) {
+        if path.is_empty() || path.iter().any(|x| x > &self.base) {
             panic!("Invalid path");
         }
 
@@ -336,7 +336,7 @@ impl<T> DigitTrie<T> {
                 } else {
                     let common_prefix = get_common_prefix(&prefix, path);
                     let suffix: Vec<_> = path.iter().skip(common_prefix.len()).cloned().collect();
-                    if &prefix == &common_prefix {
+                    if prefix == common_prefix {
                         match cur_node {
                             Node::Node(mut digit_node) => {
                                 digit_node.children[suffix[0]] = Some(self.insert_internal(
@@ -427,13 +427,12 @@ impl<T> DigitTrie<T> {
                     }
 
                     if digit_node.prefix.len() == path.len() {
-                        return match &digit_node.data {
-                            None => None,
-                            Some(data) => Some(vec![LookupResult {
+                        return digit_node.data.as_ref().map(|data| {
+                            vec![LookupResult {
                                 value: data,
                                 path: digit_node.prefix.clone(),
-                            }]),
-                        };
+                            }]
+                        });
                     }
 
                     let prefix = path[digit_node.prefix.len()];
@@ -441,13 +440,12 @@ impl<T> DigitTrie<T> {
                         path.iter().skip(digit_node.prefix.len()).cloned().collect();
                     let res = self.look_up_internal(digit_node.children[prefix], &suffix);
                     match res {
-                        None => match &digit_node.data {
-                            Some(data) => Some(vec![LookupResult {
+                        None => digit_node.data.as_ref().map(|data| {
+                            vec![LookupResult {
                                 value: data,
                                 path: digit_node.prefix.clone(),
-                            }]),
-                            None => None,
-                        },
+                            }]
+                        }),
                         Some(l_res) => match &digit_node.data {
                             None => Some(extend_lookup_res_paths(l_res, &digit_node.prefix)),
                             Some(data) => {
@@ -469,7 +467,7 @@ impl<T> DigitTrie<T> {
 
 fn extend_lookup_res_paths<'a, T>(
     l_res: Vec<LookupResult<'a, T, usize>>,
-    path: &Vec<usize>,
+    path: &[usize],
 ) -> Vec<LookupResult<'a, T, usize>> {
     l_res
         .into_iter()
@@ -647,9 +645,8 @@ mod tests {
     where
         T: Copy,
     {
-        match res {
-            Some(_) => panic!(),
-            _ => {}
+        if res.is_some() {
+            panic!();
         }
     }
 
@@ -754,12 +751,10 @@ mod tests {
 
         assert_eq!(paths.len(), unordered.len());
 
-        unordered.sort();
+        unordered.sort_unstable();
 
-        let mut prev_index = 0;
-        for i in unordered.iter().skip(1) {
+        for (prev_index, i) in unordered.iter().skip(1).enumerate() {
             assert_eq!(*i, prev_index + 1);
-            prev_index += 1;
         }
     }
 }

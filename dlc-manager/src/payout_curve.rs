@@ -90,7 +90,7 @@ impl PayoutFunctionPiece {
 
     fn get_last_point(&self) -> &PayoutPoint {
         match self {
-            PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => &p.payout_points.last().unwrap(),
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.payout_points.last().unwrap(),
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => &h.right_end_point,
         }
     }
@@ -195,7 +195,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
                     let j_outcome = self.payout_points[j].event_outcome as f64;
                     let denominator = i_outcome - j_outcome;
                     let numerator = outcome - j_outcome;
-                    l = l * (numerator / denominator);
+                    l *= numerator / denominator;
                 }
             }
             result += l;
@@ -314,9 +314,7 @@ impl Evaluable for HyperbolaPayoutCurvePiece {
 
         let first_term = self.c * (translated_outcome + sqrt_term) / (2.0 * self.a);
         let second_term = 2.0 * self.a * self.d / (translated_outcome + sqrt_term);
-        let value = first_term + second_term + self.translate_payout;
-
-        value
+        first_term + second_term + self.translate_payout
     }
 
     fn get_first_outcome(&self) -> u64 {

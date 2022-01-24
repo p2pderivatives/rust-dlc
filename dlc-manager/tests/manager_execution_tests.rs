@@ -33,7 +33,11 @@ use secp256k1_zkp::rand::{seq::SliceRandom, thread_rng, RngCore};
 use secp256k1_zkp::{EcdsaAdaptorSignature, Signature};
 use serde_json::{from_str, to_writer_pretty};
 use std::collections::HashMap;
-use std::sync::{mpsc::channel, Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc::channel,
+    Arc, Mutex,
+};
 use std::thread;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -82,8 +86,8 @@ fn create_test_vector() {
                 .unwrap(),
             sign_message: from_str(&std::fs::read_to_string("sign_message.json").unwrap()).unwrap(),
         };
-        let file_name =
-            std::env::var("TEST_VECTOR_OUTPUT_NAME").unwrap_or("test_vector.json".to_string());
+        let file_name = std::env::var("TEST_VECTOR_OUTPUT_NAME")
+            .unwrap_or_else(|_| "test_vector.json".to_string());
         to_writer_pretty(std::fs::File::create(file_name).unwrap(), &test_vector).unwrap();
     }
 }
@@ -125,7 +129,7 @@ macro_rules! receive_loop {
                         .unwrap(),
                 ) {
                     Ok(opt) => {
-                        if *$expect_err.lock().unwrap() != false {
+                        if $expect_err.load(Ordering::Relaxed) != false {
                             panic!("Expected error not raised");
                         }
                         match opt {
@@ -143,7 +147,7 @@ macro_rules! receive_loop {
                         }
                     }
                     Err(e) => {
-                        if *$expect_err.lock().unwrap() != true {
+                        if $expect_err.load(Ordering::Relaxed) != true {
                             panic!("Unexpected error {}", e);
                         }
                     }
@@ -197,7 +201,7 @@ fn select_active_oracles(nb_oracles: usize, threshold: usize) -> Vec<usize> {
     let mut oracle_indexes: Vec<usize> = (0..nb_oracles).collect();
     oracle_indexes.shuffle(&mut thread_rng());
     oracle_indexes = oracle_indexes.into_iter().take(nb_active_oracles).collect();
-    oracle_indexes.sort();
+    oracle_indexes.sort_unstable();
     oracle_indexes
 }
 
@@ -245,11 +249,7 @@ fn get_enum_oracle() -> MockOracle {
         outcomes: enum_outcomes(),
     };
 
-    oracle.add_event(
-        &EVENT_ID,
-        &EventDescriptor::EnumEvent(event),
-        EVENT_MATURITY,
-    );
+    oracle.add_event(EVENT_ID, &EventDescriptor::EnumEvent(event), EVENT_MATURITY);
 
     oracle
 }
@@ -264,7 +264,7 @@ fn get_enum_oracles(nb_oracles: usize, threshold: usize) -> Vec<MockOracle> {
         oracles
             .get_mut(index)
             .unwrap()
-            .add_attestation(EVENT_ID, &vec![outcome.clone()]);
+            .add_attestation(EVENT_ID, &[outcome.clone()]);
     }
 
     oracles
@@ -363,7 +363,7 @@ fn get_digit_decomposition_oracle() -> MockOracle {
     };
 
     oracle.add_event(
-        &EVENT_ID,
+        EVENT_ID,
         &EventDescriptor::DigitDecompositionEvent(event),
         EVENT_MATURITY,
     );
@@ -410,7 +410,7 @@ fn get_digit_decomposition_oracles(
         oracles
             .get_mut(*index)
             .unwrap()
-            .add_attestation(&EVENT_ID, &outcomes);
+            .add_attestation(EVENT_ID, &outcomes);
     }
 
     oracles
@@ -687,7 +687,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let (bob_send, alice_receive) = channel::<Option<Message>>();
     let (sync_send, sync_receive) = channel::<()>();
     let alice_sync_send = sync_send.clone();
-    let bob_sync_send = sync_send.clone();
+    let bob_sync_send = sync_send;
     let (alice_rpc, bob_rpc, sink_rpc) = init_clients();
 
     let alice_bitcoin_core = Arc::new(BitcoinCoreProvider { client: alice_rpc });
@@ -731,11 +731,11 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let alice_send_loop = alice_send.clone();
     let bob_send_loop = bob_send.clone();
 
-    let alice_expect_error = Arc::new(Mutex::new(false));
-    let bob_expect_error = Arc::new(Mutex::new(false));
+    let alice_expect_error = Arc::new(AtomicBool::new(false));
+    let bob_expect_error = Arc::new(AtomicBool::new(false));
 
-    let alice_expect_error_loop = Arc::clone(&alice_expect_error);
-    let bob_expect_error_loop = Arc::clone(&bob_expect_error);
+    let alice_expect_error_loop = alice_expect_error.clone();
+    let bob_expect_error_loop = bob_expect_error.clone();
 
     let path_copy = path.clone();
     let alter_sign = move |msg| match msg {
@@ -814,13 +814,13 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                 }
                 _ => {}
             };
-            *bob_expect_error.lock().unwrap() = true;
+            bob_expect_error.store(true, Ordering::Relaxed);
             alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             sync_receive.recv().expect("Error synchronizing");
             assert_contract_state!(bob_manager_send, temporary_contract_id, FailedAccept);
         }
         TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
-            *alice_expect_error.lock().unwrap() = true;
+            alice_expect_error.store(true, Ordering::Relaxed);
             alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             // Bob receives accept message
             sync_receive.recv().expect("Error synchronizing");

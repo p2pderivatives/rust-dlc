@@ -212,9 +212,9 @@ where
     write_vec_cb(&input.prefix, writer, &write_usize)?;
     let cb = |x: &Vec<Option<usize>>, writer: &mut W| -> Result<(), ::std::io::Error> {
         let cb = |y: &Option<usize>, writer: &mut W| -> Result<(), ::std::io::Error> {
-            write_option_cb(&y, writer, &write_usize)
+            write_option_cb(y, writer, &write_usize)
         };
-        write_vec_cb(&x, writer, &cb)
+        write_vec_cb(x, writer, &cb)
     };
     write_option_cb(&input.children, writer, &cb)
 }

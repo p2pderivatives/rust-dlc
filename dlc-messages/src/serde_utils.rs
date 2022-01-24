@@ -34,8 +34,7 @@ where
 {
     if deserializer.is_human_readable() {
         let string: String = serde::de::Deserialize::deserialize(deserializer)?;
-        let mut hex = Vec::with_capacity(string.len() / 2);
-        hex.resize(string.len() / 2, 0);
+        let mut hex = vec![0; string.len() / 2];
         from_hex(&string, &mut hex).map_err(serde::de::Error::custom)?;
         Ok(hex)
     } else {

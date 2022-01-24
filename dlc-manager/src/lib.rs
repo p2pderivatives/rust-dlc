@@ -2,8 +2,6 @@
 //! and management of DLC.
 
 #![crate_name = "dlc_manager"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 // Coding conventions
 #![forbid(unsafe_code)]
 #![deny(non_upper_case_globals)]

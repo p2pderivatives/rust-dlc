@@ -3,9 +3,6 @@
 //! Discreet Log Contract protocol.
 //!
 
-#![crate_name = "dlc"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 // Coding conventions
 #![deny(non_upper_case_globals)]
 #![deny(non_camel_case_types)]
@@ -342,11 +339,11 @@ pub fn create_dlc_transactions(
     );
 
     fn get_sequence(lock_time: u32) -> u32 {
-        return if lock_time == 0 {
+        if lock_time == 0 {
             DISABLE_LOCKTIME
         } else {
             ENABLE_LOCKTIME
-        };
+        }
     }
 
     let fund_sequence = get_sequence(fund_lock_time);
@@ -459,13 +456,13 @@ pub fn create_cets(
     lock_time: u32,
 ) -> Vec<Transaction> {
     let mut txs: Vec<Transaction> = Vec::new();
-    for i in 0..payouts.len() {
+    for payout in payouts {
         let offer_output = TxOut {
-            value: payouts[i].offer,
+            value: payout.offer,
             script_pubkey: offer_payout_script_pubkey.clone(),
         };
         let accept_output = TxOut {
-            value: payouts[i].accept,
+            value: payout.accept,
             script_pubkey: accept_payout_script_pubkey.clone(),
         };
         let tx = create_cet(
@@ -519,18 +516,16 @@ pub fn create_funding_transaction(
     };
 
     let input = util::order_by_serial_ids(
-        [&offer_inputs[..], &accept_inputs[..]].concat(),
-        &[&offer_inputs_serial_ids[..], &accept_inputs_serial_ids[..]].concat(),
+        [offer_inputs, accept_inputs].concat(),
+        &[offer_inputs_serial_ids, accept_inputs_serial_ids].concat(),
     );
 
-    let funding_transaction = Transaction {
+    Transaction {
         version: TX_VERSION,
-        lock_time: lock_time,
+        lock_time,
         input,
         output,
-    };
-
-    return funding_transaction;
+    }
 }
 
 /// Create a refund transaction
@@ -587,15 +582,15 @@ fn get_oracle_sig_point<C: secp256k1_zkp::Verification>(
 pub fn get_adaptor_point_from_oracle_info<C: Verification>(
     secp: &Secp256k1<C>,
     oracle_infos: &[OracleInfo],
-    msgs: &Vec<Vec<Message>>,
+    msgs: &[Vec<Message>],
 ) -> Result<PublicKey, Error> {
-    if oracle_infos.len() < 1 || msgs.len() < 1 {
+    if oracle_infos.is_empty() || msgs.is_empty() {
         return Err(Error::InvalidArgument);
     }
 
     let mut oracle_sigpoints = Vec::with_capacity(msgs[0].len());
     for (i, info) in oracle_infos.iter().enumerate() {
-        oracle_sigpoints.push(get_oracle_sig_point(secp, &info, &msgs[i])?);
+        oracle_sigpoints.push(get_oracle_sig_point(secp, info, &msgs[i])?);
     }
     Ok(PublicKey::combine_keys(
         &oracle_sigpoints.iter().collect::<Vec<_>>(),
@@ -625,11 +620,11 @@ pub fn create_cet_adaptor_sig_from_point<C: secp256k1_zkp::Signing>(
 pub fn create_cet_adaptor_sig_from_oracle_info(
     secp: &secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
     cet: &Transaction,
-    oracle_infos: &Vec<OracleInfo>,
+    oracle_infos: &[OracleInfo],
     funding_sk: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    msgs: &Vec<Vec<Message>>,
+    msgs: &[Vec<Message>],
 ) -> Result<EcdsaAdaptorSignature, Error> {
     let adaptor_point = get_adaptor_point_from_oracle_info(secp, oracle_infos, msgs)?;
     create_cet_adaptor_sig_from_point(
@@ -645,7 +640,7 @@ pub fn create_cet_adaptor_sig_from_oracle_info(
 /// Crerate a set of adaptor signatures for the given cet/message pairs.
 pub fn create_cet_adaptor_sigs_from_points<C: secp256k1_zkp::Signing>(
     secp: &secp256k1_zkp::Secp256k1<C>,
-    inputs: &Vec<(&Transaction, &PublicKey)>,
+    inputs: &[(&Transaction, &PublicKey)],
     funding_sk: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
@@ -668,12 +663,12 @@ pub fn create_cet_adaptor_sigs_from_points<C: secp256k1_zkp::Signing>(
 /// Crerate a set of adaptor signatures for the given cet/message pairs.
 pub fn create_cet_adaptor_sigs_from_oracle_info(
     secp: &secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
-    cets: &Vec<Transaction>,
-    oracle_infos: &Vec<OracleInfo>,
+    cets: &[Transaction],
+    oracle_infos: &[OracleInfo],
     funding_sk: &SecretKey,
     funding_script_pubkey: &Script,
     fund_output_value: u64,
-    msgs: &Vec<Vec<Vec<Message>>>,
+    msgs: &[Vec<Vec<Message>>],
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     if msgs.len() != cets.len() {
         return Err(Error::InvalidArgument);
@@ -695,7 +690,7 @@ pub fn create_cet_adaptor_sigs_from_oracle_info(
         .collect()
 }
 
-fn signatures_to_secret(signatures: &Vec<Vec<SchnorrSignature>>) -> Result<SecretKey, Error> {
+fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey, Error> {
     let s_values = signatures
         .iter()
         .flatten()
@@ -719,7 +714,7 @@ pub fn sign_cet<C: secp256k1_zkp::Signing>(
     secp: &secp256k1_zkp::Secp256k1<C>,
     cet: &mut Transaction,
     adaptor_signature: &EcdsaAdaptorSignature,
-    oracle_signatures: &Vec<Vec<SchnorrSignature>>,
+    oracle_signatures: &[Vec<SchnorrSignature>],
     funding_sk: &SecretKey,
     other_pk: &PublicKey,
     funding_script_pubkey: &Script,
@@ -754,7 +749,7 @@ pub fn verify_cet_adaptor_sig_from_point(
     total_collateral: u64,
 ) -> Result<(), Error> {
     let sig_hash = util::get_sig_hash_msg(cet, 0, funding_script_pubkey, total_collateral);
-    adaptor_sig.verify(secp, &sig_hash, &pubkey, &adaptor_point)?;
+    adaptor_sig.verify(secp, &sig_hash, pubkey, adaptor_point)?;
     Ok(())
 }
 
@@ -764,11 +759,11 @@ pub fn verify_cet_adaptor_sig_from_oracle_info(
     secp: &Secp256k1<secp256k1_zkp::All>,
     adaptor_sig: &EcdsaAdaptorSignature,
     cet: &Transaction,
-    oracle_infos: &Vec<OracleInfo>,
+    oracle_infos: &[OracleInfo],
     pubkey: &PublicKey,
     funding_script_pubkey: &Script,
     total_collateral: u64,
-    msgs: &Vec<Vec<Message>>,
+    msgs: &[Vec<Message>],
 ) -> Result<(), Error> {
     let adaptor_point = get_adaptor_point_from_oracle_info(secp, oracle_infos, msgs)?;
     verify_cet_adaptor_sig_from_point(
@@ -810,7 +805,6 @@ mod tests {
         schnorrsig::KeyPair,
         PublicKey, Secp256k1, SecretKey, Signing,
     };
-    use std::convert::TryInto;
     use std::fmt::Write;
     use std::str::FromStr;
     use util;
@@ -820,7 +814,7 @@ mod tests {
         let txin = TxIn {
             previous_output: OutPoint::default(),
             script_sig: Script::new(),
-            sequence: sequence,
+            sequence,
             witness: Vec::new(),
         };
         inputs.push(txin);
@@ -1074,7 +1068,7 @@ mod tests {
             network: Network::Testnet,
             compressed: true,
         };
-        let pk = bitcoin::PublicKey::from_private_key(&secp, &sk);
+        let pk = bitcoin::PublicKey::from_private_key(secp, &sk);
         Address::p2wpkh(&pk, Network::Testnet)
             .unwrap()
             .script_pubkey()
@@ -1108,7 +1102,7 @@ mod tests {
                         .unwrap(),
                         vout: serial_id as u32,
                     },
-                    serial_id: serial_id,
+                    serial_id,
                 }],
             },
             fund_privkey,
@@ -1214,9 +1208,7 @@ mod tests {
                             .map(|z| {
                                 Message::from_hashed_data::<
                                     secp256k1_zkp::bitcoin_hashes::sha256::Hash,
-                                >(&[((y + x + z) as u8)
-                                    .try_into()
-                                    .unwrap()])
+                                >(&[((y + x + z) as u8)])
                             })
                             .collect()
                     })
@@ -1292,7 +1284,7 @@ mod tests {
             .enumerate()
             .all(|(i, x)| verify_cet_adaptor_sig_from_oracle_info(
                 &secp,
-                &x,
+                x,
                 &cets[i],
                 &oracle_infos,
                 &offer_party_params.fund_pubkey,
@@ -1359,7 +1351,7 @@ mod tests {
             let dlc_txs = create_dlc_transactions(
                 &offer_party_params,
                 &accept_party_params,
-                &vec![Payout {
+                &[Payout {
                     offer: 100000000,
                     accept: 100000000,
                 }],

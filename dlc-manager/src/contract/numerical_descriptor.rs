@@ -94,7 +94,7 @@ impl NumericalDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         threshold: usize,
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
         cets: &[Transaction],
         adaptor_pairs: &[EcdsaAdaptorSignature],
         adaptor_index_start: usize,
@@ -116,7 +116,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    &precomputed_points,
+                    precomputed_points,
                     adaptor_pairs,
                     adaptor_index_start,
                 )?;
@@ -136,7 +136,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    &precomputed_points,
+                    precomputed_points,
                     adaptor_pairs,
                     adaptor_index_start,
                 )?;
@@ -154,7 +154,7 @@ impl NumericalDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         threshold: usize,
-        precomputed_points: &Vec<Vec<Vec<PublicKey>>>,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
         cets: &[Transaction],
         adaptor_index_start: usize,
     ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
@@ -175,7 +175,7 @@ impl NumericalDescriptor {
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    &precomputed_points,
+                    precomputed_points,
                     adaptor_index_start,
                 )?;
                 Ok((
@@ -193,12 +193,12 @@ impl NumericalDescriptor {
                 );
                 let sigs = trie.generate_sign(
                     secp,
-                    &fund_priv_key,
-                    &funding_script_pubkey,
+                    fund_priv_key,
+                    funding_script_pubkey,
                     fund_output_value,
                     &self.get_range_payouts(total_collateral),
                     cets,
-                    &precomputed_points,
+                    precomputed_points,
                     adaptor_index_start,
                 )?;
                 Ok((AdaptorInfo::Numerical(trie), sigs))

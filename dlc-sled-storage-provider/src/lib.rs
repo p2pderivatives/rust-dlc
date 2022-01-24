@@ -2,8 +2,6 @@
 //! Storage provider for dlc-manager using sled as underlying storage.
 
 #![crate_name = "dlc_sled_storage_provider"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 // Coding conventions
 #![deny(non_upper_case_globals)]
 #![deny(non_camel_case_types)]
@@ -110,7 +108,7 @@ impl SledStorageProvider {
                 let mut pref = [0u8; 1];
                 cursor.read_exact(&mut pref).expect("Error reading prefix");
                 if pref[0] == prefix {
-                    return Some(Ok(T::deserialize(&mut cursor).ok()?));
+                    Some(Ok(T::deserialize(&mut cursor).ok()?))
                 } else {
                     None
                 }
@@ -128,12 +126,11 @@ impl Storage for SledStorageProvider {
     }
 
     fn get_contracts(&self) -> Result<Vec<Contract>, Error> {
-        Ok(self
-            .db
+        self.db
             .iter()
             .values()
-            .map(|x| Ok(deserialize_contract(&x.unwrap())?))
-            .collect::<Result<Vec<Contract>, Error>>()?)
+            .map(|x| deserialize_contract(&x.unwrap()))
+            .collect::<Result<Vec<Contract>, Error>>()
     }
 
     fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error> {

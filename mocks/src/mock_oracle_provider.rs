@@ -36,7 +36,7 @@ impl MockOracle {
 
     pub fn from_secret_key(sk: &SecretKey) -> Self {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::from_secret_key(&secp, sk.clone());
+        let key_pair = KeyPair::from_secret_key(&secp, *sk);
 
         MockOracle {
             secp,
@@ -45,6 +45,12 @@ impl MockOracle {
             attestations: HashMap::new(),
             nonces: HashMap::new(),
         }
+    }
+}
+
+impl Default for MockOracle {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -57,9 +63,7 @@ impl Oracle for MockOracle {
         let res = self
             .announcements
             .get(event_id)
-            .ok_or(DaemonError::OracleError(
-                "Announcement not found".to_string(),
-            ))?;
+            .ok_or_else(|| DaemonError::OracleError("Announcement not found".to_string()))?;
         Ok(res.clone())
     }
 
@@ -67,9 +71,7 @@ impl Oracle for MockOracle {
         let res = self
             .attestations
             .get(event_id)
-            .ok_or(DaemonError::OracleError(
-                "Attestation not found".to_string(),
-            ))?;
+            .ok_or_else(|| DaemonError::OracleError("Attestation not found".to_string()))?;
         Ok(res.clone())
     }
 }
@@ -118,12 +120,12 @@ impl MockOracle {
             Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
         let sig = self.secp.schnorrsig_sign(&msg, &self.key_pair);
         let announcement = OracleAnnouncement {
-            oracle_event: oracle_event,
+            oracle_event,
             oracle_public_key: self.get_public_key(),
             announcement_signature: sig,
         };
         self.announcements
-            .insert(event_id.to_string(), announcement.clone());
+            .insert(event_id.to_string(), announcement);
     }
 
     pub fn add_attestation(&mut self, event_id: &str, outcomes: &[String]) {
@@ -133,7 +135,7 @@ impl MockOracle {
             .zip(nonces.iter())
             .map(|(x, nonce)| {
                 let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
-                    &x.as_bytes(),
+                    x.as_bytes(),
                 );
                 dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &self.secp,

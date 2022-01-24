@@ -140,7 +140,7 @@ impl Wallet for BitcoinCoreProvider {
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
         let b_pubkey = bitcoin::PublicKey {
             compressed: true,
-            key: pubkey.clone(),
+            key: *pubkey,
         };
         let address =
             Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
@@ -201,7 +201,7 @@ impl Wallet for BitcoinCoreProvider {
                         script_pubkey: x.script_pub_key.clone(),
                     },
                     outpoint: OutPoint {
-                        txid: x.txid.clone(),
+                        txid: x.txid,
                         vout: x.vout,
                     },
                     address: x.address.as_ref().ok_or(Error::InvalidState)?.clone(),
@@ -213,7 +213,7 @@ impl Wallet for BitcoinCoreProvider {
         let selection = select_coins(amount, 20, &mut utxo_pool).ok_or(Error::NotEnoughCoins)?;
 
         if lock_utxos {
-            let outputs: Vec<_> = selection.iter().map(|x| x.0.outpoint.clone()).collect();
+            let outputs: Vec<_> = selection.iter().map(|x| x.0.outpoint).collect();
             self.client
                 .lock_unspent(&outputs)
                 .map_err(rpc_err_to_manager_err)?;
@@ -245,8 +245,7 @@ impl Wallet for BitcoinCoreProvider {
                 bitcoincore_rpc::Error::JsonRpc(json_rpc_err) => match json_rpc_err {
                     bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error) => {
                         if rpc_error.code == -5
-                            && rpc_error.message
-                                == "Invalid or non-wallet transaction id".to_string()
+                            && rpc_error.message == *"Invalid or non-wallet transaction id"
                         {
                             return Ok(0);
                         }

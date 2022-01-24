@@ -108,13 +108,10 @@ pub fn read_string<R: ::std::io::Read>(reader: &mut R) -> Result<String, DecodeE
     Ok(res)
 }
 
-pub fn write_strings<W: Writer>(
-    inputs: &Vec<String>,
-    writer: &mut W,
-) -> Result<(), ::std::io::Error> {
+pub fn write_strings<W: Writer>(inputs: &[String], writer: &mut W) -> Result<(), ::std::io::Error> {
     BigSize(inputs.len() as u64).write(writer)?;
     for s in inputs {
-        write_string(&s, writer)?;
+        write_string(s, writer)?;
     }
 
     Ok(())
@@ -136,12 +133,12 @@ pub fn read_strings<R: ::std::io::Read>(
 }
 
 pub fn write_strings_u16<W: Writer>(
-    inputs: &Vec<String>,
+    inputs: &[String],
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     (inputs.len() as u16).write(writer)?;
     for s in inputs {
-        write_string(&s, writer)?;
+        write_string(s, writer)?;
     }
 
     Ok(())
@@ -197,12 +194,12 @@ pub fn read_schnorrsig<R: ::std::io::Read>(
     let buf: [u8; 64] = Readable::read(reader)?;
     match secp256k1_zkp::schnorrsig::Signature::from_slice(&buf) {
         Ok(sig) => Ok(sig),
-        Err(_) => return Err(lightning::ln::msgs::DecodeError::InvalidValue),
+        Err(_) => Err(lightning::ln::msgs::DecodeError::InvalidValue),
     }
 }
 
 pub fn write_schnorr_signatures<W: lightning::util::ser::Writer>(
-    signatures: &Vec<secp256k1_zkp::schnorrsig::Signature>,
+    signatures: &[secp256k1_zkp::schnorrsig::Signature],
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     (signatures.len() as u16).write(writer)?;
@@ -242,12 +239,12 @@ pub fn read_schnorr_pubkey<R: ::std::io::Read>(
     let buf: [u8; 32] = Readable::read(reader)?;
     match secp256k1_zkp::schnorrsig::PublicKey::from_slice(&buf) {
         Ok(sig) => Ok(sig),
-        Err(_) => return Err(lightning::ln::msgs::DecodeError::InvalidValue),
+        Err(_) => Err(lightning::ln::msgs::DecodeError::InvalidValue),
     }
 }
 
 pub fn write_schnorr_pubkeys<W: Writer>(
-    pubkeys: &Vec<secp256k1_zkp::schnorrsig::PublicKey>,
+    pubkeys: &[secp256k1_zkp::schnorrsig::PublicKey],
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     (pubkeys.len() as u16).write(writer)?;
@@ -274,7 +271,7 @@ pub fn read_schnorr_pubkeys<R: ::std::io::Read>(
     Ok(ret)
 }
 
-pub fn write_vec<W: Writer, T>(input: &Vec<T>, writer: &mut W) -> Result<(), ::std::io::Error>
+pub fn write_vec<W: Writer, T>(input: &[T], writer: &mut W) -> Result<(), ::std::io::Error>
 where
     T: Writeable,
 {
@@ -289,7 +286,7 @@ where
 }
 
 pub fn write_vec_cb<W: Writer, T, F>(
-    input: &Vec<T>,
+    input: &[T],
     writer: &mut W,
     cb: &F,
 ) -> Result<(), ::std::io::Error>
@@ -319,7 +316,7 @@ where
     Ok(res)
 }
 
-pub fn write_vec_u16<W: Writer, T>(input: &Vec<T>, writer: &mut W) -> Result<(), ::std::io::Error>
+pub fn write_vec_u16<W: Writer, T>(input: &[T], writer: &mut W) -> Result<(), ::std::io::Error>
 where
     T: Writeable,
 {
@@ -334,7 +331,7 @@ where
 }
 
 pub fn write_vec_u16_cb<W: Writer, T, F>(
-    input: &Vec<T>,
+    input: &[T],
     writer: &mut W,
     cb: &F,
 ) -> Result<(), ::std::io::Error>
@@ -398,7 +395,7 @@ where
     match t {
         Some(t) => {
             1_u8.write(writer)?;
-            cb(&t, writer)
+            cb(t, writer)
         }
         None => 0_u8.write(writer),
     }
@@ -466,11 +463,12 @@ pub fn read_ecdsa_adaptor_signature<R: ::std::io::Read>(
     EcdsaAdaptorSignature::from_slice(&buf).map_err(|_| DecodeError::InvalidValue)
 }
 
+#[allow(clippy::ptr_arg)] // Need to have Vec to work with callbacks.
 pub fn write_ecdsa_adaptor_signatures<W: Writer>(
     sig: &Vec<EcdsaAdaptorSignature>,
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
-    write_vec_cb(&sig, writer, &write_ecdsa_adaptor_signature)
+    write_vec_cb(sig, writer, &write_ecdsa_adaptor_signature)
 }
 
 pub fn read_ecdsa_adaptor_signatures<R: ::std::io::Read>(
