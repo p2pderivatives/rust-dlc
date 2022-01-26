@@ -22,7 +22,7 @@ pub mod oracle_msgs;
 #[cfg(any(test, feature = "serde"))]
 pub mod serde_utils;
 
-use bitcoin::{consensus::Decodable, hash_types::Txid, OutPoint, Script, Transaction};
+use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
 use contract_msgs::ContractInfo;
 use dlc::TxInputInfo;
 use lightning::ln::msgs::DecodeError;
@@ -400,21 +400,6 @@ impl Writeable for Message {
             Message::Sign(s) => s.write(writer),
         }
     }
-}
-
-/// Compute the ID of a DLC based on the fund transaction ID and temporary contract ID.
-pub fn compute_contract_id(
-    fund_tx_id: Txid,
-    fund_ouput_index: u16,
-    temporary_contract_id: [u8; 32],
-) -> [u8; 32] {
-    let mut res = [0; 32];
-    for i in 0..32 {
-        res[i] = fund_tx_id[31 - i] ^ temporary_contract_id[i];
-    }
-    res[0] ^= ((fund_ouput_index >> 8) & 0xff) as u8;
-    res[1] ^= (fund_ouput_index & 0xff) as u8;
-    res
 }
 
 #[cfg(test)]

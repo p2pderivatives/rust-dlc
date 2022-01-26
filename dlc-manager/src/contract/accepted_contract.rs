@@ -2,6 +2,7 @@
 
 use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
+use bitcoin::Txid;
 use dlc::{DlcTransactions, PartyParams};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::Signature;
@@ -31,27 +32,11 @@ impl AcceptedContract {
     /// Returns the contract id for the contract computed as specified here:
     /// https://github.com/discreetlogcontracts/dlcspecs/blob/master/Protocol.md#requirements-2
     pub fn get_contract_id(&self) -> [u8; 32] {
-        let fund_output_index = self.dlc_transactions.get_fund_output_index();
-        let contract_id_vec: Vec<_> = self
-            .dlc_transactions
-            .fund
-            .txid()
-            .as_ref()
-            .iter()
-            .zip(
-                std::iter::repeat(&(0_u8))
-                    .take(28)
-                    .chain((fund_output_index as u32).to_be_bytes().iter()),
-            )
-            .zip(self.offered_contract.id.iter())
-            .map(|((x, y), z)| x ^ y ^ z)
-            .collect();
-
-        let mut contract_id = [0u8; 32];
-
-        contract_id[..32].clone_from_slice(&contract_id_vec[..32]);
-
-        contract_id
+        compute_contract_id(
+            self.dlc_transactions.fund.txid(),
+            self.dlc_transactions.get_fund_output_index() as u16,
+            self.offered_contract.id,
+        )
     }
 
     /// Utility function to get the contract id as a string.
@@ -64,5 +49,39 @@ impl AcceptedContract {
         }
 
         string_id
+    }
+}
+
+fn compute_contract_id(
+    fund_tx_id: Txid,
+    fund_ouput_index: u16,
+    temporary_contract_id: [u8; 32],
+) -> [u8; 32] {
+    let mut res = [0; 32];
+    for i in 0..32 {
+        res[i] = fund_tx_id[31 - i] ^ temporary_contract_id[i];
+    }
+    res[30] ^= ((fund_ouput_index >> 8) & 0xff) as u8;
+    res[31] ^= (fund_ouput_index & 0xff) as u8;
+    res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contract_id_computation_test() {
+        let transaction = bitcoin_test_utils::tx_from_string("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff020000ffffffff0101000000000000000000000000");
+        let output_index = 1;
+        let temporary_contract_id = [34u8; 32];
+        let expected_contract_id = bitcoin_test_utils::str_to_hex(
+            "81db60dcbef10a2d0cb92cb78400a96ee6a9b6da785d0230bdabf1e18a2d6ffb",
+        );
+
+        let contract_id =
+            compute_contract_id(transaction.txid(), output_index, temporary_contract_id);
+
+        assert_eq!(expected_contract_id, contract_id);
     }
 }
