@@ -1,7 +1,14 @@
 #!/bin/bash
 
+if command -v docker &> /dev/null
+then
+   CMD=docker
+else
+   CMD=podman
+fi
+
 : "${BITCOINVERSION:=0.20.0}"
-docker run --rm -d -p 18443:18443 --name bitcoin-node ruimarinho/bitcoin-core:$BITCOINVERSION \
+$CMD run --rm -d -p 18443:18443 --name bitcoin-node ruimarinho/bitcoin-core:$BITCOINVERSION \
   -regtest=1 \
   -rpcallowip=0.0.0/0 \
   -rpcbind=0.0.0.0 \
