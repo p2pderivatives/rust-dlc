@@ -378,7 +378,7 @@ pub fn create_dlc_transactions(
         vout: fund_vout as u32,
     };
 
-    let fund_tx_in = TxIn {
+    let cet_tx_in = TxIn {
         previous_output: fund_outpoint,
         witness: Vec::new(),
         script_sig: Script::new(),
@@ -386,7 +386,7 @@ pub fn create_dlc_transactions(
     };
 
     let cets = create_cets(
-        &fund_tx_in,
+        &cet_tx_in,
         &offer_params.payout_script_pubkey,
         offer_params.payout_serial_id,
         &accept_params.payout_script_pubkey,
@@ -405,10 +405,17 @@ pub fn create_dlc_transactions(
         script_pubkey: accept_params.payout_script_pubkey.clone(),
     };
 
+    let refund_tx_in = TxIn {
+        previous_output: fund_outpoint,
+        witness: Vec::new(),
+        script_sig: Script::new(),
+        sequence: ENABLE_LOCKTIME,
+    };
+
     let refund_tx = create_refund_transaction(
         offer_refund_output,
         accept_refund_ouput,
-        fund_tx_in,
+        refund_tx_in,
         refund_lock_time,
     );
 

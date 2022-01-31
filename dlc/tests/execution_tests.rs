@@ -227,14 +227,21 @@ enum TestCase {
 #[test]
 #[ignore]
 fn integration_tests_close() {
-    let mut test_params = integration_tests_basic_setup();
+    let mut test_params = integration_tests_basic_setup(None);
     integration_tests_common(&mut test_params, TestCase::Close);
 }
 
 #[test]
 #[ignore]
 fn integration_tests_refund() {
-    let mut test_params = integration_tests_basic_setup();
+    let mut test_params = integration_tests_basic_setup(None);
+    integration_tests_common(&mut test_params, TestCase::Refund);
+}
+
+#[test]
+#[ignore]
+fn integration_tests_refund_zero_cet_lock_time() {
+    let mut test_params = integration_tests_basic_setup(Some(0));
     integration_tests_common(&mut test_params, TestCase::Refund);
 }
 
@@ -493,7 +500,7 @@ fn integration_tests_decomposed_common(
     integration_tests_common(&mut test_params, TestCase::Decomposition);
 }
 
-fn integration_tests_basic_setup() -> TestParams<secp256k1_zkp::All> {
+fn integration_tests_basic_setup(cet_lock_time: Option<u32>) -> TestParams<secp256k1_zkp::All> {
     let nb_oracles = 3;
     let nb_digits = 20;
     let nb_outcomes = 2;
@@ -520,7 +527,7 @@ fn integration_tests_basic_setup() -> TestParams<secp256k1_zkp::All> {
         REFUND_LOCK_TIME,
         2,
         FUND_LOCK_TIME,
-        CET_LOCK_TIME,
+        cet_lock_time.unwrap_or(CET_LOCK_TIME),
         rng.next_u64(),
     )
     .expect("Error creating dlc transactions.");
