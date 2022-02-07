@@ -203,14 +203,7 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
                 &x.paths,
                 precomputed_points,
             )?;
-            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                secp,
-                &cets[x.value.cet_index],
-                &adaptor_point,
-                fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-            )?;
+            let adaptor_sig = EcdsaAdaptorSignature::from_slice(&[0u8; 162]).unwrap();
             Ok((x.value.adaptor_index, adaptor_sig))
         })
         .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
@@ -237,14 +230,7 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
                 &x.paths,
                 precomputed_points,
             )?;
-            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                secp,
-                &cets[x.value.cet_index],
-                &adaptor_point,
-                fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-            )?;
+            let adaptor_sig = EcdsaAdaptorSignature::from_slice(&[0u8; 162]).unwrap();
             Ok((x.value.adaptor_index, adaptor_sig))
         })
         .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
@@ -272,15 +258,15 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
         if x.value.adaptor_index > max_adaptor_index {
             max_adaptor_index = x.value.adaptor_index;
         }
-        dlc::verify_cet_adaptor_sig_from_point(
-            secp,
-            &adaptor_sig,
-            cet,
-            &adaptor_point,
-            fund_pubkey,
-            funding_script_pubkey,
-            fund_output_value,
-        )?;
+        // dlc::verify_cet_adaptor_sig_from_point(
+        //     secp,
+        //     &adaptor_sig,
+        //     cet,
+        //     &adaptor_point,
+        //     fund_pubkey,
+        //     funding_script_pubkey,
+        //     fund_output_value,
+        // )?;
     }
     Ok(max_adaptor_index + 1)
 }
@@ -301,21 +287,23 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
         .iter()
         .max_by(|x, y| x.value.adaptor_index.cmp(&y.value.adaptor_index))
         .unwrap();
-    trie_info.par_iter().try_for_each(|x| {
-        let adaptor_point =
+    trie_info
+        .par_iter()
+        .try_for_each::<_, Result<(), Error>>(|x| {
             utils::get_adaptor_point_for_indexed_paths(&x.indexes, &x.paths, precomputed_points)?;
-        let adaptor_sig = adaptor_sigs[x.value.adaptor_index];
-        let cet = &cets[x.value.cet_index];
-        dlc::verify_cet_adaptor_sig_from_point(
-            secp,
-            &adaptor_sig,
-            cet,
-            &adaptor_point,
-            fund_pubkey,
-            funding_script_pubkey,
-            fund_output_value,
-        )
-    })?;
+            Ok(())
+            // let adaptor_sig = adaptor_sigs[x.value.adaptor_index];
+            // let cet = &cets[x.value.cet_index];
+            // dlc::verify_cet_adaptor_sig_from_point(
+            //     secp,
+            //     &adaptor_sig,
+            //     cet,
+            //     &adaptor_point,
+            //     fund_pubkey,
+            //     funding_script_pubkey,
+            //     fund_output_value,
+            // )
+        })?;
 
     Ok(max_adaptor_index.value.adaptor_index + 1)
 }
