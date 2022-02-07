@@ -45,11 +45,11 @@ const MIN_SUPPORT_EXP: usize = 7;
 /// The maximum difference between oracle supported for the contract (as a power of 2).
 const MAX_ERROR_EXP: usize = 8;
 /// Whether to allow difference in oracle's attestation values.
-const USE_DIFF_PARAMS: bool = true;
+const USE_DIFF_PARAMS: bool = false;
 /// The number of oracles used for the contract.
-const NB_ORACLES: usize = 3;
+const NB_ORACLES: usize = 1;
 /// The number of oracles required to be in agreement to close the contract.
-const THRESHOLD: usize = 2;
+const THRESHOLD: usize = 1;
 /// The ID of the event.
 const EVENT_ID: &str = "Test";
 /// The total collateral value locked in the contract.
@@ -287,9 +287,73 @@ pub fn verify_bench(c: &mut Criterion) {
     });
 }
 
-criterion_group! {
-    name = sign_verify_bench;
-    config = Criterion::default().measurement_time(std::time::Duration::new(120, 0)).sample_size(10);
-    targets = sign_bench, verify_bench
+pub fn both_party_sign_verify_bench(c: &mut Criterion) {
+    let contract_info = create_contract_info();
+    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000));
+    let fund_output_value = dlc_transactions.get_fund_output().value;
+
+    let offer_seckey = offer_seckey();
+    let accept_seckey = accept_seckey();
+    let offer_pubkey = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &offer_seckey);
+    let accept_pubkey = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &accept_seckey);
+    c.bench_function("both_party_sign_verify", |b| {
+        b.iter(|| {
+            // Offer create and signs adaptor signatures.
+            let offer_adaptor_info = contract_info
+                .get_adaptor_info(
+                    SECP256K1,
+                    TOTAL_COLLATERAL,
+                    &offer_seckey,
+                    &dlc_transactions.funding_script_pubkey,
+                    fund_output_value,
+                    &dlc_transactions.cets,
+                    0,
+                )
+                .unwrap();
+            // Accept verifies adaptor sigs.
+            let accept_adaptor_info = contract_info
+                .verify_and_get_adaptor_info(
+                    SECP256K1,
+                    TOTAL_COLLATERAL,
+                    &offer_pubkey,
+                    &dlc_transactions.funding_script_pubkey,
+                    fund_output_value,
+                    &dlc_transactions.cets,
+                    &offer_adaptor_info.1,
+                    0,
+                )
+                .expect("verification to succeed");
+            // Accept generates adaptor sigs.
+            let accept_adaptor_sigs = contract_info
+                .get_adaptor_signatures(
+                    SECP256K1,
+                    &accept_adaptor_info.0,
+                    &accept_seckey,
+                    &dlc_transactions.funding_script_pubkey,
+                    fund_output_value,
+                    &dlc_transactions.cets,
+                )
+                .expect("to be able to generate adaptor signatures");
+            // Offer verifies adaptor sigs
+            contract_info
+                .verify_adaptor_info(
+                    SECP256K1,
+                    &accept_pubkey,
+                    &dlc_transactions.funding_script_pubkey,
+                    fund_output_value,
+                    &dlc_transactions.cets,
+                    &accept_adaptor_sigs,
+                    0,
+                    &accept_adaptor_info.0,
+                )
+                .expect("adaptor signatures to be valid");
+        });
+    });
 }
-criterion_main!(sign_verify_bench);
+
+criterion_group! {
+    name = both_party;
+    config = Criterion::default().measurement_time(std::time::Duration::new(120, 0)).sample_size(10);
+    targets = both_party_sign_verify_bench
+}
+criterion_main!(both_party);
