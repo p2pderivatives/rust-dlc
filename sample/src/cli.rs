@@ -403,7 +403,7 @@ fn compute_pnl(contract: &ClosedContract) -> i64 {
         &accepted_contract.accept_params
     };
     let collateral = party_params.collateral as i64;
-    let cet = &accepted_contract.dlc_transactions.cets[contract.cet_index];
+    let cet = &contract.signed_cet;
     let v0_witness_payout_script = &party_params.payout_script_pubkey;
     let final_payout = cet
         .output
