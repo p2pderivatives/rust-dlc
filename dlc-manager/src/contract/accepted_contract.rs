@@ -2,8 +2,8 @@
 
 use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
-use bitcoin::Txid;
 use dlc::{DlcTransactions, PartyParams};
+use dlc_messages::{AcceptDlc, CetAdaptorSignature, CetAdaptorSignatures};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::Signature;
 
@@ -32,10 +32,10 @@ impl AcceptedContract {
     /// Returns the contract id for the contract computed as specified here:
     /// <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Protocol.md#requirements-2>
     pub fn get_contract_id(&self) -> [u8; 32] {
-        compute_contract_id(
+        crate::utils::compute_id(
             self.dlc_transactions.fund.txid(),
             self.dlc_transactions.get_fund_output_index() as u16,
-            self.offered_contract.id,
+            &self.offered_contract.id,
         )
     }
 
@@ -50,38 +50,28 @@ impl AcceptedContract {
 
         string_id
     }
-}
 
-fn compute_contract_id(
-    fund_tx_id: Txid,
-    fund_ouput_index: u16,
-    temporary_contract_id: [u8; 32],
-) -> [u8; 32] {
-    let mut res = [0; 32];
-    for i in 0..32 {
-        res[i] = fund_tx_id[31 - i] ^ temporary_contract_id[i];
-    }
-    res[30] ^= ((fund_ouput_index >> 8) & 0xff) as u8;
-    res[31] ^= (fund_ouput_index & 0xff) as u8;
-    res
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn contract_id_computation_test() {
-        let transaction = bitcoin_test_utils::tx_from_string("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff020000ffffffff0101000000000000000000000000");
-        let output_index = 1;
-        let temporary_contract_id = [34u8; 32];
-        let expected_contract_id = bitcoin_test_utils::str_to_hex(
-            "81db60dcbef10a2d0cb92cb78400a96ee6a9b6da785d0230bdabf1e18a2d6ffb",
-        );
-
-        let contract_id =
-            compute_contract_id(transaction.txid(), output_index, temporary_contract_id);
-
-        assert_eq!(expected_contract_id, contract_id);
+    pub(crate) fn get_accept_contract_msg(
+        &self,
+        ecdsa_adaptor_signatures: Vec<EcdsaAdaptorSignature>,
+    ) -> AcceptDlc {
+        AcceptDlc {
+            temporary_contract_id: self.offered_contract.id,
+            accept_collateral: self.accept_params.collateral,
+            funding_pubkey: self.accept_params.fund_pubkey,
+            payout_spk: self.accept_params.payout_script_pubkey.clone(),
+            payout_serial_id: self.accept_params.payout_serial_id,
+            funding_inputs: self.funding_inputs.iter().map(|x| x.into()).collect(),
+            change_spk: self.accept_params.change_script_pubkey.clone(),
+            change_serial_id: self.accept_params.change_serial_id,
+            cet_adaptor_signatures: CetAdaptorSignatures {
+                ecdsa_adaptor_signatures: ecdsa_adaptor_signatures
+                    .into_iter()
+                    .map::<CetAdaptorSignature, _>(|x| CetAdaptorSignature { signature: x })
+                    .collect(),
+            },
+            refund_signature: self.accept_refund_signature,
+            negotiation_fields: None,
+        }
     }
 }

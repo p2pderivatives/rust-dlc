@@ -1,10 +1,8 @@
 use crate::contract::{
-    accepted_contract::AcceptedContract,
     contract_info::ContractInfo,
     enum_descriptor::EnumDescriptor,
     numerical_descriptor::{DifferenceParams, NumericalDescriptor},
     offered_contract::OfferedContract,
-    signed_contract::SignedContract,
     ContractDescriptor, FundingInputInfo,
 };
 use crate::payout_curve::{
@@ -12,34 +10,34 @@ use crate::payout_curve::{
     PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
 };
 use bitcoin::{consensus::encode::Decodable, OutPoint, Transaction};
-use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
-use dlc_messages::contract_msgs::{
-    ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
-    ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
-    HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece, NumericOutcomeContractDescriptor,
-    PayoutCurvePiece as SerPayoutCurvePiece, PayoutFunction as SerPayoutFunction,
-    PayoutFunctionPiece as SerPayoutFunctionPiece, PayoutPoint as SerPayoutPoint,
-    PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
-    RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
-    SingleContractInfo,
-};
+use dlc::{EnumerationPayout, Payout, TxInputInfo};
 use dlc_messages::oracle_msgs::{
-    EventDescriptor, MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
+    MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
 };
+use dlc_messages::FundingInput;
 use dlc_messages::{
-    AcceptDlc, CetAdaptorSignature, CetAdaptorSignatures, FundingInput, OfferDlc, SignDlc,
+    contract_msgs::{
+        ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
+        ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
+        HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece,
+        NumericOutcomeContractDescriptor, PayoutCurvePiece as SerPayoutCurvePiece,
+        PayoutFunction as SerPayoutFunction, PayoutFunctionPiece as SerPayoutFunctionPiece,
+        PayoutPoint as SerPayoutPoint, PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
+        RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
+        SingleContractInfo,
+    },
+    oracle_msgs::EventDescriptor,
 };
 use dlc_trie::OracleNumericInfo;
-use secp256k1_zkp::PublicKey;
 use std::error;
 use std::fmt;
 
-const BITCOIN_CHAINHASH: [u8; 32] = [
+pub(crate) const BITCOIN_CHAINHASH: [u8; 32] = [
     0x06, 0x22, 0x6e, 0x46, 0x11, 0x1a, 0x0b, 0x59, 0xca, 0xaf, 0x12, 0x60, 0x43, 0xeb, 0x5b, 0xbf,
     0x28, 0xc3, 0x4f, 0x3a, 0x5e, 0x33, 0x2a, 0x1f, 0xc7, 0xb2, 0xb7, 0x3c, 0xf1, 0x88, 0x91, 0x0f,
 ];
 
-const PROTOCOL_VERSION: u32 = 1;
+pub(crate) const PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug)]
 pub enum Error {
@@ -67,32 +65,6 @@ impl error::Error for Error {
 impl From<bitcoin::consensus::encode::Error> for Error {
     fn from(e: bitcoin::consensus::encode::Error) -> Error {
         Error::BitcoinEncoding(e)
-    }
-}
-
-impl From<&OfferedContract> for OfferDlc {
-    fn from(offered_contract: &OfferedContract) -> OfferDlc {
-        OfferDlc {
-            protocol_version: PROTOCOL_VERSION,
-            contract_flags: 0,
-            chain_hash: BITCOIN_CHAINHASH,
-            contract_info: offered_contract.into(),
-            funding_pubkey: offered_contract.offer_params.fund_pubkey,
-            payout_spk: offered_contract.offer_params.payout_script_pubkey.clone(),
-            payout_serial_id: offered_contract.offer_params.payout_serial_id,
-            offer_collateral: offered_contract.offer_params.collateral,
-            funding_inputs: offered_contract
-                .funding_inputs_info
-                .iter()
-                .map(|x| x.into())
-                .collect(),
-            change_spk: offered_contract.offer_params.change_script_pubkey.clone(),
-            change_serial_id: offered_contract.offer_params.change_serial_id,
-            cet_locktime: offered_contract.contract_maturity_bound,
-            refund_locktime: offered_contract.contract_timeout,
-            fee_rate_per_vb: offered_contract.fee_rate_per_vb,
-            fund_output_serial_id: offered_contract.fund_output_serial_id,
-        }
     }
 }
 
@@ -124,43 +96,11 @@ pub fn get_tx_input_infos(
     Ok((inputs, input_amount))
 }
 
-impl OfferedContract {
-    pub(crate) fn try_from_offer_dlc(
-        offer_dlc: &OfferDlc,
-        counter_party: PublicKey,
-    ) -> Result<OfferedContract, Error> {
-        let contract_info = get_contract_info_and_announcements(offer_dlc)?;
-
-        let (inputs, input_amount) = get_tx_input_infos(&offer_dlc.funding_inputs)?;
-
-        Ok(OfferedContract {
-            id: offer_dlc.get_hash().unwrap(),
-            is_offer_party: false,
-            contract_info,
-            offer_params: PartyParams {
-                fund_pubkey: offer_dlc.funding_pubkey,
-                change_script_pubkey: offer_dlc.change_spk.clone(),
-                change_serial_id: offer_dlc.change_serial_id,
-                payout_script_pubkey: offer_dlc.payout_spk.clone(),
-                payout_serial_id: offer_dlc.payout_serial_id,
-                collateral: offer_dlc.offer_collateral,
-                inputs,
-                input_amount,
-            },
-            contract_maturity_bound: offer_dlc.cet_locktime,
-            contract_timeout: offer_dlc.refund_locktime,
-            fee_rate_per_vb: offer_dlc.fee_rate_per_vb,
-            fund_output_serial_id: offer_dlc.fund_output_serial_id,
-            funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
-            total_collateral: offer_dlc.contract_info.get_total_collateral(),
-            counter_party,
-        })
-    }
-}
-
-fn get_contract_info_and_announcements(offer_dlc: &OfferDlc) -> Result<Vec<ContractInfo>, Error> {
+pub(crate) fn get_contract_info_and_announcements(
+    contract_info: &SerContractInfo,
+) -> Result<Vec<ContractInfo>, Error> {
     let mut contract_infos = Vec::new();
-    let (total_collateral, inner_contract_infos) = match &offer_dlc.contract_info {
+    let (total_collateral, inner_contract_infos) = match contract_info {
         SerContractInfo::SingleContractInfo(single) => {
             (single.total_collateral, vec![single.contract_info.clone()])
         }
@@ -565,54 +505,6 @@ impl From<&SerPolynomialPayoutCurvePiece> for PolynomialPayoutCurvePiece {
     fn from(piece: &SerPolynomialPayoutCurvePiece) -> PolynomialPayoutCurvePiece {
         PolynomialPayoutCurvePiece {
             payout_points: piece.payout_points.iter().map(|x| x.into()).collect(),
-        }
-    }
-}
-
-impl From<&AcceptedContract> for AcceptDlc {
-    fn from(contract: &AcceptedContract) -> AcceptDlc {
-        AcceptDlc {
-            temporary_contract_id: contract.offered_contract.id,
-            accept_collateral: contract.accept_params.collateral,
-            funding_pubkey: contract.accept_params.fund_pubkey,
-            payout_spk: contract.accept_params.payout_script_pubkey.clone(),
-            payout_serial_id: contract.accept_params.payout_serial_id,
-            funding_inputs: contract.funding_inputs.iter().map(|x| x.into()).collect(),
-            change_spk: contract.accept_params.change_script_pubkey.clone(),
-            change_serial_id: contract.accept_params.change_serial_id,
-            cet_adaptor_signatures: CetAdaptorSignatures {
-                ecdsa_adaptor_signatures: contract
-                    .adaptor_signatures
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .cloned()
-                    .map::<CetAdaptorSignature, _>(|x| CetAdaptorSignature { signature: x })
-                    .collect(),
-            },
-            refund_signature: contract.accept_refund_signature,
-            negotiation_fields: None,
-        }
-    }
-}
-
-impl From<&SignedContract> for SignDlc {
-    fn from(contract: &SignedContract) -> SignDlc {
-        let contract_id = contract.accepted_contract.get_contract_id();
-
-        SignDlc {
-            contract_id,
-            cet_adaptor_signatures: CetAdaptorSignatures {
-                ecdsa_adaptor_signatures: contract
-                    .adaptor_signatures
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .map(|x| CetAdaptorSignature { signature: *x })
-                    .collect(),
-            },
-            refund_signature: contract.offer_refund_signature,
-            funding_signatures: contract.funding_signatures.clone(),
         }
     }
 }

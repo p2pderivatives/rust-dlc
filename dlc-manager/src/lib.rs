@@ -25,6 +25,7 @@ extern crate rand_chacha;
 extern crate secp256k1_zkp;
 
 pub mod contract;
+pub mod contract_updater;
 mod conversion_utils;
 pub mod error;
 pub mod manager;
@@ -59,17 +60,8 @@ impl Time for SystemTimeProvider {
     }
 }
 
-/// Wallet trait to provide functionalities related to generating, storing and
-/// managing bitcoin addresses and UTXOs.
-pub trait Wallet {
-    /// Returns a new (unused) address.
-    fn get_new_address(&self) -> Result<Address, Error>;
-    /// Generate a new secret key and store it in the wallet so that it can later
-    /// be retrieved.
-    fn get_new_secret_key(&self) -> Result<SecretKey, Error>;
-    /// Get the secret key associated with the provided public key.
-    fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, Error>;
-
+/// Provides signing related functionalities.
+pub trait Signer {
     /// Signs a transaction input
     fn sign_tx_input(
         &self,
@@ -78,7 +70,18 @@ pub trait Wallet {
         tx_out: &TxOut,
         redeem_script: Option<Script>,
     ) -> Result<(), Error>;
+    /// Get the secret key associated with the provided public key.
+    fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, Error>;
+}
 
+/// Wallet trait to provide functionalities related to generating, storing and
+/// managing bitcoin addresses and UTXOs.
+pub trait Wallet: Signer {
+    /// Returns a new (unused) address.
+    fn get_new_address(&self) -> Result<Address, Error>;
+    /// Generate a new secret key and store it in the wallet so that it can later
+    /// be retrieved.
+    fn get_new_secret_key(&self) -> Result<SecretKey, Error>;
     /// Get a set of UTXOs to fund the given amount.
     fn get_utxos_for_amount(
         &self,

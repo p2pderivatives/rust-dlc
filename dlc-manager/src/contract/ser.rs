@@ -127,7 +127,7 @@ impl_dlc_writeable!(SignedContract, {
 impl_dlc_writeable!(ClosedContract, {
     (signed_contract, writeable),
     (attestations, vec),
-    (cet_index, usize)
+    (signed_cet, writeable)
 });
 impl_dlc_writeable!(FailedAcceptContract, {(offered_contract, writeable), (accept_message, writeable), (error_message, string)});
 impl_dlc_writeable!(FailedSignContract, {(accepted_contract, writeable), (sign_message, writeable), (error_message, string)});
