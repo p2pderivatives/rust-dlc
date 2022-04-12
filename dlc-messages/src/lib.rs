@@ -43,7 +43,7 @@ use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::{bitcoin_hashes::*, Secp256k1};
+use secp256k1_zkp::Secp256k1;
 use secp256k1_zkp::{EcdsaAdaptorSignature, Signing};
 use secp256k1_zkp::{PublicKey, Signature};
 use segmentation::{SegmentChunk, SegmentStart};
@@ -270,6 +270,15 @@ pub struct OfferDlc {
     )]
     /// The identifier of the chain on which the contract will be settled.
     pub chain_hash: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+        )
+    )]
+    /// Temporary contract id to identify the contract.
+    pub temporary_contract_id: [u8; 32],
     /// Information about the contract event, payouts and oracles.
     pub contract_info: ContractInfo,
     /// The public key of the offerer to be used to lock the collateral.
@@ -303,13 +312,6 @@ impl Type for OfferDlc {
 }
 
 impl OfferDlc {
-    /// Returns the hash of the serialized OfferDlc message.
-    pub fn get_hash(&self) -> Result<[u8; 32], ::std::io::Error> {
-        let mut buff = Vec::new();
-        self.write(&mut buff)?;
-        Ok(sha256::Hash::hash(&buff).into_inner())
-    }
-
     /// Returns the total collateral locked in the contract.
     pub fn get_total_collateral(&self) -> u64 {
         match &self.contract_info {
@@ -350,6 +352,7 @@ impl_dlc_writeable!(OfferDlc, {
         (protocol_version, writeable),
         (contract_flags, writeable),
         (chain_hash, writeable),
+        (temporary_contract_id, writeable),
         (contract_info, writeable),
         (funding_pubkey, writeable),
         (payout_spk, writeable),

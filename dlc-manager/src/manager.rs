@@ -234,8 +234,8 @@ where
             .iter()
             .map(|x| self.contract_view_info_to_contract_info(x))
             .collect::<Result<Vec<ContractInfo>, Error>>()?;
-        let mut offered_contract = OfferedContract {
-            id: [0u8; 32],
+        let offered_contract = OfferedContract {
+            id: crate::utils::get_new_temporary_id(),
             is_offer_party: true,
             contract_info,
             offer_params: party_params,
@@ -249,8 +249,6 @@ where
         };
 
         let offer_msg: OfferDlc = (&offered_contract).into();
-
-        offered_contract.id = offer_msg.get_hash()?;
 
         self.store.create_contract(&offered_contract)?;
 

@@ -74,6 +74,7 @@ impl From<&OfferedContract> for OfferDlc {
     fn from(offered_contract: &OfferedContract) -> OfferDlc {
         OfferDlc {
             protocol_version: PROTOCOL_VERSION,
+            temporary_contract_id: offered_contract.id,
             contract_flags: 0,
             chain_hash: BITCOIN_CHAINHASH,
             contract_info: offered_contract.into(),
@@ -134,7 +135,7 @@ impl OfferedContract {
         let (inputs, input_amount) = get_tx_input_infos(&offer_dlc.funding_inputs)?;
 
         Ok(OfferedContract {
-            id: offer_dlc.get_hash().unwrap(),
+            id: offer_dlc.temporary_contract_id,
             is_offer_party: false,
             contract_info,
             offer_params: PartyParams {
