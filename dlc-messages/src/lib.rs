@@ -28,7 +28,6 @@ use dlc::TxInputInfo;
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::bitcoin_hashes::*;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{PublicKey, Signature};
 use ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
@@ -234,6 +233,14 @@ pub struct OfferDlc {
         )
     )]
     pub chain_hash: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+        )
+    )]
+    pub temporary_contract_id: [u8; 32],
     pub contract_info: ContractInfo,
     pub funding_pubkey: PublicKey,
     pub payout_spk: Script,
@@ -255,13 +262,7 @@ impl Type for OfferDlc {
 }
 
 impl OfferDlc {
-    /// Returns the hash of the serialized OfferDlc message.
-    pub fn get_hash(&self) -> Result<[u8; 32], ::std::io::Error> {
-        let mut buff = Vec::new();
-        self.write(&mut buff)?;
-        Ok(sha256::Hash::hash(&buff).into_inner())
-    }
-
+    /// Return the sum of the collaterals from both parties.
     pub fn get_total_collateral(&self) -> u64 {
         match &self.contract_info {
             ContractInfo::SingleContractInfo(single) => single.total_collateral,
@@ -274,6 +275,7 @@ impl_dlc_writeable!(OfferDlc, {
         (protocol_version, writeable),
         (contract_flags, writeable),
         (chain_hash, writeable),
+        (temporary_contract_id, writeable),
         (contract_info, writeable),
         (funding_pubkey, writeable),
         (payout_spk, writeable),

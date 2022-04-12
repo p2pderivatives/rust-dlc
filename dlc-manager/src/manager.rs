@@ -124,7 +124,7 @@ where
         let (party_params, _, funding_inputs_info) =
             self.get_party_params(contract.offer_collateral, contract.fee_rate)?;
 
-        let mut offered_contract = OfferedContract::new(
+        let offered_contract = OfferedContract::new(
             contract,
             oracle_announcements,
             &party_params,
@@ -134,8 +134,6 @@ where
         );
 
         let offer_msg: OfferDlc = (&offered_contract).into();
-
-        offered_contract.id = offer_msg.get_hash()?;
 
         self.store.create_contract(&offered_contract)?;
 

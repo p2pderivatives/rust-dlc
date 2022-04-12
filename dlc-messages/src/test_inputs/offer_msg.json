@@ -2,6 +2,7 @@
   "protocolVersion": 1,
   "contractFlags": 0,
   "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+  "temporaryContractId": "1212121212121212121212121212121212121212121212121212121212121212",
   "contractInfo": {
     "singleContractInfo": {
       "totalCollateral": 200000000,
