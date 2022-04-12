@@ -1009,7 +1009,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         .expect("Send offer error");
 
     write_message("offer_message", offer_msg.clone());
-    let temporary_contract_id = offer_msg.get_hash().unwrap();
+    let temporary_contract_id = offer_msg.temporary_contract_id;
     bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
 
     assert_contract_state!(bob_manager_send, temporary_contract_id, Offered);
