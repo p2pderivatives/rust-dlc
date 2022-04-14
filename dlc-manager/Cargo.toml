@@ -9,7 +9,7 @@ repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-manager
 version = "0.1.0"
 
 [features]
-fuzztarget = ["rand_chacha", "bitcoin/fuzztarget", "lightning/fuzztarget"]
+fuzztarget = ["rand_chacha", "bitcoin/fuzztarget"]
 parallel = ["dlc-trie/parallel"]
 use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde"]
 
@@ -19,7 +19,7 @@ bitcoin = {version = "0.27"}
 dlc = {version = "0.1.0", path = "../dlc"}
 dlc-messages = {version = "0.1.0", path = "../dlc-messages"}
 dlc-trie = {version = "0.1.0", path = "../dlc-trie"}
-lightning = {version = "0.0.103"}
+lightning = {version = "0.0.106"}
 log = "0.4.14"
 rand_chacha = {version = "0.3.1", optional = true}
 secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
