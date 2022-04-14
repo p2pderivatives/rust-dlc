@@ -478,7 +478,7 @@ pub fn read_ecdsa_adaptor_signatures<R: ::std::io::Read>(
 }
 
 pub fn write_i32<W: Writer>(i: &i32, writer: &mut W) -> Result<(), ::std::io::Error> {
-    write_vec(&i.to_be_bytes().to_vec(), writer)
+    write_vec(i.to_be_bytes().as_ref(), writer)
 }
 
 pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> {
