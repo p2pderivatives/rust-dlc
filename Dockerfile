@@ -39,6 +39,6 @@ RUN apt-get install -y linux-perf linux-base
 
 RUN cargo test --no-run
 
-RUN cp -r ./sled-storage-provider/test_files ./target/debug/deps/
+RUN cp -r ./dlc-sled-storage-provider/test_files ./target/debug/deps/
 
 CMD [ "cargo test" ]
