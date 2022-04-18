@@ -36,33 +36,18 @@ docker build . -t rust-dlc-test
 
 From the main folder run:
 ```
-./scripts/run_test_coverage.sh
+./scripts/generate_test_coverage.sh
 ```
 
-This will generate coverage reports for each projects in `target/cov/cov-project-name`.
-
-To generate a consolidated report run:
-```
-docker-compose run tester ./scripts/kcov_merge.sh cov-
-```
-
-The consolidated report will be available at `target/cov/merged`.
+This will generate a coverage report in `coverage/index.html`.
 
 ### Code coverage for dlc-manager integration tests
 
 From the main folder run:
 ```
-./scripts/run_manager_test_coverage.sh
+./scripts/generate_integration_test_coverage.sh
 ```
-
-This will generate coverage reports for each integration test.
-
-To generate a consolidated report run (note that this will override the report in the `target/cov/merged` folder if it previously existed):
-```
-docker-compose run tester ./scripts/kcov_merge.sh cov-manager_execution_tests
-```
-
-The consolidated report will be available at `target/cov/merged`.
+The coverage report will be available at `integration_coverage/index.html`.
 
 ## Benchmarking and profiling
 
