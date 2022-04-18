@@ -372,7 +372,7 @@ impl From<&PayoutFunction> for SerPayoutFunction {
                         ),
                     };
                     SerPayoutFunctionPiece {
-                        left_end_point: left,
+                        end_point: left,
                         payout_curve_piece: piece,
                     }
                 })
@@ -403,7 +403,7 @@ impl From<&SerPayoutFunction> for PayoutFunction {
                         .payout_function_pieces
                         .iter()
                         .skip(1)
-                        .map(|x| &x.left_end_point)
+                        .map(|x| &x.end_point)
                         .chain(vec![&payout_function.last_endpoint]),
                 )
                 .map(|(x, y)| from_ser_payout_function_piece(x, y))
@@ -419,7 +419,7 @@ fn from_ser_payout_function_piece(
     match &piece.payout_curve_piece {
         SerPayoutCurvePiece::PolynomialPayoutCurvePiece(p) => {
             PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
-                payout_points: vec![(&piece.left_end_point).into()]
+                payout_points: vec![(&piece.end_point).into()]
                     .into_iter()
                     .chain(p.payout_points.iter().map(|x| x.into()))
                     .chain(vec![(right_end_point).into()])
@@ -428,7 +428,7 @@ fn from_ser_payout_function_piece(
         }
         SerPayoutCurvePiece::HyperbolaPayoutCurvePiece(h) => {
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(HyperbolaPayoutCurvePiece {
-                left_end_point: (&piece.left_end_point).into(),
+                left_end_point: (&piece.end_point).into(),
                 right_end_point: right_end_point.into(),
                 use_positive_piece: h.use_positive_piece,
                 translate_outcome: h.translate_outcome,
