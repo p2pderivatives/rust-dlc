@@ -142,11 +142,11 @@ impl_dlc_writeable!(PayoutFunction, {(payout_function_pieces, vec), (last_endpoi
     serde(rename_all = "camelCase")
 )]
 pub struct PayoutFunctionPiece {
-    pub left_end_point: PayoutPoint,
+    pub end_point: PayoutPoint,
     pub payout_curve_piece: PayoutCurvePiece,
 }
 
-impl_dlc_writeable!(PayoutFunctionPiece, { (left_end_point, writeable), (payout_curve_piece, writeable) });
+impl_dlc_writeable!(PayoutFunctionPiece, { (end_point, writeable), (payout_curve_piece, writeable) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(

@@ -12,7 +12,7 @@
             "payoutFunction": {
               "payoutFunctionPieces": [
                 {
-                  "leftEndPoint": {
+                  "endPoint": {
                     "eventOutcome": 0,
                     "outcomePayout": 0,
                     "extraPrecision": 0
