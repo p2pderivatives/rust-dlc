@@ -1,3 +1,6 @@
+//! Set of macro to help implementing the [`lightning::util::ser::Writeable`] trait.
+
+/// Writes a field to a writer.
 #[macro_export]
 macro_rules! field_write {
     ($stream: expr, $field: expr, writeable) => {
@@ -32,6 +35,7 @@ macro_rules! field_write {
     };
 }
 
+/// Reads a field from a reader.
 #[macro_export]
 macro_rules! field_read {
     ($stream: expr, writeable) => {
@@ -66,6 +70,8 @@ macro_rules! field_read {
     };
 }
 
+/// Implements the [`lightning::util::ser::Writeable`] trait for a struct available
+/// in this crate.
 #[macro_export]
 macro_rules! impl_dlc_writeable {
     ($st:ident, {$(($field: ident, $fieldty: tt)), *} ) => {
@@ -90,6 +96,8 @@ macro_rules! impl_dlc_writeable {
     };
 }
 
+/// Implements the [`lightning::util::ser::Writeable`] trait for a struct external
+/// to this crate.
 #[macro_export]
 macro_rules! impl_dlc_writeable_external {
     ($st: ident $(< $gen: ident $(< $gen2: ident >)?> )? , $name: ident, {$(($field: ident, $fieldty: tt)), *} ) => {
@@ -118,6 +126,8 @@ macro_rules! impl_dlc_writeable_external {
     };
 }
 
+/// Implements the [`lightning::util::ser::Writeable`] trait for an enum external
+/// to this crate.
 #[macro_export]
 macro_rules! impl_dlc_writeable_external_enum {
     ($st:ident $(<$gen: ident>)?, $name: ident, $(($variant_id: expr, $variant_name: ident, $variant_mod: ident)), * ) => {
@@ -150,6 +160,7 @@ macro_rules! impl_dlc_writeable_external_enum {
     };
 }
 
+/// Implements the [`lightning::util::ser::Writeable`] trait for an enum as a TLV.
 #[macro_export]
 macro_rules! impl_dlc_writeable_enum_as_tlv {
     ($st:ident, $(($variant_id: expr, $variant_name: ident)), *;) => {
@@ -183,6 +194,7 @@ macro_rules! impl_dlc_writeable_enum_as_tlv {
     };
 }
 
+/// Implements the [`lightning::util::ser::Writeable`] trait for an enum.
 #[macro_export]
 macro_rules! impl_dlc_writeable_enum {
     ($st:ident, $(($variant_id: expr, $variant_name: ident)), *; $(($external_variant_id: expr, $external_variant_name: ident, $write_cb: expr, $read_cb: expr)), *; $(($simple_variant_id: expr, $simple_variant_name: ident)), *) => {

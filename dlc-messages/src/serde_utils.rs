@@ -1,3 +1,6 @@
+//! Utility functions to serialize hexadecimal values as strings in json.
+
+/// Serialize an hexadecimal value.
 pub fn serialize_hex<S>(hex: &[u8], s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
@@ -14,6 +17,7 @@ where
     }
 }
 
+/// Deserialize an hexadecimal value represented as an array.
 pub fn deserialize_hex_array<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
 where
     D: serde::de::Deserializer<'de>,
@@ -28,6 +32,7 @@ where
     }
 }
 
+/// Deserialize an hexadecimal value represented as a string.
 pub fn deserialize_hex_string<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
     D: serde::de::Deserializer<'de>,

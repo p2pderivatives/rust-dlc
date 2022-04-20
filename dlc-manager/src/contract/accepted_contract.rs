@@ -30,7 +30,7 @@ pub struct AcceptedContract {
 
 impl AcceptedContract {
     /// Returns the contract id for the contract computed as specified here:
-    /// https://github.com/discreetlogcontracts/dlcspecs/blob/master/Protocol.md#requirements-2
+    /// <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Protocol.md#requirements-2>
     pub fn get_contract_id(&self) -> [u8; 32] {
         compute_contract_id(
             self.dlc_transactions.fund.txid(),
