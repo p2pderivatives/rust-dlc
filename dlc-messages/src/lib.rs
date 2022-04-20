@@ -1,5 +1,15 @@
 //! Data structure and functions related to peer communication.
 
+// Coding conventions
+#![forbid(unsafe_code)]
+#![deny(non_upper_case_globals)]
+#![deny(non_camel_case_types)]
+#![deny(non_snake_case)]
+#![deny(unused_mut)]
+#![deny(dead_code)]
+#![deny(unused_imports)]
+#![deny(missing_docs)]
+
 extern crate bitcoin;
 extern crate dlc;
 extern crate lightning;
@@ -22,6 +32,7 @@ pub mod oracle_msgs;
 #[cfg(any(test, feature = "serde"))]
 pub mod serde_utils;
 
+use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
 use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
 use contract_msgs::ContractInfo;
 use dlc::TxInputInfo;
@@ -31,23 +42,26 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::bitcoin_hashes::*;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{PublicKey, Signature};
-use ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
 
+/// The type prefix for an [`OfferDlc`] message.
 pub const OFFER_TYPE: u16 = 42778;
 
+/// The type prefix for an [`AcceptDlc`] message.
 pub const ACCEPT_TYPE: u16 = 42780;
 
+/// The type prefix for a [`SignDlc`] message.
 pub const SIGN_TYPE: u16 = 42782;
 
-/// Contains information about a specific input to be used in a funding transaction,
-/// as well as its corresponding on-chain UTXO.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains information about a specific input to be used in a funding transaction,
+/// as well as its corresponding on-chain UTXO.
 pub struct FundingInput {
+    /// Serial id used for input ordering in the funding transaction.
     pub input_serial_id: u64,
     #[cfg_attr(
         feature = "serde",
@@ -56,10 +70,15 @@ pub struct FundingInput {
             deserialize_with = "crate::serde_utils::deserialize_hex_string"
         )
     )]
+    /// The previous transaction used by the associated input in serialized format.
     pub prev_tx: Vec<u8>,
+    /// The vout of the output used by the associated input.
     pub prev_tx_vout: u32,
+    /// The sequence number to use for the input.
     pub sequence: u32,
+    /// The maximum witness length that can be used to spend the previous UTXO.
     pub max_witness_len: u16,
+    /// The redeem script of the previous UTXO.
     pub redeem_script: Script,
 }
 
@@ -88,14 +107,15 @@ impl From<&FundingInput> for TxInputInfo {
     }
 }
 
-/// Contains an adaptor signature for a CET input and its associated DLEQ proof.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains an adaptor signature for a CET input and its associated DLEQ proof.
 pub struct CetAdaptorSignature {
+    /// The signature.
     pub signature: EcdsaAdaptorSignature,
 }
 
@@ -103,14 +123,15 @@ impl_dlc_writeable!(CetAdaptorSignature, {
      (signature, { cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature })
 });
 
-/// Contains a list of adaptor signature for a number of CET inputs.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains a list of adaptor signature for a number of CET inputs.
 pub struct CetAdaptorSignatures {
+    /// The set of signatures.
     pub ecdsa_adaptor_signatures: Vec<CetAdaptorSignature>,
 }
 
@@ -127,40 +148,42 @@ impl From<Vec<EcdsaAdaptorSignature>> for CetAdaptorSignatures {
 
 impl_dlc_writeable!(CetAdaptorSignatures, { (ecdsa_adaptor_signatures, vec) });
 
-/// Contains the witness elements to use to make a funding transaction input valid.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains the witness elements to use to make a funding transaction input valid.
 pub struct FundingSignature {
+    /// The set of witness elements.
     pub witness_elements: Vec<WitnessElement>,
 }
 
 impl_dlc_writeable!(FundingSignature, { (witness_elements, vec) });
 
-/// Contains a list of witness elements to satisfy the spending conditions of
-/// funding inputs.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains a list of witness elements to satisfy the spending conditions of
+/// funding inputs.
 pub struct FundingSignatures {
+    /// The set of funding signatures.
     pub funding_signatures: Vec<FundingSignature>,
 }
 
 impl_dlc_writeable!(FundingSignatures, { (funding_signatures, vec) });
 
-/// Contains serialized data representing a single witness stack element.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains serialized data representing a single witness stack element.
 pub struct WitnessElement {
     #[cfg_attr(
         feature = "serde",
@@ -169,62 +192,69 @@ pub struct WitnessElement {
             deserialize_with = "crate::serde_utils::deserialize_hex_string"
         )
     )]
+    /// The serialized witness data.
     pub witness: Vec<u8>,
 }
 
 impl_dlc_writeable!(WitnessElement, { (witness, vec) });
 
-///
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Fields used to negotiate contract information.
 pub enum NegotiationFields {
+    /// Negotiation for single event based contract.
     Single(SingleNegotiationFields),
+    /// Negotiation for multiple event based contract.
     Disjoint(DisjointNegotiationFields),
 }
 
 impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;);
 
-///
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Negotiation fields for contract based on a single event.
 pub struct SingleNegotiationFields {
+    /// Proposed rounding intervals.
     rounding_intervals: contract_msgs::RoundingIntervals,
 }
 
 impl_dlc_writeable!(SingleNegotiationFields, { (rounding_intervals, writeable) });
 
-///
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Negotiation fields for contract based on multiple events.
 pub struct DisjointNegotiationFields {
+    /// The negotiation fields for each contract event.
     negotiation_fields: Vec<NegotiationFields>,
 }
 
 impl_dlc_writeable!(DisjointNegotiationFields, { (negotiation_fields, vec) });
 
-/// Contains information about a party wishing to enter into a DLC with
-/// another party. The contained information is sufficient for any other party
-/// to create a set of transactions representing the contract and its terms.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Contains information about a party wishing to enter into a DLC with
+/// another party. The contained information is sufficient for any other party
+/// to create a set of transactions representing the contract and its terms.
 pub struct OfferDlc {
+    /// The version of the protocol used by the peer.
     pub protocol_version: u32,
+    /// Feature flags to be used for the offered contract.
     pub contract_flags: u8,
     #[cfg_attr(
         feature = "serde",
@@ -233,18 +263,31 @@ pub struct OfferDlc {
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
         )
     )]
+    /// The identifier of the chain on which the contract will be settled.
     pub chain_hash: [u8; 32],
+    /// Information about the contract event, payouts and oracles.
     pub contract_info: ContractInfo,
+    /// The public key of the offerer to be used to lock the collateral.
     pub funding_pubkey: PublicKey,
+    /// The SPK where the offerer will receive their payout.
     pub payout_spk: Script,
+    /// Serial id to order CET outputs.
     pub payout_serial_id: u64,
+    /// Collateral of the offer party.
     pub offer_collateral: u64,
+    /// Inputs used by the offer party to fund the contract.
     pub funding_inputs: Vec<FundingInput>,
+    /// The SPK where the offer party will receive their change.
     pub change_spk: Script,
+    /// Serial id to order funding transaction outputs.
     pub change_serial_id: u64,
+    /// Serial id to order funding transaction outputs.
     pub fund_output_serial_id: u64,
+    /// The fee rate to use to compute transaction fees for this contract.
     pub fee_rate_per_vb: u64,
+    /// The expected maturity of the contract.
     pub contract_maturity_bound: u32,
+    /// The time at which the contract can be refunded.
     pub contract_timeout: u32,
 }
 
@@ -262,6 +305,7 @@ impl OfferDlc {
         Ok(sha256::Hash::hash(&buff).into_inner())
     }
 
+    /// Returns the total collateral locked in the contract.
     pub fn get_total_collateral(&self) -> u64 {
         match &self.contract_info {
             ContractInfo::SingleContractInfo(single) => single.total_collateral,
@@ -306,16 +350,27 @@ pub struct AcceptDlc {
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
         )
     )]
+    /// The temporary contract id for the contract.
     pub temporary_contract_id: [u8; 32],
+    /// The collateral input by the accept party.
     pub accept_collateral: u64,
+    /// The public key of the accept party to be used to lock the collateral.
     pub funding_pubkey: PublicKey,
+    /// The SPK where the accept party will receive their payout.
     pub payout_spk: Script,
+    /// Serial id to order CET outputs.
     pub payout_serial_id: u64,
+    /// Inputs used by the accept party to fund the contract.
     pub funding_inputs: Vec<FundingInput>,
+    /// The SPK where the accept party will receive their change.
     pub change_spk: Script,
+    /// Serial id to order funding transaction outputs.
     pub change_serial_id: u64,
+    /// The set of adaptor signatures from the accept party.
     pub cet_adaptor_signatures: CetAdaptorSignatures,
+    /// The refund signature of the accept party.
     pub refund_signature: Signature,
+    /// The negotiation fields from the accept party.
     pub negotiation_fields: Option<NegotiationFields>,
 }
 
@@ -355,9 +410,13 @@ pub struct SignDlc {
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
         )
     )]
+    /// The id of the contract referred to by this message.
     pub contract_id: [u8; 32],
+    /// The set of adaptor signatures from the offer party.
     pub cet_adaptor_signatures: CetAdaptorSignatures,
+    /// The refund signature from the offer party.
     pub refund_signature: Signature,
+    /// The set of funding signatures from the offer party.
     pub funding_signatures: FundingSignatures,
 }
 

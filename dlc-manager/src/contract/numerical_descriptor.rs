@@ -26,7 +26,7 @@ pub struct DifferenceParams {
     /// The minimum error deviation under which the contract should be guaranteed
     /// to be closeable.
     pub min_support_exp: usize,
-    /// Whether to maximize the coverage of the [min;max] interval to increase
+    /// Whether to maximize the coverage of the \[min;max\] interval to increase
     /// the probability of the contract being closeable within it.
     pub maximize_coverage: bool,
 }

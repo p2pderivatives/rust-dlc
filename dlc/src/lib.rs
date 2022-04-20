@@ -52,11 +52,11 @@ const FUND_TX_BASE_WEIGHT: usize = 214;
 const CET_BASE_WEIGHT: usize = 500;
 
 /// The base weight of a transaction input computed as: (outpoint(36) + sequence(4) + scriptPubKeySize(1)) * 4
-/// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
+/// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>
 const TX_INPUT_BASE_WEIGHT: usize = 164;
 
 /// The witness size of a P2WPKH input
-/// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
+/// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>
 pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
 // Setting the nSequence for every input of a transaction to this value disables

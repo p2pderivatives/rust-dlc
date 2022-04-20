@@ -1,3 +1,5 @@
+//! Set of utility functions to help with serialization.
+
 use bitcoin::network::constants::Network;
 use bitcoin::Address;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
@@ -10,7 +12,7 @@ use std::io::Read;
 
 const MAX_VEC_SIZE: u64 = 1000000;
 
-/// Taken from rust-lightning: https://github.com/rust-bitcoin/rust-lightning/blob/v0.0.101/lightning/src/util/ser.rs#L295
+/// Taken from rust-lightning: <https://github.com/rust-bitcoin/rust-lightning/blob/v0.0.101/lightning/src/util/ser.rs#L295>
 ///
 /// Lightning TLV uses a custom variable-length integer called BigSize. It is similar to Bitcoin's
 /// variable-length integers except that it is serialized in big-endian instead of little-endian.
@@ -74,6 +76,8 @@ impl Readable for BigSize {
     }
 }
 
+/// Writes a given string to the given writer, prefixing the string length as
+/// a BigSize value.
 pub fn write_string<W: Writer>(input: &str, writer: &mut W) -> Result<(), ::std::io::Error> {
     let len = BigSize(input.len() as u64);
     len.write(writer)?;
@@ -86,6 +90,7 @@ pub fn write_string<W: Writer>(input: &str, writer: &mut W) -> Result<(), ::std:
     Ok(())
 }
 
+/// Reads a string from the given reader.
 pub fn read_string<R: ::std::io::Read>(reader: &mut R) -> Result<String, DecodeError> {
     let len: BigSize = Readable::read(reader)?;
 
@@ -108,6 +113,7 @@ pub fn read_string<R: ::std::io::Read>(reader: &mut R) -> Result<String, DecodeE
     Ok(res)
 }
 
+/// Writes a set of strings to the given writer.
 pub fn write_strings<W: Writer>(inputs: &[String], writer: &mut W) -> Result<(), ::std::io::Error> {
     BigSize(inputs.len() as u64).write(writer)?;
     for s in inputs {
@@ -117,6 +123,7 @@ pub fn write_strings<W: Writer>(inputs: &[String], writer: &mut W) -> Result<(),
     Ok(())
 }
 
+/// Reads a set of strings from the given reader.
 pub fn read_strings<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<Vec<String>, lightning::ln::msgs::DecodeError> {
@@ -132,6 +139,8 @@ pub fn read_strings<R: ::std::io::Read>(
     Ok(res)
 }
 
+/// Writes a set of strings to the given writer, using `u16` prefixes, compared
+/// to [`write_strings`] which uses `BigSize` prefixes.
 pub fn write_strings_u16<W: Writer>(
     inputs: &[String],
     writer: &mut W,
@@ -144,6 +153,8 @@ pub fn write_strings_u16<W: Writer>(
     Ok(())
 }
 
+/// Reads a set of string from the given reader, assuming `u16` prefixes, compared
+/// to [`read_strings`] which assumes `BigSize` prefixes.
 pub fn read_strings_u16<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<Vec<String>, lightning::ln::msgs::DecodeError> {
@@ -156,6 +167,7 @@ pub fn read_strings_u16<R: ::std::io::Read>(
     Ok(res)
 }
 
+/// Writes an `f64` value to the given writer.
 pub fn write_f64<W: lightning::util::ser::Writer>(
     input: f64,
     writer: &mut W,
@@ -169,6 +181,7 @@ pub fn write_f64<W: lightning::util::ser::Writer>(
     extra_precision.write(writer)
 }
 
+/// Reads an `f64` value from the given reader.
 pub fn read_f64<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<f64, lightning::ln::msgs::DecodeError> {
@@ -181,6 +194,7 @@ pub fn read_f64<R: ::std::io::Read>(
     Ok(((no_precision) + ((extra_precision as f64) / ((1 << 16) as f64))) * mul_sign)
 }
 
+/// Writes a [`secp256k1_zkp::schnorrsig::Signature`] value to the given writer.
 pub fn write_schnorrsig<W: lightning::util::ser::Writer>(
     signature: &secp256k1_zkp::schnorrsig::Signature,
     writer: &mut W,
@@ -188,6 +202,7 @@ pub fn write_schnorrsig<W: lightning::util::ser::Writer>(
     signature.as_ref().write(writer)
 }
 
+/// Reads a [`secp256k1_zkp::schnorrsig::Signature`] value from the given reader.
 pub fn read_schnorrsig<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<secp256k1_zkp::schnorrsig::Signature, lightning::ln::msgs::DecodeError> {
@@ -198,6 +213,7 @@ pub fn read_schnorrsig<R: ::std::io::Read>(
     }
 }
 
+/// Writes a set of [`secp256k1_zkp::schnorrsig::Signature`] to the given writer.
 pub fn write_schnorr_signatures<W: lightning::util::ser::Writer>(
     signatures: &[secp256k1_zkp::schnorrsig::Signature],
     writer: &mut W,
@@ -209,6 +225,7 @@ pub fn write_schnorr_signatures<W: lightning::util::ser::Writer>(
     Ok(())
 }
 
+/// Reads a set of [`secp256k1_zkp::schnorrsig::Signature`] from the given reader.
 pub fn read_schnorr_signatures<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<Vec<secp256k1_zkp::schnorrsig::Signature>, lightning::ln::msgs::DecodeError> {
@@ -226,6 +243,7 @@ pub fn read_schnorr_signatures<R: ::std::io::Read>(
     Ok(ret)
 }
 
+/// Writes a schnorr public key to the given writer.
 pub fn write_schnorr_pubkey<W: lightning::util::ser::Writer>(
     pubkey: &secp256k1_zkp::schnorrsig::PublicKey,
     writer: &mut W,
@@ -233,6 +251,7 @@ pub fn write_schnorr_pubkey<W: lightning::util::ser::Writer>(
     pubkey.serialize().write(writer)
 }
 
+/// Reads a schnorr public key from the given reader.
 pub fn read_schnorr_pubkey<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<secp256k1_zkp::schnorrsig::PublicKey, lightning::ln::msgs::DecodeError> {
@@ -243,6 +262,7 @@ pub fn read_schnorr_pubkey<R: ::std::io::Read>(
     }
 }
 
+/// Writes a set of schnorr public keys to the given writer.
 pub fn write_schnorr_pubkeys<W: Writer>(
     pubkeys: &[secp256k1_zkp::schnorrsig::PublicKey],
     writer: &mut W,
@@ -254,6 +274,7 @@ pub fn write_schnorr_pubkeys<W: Writer>(
     Ok(())
 }
 
+/// Reads a set of schnorr public keys from the given reader.
 pub fn read_schnorr_pubkeys<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<Vec<secp256k1_zkp::schnorrsig::PublicKey>, DecodeError> {
@@ -271,6 +292,7 @@ pub fn read_schnorr_pubkeys<R: ::std::io::Read>(
     Ok(ret)
 }
 
+/// Writes a vector of writeable to the given writer.
 pub fn write_vec<W: Writer, T>(input: &[T], writer: &mut W) -> Result<(), ::std::io::Error>
 where
     T: Writeable,
@@ -278,6 +300,7 @@ where
     write_vec_cb(input, writer, &<T as Writeable>::write)
 }
 
+/// Reads a vector of writeable from the given reader.
 pub fn read_vec<R: ::std::io::Read, T>(reader: &mut R) -> Result<Vec<T>, DecodeError>
 where
     T: Readable,
@@ -285,6 +308,8 @@ where
     read_vec_cb(reader, &Readable::read)
 }
 
+/// Writes a vector of values to the given writer using the provided callback to
+/// serialize each value.
 pub fn write_vec_cb<W: Writer, T, F>(
     input: &[T],
     writer: &mut W,
@@ -300,6 +325,8 @@ where
     Ok(())
 }
 
+/// Reads a vector of values from the given reader using the provided callback to
+/// deserialize each value.
 pub fn read_vec_cb<R: ::std::io::Read, T, F>(reader: &mut R, cb: &F) -> Result<Vec<T>, DecodeError>
 where
     F: Fn(&mut R) -> Result<T, DecodeError>,
@@ -316,6 +343,9 @@ where
     Ok(res)
 }
 
+/// Writes a vector of values to the given writer. This function differs from
+/// [`write_vec`] in that it uses `u16` prefixes to give the length of the vector
+/// instead of a `BigSize`.
 pub fn write_vec_u16<W: Writer, T>(input: &[T], writer: &mut W) -> Result<(), ::std::io::Error>
 where
     T: Writeable,
@@ -323,6 +353,9 @@ where
     write_vec_u16_cb(input, writer, &<T as Writeable>::write)
 }
 
+/// Reads a vector of values from the given reader. This function differs from
+/// [`read_vec`] in that it uses `u16` prefixes to read the length of the vector
+/// instead of a `BigSize`.
 pub fn read_vec_u16<R: ::std::io::Read, T>(reader: &mut R) -> Result<Vec<T>, DecodeError>
 where
     T: Readable,
@@ -330,6 +363,9 @@ where
     read_vec_u16_cb(reader, &Readable::read)
 }
 
+/// Writes a vector of values to the given writer using the provided callback to
+/// serialize each value. This function differs from [`write_vec_cb`] in that it
+/// uses `u16` prefixes to give the length of the vector instead of a `BigSize`.
 pub fn write_vec_u16_cb<W: Writer, T, F>(
     input: &[T],
     writer: &mut W,
@@ -345,6 +381,9 @@ where
     Ok(())
 }
 
+/// Reads a vector of values from the given reader using the provided callback to
+/// deserialize each value. This function differs from [`read_vec_cb`] in that it
+/// uses `u16` prefixes to read the length of the vector instead of a `BigSize`.
 pub fn read_vec_u16_cb<R: ::std::io::Read, T, F>(
     reader: &mut R,
     cb: &F,
@@ -361,15 +400,18 @@ where
     Ok(res)
 }
 
+/// Writes a usize value as a u64 to the given writer.
 pub fn write_usize<W: Writer>(i: &usize, writer: &mut W) -> Result<(), ::std::io::Error> {
     <u64 as Writeable>::write(&(*i as u64), writer)
 }
 
+/// Reads a usize value as a u64 from the given reader.
 pub fn read_usize<R: ::std::io::Read>(reader: &mut R) -> Result<usize, DecodeError> {
     let i: u64 = Readable::read(reader)?;
     Ok(i as usize)
 }
 
+/// Writes an option of a [`lightning::util::ser::Writeable`] value to the given writer.
 pub fn write_option<W: Writer, T>(t: &Option<T>, writer: &mut W) -> Result<(), ::std::io::Error>
 where
     T: Writeable,
@@ -377,6 +419,7 @@ where
     write_option_cb(t, writer, &<T as Writeable>::write)
 }
 
+/// Reads an option of a [`lightning::util::ser::Writeable`] value from the given reader.
 pub fn read_option<R: ::std::io::Read, T>(reader: &mut R) -> Result<Option<T>, DecodeError>
 where
     T: Readable,
@@ -384,6 +427,7 @@ where
     read_option_cb(reader, &<T as Readable>::read)
 }
 
+/// Writes an option using the provided callback to serialize the inner value (if any).
 pub fn write_option_cb<W: Writer, T, F>(
     t: &Option<T>,
     writer: &mut W,
@@ -401,6 +445,7 @@ where
     }
 }
 
+/// Reads an option using the provided callback to deserialize the inner value (if any).
 pub fn read_option_cb<R: ::std::io::Read, T, F>(
     reader: &mut R,
     cb: &F,
@@ -417,6 +462,7 @@ where
     Ok(res)
 }
 
+/// Writes a [`bitcoin::util::address::Address`] value to the given writer.
 pub fn write_address<W: Writer>(address: &Address, writer: &mut W) -> Result<(), ::std::io::Error> {
     address.script_pubkey().write(writer)?;
     let net: u8 = match address.network {
@@ -429,6 +475,7 @@ pub fn write_address<W: Writer>(address: &Address, writer: &mut W) -> Result<(),
     net.write(writer)
 }
 
+/// Reads a [`bitcoin::util::address::Address`] value from the given reader.
 pub fn read_address<R: Read>(reader: &mut R) -> Result<Address, DecodeError> {
     let script: bitcoin::Script = Readable::read(reader)?;
     let net: u8 = Readable::read(reader)?;
@@ -442,6 +489,7 @@ pub fn read_address<R: Read>(reader: &mut R) -> Result<Address, DecodeError> {
     Ok(bitcoin::Address::from_script(&script, network).unwrap())
 }
 
+/// Writes an [`secp256k1_zkp::EcdsaAdaptorSignature`] to the given writer.
 pub fn write_ecdsa_adaptor_signature<W: Writer>(
     sig: &EcdsaAdaptorSignature,
     writer: &mut W,
@@ -452,6 +500,7 @@ pub fn write_ecdsa_adaptor_signature<W: Writer>(
     Ok(())
 }
 
+/// Reads an [`secp256k1_zkp::EcdsaAdaptorSignature`] from the given reader.
 pub fn read_ecdsa_adaptor_signature<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<EcdsaAdaptorSignature, DecodeError> {
@@ -463,6 +512,7 @@ pub fn read_ecdsa_adaptor_signature<R: ::std::io::Read>(
     EcdsaAdaptorSignature::from_slice(&buf).map_err(|_| DecodeError::InvalidValue)
 }
 
+/// Writes a set of [`secp256k1_zkp::EcdsaAdaptorSignature`] to the given writer.
 #[allow(clippy::ptr_arg)] // Need to have Vec to work with callbacks.
 pub fn write_ecdsa_adaptor_signatures<W: Writer>(
     sig: &Vec<EcdsaAdaptorSignature>,
@@ -471,16 +521,19 @@ pub fn write_ecdsa_adaptor_signatures<W: Writer>(
     write_vec_cb(sig, writer, &write_ecdsa_adaptor_signature)
 }
 
+/// Reads a set of [`secp256k1_zkp::EcdsaAdaptorSignature`] from the given reader.
 pub fn read_ecdsa_adaptor_signatures<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<Vec<EcdsaAdaptorSignature>, DecodeError> {
     read_vec_cb(reader, &read_ecdsa_adaptor_signature)
 }
 
+/// Writes an `i32` value to the given writer.
 pub fn write_i32<W: Writer>(i: &i32, writer: &mut W) -> Result<(), ::std::io::Error> {
     write_vec(i.to_be_bytes().as_ref(), writer)
 }
 
+/// Reads an `i32` value from the given reader.
 pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> {
     let v = read_vec(reader)?;
     Ok(i32::from_be_bytes(
@@ -488,6 +541,7 @@ pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> 
     ))
 }
 
+/// Writes a [`lightning::util::ser::Writeable`] value to the given writer as a TLV.
 pub fn write_as_tlv<T: Type + Writeable, W: Writer>(
     e: &T,
     writer: &mut W,
@@ -497,6 +551,7 @@ pub fn write_as_tlv<T: Type + Writeable, W: Writer>(
     e.write(writer)
 }
 
+/// Read a [`lightning::util::ser::Writeable`] value from the given reader as a TLV.
 pub fn read_as_tlv<T: Type + Readable, R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<T, DecodeError> {
