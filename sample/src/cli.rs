@@ -439,7 +439,7 @@ fn process_incoming_messages(
         }
     }
 
-    if !dlc_message_handler.is_empty() {
+    if dlc_message_handler.has_pending_messages() {
         peer_manager.process_events();
     }
 }
