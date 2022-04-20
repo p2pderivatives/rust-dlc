@@ -18,7 +18,7 @@
                       "extraPrecision": 0
                     },
                     {
-                      "eventOutcome": 49999,
+                      "eventOutcome": 50000,
                       "outcomePayout": 0,
                       "extraPrecision": 0
                     }
@@ -29,12 +29,12 @@
                 "polynomialPayoutCurvePiece": {
                   "payoutPoints": [
                     {
-                      "eventOutcome": 49999,
+                      "eventOutcome": 50000,
                       "outcomePayout": 0,
                       "extraPrecision": 0
                     },
                     {
-                      "eventOutcome": 50000,
+                      "eventOutcome": 60000,
                       "outcomePayout": 200000000,
                       "extraPrecision": 0
                     }
@@ -45,7 +45,7 @@
                 "polynomialPayoutCurvePiece": {
                   "payoutPoints": [
                     {
-                      "eventOutcome": 50000,
+                      "eventOutcome": 60000,
                       "outcomePayout": 200000000,
                       "extraPrecision": 0
                     },

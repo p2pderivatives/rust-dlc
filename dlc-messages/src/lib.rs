@@ -27,10 +27,14 @@ extern crate serde;
 extern crate serde_json;
 
 pub mod contract_msgs;
+pub mod message_handler;
 pub mod oracle_msgs;
+pub mod segmentation;
 
 #[cfg(any(test, feature = "serde"))]
 pub mod serde_utils;
+
+use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
 use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
@@ -42,6 +46,7 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::bitcoin_hashes::*;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{PublicKey, Signature};
+use segmentation::{SegmentChunk, SegmentStart};
 
 /// The type prefix for an [`OfferDlc`] message.
 pub const OFFER_TYPE: u16 = 42778;
@@ -434,7 +439,7 @@ impl Type for SignDlc {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     Offer(OfferDlc),
     Accept(AcceptDlc),
@@ -457,6 +462,48 @@ impl Writeable for Message {
             Message::Offer(o) => o.write(writer),
             Message::Accept(a) => a.write(writer),
             Message::Sign(s) => s.write(writer),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+/// Wrapper for DLC related message and segmentation related messages.
+pub enum WireMessage {
+    /// Message related to establishment of a DLC contract.
+    Message(Message),
+    /// Message indicating an incoming segmented message.
+    SegmentStart(SegmentStart),
+    /// Message providing a chunk of a segmented message.
+    SegmentChunk(SegmentChunk),
+}
+
+impl Display for WireMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Message(_) => "Message",
+            Self::SegmentStart(_) => "SegmentStart",
+            Self::SegmentChunk(_) => "SegmentChunk",
+        };
+        f.write_str(name)
+    }
+}
+
+impl Type for WireMessage {
+    fn type_id(&self) -> u16 {
+        match self {
+            WireMessage::Message(m) => m.type_id(),
+            WireMessage::SegmentStart(s) => s.type_id(),
+            WireMessage::SegmentChunk(s) => s.type_id(),
+        }
+    }
+}
+
+impl Writeable for WireMessage {
+    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
+        match self {
+            WireMessage::Message(m) => m.write(writer),
+            WireMessage::SegmentStart(s) => s.write(writer),
+            WireMessage::SegmentChunk(s) => s.write(writer),
         }
     }
 }

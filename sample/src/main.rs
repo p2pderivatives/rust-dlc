@@ -8,18 +8,13 @@ use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc_manager::{Oracle, SystemTimeProvider};
-use dlc_messages::Message as DlcMessage;
-use lightning::ln::msgs::DecodeError;
+use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
 use lightning::ln::peer_handler::{
-    CustomMessageHandler, ErroringMessageHandler, IgnoringMessageHandler, MessageHandler,
-    PeerManager as LdkPeerManager,
+    ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
-use lightning::ln::wire::CustomMessageReader;
-use lightning::util::ser::Readable;
 use lightning_net_tokio::SocketDescriptor;
 use p2pd_oracle_client::P2PDOracleClient;
 use std::collections::hash_map::HashMap;
-use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -39,73 +34,6 @@ pub(crate) type DlcManager = dlc_manager::manager::Manager<
     Box<P2PDOracleClient>,
     Arc<SystemTimeProvider>,
 >;
-
-/// DlcMessageHandler is used to send and receive messages through
-/// the custom message handling mechanism of the LDK.
-pub(crate) struct DlcMessageHandler {
-    msg_events: Mutex<VecDeque<(PublicKey, DlcMessage)>>,
-    msg_received: Mutex<Vec<(PublicKey, DlcMessage)>>,
-}
-
-impl DlcMessageHandler {
-    fn new() -> Self {
-        DlcMessageHandler {
-            msg_events: Mutex::new(VecDeque::new()),
-            msg_received: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn get_and_clear_received_messages(&self) -> Vec<(PublicKey, DlcMessage)> {
-        let mut ret = Vec::new();
-        std::mem::swap(&mut *self.msg_received.lock().unwrap(), &mut ret);
-        ret
-    }
-
-    fn send_message(&self, node_id: PublicKey, msg: DlcMessage) {
-        self.msg_events.lock().unwrap().push_back((node_id, msg));
-    }
-
-    fn is_empty(&self) -> bool {
-        self.msg_events.lock().unwrap().is_empty()
-    }
-}
-
-/// Implementation of the `CustomMessageReader` trait is required to decode
-/// custom messages in the LDK.
-impl CustomMessageReader for DlcMessageHandler {
-    type CustomMessage = DlcMessage;
-    fn read<R: ::std::io::Read>(
-        &self,
-        msg_type: u16,
-        mut buffer: &mut R,
-    ) -> Result<Option<DlcMessage>, DecodeError> {
-        let decoded = match msg_type {
-            dlc_messages::OFFER_TYPE => DlcMessage::Offer(Readable::read(&mut buffer)?),
-            dlc_messages::ACCEPT_TYPE => DlcMessage::Accept(Readable::read(&mut buffer)?),
-            dlc_messages::SIGN_TYPE => DlcMessage::Sign(Readable::read(&mut buffer)?),
-            _ => return Ok(None),
-        };
-
-        Ok(Some(decoded))
-    }
-}
-
-/// Implementation of the `CustomMessageHandler` trait is required to handle
-/// custom messages in the LDK.
-impl CustomMessageHandler for DlcMessageHandler {
-    fn handle_custom_message(
-        &self,
-        msg: DlcMessage,
-        org: &PublicKey,
-    ) -> Result<(), lightning::ln::msgs::LightningError> {
-        self.msg_received.lock().unwrap().push((*org, msg));
-        Ok(())
-    }
-
-    fn get_and_clear_pending_msg(&self) -> Vec<(PublicKey, Self::CustomMessage)> {
-        self.msg_events.lock().unwrap().drain(..).collect()
-    }
-}
 
 #[tokio::main]
 async fn main() {

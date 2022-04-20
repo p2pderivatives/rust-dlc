@@ -8,7 +8,7 @@ version = "0.1.0"
 bitcoin = {version = "0.27"}
 bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
 dlc = {path = "../dlc", features = ["use-serde"]}
-dlc-manager = {path = "../dlc-manager", features = ["use-serde"]}
+dlc-manager = {path = "../dlc-manager", features = ["use-serde", "parallel"]}
 dlc-messages = {path = "../dlc-messages"}
 dlc-sled-storage-provider = {path = "../dlc-sled-storage-provider"}
 futures = "0.3"
