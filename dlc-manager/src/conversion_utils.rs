@@ -343,6 +343,12 @@ impl From<&EnumDescriptor> for EnumeratedContractDescriptor {
 impl From<&NumericalDescriptor> for NumericOutcomeContractDescriptor {
     fn from(num_descriptor: &NumericalDescriptor) -> NumericOutcomeContractDescriptor {
         NumericOutcomeContractDescriptor {
+            num_digits: *num_descriptor
+                .oracle_numeric_infos
+                .nb_digits
+                .iter()
+                .min()
+                .expect("to have at least a value") as u16,
             payout_function: (&num_descriptor.payout_function).into(),
             rounding_intervals: (&num_descriptor.rounding_intervals).into(),
         }
