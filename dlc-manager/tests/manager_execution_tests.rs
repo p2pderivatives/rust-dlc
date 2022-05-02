@@ -8,16 +8,19 @@ use bitcoin_rpc_provider::BitcoinCoreProvider;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc::{EnumerationPayout, Payout};
-use dlc_manager::contract::{
-    contract_input::{ContractInput, ContractInputInfo, OracleInput},
-    enum_descriptor::EnumDescriptor,
-    numerical_descriptor::{DifferenceParams, NumericalDescriptor},
-    Contract, ContractDescriptor,
-};
 use dlc_manager::manager::Manager;
 use dlc_manager::payout_curve::{
     PayoutFunction, PayoutFunctionPiece, PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval,
     RoundingIntervals,
+};
+use dlc_manager::{
+    contract::{
+        contract_input::{ContractInput, ContractInputInfo, OracleInput},
+        enum_descriptor::EnumDescriptor,
+        numerical_descriptor::{DifferenceParams, NumericalDescriptor},
+        Contract, ContractDescriptor,
+    },
+    payout_curve::HyperbolaPayoutCurvePiece,
 };
 use dlc_manager::{Oracle, Storage};
 use dlc_messages::oracle_msgs::{
@@ -327,46 +330,78 @@ fn get_enum_test_params(
     }
 }
 
+fn get_polynomial_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFunctionPiece> {
+    vec![
+        PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+            PolynomialPayoutCurvePiece::new(vec![
+                PayoutPoint {
+                    event_outcome: 0,
+                    outcome_payout: 0,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 3,
+                    outcome_payout: 100000000,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: MID_POINT,
+                    outcome_payout: 200000000,
+                    extra_precision: 0,
+                },
+            ])
+            .unwrap(),
+        ),
+        PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+            PolynomialPayoutCurvePiece::new(vec![
+                PayoutPoint {
+                    event_outcome: MID_POINT,
+                    outcome_payout: 200000000,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: max_value_from_digits(min_nb_digits) as u64,
+                    outcome_payout: 200000000,
+                    extra_precision: 0,
+                },
+            ])
+            .unwrap(),
+        ),
+    ]
+}
+
+fn get_hyperbola_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFunctionPiece> {
+    vec![PayoutFunctionPiece::HyperbolaPayoutCurvePiece(
+        HyperbolaPayoutCurvePiece::new(
+            PayoutPoint {
+                event_outcome: 0,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            PayoutPoint {
+                event_outcome: max_value_from_digits(min_nb_digits) as u64,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            true,
+            50.0,
+            50.0,
+            5.0,
+            -1.0,
+            0.0,
+            1.0,
+        )
+        .unwrap(),
+    )]
+}
+
 fn get_numerical_contract_descriptor(
     oracle_numeric_infos: OracleNumericInfo,
+    function_pieces: Vec<PayoutFunctionPiece>,
     difference_params: Option<DifferenceParams>,
 ) -> ContractDescriptor {
     ContractDescriptor::Numerical(NumericalDescriptor {
-        payout_function: PayoutFunction::new(vec![
-            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
-                PolynomialPayoutCurvePiece::new(vec![
-                    PayoutPoint {
-                        event_outcome: 0,
-                        outcome_payout: 0,
-                        extra_precision: 0,
-                    },
-                    PayoutPoint {
-                        event_outcome: MID_POINT,
-                        outcome_payout: 200000000,
-                        extra_precision: 0,
-                    },
-                ])
-                .unwrap(),
-            ),
-            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
-                PolynomialPayoutCurvePiece::new(vec![
-                    PayoutPoint {
-                        event_outcome: MID_POINT,
-                        outcome_payout: 200000000,
-                        extra_precision: 0,
-                    },
-                    PayoutPoint {
-                        event_outcome: max_value_from_digits(
-                            oracle_numeric_infos.get_min_nb_digits(),
-                        ) as u64,
-                        outcome_payout: 200000000,
-                        extra_precision: 0,
-                    },
-                ])
-                .unwrap(),
-            ),
-        ])
-        .unwrap(),
+        payout_function: PayoutFunction::new(function_pieces).unwrap(),
         rounding_intervals: RoundingIntervals {
             intervals: vec![RoundingInterval {
                 begin_interval: 0,
@@ -499,15 +534,21 @@ fn get_numerical_test_params(
     }
 }
 
-fn numerical_common(
+fn numerical_common<F>(
     nb_oracles: usize,
     threshold: usize,
+    payout_function_pieces_cb: F,
     difference_params: Option<DifferenceParams>,
-) {
+) where
+    F: Fn(usize) -> Vec<PayoutFunctionPiece>,
+{
     let oracle_numeric_infos = get_same_num_digits_oracle_numeric_infos(nb_oracles);
     let with_diff = difference_params.is_some();
-    let contract_descriptor =
-        get_numerical_contract_descriptor(oracle_numeric_infos.clone(), difference_params);
+    let contract_descriptor = get_numerical_contract_descriptor(
+        oracle_numeric_infos.clone(),
+        payout_function_pieces_cb(*oracle_numeric_infos.nb_digits.iter().min().unwrap()),
+        difference_params,
+    );
     manager_execution_test(
         get_numerical_test_params(
             &oracle_numeric_infos,
@@ -517,6 +558,19 @@ fn numerical_common(
             false,
         ),
         TestPath::Close,
+    );
+}
+
+fn numerical_polynomial_common(
+    nb_oracles: usize,
+    threshold: usize,
+    difference_params: Option<DifferenceParams>,
+) {
+    numerical_common(
+        nb_oracles,
+        threshold,
+        get_polynomial_payout_curve_pieces,
+        difference_params,
     );
 }
 
@@ -532,8 +586,11 @@ fn numerical_common_diff_nb_digits(
             .map(|_| (NB_DIGITS + (thread_rng().next_u32() % 6)) as usize)
             .collect::<Vec<_>>(),
     );
-    let contract_descriptor =
-        get_numerical_contract_descriptor(oracle_numeric_infos.clone(), difference_params);
+    let contract_descriptor = get_numerical_contract_descriptor(
+        oracle_numeric_infos.clone(),
+        get_polynomial_payout_curve_pieces(oracle_numeric_infos.get_min_nb_digits()),
+        difference_params,
+    );
 
     manager_execution_test(
         get_numerical_test_params(
@@ -568,6 +625,7 @@ fn get_enum_and_numerical_test_params(
         get_digit_decomposition_oracles(&oracle_numeric_infos, threshold, with_diff, false);
     let numerical_contract_descriptor = get_numerical_contract_descriptor(
         get_same_num_digits_oracle_numeric_infos(nb_oracles),
+        get_polynomial_payout_curve_pieces(oracle_numeric_infos.get_min_nb_digits()),
         difference_params,
     );
     let numerical_contract_info = ContractInputInfo {
@@ -624,37 +682,43 @@ fn get_variable_oracle_numeric_infos(nb_digits: &[usize]) -> OracleNumericInfo {
 #[test]
 #[ignore]
 fn single_oracle_numerical_test() {
-    numerical_common(1, 1, None);
+    numerical_polynomial_common(1, 1, None);
+}
+
+#[test]
+#[ignore]
+fn single_oracle_numerical_hyperbola_test() {
+    numerical_common(1, 1, get_hyperbola_payout_curve_pieces, None);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_test() {
-    numerical_common(3, 3, None);
+    numerical_polynomial_common(3, 3, None);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_test() {
-    numerical_common(5, 2, None);
+    numerical_polynomial_common(5, 2, None);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_with_diff_test() {
-    numerical_common(3, 3, Some(get_difference_params()));
+    numerical_polynomial_common(3, 3, Some(get_difference_params()));
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_with_diff_test() {
-    numerical_common(5, 2, Some(get_difference_params()));
+    numerical_polynomial_common(5, 2, Some(get_difference_params()));
 }
 
 #[test]
 #[ignore]
 fn three_of_five_oracle_numerical_with_diff_test() {
-    numerical_common(5, 3, Some(get_difference_params()));
+    numerical_polynomial_common(5, 3, Some(get_difference_params()));
 }
 
 #[test]
