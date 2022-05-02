@@ -176,7 +176,7 @@ pub fn write_f64<W: lightning::util::ser::Writer>(
     sign.write(writer)?;
     let input_abs = f64::abs(input);
     let no_precision = f64::floor(input_abs);
-    BigSize(no_precision as u64).write(writer)?;
+    (no_precision as u64).write(writer)?;
     let extra_precision = f64::floor((input_abs - no_precision) * ((1 << 16) as f64)) as u16;
     extra_precision.write(writer)
 }
@@ -186,12 +186,11 @@ pub fn read_f64<R: ::std::io::Read>(
     reader: &mut R,
 ) -> Result<f64, lightning::ln::msgs::DecodeError> {
     let sign: bool = Readable::read(reader)?;
-    let no_precision_bs: BigSize = Readable::read(reader)?;
-    let no_precision = no_precision_bs.0 as f64;
+    let no_precision: u64 = Readable::read(reader)?;
     let extra_precision: u16 = Readable::read(reader)?;
     let mul_sign: f64 = if sign { 1.0 } else { -1.0 };
 
-    Ok(((no_precision) + ((extra_precision as f64) / ((1 << 16) as f64))) * mul_sign)
+    Ok(((no_precision as f64) + ((extra_precision as f64) / ((1 << 16) as f64))) * mul_sign)
 }
 
 /// Writes a [`secp256k1_zkp::schnorrsig::Signature`] value to the given writer.
