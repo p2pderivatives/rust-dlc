@@ -460,7 +460,7 @@ fn from_ser_payout_function_piece(
                 a: h.a,
                 b: h.b,
                 c: h.c,
-                d: h.b,
+                d: h.d,
             })
         }
     }
