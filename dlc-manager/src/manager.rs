@@ -31,8 +31,8 @@ use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
 };
 use log::{error, warn};
-use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
-use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey, Signature};
+use secp256k1_zkp::XOnlyPublicKey;
+use secp256k1_zkp::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::string::ToString;
@@ -63,7 +63,7 @@ where
     T::Target: Time,
     F::Target: FeeEstimator,
 {
-    oracles: HashMap<SchnorrPublicKey, O>,
+    oracles: HashMap<XOnlyPublicKey, O>,
     wallet: W,
     blockchain: B,
     store: S,
@@ -172,7 +172,7 @@ where
         wallet: W,
         blockchain: B,
         store: S,
-        oracles: HashMap<SchnorrPublicKey, O>,
+        oracles: HashMap<XOnlyPublicKey, O>,
         time: T,
         fee_estimator: F,
     ) -> Result<Self, Error> {
@@ -1683,9 +1683,9 @@ where
                     let witness = if signed_channel.own_params.fund_pubkey
                         < signed_channel.counter_params.fund_pubkey
                     {
-                        &tx.input[0].witness[1]
+                        tx.input[0].witness.to_vec().remove(1)
                     } else {
-                        &tx.input[0].witness[2]
+                        tx.input[0].witness.to_vec().remove(2)
                     };
 
                     let sig_data = witness
@@ -1698,7 +1698,7 @@ where
                     let counter_sk = own_adaptor_signature.recover(
                         &self.secp,
                         &own_sig,
-                        &counter_revocation_params.publish_pk.key,
+                        &counter_revocation_params.publish_pk.inner,
                     )?;
 
                     let own_revocation_base_secret = &self.wallet.get_secret_key_for_pubkey(

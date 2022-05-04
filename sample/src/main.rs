@@ -104,7 +104,7 @@ async fn main() {
         sk_str.parse().expect("Error parsing secret key file")
     } else {
         let sk = SecretKey::new(&mut thread_rng());
-        let sk_str = sk.to_string();
+        let sk_str = sk.display_secret().to_string();
         fs::write(sk_path, sk_str).expect("Error writing secret key file.");
         sk
     };

@@ -8,7 +8,7 @@ use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::{DlcTrie, RangeInfo};
 use secp256k1_zkp::{
-    bitcoin_hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
+    hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
     Verification,
 };
 

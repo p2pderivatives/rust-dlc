@@ -159,7 +159,7 @@ impl Signer for BitcoinCoreProvider {
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
         let b_pubkey = bitcoin::PublicKey {
             compressed: true,
-            key: *pubkey,
+            inner: *pubkey,
         };
         let address =
             Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
@@ -170,7 +170,7 @@ impl Signer for BitcoinCoreProvider {
             .unwrap()
             .dump_private_key(&address)
             .map_err(rpc_err_to_manager_err)?;
-        Ok(pk.key)
+        Ok(pk.inner)
     }
 
     fn sign_tx_input(
@@ -225,7 +225,7 @@ impl Wallet for BitcoinCoreProvider {
                 &PrivateKey {
                     compressed: true,
                     network,
-                    key: sk,
+                    inner: sk,
                 },
                 None,
                 Some(false),

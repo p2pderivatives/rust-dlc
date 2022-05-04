@@ -97,11 +97,11 @@ fn derive_bitcoin_public_key<C: Signing>(
     per_commitment_point: &PublicKey,
     base_point: &PublicKey,
 ) -> Result<BitcoinPublicKey, Error> {
-    let key = derive_public_key(secp, per_commitment_point, base_point)
+    let inner = derive_public_key(secp, per_commitment_point, base_point)
         .map_err(|e| Error::InvalidParameters(format!("Invalid point was given {}", e)))?;
     Ok(BitcoinPublicKey {
         compressed: true,
-        key,
+        inner,
     })
 }
 
@@ -110,7 +110,7 @@ fn derive_bitcoin_public_revocation_key<C: Verification>(
     per_commitment_point: &PublicKey,
     countersignatory_revocation_base_point: &PublicKey,
 ) -> Result<BitcoinPublicKey, Error> {
-    let key = derive_public_revocation_key(
+    let inner = derive_public_revocation_key(
         secp,
         per_commitment_point,
         countersignatory_revocation_base_point,
@@ -118,6 +118,6 @@ fn derive_bitcoin_public_revocation_key<C: Verification>(
     .map_err(|e| Error::InvalidParameters(format!("Could not derive revocation secret: {}", e)))?;
     Ok(BitcoinPublicKey {
         compressed: true,
-        key,
+        inner,
     })
 }

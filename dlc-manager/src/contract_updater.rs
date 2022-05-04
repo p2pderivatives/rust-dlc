@@ -2,14 +2,14 @@
 
 use std::ops::Deref;
 
-use bitcoin::{consensus::Decodable, Script, Transaction};
+use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
 };
 use secp256k1_zkp::{
-    All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signature, Signing,
+    ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
 };
 
 use crate::{
@@ -185,7 +185,7 @@ pub(crate) fn accept_contract_internal(
         &input_script_pubkey,
         input_value,
         adaptor_secret_key,
-    );
+    )?;
 
     let dlc_transactions = DlcTransactions {
         fund: fund.clone(),
@@ -396,7 +396,7 @@ where
     input_serial_ids.sort_unstable();
 
     // Vec<Witness>
-    let witnesses: Vec<Vec<Vec<u8>>> = offered_contract
+    let witnesses: Vec<Witness> = offered_contract
         .funding_inputs_info
         .iter()
         .map(|x| {
@@ -430,8 +430,10 @@ where
         .into_iter()
         .map(|witness| {
             let witness_elements = witness
-                .into_iter()
-                .map(|z| WitnessElement { witness: z })
+                .iter()
+                .map(|z| WitnessElement {
+                    witness: z.to_vec(),
+                })
                 .collect();
             Ok(FundingSignature { witness_elements })
         })
@@ -446,7 +448,7 @@ where
         &input_script_pubkey,
         input_value,
         adaptor_secret,
-    );
+    )?;
 
     let dlc_transactions = DlcTransactions {
         fund,
@@ -582,11 +584,13 @@ where
                 ))
             })?;
 
-        fund_tx.input[input_index].witness = funding_signatures
-            .witness_elements
-            .iter()
-            .map(|x| x.witness.clone())
-            .collect();
+        fund_tx.input[input_index].witness = Witness::from_vec(
+            funding_signatures
+                .witness_elements
+                .iter()
+                .map(|x| x.witness.clone())
+                .collect(),
+        );
     }
 
     for funding_input_info in &accepted_contract.funding_inputs {
@@ -720,6 +724,6 @@ where
         funding_script_pubkey,
         fund_output_value,
         0,
-    );
+    )?;
     Ok(refund)
 }

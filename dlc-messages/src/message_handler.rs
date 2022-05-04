@@ -230,7 +230,7 @@ mod tests {
     use super::*;
 
     fn some_pk() -> PublicKey {
-        PublicKey::from_secret_key(SECP256K1, &secp256k1_zkp::key::ONE_KEY)
+        PublicKey::from_secret_key(SECP256K1, &secp256k1_zkp::ONE_KEY)
     }
 
     macro_rules! read_test {

@@ -8,10 +8,10 @@ repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc"
 version = "0.1.0"
 
 [dependencies]
-bitcoin = {version = "0.27"}
-miniscript = "6.0.1"
-secp256k1-sys = {version = "=0.4.1"}
-secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand-std"]}
+bitcoin = {version = "0.28"}
+miniscript = "7.0.0"
+secp256k1-sys = {version = "0.5.2"}
+secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand-std"]}
 serde = {version = "1.0", default-features = false, optional = true}
 
 [features]
@@ -20,10 +20,10 @@ unstable = []
 use-serde = ["serde", "bitcoin/use-serde", "secp256k1-zkp/use-serde"]
 
 [dev-dependencies]
-bitcoin = {version = "0.27", features = ["use-serde"]}
+bitcoin = {version = "0.28", features = ["use-serde"]}
 bitcoin-test-utils = {path = "../bitcoin-test-utils"}
-bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
-bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
+bitcoincore-rpc = {version = "0.15.0"}
+bitcoincore-rpc-json = {version = "0.15.0"}
 dlc-trie = {path = "../dlc-trie"}
 rayon = "1.5"
-secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std", "serde", "global-context"]}
+secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std", "serde", "global-context"]}

@@ -4,8 +4,8 @@ use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::AcceptDlc;
+use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
-use secp256k1_zkp::Signature;
 
 /// An AcceptedContract represents a contract in the accepted state.
 #[derive(Clone)]

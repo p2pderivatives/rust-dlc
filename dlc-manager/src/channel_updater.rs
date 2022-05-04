@@ -22,7 +22,7 @@ use crate::{
     utils::get_new_temporary_id,
     Signer, Time, Wallet,
 };
-use bitcoin::{OutPoint, Script, Transaction, TxIn};
+use bitcoin::{OutPoint, Script, Transaction, TxIn, Witness};
 use dlc::{
     channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions},
     PartyParams,
@@ -210,8 +210,8 @@ where
         dlc_transactions.get_fund_output().value,
         &dlc_transactions.funding_script_pubkey,
         &own_fund_sk,
-        &offer_revoke_params.publish_pk.key,
-    );
+        &offer_revoke_params.publish_pk.inner,
+    )?;
 
     let (accepted_contract, adaptor_sigs) = accept_contract_internal(
         secp,
@@ -350,7 +350,7 @@ where
         &offer_own_sk,
         signer,
         Some(buffer_script_pubkey),
-        Some(accept_revoke_params.own_pk.key),
+        Some(accept_revoke_params.own_pk.inner),
         &dlc_transactions,
         Some(channel_id),
     )?;
@@ -361,7 +361,7 @@ where
         dlc_transactions.get_fund_output().value,
         &dlc_transactions.funding_script_pubkey,
         &signed_contract.accepted_contract.accept_params.fund_pubkey,
-        &offer_revoke_params.publish_pk.key,
+        &offer_revoke_params.publish_pk.inner,
         &accept_channel.buffer_adaptor_signature,
     )?;
 
@@ -371,8 +371,8 @@ where
         dlc_transactions.get_fund_output().value,
         &dlc_transactions.funding_script_pubkey,
         &offer_fund_sk,
-        &accept_revoke_params.publish_pk.key,
-    );
+        &accept_revoke_params.publish_pk.inner,
+    )?;
 
     let signed_channel = SignedChannel {
         counter_party: signed_contract
@@ -810,7 +810,7 @@ where
         channel.fund_tx.output[channel.fund_output_index].value,
         &channel.fund_script_pubkey,
         &channel.counter_params.fund_pubkey,
-        &accept_revoke_params.publish_pk.key,
+        &accept_revoke_params.publish_pk.inner,
         &settle_channel_confirm.settle_adaptor_signature,
     )?;
 
@@ -1131,8 +1131,8 @@ where
         dlc_transactions.get_fund_output().value,
         &dlc_transactions.funding_script_pubkey,
         &own_fund_sk,
-        &offer_revoke_params.publish_pk.key,
-    );
+        &offer_revoke_params.publish_pk.inner,
+    )?;
 
     let own_secret_key = derive_private_key(secp, &accept_per_update_point, &own_base_secret_key)
         .expect("to get a valid secret.");
@@ -1249,7 +1249,7 @@ where
         &offer_own_sk,
         signer,
         Some(buffer_script_pubkey.clone()),
-        Some(accept_revoke_params.own_pk.key),
+        Some(accept_revoke_params.own_pk.inner),
         &dlc_transactions,
         Some(signed_channel.channel_id),
     )?;
@@ -1260,7 +1260,7 @@ where
         dlc_transactions.get_fund_output().value,
         &dlc_transactions.funding_script_pubkey,
         &signed_contract.accepted_contract.accept_params.fund_pubkey,
-        &offer_revoke_params.publish_pk.key,
+        &offer_revoke_params.publish_pk.inner,
         &renew_accept.buffer_adaptor_signature,
     )?;
 
@@ -1270,8 +1270,8 @@ where
         dlc_transactions.get_fund_output().value,
         &dlc_transactions.funding_script_pubkey,
         &own_fund_sk,
-        &accept_revoke_params.publish_pk.key,
-    );
+        &accept_revoke_params.publish_pk.inner,
+    )?;
 
     let state = SignedChannelState::RenewConfirmed {
         contract_id: signed_contract.accepted_contract.get_contract_id(),
@@ -1512,7 +1512,7 @@ where
         &signed_channel.fund_script_pubkey,
         fund_output_value,
         &own_fund_sk,
-    );
+    )?;
 
     let state = SignedChannelState::CollaborativeCloseOffered {
         counter_payout,
@@ -1615,7 +1615,7 @@ where
         &signed_channel.fund_script_pubkey,
         fund_out_amount,
         0,
-    );
+    )?;
 
     // TODO(tibo): should only transition to close after confirmation.
     signed_channel.state = SignedChannelState::CollaborativelyClosed;
@@ -1653,7 +1653,7 @@ fn get_settle_tx_and_adaptor_sig(
         },
         script_sig: Script::new(),
         sequence: 0xffffffff,
-        witness: vec![],
+        witness: Witness::default(),
     };
 
     let offer_revoke_params = offer_points.get_revokable_params(
@@ -1687,15 +1687,15 @@ fn get_settle_tx_and_adaptor_sig(
             fund_tx.output[fund_vout].value,
             funding_script_pubkey,
             &fund_pk,
-            &offer_revoke_params.publish_pk.key,
+            &offer_revoke_params.publish_pk.inner,
             adaptor_sig,
         )?;
     }
 
     let counter_pk = if is_offer {
-        accept_revoke_params.publish_pk.key
+        accept_revoke_params.publish_pk.inner
     } else {
-        offer_revoke_params.publish_pk.key
+        offer_revoke_params.publish_pk.inner
     };
 
     let settle_adaptor_signature = dlc::channel::get_tx_adaptor_signature(
@@ -1705,7 +1705,7 @@ fn get_settle_tx_and_adaptor_sig(
         funding_script_pubkey,
         own_fund_sk,
         &counter_pk,
-    );
+    )?;
 
     Ok((settle_tx, settle_adaptor_signature))
 }
@@ -1785,7 +1785,7 @@ where
         &signed_channel.fund_script_pubkey,
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
         0,
-    );
+    )?;
 
     let (range_info, oracle_sigs) =
         crate::utils::get_range_info_and_oracle_sigs(contract_info, adaptor_info, attestations)?;
@@ -1915,7 +1915,7 @@ where
         &signed_channel.fund_script_pubkey,
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
         0,
-    );
+    )?;
 
     signed_channel.state = SignedChannelState::Closed;
     Ok(settle_tx)

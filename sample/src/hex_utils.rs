@@ -1,4 +1,4 @@
-use bitcoin::secp256k1::key::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 
 pub fn to_vec(hex: &str) -> Option<Vec<u8>> {
     let len = hex.len() / 2;

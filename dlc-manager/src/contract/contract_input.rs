@@ -1,7 +1,7 @@
 //! #ContractInput
 
 use super::ContractDescriptor;
-use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
+use secp256k1_zkp::XOnlyPublicKey;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct OracleInput {
     /// The set of public keys for each of the used oracles.
-    pub public_keys: Vec<SchnorrPublicKey>,
+    pub public_keys: Vec<XOnlyPublicKey>,
     /// The id of the event being used for the contract. Note that at the moment
     /// a single event id is used, while multiple ids would be preferable.
     pub event_id: String,
