@@ -416,7 +416,7 @@ fn get_numerical_contract_descriptor(
 fn get_digit_decomposition_oracle(nb_digits: u16) -> MockOracle {
     let mut oracle = MockOracle::new();
     let event = DigitDecompositionEventDescriptor {
-        base: BASE as u64,
+        base: BASE as u16,
         is_signed: false,
         unit: "sats/sec".to_owned(),
         precision: 0,

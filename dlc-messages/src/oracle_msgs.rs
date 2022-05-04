@@ -223,7 +223,7 @@ impl_dlc_writeable!(EnumEventDescriptor, {
 /// Describes the outcomes of a numerical outcome event.
 pub struct DigitDecompositionEventDescriptor {
     /// The base in which the outcome will be represented.
-    pub base: u64,
+    pub base: u16,
     /// Whether the outcome value is signed.
     pub is_signed: bool,
     /// The unit in which the outcome is represented.

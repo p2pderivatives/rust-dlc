@@ -42,7 +42,7 @@ struct PublicKeyResponse {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EventDescriptor {
-    base: u64,
+    base: u16,
     is_signed: bool,
     unit: String,
     precision: i32,
