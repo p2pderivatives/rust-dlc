@@ -1,4 +1,4 @@
-use bitcoin::secp256k1::key::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 
 use std::fmt::Write as _;
 

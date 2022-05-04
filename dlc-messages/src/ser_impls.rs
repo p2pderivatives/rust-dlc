@@ -194,7 +194,7 @@ pub fn read_f64<R: ::std::io::Read>(
 
 /// Writes a [`secp256k1_zkp::schnorrsig::Signature`] value to the given writer.
 pub fn write_schnorrsig<W: lightning::util::ser::Writer>(
-    signature: &secp256k1_zkp::schnorrsig::Signature,
+    signature: &secp256k1_zkp::schnorr::Signature,
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     signature.as_ref().write(writer)
@@ -203,9 +203,9 @@ pub fn write_schnorrsig<W: lightning::util::ser::Writer>(
 /// Reads a [`secp256k1_zkp::schnorrsig::Signature`] value from the given reader.
 pub fn read_schnorrsig<R: ::std::io::Read>(
     reader: &mut R,
-) -> Result<secp256k1_zkp::schnorrsig::Signature, lightning::ln::msgs::DecodeError> {
+) -> Result<secp256k1_zkp::schnorr::Signature, lightning::ln::msgs::DecodeError> {
     let buf: [u8; 64] = Readable::read(reader)?;
-    match secp256k1_zkp::schnorrsig::Signature::from_slice(&buf) {
+    match secp256k1_zkp::schnorr::Signature::from_slice(&buf) {
         Ok(sig) => Ok(sig),
         Err(_) => Err(lightning::ln::msgs::DecodeError::InvalidValue),
     }
@@ -213,7 +213,7 @@ pub fn read_schnorrsig<R: ::std::io::Read>(
 
 /// Writes a set of [`secp256k1_zkp::schnorrsig::Signature`] to the given writer.
 pub fn write_schnorr_signatures<W: lightning::util::ser::Writer>(
-    signatures: &[secp256k1_zkp::schnorrsig::Signature],
+    signatures: &[secp256k1_zkp::schnorr::Signature],
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     (signatures.len() as u16).write(writer)?;
@@ -226,10 +226,10 @@ pub fn write_schnorr_signatures<W: lightning::util::ser::Writer>(
 /// Reads a set of [`secp256k1_zkp::schnorrsig::Signature`] from the given reader.
 pub fn read_schnorr_signatures<R: ::std::io::Read>(
     reader: &mut R,
-) -> Result<Vec<secp256k1_zkp::schnorrsig::Signature>, lightning::ln::msgs::DecodeError> {
+) -> Result<Vec<secp256k1_zkp::schnorr::Signature>, lightning::ln::msgs::DecodeError> {
     let len: u16 = Readable::read(reader)?;
     let byte_size = (len as usize)
-        .checked_mul(secp256k1_zkp::constants::SCHNORRSIG_SIGNATURE_SIZE)
+        .checked_mul(secp256k1_zkp::constants::SCHNORR_SIGNATURE_SIZE)
         .ok_or(lightning::ln::msgs::DecodeError::BadLengthDescriptor)?;
     if byte_size > lightning::util::ser::MAX_BUF_SIZE {
         return Err(lightning::ln::msgs::DecodeError::BadLengthDescriptor);
@@ -243,7 +243,7 @@ pub fn read_schnorr_signatures<R: ::std::io::Read>(
 
 /// Writes a schnorr public key to the given writer.
 pub fn write_schnorr_pubkey<W: lightning::util::ser::Writer>(
-    pubkey: &secp256k1_zkp::schnorrsig::PublicKey,
+    pubkey: &secp256k1_zkp::XOnlyPublicKey,
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     pubkey.serialize().write(writer)
@@ -252,9 +252,9 @@ pub fn write_schnorr_pubkey<W: lightning::util::ser::Writer>(
 /// Reads a schnorr public key from the given reader.
 pub fn read_schnorr_pubkey<R: ::std::io::Read>(
     reader: &mut R,
-) -> Result<secp256k1_zkp::schnorrsig::PublicKey, lightning::ln::msgs::DecodeError> {
+) -> Result<secp256k1_zkp::XOnlyPublicKey, lightning::ln::msgs::DecodeError> {
     let buf: [u8; 32] = Readable::read(reader)?;
-    match secp256k1_zkp::schnorrsig::PublicKey::from_slice(&buf) {
+    match secp256k1_zkp::XOnlyPublicKey::from_slice(&buf) {
         Ok(sig) => Ok(sig),
         Err(_) => Err(lightning::ln::msgs::DecodeError::InvalidValue),
     }
@@ -262,7 +262,7 @@ pub fn read_schnorr_pubkey<R: ::std::io::Read>(
 
 /// Writes a set of schnorr public keys to the given writer.
 pub fn write_schnorr_pubkeys<W: Writer>(
-    pubkeys: &[secp256k1_zkp::schnorrsig::PublicKey],
+    pubkeys: &[secp256k1_zkp::XOnlyPublicKey],
     writer: &mut W,
 ) -> Result<(), ::std::io::Error> {
     (pubkeys.len() as u16).write(writer)?;
@@ -275,10 +275,10 @@ pub fn write_schnorr_pubkeys<W: Writer>(
 /// Reads a set of schnorr public keys from the given reader.
 pub fn read_schnorr_pubkeys<R: ::std::io::Read>(
     reader: &mut R,
-) -> Result<Vec<secp256k1_zkp::schnorrsig::PublicKey>, DecodeError> {
+) -> Result<Vec<secp256k1_zkp::XOnlyPublicKey>, DecodeError> {
     let len: u16 = Readable::read(reader)?;
     let byte_size = (len as usize)
-        .checked_mul(secp256k1_zkp::constants::SCHNORRSIG_PUBLIC_KEY_SIZE)
+        .checked_mul(secp256k1_zkp::constants::SCHNORR_PUBLIC_KEY_SIZE)
         .ok_or(DecodeError::BadLengthDescriptor)?;
     if byte_size > lightning::util::ser::MAX_BUF_SIZE {
         return Err(DecodeError::BadLengthDescriptor);

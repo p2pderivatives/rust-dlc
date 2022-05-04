@@ -6,7 +6,7 @@ use bitcoin::{Script, Transaction, Txid};
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAttestation;
 use lightning::ln::chan_utils::CounterpartyCommitmentSecrets;
-use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey, Signature};
+use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey};
 
 use crate::{ChannelId, ContractId};
 

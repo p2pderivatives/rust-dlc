@@ -4,10 +4,10 @@ use dlc_messages::oracle_msgs::{
     EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent,
 };
 use lightning::util::ser::Writeable;
-use secp256k1_zkp::key::SecretKey;
 use secp256k1_zkp::rand::thread_rng;
-use secp256k1_zkp::schnorrsig::{KeyPair, PublicKey};
+use secp256k1_zkp::SecretKey;
 use secp256k1_zkp::{All, Message, Secp256k1};
+use secp256k1_zkp::{KeyPair, XOnlyPublicKey};
 
 use std::collections::HashMap;
 
@@ -55,8 +55,8 @@ impl Default for MockOracle {
 }
 
 impl Oracle for MockOracle {
-    fn get_public_key(&self) -> PublicKey {
-        PublicKey::from_keypair(&self.secp, &self.key_pair)
+    fn get_public_key(&self) -> XOnlyPublicKey {
+        XOnlyPublicKey::from_keypair(&self.key_pair)
     }
 
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
@@ -81,7 +81,7 @@ impl MockOracle {
         &mut self,
         event_id: &str,
         event_descriptor: &EventDescriptor,
-    ) -> Vec<PublicKey> {
+    ) -> Vec<XOnlyPublicKey> {
         let nb_nonces = match event_descriptor {
             EventDescriptor::EnumEvent(_) => 1,
             EventDescriptor::DigitDecompositionEvent(d) => d.nb_digits,
@@ -95,10 +95,7 @@ impl MockOracle {
             .map(|x| KeyPair::from_seckey_slice(&self.secp, x.as_ref()).unwrap())
             .collect();
 
-        let nonces = key_pairs
-            .iter()
-            .map(|x| PublicKey::from_keypair(&self.secp, x))
-            .collect();
+        let nonces = key_pairs.iter().map(XOnlyPublicKey::from_keypair).collect();
 
         self.nonces.insert(event_id.to_string(), priv_nonces);
 
@@ -117,9 +114,8 @@ impl MockOracle {
         oracle_event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let msg =
-            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
-        let sig = self.secp.schnorrsig_sign(&msg, &self.key_pair);
+        let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+        let sig = self.secp.sign_schnorr(&msg, &self.key_pair);
         let announcement = OracleAnnouncement {
             oracle_event,
             oracle_public_key: self.get_public_key(),
@@ -135,9 +131,8 @@ impl MockOracle {
             .iter()
             .zip(nonces.iter())
             .map(|(x, nonce)| {
-                let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
-                    x.as_bytes(),
-                );
+                let msg =
+                    Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(x.as_bytes());
                 dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &self.secp,
                     &msg,

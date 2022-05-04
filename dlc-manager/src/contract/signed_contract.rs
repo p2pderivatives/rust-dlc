@@ -8,8 +8,8 @@ use dlc_messages::CetAdaptorSignature;
 use dlc_messages::CetAdaptorSignatures;
 use dlc_messages::FundingSignatures;
 use dlc_messages::SignDlc;
+use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
-use secp256k1_zkp::Signature;
 
 /// Contain information about a contract that was fully signed.
 #[derive(Clone)]

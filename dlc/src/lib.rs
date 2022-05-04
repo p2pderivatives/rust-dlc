@@ -20,14 +20,19 @@ extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
 extern crate serde;
 
-use bitcoin::blockdata::{
-    opcodes,
-    script::{Builder, Script},
-    transaction::{OutPoint, Transaction, TxIn, TxOut},
+use bitcoin::{
+    blockdata::{
+        opcodes,
+        script::{Builder, Script},
+        transaction::{OutPoint, Transaction, TxIn, TxOut},
+    },
+    Witness,
 };
-use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
-use secp256k1_zkp::EcdsaAdaptorSignature;
-use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verification};
+use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
+use secp256k1_zkp::{
+    ecdsa::Signature, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
+    Verification, XOnlyPublicKey,
+};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -151,18 +156,22 @@ pub struct TxInputInfo {
 #[derive(Clone)]
 pub struct OracleInfo {
     /// The public key of the oracle.
-    pub public_key: SchnorrPublicKey,
+    pub public_key: XOnlyPublicKey,
     /// The nonces that the oracle will use to attest to the event.
-    pub nonces: Vec<SchnorrPublicKey>,
+    pub nonces: Vec<XOnlyPublicKey>,
 }
 
 /// An error code.
-#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+#[derive(Debug)]
 pub enum Error {
     /// Secp256k1 error
     Secp256k1(secp256k1_zkp::Error),
+    /// An error while computing a signature hash
+    Sighash(bitcoin::util::sighash::Error),
     /// An invalid argument was provided
     InvalidArgument,
+    /// An error occurred in miniscript
+    Miniscript(miniscript::Error),
 }
 
 impl From<secp256k1_zkp::Error> for Error {
@@ -177,11 +186,25 @@ impl From<secp256k1_zkp::UpstreamError> for Error {
     }
 }
 
+impl From<bitcoin::util::sighash::Error> for Error {
+    fn from(error: bitcoin::util::sighash::Error) -> Error {
+        Error::Sighash(error)
+    }
+}
+
+impl From<miniscript::Error> for Error {
+    fn from(error: miniscript::Error) -> Error {
+        Error::Miniscript(error)
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Secp256k1(ref e) => write!(f, "Secp256k1 error {}", e),
             Error::InvalidArgument => write!(f, "Invalid argument"),
+            Error::Sighash(ref e) => write!(f, "Error while computing sighash {}", e),
+            Error::Miniscript(ref e) => write!(f, "Error within miniscript {}", e),
         }
     }
 }
@@ -278,7 +301,7 @@ impl PartyParams {
                 previous_output: input.outpoint,
                 script_sig: util::redeem_script_to_script_sig(&input.redeem_script),
                 sequence,
-                witness: Vec::new(),
+                witness: Witness::new(),
             };
             tx_ins.push(tx_in);
             serial_ids.push(input.serial_id);
@@ -416,8 +439,8 @@ pub(crate) fn create_cets_and_refund_tx(
 
     let cet_input = TxIn {
         previous_output: prev_outpoint,
-        witness: Vec::new(),
-        script_sig: Script::new(),
+        witness: Witness::default(),
+        script_sig: Script::default(),
         sequence: cet_nsequence.unwrap_or_else(|| util::get_sequence(cet_lock_time)),
     };
 
@@ -443,8 +466,8 @@ pub(crate) fn create_cets_and_refund_tx(
 
     let refund_input = TxIn {
         previous_output: prev_outpoint,
-        witness: Vec::new(),
-        script_sig: Script::new(),
+        witness: Witness::default(),
+        script_sig: Script::default(),
         sequence: util::ENABLE_LOCKTIME,
     };
 
@@ -645,7 +668,7 @@ pub fn create_cet_adaptor_sig_from_point<C: secp256k1_zkp::Signing>(
     funding_script_pubkey: &Script,
     fund_output_value: u64,
 ) -> Result<EcdsaAdaptorSignature, Error> {
-    let sig_hash = util::get_sig_hash_msg(cet, 0, funding_script_pubkey, fund_output_value);
+    let sig_hash = util::get_sig_hash_msg(cet, 0, funding_script_pubkey, fund_output_value)?;
 
     Ok(secp256k1_zkp::EcdsaAdaptorSignature::encrypt(
         secp,
@@ -771,7 +794,7 @@ pub fn sign_cet<C: secp256k1_zkp::Signing>(
         funding_script_pubkey,
         fund_output_value,
         0,
-    );
+    )?;
 
     Ok(())
 }
@@ -787,7 +810,7 @@ pub fn verify_cet_adaptor_sig_from_point(
     funding_script_pubkey: &Script,
     total_collateral: u64,
 ) -> Result<(), Error> {
-    let sig_hash = util::get_sig_hash_msg(cet, 0, funding_script_pubkey, total_collateral);
+    let sig_hash = util::get_sig_hash_msg(cet, 0, funding_script_pubkey, total_collateral)?;
     adaptor_sig.verify(secp, &sig_hash, pubkey, adaptor_point)?;
     Ok(())
 }
@@ -826,8 +849,8 @@ pub fn verify_tx_input_sig<V: Verification>(
     value: u64,
     pk: &PublicKey,
 ) -> Result<(), Error> {
-    let sig_hash_msg = util::get_sig_hash_msg(tx, input_index, script_pubkey, value);
-    secp.verify(&sig_hash_msg, signature, pk)?;
+    let sig_hash_msg = util::get_sig_hash_msg(tx, input_index, script_pubkey, value)?;
+    secp.verify_ecdsa(&sig_hash_msg, signature, pk)?;
     Ok(())
 }
 
@@ -835,14 +858,13 @@ pub fn verify_tx_input_sig<V: Verification>(
 mod tests {
     use super::*;
     use bitcoin::blockdata::script::Script;
-    use bitcoin::blockdata::transaction::{OutPoint, SigHashType};
+    use bitcoin::blockdata::transaction::{EcdsaSighashType, OutPoint};
     use bitcoin::consensus::encode::Encodable;
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::{network::constants::Network, Address, Txid};
     use secp256k1_zkp::{
         rand::{Rng, RngCore},
-        schnorrsig::KeyPair,
-        PublicKey, Secp256k1, SecretKey, Signing,
+        KeyPair, PublicKey, Secp256k1, SecretKey, Signing,
     };
     use std::fmt::Write;
     use std::str::FromStr;
@@ -854,7 +876,7 @@ mod tests {
             previous_output: OutPoint::default(),
             script_sig: Script::new(),
             sequence,
-            witness: Vec::new(),
+            witness: Witness::new(),
         };
         inputs.push(txin);
         inputs
@@ -886,7 +908,7 @@ mod tests {
             previous_output: OutPoint::default(),
             script_sig: Script::new(),
             sequence: 3,
-            witness: Vec::new(),
+            witness: Witness::new(),
         };
 
         (offer, accept, funding)
@@ -1020,7 +1042,7 @@ mod tests {
             },
             script_sig: Script::new(),
             sequence: 0xffffffff,
-            witness: vec![Script::new().to_bytes()],
+            witness: Witness::from_vec(vec![Script::new().to_bytes()]),
         };
 
         let accept_input = TxIn {
@@ -1033,7 +1055,7 @@ mod tests {
             },
             script_sig: Script::new(),
             sequence: 0xffffffff,
-            witness: vec![Script::new().to_bytes()],
+            witness: Witness::from_vec(vec![Script::new().to_bytes()]),
         };
         let offer_fund_sk =
             SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001")
@@ -1075,18 +1097,20 @@ mod tests {
             &offer_input_sk,
             &mut fund_tx,
             0,
-            SigHashType::All,
+            EcdsaSighashType::All,
             input_amount,
-        );
+        )
+        .expect("to be able to sign the input.");
 
         util::sign_p2wpkh_input(
             &secp,
             &accept_input_sk,
             &mut fund_tx,
             1,
-            SigHashType::All,
+            EcdsaSighashType::All,
             input_amount,
-        );
+        )
+        .expect("to be able to sign the input.");
 
         let mut writer = Vec::new();
         fund_tx.consensus_encode(&mut writer).unwrap();
@@ -1103,7 +1127,7 @@ mod tests {
         rng: &mut R,
     ) -> Script {
         let sk = bitcoin::PrivateKey {
-            key: SecretKey::new(rng),
+            inner: SecretKey::new(rng),
             network: Network::Testnet,
             compressed: true,
         };
@@ -1246,9 +1270,9 @@ mod tests {
                     .map(|y| {
                         (0..NB_DIGITS)
                             .map(|z| {
-                                Message::from_hashed_data::<
-                                    secp256k1_zkp::bitcoin_hashes::sha256::Hash,
-                                >(&[((y + x + z) as u8)])
+                                Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&[
+                                    ((y + x + z) as u8),
+                                ])
                             })
                             .collect()
                     })
@@ -1257,17 +1281,16 @@ mod tests {
             .collect();
 
         for i in 0..NB_ORACLES {
-            let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
-            let mut nonces: Vec<SchnorrPublicKey> = Vec::with_capacity(NB_DIGITS);
+            let oracle_kp = KeyPair::new(&secp, &mut rng);
+            let oracle_pubkey = oracle_kp.public_key();
+            let mut nonces: Vec<XOnlyPublicKey> = Vec::with_capacity(NB_DIGITS);
             let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(NB_DIGITS);
             oracle_sigs.push(Vec::with_capacity(NB_DIGITS));
             for j in 0..NB_DIGITS {
                 let mut sk_nonce = [0u8; 32];
                 rng.fill_bytes(&mut sk_nonce);
-                let oracle_r_kp =
-                    secp256k1_zkp::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce)
-                        .unwrap();
-                let nonce = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
+                let oracle_r_kp = KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
+                let nonce = XOnlyPublicKey::from_keypair(&oracle_r_kp);
                 let sig = secp_utils::schnorrsig_sign_with_nonce(
                     &secp,
                     &messages[0][i][j],
