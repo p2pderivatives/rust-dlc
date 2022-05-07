@@ -8,8 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Pin secp256k1-sys
-        run: cargo generate-lockfile --verbose && cargo update -p secp256k1-sys --precise "0.4.1" --verbose
       - name: install clippy
         run: rustup component add clippy
       - name: Run clippy
@@ -19,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Pin secp256k1-sys
-        run: cargo generate-lockfile --verbose && cargo update -p secp256k1-sys --precise "0.4.1" --verbose
       - name: Build
         run: cargo build --verbose
       - name: Test
@@ -39,7 +35,7 @@ jobs:
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - uses: actions/checkout@v2
       - id: set-matrix
-        run: cargo generate-lockfile --verbose && cargo update -p secp256k1-sys --precise "0.4.1" --verbose && cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager)"
+        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager)"
   integration_tests:
     name: integration-tests
     needs: integration_tests_prepare
