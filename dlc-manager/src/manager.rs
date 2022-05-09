@@ -51,6 +51,21 @@ where
     time: T,
 }
 
+macro_rules! get_contract_in_state {
+    ($manager: ident, $contract_id: expr, $state: ident) => {{
+        let contract = $manager.store.get_contract($contract_id)?;
+        match contract {
+            Some(Contract::$state(s)) => Ok(s),
+            None => Err(Error::InvalidParameters("Unknown contract id.".to_string())),
+            _ => Err(Error::InvalidState(format!(
+                "Invalid state {:?} expected {}.",
+                contract,
+                stringify!($state),
+            ))),
+        }
+    }};
+}
+
 impl<W: Deref, B: Deref, S: DerefMut, O: Deref, T: Deref> Manager<W, B, S, O, T>
 where
     W::Target: Wallet,
@@ -247,12 +262,7 @@ where
         &mut self,
         contract_id: &ContractId,
     ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
-        let contract = self.store.get_contract(contract_id)?;
-        let offered_contract = match contract {
-            Some(Contract::Offered(offered)) => offered,
-            None => return Err(Error::InvalidParameters("Unknown contract id.".to_string())),
-            _ => return Err(Error::InvalidState),
-        };
+        let offered_contract = get_contract_in_state!(self, contract_id, Offered)?;
 
         let total_collateral = offered_contract.total_collateral;
 
@@ -370,13 +380,8 @@ where
     }
 
     fn on_accept_message(&mut self, accept_msg: &AcceptDlc) -> Result<DlcMessage, Error> {
-        let contract = self.store.get_contract(&accept_msg.temporary_contract_id)?;
-
-        let offered_contract = match contract {
-            Some(Contract::Offered(offered)) => offered,
-            None => return Err(Error::InvalidParameters("Unknown contract id.".to_string())),
-            _ => return Err(Error::InvalidState),
-        };
+        let offered_contract =
+            get_contract_in_state!(self, &accept_msg.temporary_contract_id, Offered)?;
 
         let (tx_input_infos, input_amount) = get_tx_input_infos(&accept_msg.funding_inputs)?;
 
@@ -527,7 +532,12 @@ where
                 let input_index = input_serial_ids
                     .iter()
                     .position(|y| y == &x.funding_input.input_serial_id)
-                    .ok_or(Error::InvalidState)?;
+                    .ok_or_else(|| {
+                        Error::InvalidState(format!(
+                            "Could not find input for serial id {}",
+                            x.funding_input.input_serial_id
+                        ))
+                    })?;
                 let tx =
                     Transaction::consensus_decode(&*x.funding_input.prev_tx).map_err(|_| {
                         Error::InvalidParameters(
@@ -607,12 +617,7 @@ where
     }
 
     fn on_sign_message(&mut self, sign_message: &SignDlc) -> Result<(), Error> {
-        let contract = self.store.get_contract(&sign_message.contract_id)?;
-        let accepted_contract = match contract {
-            Some(Contract::Accepted(accepted)) => accepted,
-            None => return Err(Error::InvalidParameters("Unknown contract id.".to_string())),
-            _ => return Err(Error::InvalidState),
-        };
+        let accepted_contract = get_contract_in_state!(self, &sign_message.contract_id, Accepted)?;
 
         let offered_contract = &accepted_contract.offered_contract;
 
@@ -676,7 +681,12 @@ where
             let input_index = input_serials
                 .iter()
                 .position(|x| x == &funding_input.funding_input.input_serial_id)
-                .ok_or(Error::InvalidState)?;
+                .ok_or_else(|| {
+                    Error::InvalidState(format!(
+                        "Could not find input for serial id {}",
+                        funding_input.funding_input.input_serial_id
+                    ))
+                })?;
 
             fund_tx.input[input_index].witness = funding_signatures
                 .witness_elements
@@ -689,7 +699,12 @@ where
             let input_index = input_serials
                 .iter()
                 .position(|x| x == &funding_input_info.funding_input.input_serial_id)
-                .ok_or(Error::InvalidState)?;
+                .ok_or_else(|| {
+                    Error::InvalidState(format!(
+                        "Could not find input for serial id {}",
+                        funding_input_info.funding_input.input_serial_id,
+                    ))
+                })?;
             let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx)
                 .map_err(|_| {
                     Error::InvalidParameters(
