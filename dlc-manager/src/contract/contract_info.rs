@@ -33,9 +33,9 @@ pub struct ContractInfo {
 
 impl ContractInfo {
     /// Get the payouts associated with the contract.
-    pub fn get_payouts(&self, total_collateral: u64) -> Vec<Payout> {
+    pub fn get_payouts(&self, total_collateral: u64) -> Result<Vec<Payout>, Error> {
         match &self.contract_descriptor {
-            ContractDescriptor::Enum(e) => e.get_payouts(),
+            ContractDescriptor::Enum(e) => Ok(e.get_payouts()),
             ContractDescriptor::Numerical(n) => n.get_payouts(total_collateral),
         }
     }

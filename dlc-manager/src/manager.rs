@@ -264,7 +264,7 @@ where
         let dlc_transactions = dlc::create_dlc_transactions(
             &offered_contract.offer_params,
             &accept_params,
-            &offered_contract.contract_info[0].get_payouts(total_collateral),
+            &offered_contract.contract_info[0].get_payouts(total_collateral)?,
             offered_contract.contract_timeout,
             offered_contract.fee_rate_per_vb,
             0,
@@ -300,7 +300,7 @@ where
         } = dlc_transactions;
 
         for contract_info in offered_contract.contract_info.iter().skip(1) {
-            let payouts = contract_info.get_payouts(total_collateral);
+            let payouts = contract_info.get_payouts(total_collateral)?;
 
             let tmp_cets = dlc::create_cets(
                 &cet_input,
@@ -397,7 +397,7 @@ where
         let dlc_transactions = dlc::create_dlc_transactions(
             &offered_contract.offer_params,
             &accept_params,
-            &offered_contract.contract_info[0].get_payouts(total_collateral),
+            &offered_contract.contract_info[0].get_payouts(total_collateral)?,
             offered_contract.contract_timeout,
             offered_contract.fee_rate_per_vb,
             0,
@@ -458,7 +458,7 @@ where
         let cet_input = cets[0].input[0].clone();
 
         for contract_info in offered_contract.contract_info.iter().skip(1) {
-            let payouts = contract_info.get_payouts(total_collateral);
+            let payouts = contract_info.get_payouts(total_collateral)?;
 
             let tmp_cets = dlc::create_cets(
                 &cet_input,

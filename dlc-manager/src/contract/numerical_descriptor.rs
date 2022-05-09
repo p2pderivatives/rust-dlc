@@ -55,18 +55,19 @@ pub struct NumericalDescriptor {
 impl NumericalDescriptor {
     /// Returns the set of RangePayout for the descriptor generated from the
     /// payout function.
-    pub fn get_range_payouts(&self, total_collateral: u64) -> Vec<RangePayout> {
+    pub fn get_range_payouts(&self, total_collateral: u64) -> Result<Vec<RangePayout>, Error> {
         self.payout_function
             .to_range_payouts(total_collateral, &self.rounding_intervals)
     }
 
     /// Returns the set of payouts for the descriptor generated from the payout
     /// function.
-    pub fn get_payouts(&self, total_collateral: u64) -> Vec<Payout> {
-        self.get_range_payouts(total_collateral)
+    pub fn get_payouts(&self, total_collateral: u64) -> Result<Vec<Payout>, Error> {
+        Ok(self
+            .get_range_payouts(total_collateral)?
             .iter()
             .map(|x| x.payout.clone())
-            .collect()
+            .collect())
     }
 
     /// Verify the given set of adaptor signatures and generate the adaptor info.
@@ -96,7 +97,7 @@ impl NumericalDescriptor {
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral),
+                    &self.get_range_payouts(total_collateral)?,
                     cets,
                     precomputed_points,
                     adaptor_pairs,
@@ -111,7 +112,7 @@ impl NumericalDescriptor {
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral),
+                    &self.get_range_payouts(total_collateral)?,
                     cets,
                     precomputed_points,
                     adaptor_pairs,
@@ -148,7 +149,7 @@ impl NumericalDescriptor {
                     fund_priv_key,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral),
+                    &self.get_range_payouts(total_collateral)?,
                     cets,
                     precomputed_points,
                     adaptor_index_start,
@@ -166,7 +167,7 @@ impl NumericalDescriptor {
                     fund_priv_key,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral),
+                    &self.get_range_payouts(total_collateral)?,
                     cets,
                     precomputed_points,
                     adaptor_index_start,
