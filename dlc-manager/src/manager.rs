@@ -52,16 +52,28 @@ where
 }
 
 macro_rules! get_contract_in_state {
-    ($manager: ident, $contract_id: expr, $state: ident) => {{
+    ($manager: ident, $contract_id: expr, $state: ident, $peer_id: expr) => {{
         let contract = $manager.store.get_contract($contract_id)?;
         match contract {
-            Some(Contract::$state(s)) => Ok(s),
+            Some(c) => {
+                if let Some(p) = $peer_id {
+                    if c.get_counter_party_id() != p {
+                        return Err(Error::InvalidParameters(format!(
+                            "Peer {:02x?} is not involved with contract {:02x?}.",
+                            $peer_id, $contract_id
+                        )));
+                    }
+                }
+                match c {
+                    Contract::$state(s) => Ok(s),
+                    _ => Err(Error::InvalidState(format!(
+                        "Invalid state {:?} expected {}.",
+                        c,
+                        stringify!($state),
+                    ))),
+                }
+            }
             None => Err(Error::InvalidParameters("Unknown contract id.".to_string())),
-            _ => Err(Error::InvalidState(format!(
-                "Invalid state {:?} expected {}.",
-                contract,
-                stringify!($state),
-            ))),
         }
     }};
 }
@@ -108,9 +120,9 @@ where
                 self.on_offer_message(o, counter_party)?;
                 Ok(None)
             }
-            DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a)?)),
+            DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a, &counter_party)?)),
             DlcMessage::Sign(s) => {
-                self.on_sign_message(s)?;
+                self.on_sign_message(s, &counter_party)?;
                 Ok(None)
             }
         }
@@ -262,7 +274,8 @@ where
         &mut self,
         contract_id: &ContractId,
     ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
-        let offered_contract = get_contract_in_state!(self, contract_id, Offered)?;
+        let offered_contract =
+            get_contract_in_state!(self, contract_id, Offered, None as Option<PublicKey>)?;
 
         let total_collateral = offered_contract.total_collateral;
 
@@ -379,9 +392,17 @@ where
         Ok((contract_id, counter_party, accept_msg))
     }
 
-    fn on_accept_message(&mut self, accept_msg: &AcceptDlc) -> Result<DlcMessage, Error> {
-        let offered_contract =
-            get_contract_in_state!(self, &accept_msg.temporary_contract_id, Offered)?;
+    fn on_accept_message(
+        &mut self,
+        accept_msg: &AcceptDlc,
+        counter_party: &PublicKey,
+    ) -> Result<DlcMessage, Error> {
+        let offered_contract = get_contract_in_state!(
+            self,
+            &accept_msg.temporary_contract_id,
+            Offered,
+            Some(*counter_party)
+        )?;
 
         let (tx_input_infos, input_amount) = get_tx_input_infos(&accept_msg.funding_inputs)?;
 
@@ -616,8 +637,13 @@ where
         Ok(DlcMessage::Sign(signed_msg))
     }
 
-    fn on_sign_message(&mut self, sign_message: &SignDlc) -> Result<(), Error> {
-        let accepted_contract = get_contract_in_state!(self, &sign_message.contract_id, Accepted)?;
+    fn on_sign_message(
+        &mut self,
+        sign_message: &SignDlc,
+        peer_id: &PublicKey,
+    ) -> Result<(), Error> {
+        let accepted_contract =
+            get_contract_in_state!(self, &sign_message.contract_id, Accepted, Some(*peer_id))?;
 
         let offered_contract = &accepted_contract.offered_contract;
 
