@@ -5,6 +5,7 @@ use bitcoin::Address;
 use dlc_messages::{oracle_msgs::OracleAttestation, AcceptDlc, FundingInput, SignDlc};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
+use secp256k1_zkp::PublicKey;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use signed_contract::SignedContract;
@@ -83,6 +84,25 @@ impl Contract {
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.offered_contract.id,
             Contract::Closed(c) => c.signed_contract.accepted_contract.offered_contract.id,
+        }
+    }
+
+    /// Returns the public key of the counter party's node.
+    pub fn get_counter_party_id(&self) -> PublicKey {
+        match self {
+            Contract::Offered(o) => o.counter_party,
+            Contract::Accepted(a) => a.offered_contract.counter_party,
+            Contract::Signed(s) | Contract::Confirmed(s) | Contract::Refunded(s) => {
+                s.accepted_contract.offered_contract.counter_party
+            }
+            Contract::Closed(c) => {
+                c.signed_contract
+                    .accepted_contract
+                    .offered_contract
+                    .counter_party
+            }
+            Contract::FailedAccept(f) => f.offered_contract.counter_party,
+            Contract::FailedSign(f) => f.accepted_contract.offered_contract.counter_party,
         }
     }
 }
