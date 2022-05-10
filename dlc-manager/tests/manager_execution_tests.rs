@@ -92,6 +92,21 @@ fn create_test_vector() {
     }
 }
 
+macro_rules! write_contract {
+    ($contract: ident, $state: ident) => {
+        match $contract {
+            Contract::$state(s) => {
+                let mut buf = Vec::new();
+                s.write(&mut buf)
+                    .expect("to be able to serialize the contract.");
+                std::fs::write(format!("{}", stringify!($state)), buf)
+                    .expect("to be able to save the contract to file.");
+            }
+            _ => {}
+        }
+    };
+}
+
 macro_rules! assert_contract_state {
     ($d:expr, $id:expr, $p:ident) => {
         let res = $d
@@ -100,9 +115,16 @@ macro_rules! assert_contract_state {
             .get_store()
             .get_contract(&$id)
             .expect("Could not retrieve contract");
-        if let Some(Contract::$p(_)) = res {
+        if let Some(c) = res {
+            if let Contract::$p(_) = c {
+            } else {
+                panic!("Unexpected contract state {:?}", c);
+            }
+            if std::env::var("GENERATE_SERIALIZED_CONTRACT").is_ok() {
+                write_contract!(c, $p);
+            }
         } else {
-            panic!("Unexpected contract state {:?}", res);
+            panic!("Contract {:02x?} does not exist in store", $id);
         }
     };
 }
