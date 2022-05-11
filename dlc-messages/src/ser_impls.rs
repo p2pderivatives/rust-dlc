@@ -7,7 +7,6 @@ use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
-use std::convert::TryInto;
 use std::io::Read;
 
 const MAX_VEC_SIZE: u64 = 1000000;
@@ -529,15 +528,13 @@ pub fn read_ecdsa_adaptor_signatures<R: ::std::io::Read>(
 
 /// Writes an `i32` value to the given writer.
 pub fn write_i32<W: Writer>(i: &i32, writer: &mut W) -> Result<(), ::std::io::Error> {
-    write_vec(i.to_be_bytes().as_ref(), writer)
+    i.to_be_bytes().write(writer)
 }
 
 /// Reads an `i32` value from the given reader.
 pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> {
-    let v = read_vec(reader)?;
-    Ok(i32::from_be_bytes(
-        v.try_into().map_err(|_| DecodeError::InvalidValue)?,
-    ))
+    let v: [u8; 4] = Readable::read(reader)?;
+    Ok(i32::from_be_bytes(v))
 }
 
 /// Writes a [`lightning::util::ser::Writeable`] value to the given writer as a TLV.
