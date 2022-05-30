@@ -378,6 +378,8 @@ impl_dlc_writeable!(OfferDlc, {
     serde(rename_all = "camelCase")
 )]
 pub struct AcceptDlc {
+    /// The version of the protocol used by the peer.
+    pub protocol_version: u32,
     #[cfg_attr(
         feature = "serde",
         serde(
@@ -410,6 +412,7 @@ pub struct AcceptDlc {
 }
 
 impl_dlc_writeable!(AcceptDlc, {
+    (protocol_version, writeable),
     (temporary_contract_id, writeable),
     (accept_collateral, writeable),
     (funding_pubkey, writeable),
@@ -438,6 +441,8 @@ impl Type for AcceptDlc {
     serde(rename_all = "camelCase")
 )]
 pub struct SignDlc {
+    /// The version of the protocol used by the peer.
+    pub protocol_version: u32,
     #[cfg_attr(
         feature = "serde",
         serde(
@@ -456,6 +461,7 @@ pub struct SignDlc {
 }
 
 impl_dlc_writeable!(SignDlc, {
+    (protocol_version, writeable),
     (contract_id, writeable),
     (cet_adaptor_signatures, writeable),
     (refund_signature, writeable),
