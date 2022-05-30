@@ -573,6 +573,7 @@ impl From<&SerPolynomialPayoutCurvePiece> for PolynomialPayoutCurvePiece {
 impl From<&AcceptedContract> for AcceptDlc {
     fn from(contract: &AcceptedContract) -> AcceptDlc {
         AcceptDlc {
+            protocol_version: PROTOCOL_VERSION,
             temporary_contract_id: contract.offered_contract.id,
             accept_collateral: contract.accept_params.collateral,
             funding_pubkey: contract.accept_params.fund_pubkey,
@@ -602,6 +603,7 @@ impl From<&SignedContract> for SignDlc {
         let contract_id = contract.accepted_contract.get_contract_id();
 
         SignDlc {
+            protocol_version: PROTOCOL_VERSION,
             contract_id,
             cet_adaptor_signatures: CetAdaptorSignatures {
                 ecdsa_adaptor_signatures: contract

@@ -1,4 +1,5 @@
 {
+  "protocolVersion": 1,
   "temporaryContractId": "c9073a50b4a8c559c02d48b28d076fef3db735bab20c98ca7d7e0f6409405384",
   "acceptCollateral": 100000000,
   "fundingPubkey": "030eb98559aec1531b03397b8d045c0b5107e0c514225bae5f05f2b86d1ce03b5d",

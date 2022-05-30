@@ -1,4 +1,5 @@
 {
+  "protocolVersion": 1,
   "contractId": "a5808cf4f1e2bb638e33a043cdba1de2fef1344788e431c817677a22597833ab",
   "cetAdaptorSignatures": {
     "ecdsaAdaptorSignatures": [
