@@ -1,16 +1,24 @@
+use std::ops::Deref;
+
+use bitcoin::{consensus::Encodable, Txid};
+use dlc::{PartyParams, TxInputInfo};
+use dlc_messages::{oracle_msgs::OracleAttestation, FundingInput};
+use dlc_trie::RangeInfo;
 #[cfg(not(feature = "fuzztarget"))]
 use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
+use secp256k1_zkp::{PublicKey, Secp256k1, SecretKey, Signing};
+
+use crate::{
+    contract::{contract_info::ContractInfo, AdaptorInfo, FundingInputInfo},
+    error::Error,
+    Wallet,
+};
 
 const APPROXIMATE_CET_VBYTES: u64 = 190;
 const APPROXIMATE_CLOSING_VBYTES: u64 = 168;
 
 pub fn get_common_fee(fee_rate: u64) -> u64 {
     (APPROXIMATE_CET_VBYTES + APPROXIMATE_CLOSING_VBYTES) * fee_rate
-}
-
-pub fn get_half_common_fee(fee_rate: u64) -> u64 {
-    let common_fee = get_common_fee(fee_rate);
-    (common_fee as f64 / 2_f64).ceil() as u64
 }
 
 #[cfg(not(feature = "fuzztarget"))]
@@ -37,4 +45,132 @@ pub(crate) fn get_new_temporary_id() -> [u8; 32] {
     let mut res = [0u8; 32];
     rand_chacha::ChaCha8Rng::from_seed([0u8; 32]).fill_bytes(&mut res);
     res
+}
+
+pub(crate) fn compute_id(
+    fund_tx_id: Txid,
+    fund_output_index: u16,
+    temporary_id: &[u8; 32],
+) -> [u8; 32] {
+    let mut res = [0; 32];
+    for i in 0..32 {
+        res[i] = fund_tx_id[31 - i] ^ temporary_id[i];
+    }
+    res[30] ^= ((fund_output_index >> 8) & 0xff) as u8;
+    res[31] ^= (fund_output_index & 0xff) as u8;
+    res
+}
+
+pub(crate) fn get_party_params<C: Signing, W: Deref>(
+    secp: &Secp256k1<C>,
+    own_collateral: u64,
+    fee_rate: u64,
+    wallet: &W,
+) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
+where
+    W::Target: Wallet,
+{
+    let funding_privkey = wallet.get_new_secret_key()?;
+    let funding_pubkey = PublicKey::from_secret_key(secp, &funding_privkey);
+
+    let payout_addr = wallet.get_new_address()?;
+    let payout_spk = payout_addr.script_pubkey();
+    let payout_serial_id = get_new_serial_id();
+    let change_addr = wallet.get_new_address()?;
+    let change_spk = change_addr.script_pubkey();
+    let change_serial_id = get_new_serial_id();
+
+    let appr_required_amount = own_collateral + get_half_common_fee(fee_rate);
+    let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+
+    let mut funding_inputs_info: Vec<FundingInputInfo> = Vec::new();
+    let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
+    let mut total_input = 0;
+    for utxo in utxos {
+        let prev_tx = wallet.get_transaction(&utxo.outpoint.txid)?;
+        let mut writer = Vec::new();
+        prev_tx.consensus_encode(&mut writer)?;
+        let prev_tx_vout = utxo.outpoint.vout;
+        let sequence = 0xffffffff;
+        // TODO(tibo): this assumes P2WPKH with low R
+        let max_witness_len = 107;
+        let funding_input = FundingInput {
+            input_serial_id: get_new_serial_id(),
+            prev_tx: writer,
+            prev_tx_vout,
+            sequence,
+            max_witness_len,
+            redeem_script: utxo.redeem_script,
+        };
+        total_input += prev_tx.output[prev_tx_vout as usize].value;
+        funding_tx_info.push((&funding_input).into());
+        let funding_input_info = FundingInputInfo {
+            funding_input,
+            address: Some(utxo.address.clone()),
+        };
+        funding_inputs_info.push(funding_input_info);
+    }
+
+    let party_params = PartyParams {
+        fund_pubkey: funding_pubkey,
+        change_script_pubkey: change_spk,
+        change_serial_id,
+        payout_script_pubkey: payout_spk,
+        payout_serial_id,
+        inputs: funding_tx_info,
+        collateral: own_collateral,
+        input_amount: total_input,
+    };
+
+    Ok((party_params, funding_privkey, funding_inputs_info))
+}
+
+fn get_half_common_fee(fee_rate: u64) -> u64 {
+    let common_fee = get_common_fee(fee_rate);
+    (common_fee as f64 / 2_f64).ceil() as u64
+}
+
+pub(crate) fn get_range_info_and_oracle_sigs(
+    contract_info: &ContractInfo,
+    adaptor_info: &AdaptorInfo,
+    attestations: &[(usize, OracleAttestation)],
+) -> Result<(RangeInfo, Vec<Vec<secp256k1_zkp::schnorrsig::Signature>>), Error> {
+    let outcomes = attestations
+        .iter()
+        .map(|(i, x)| (*i, &x.outcomes))
+        .collect::<Vec<(usize, &Vec<String>)>>();
+    let info_opt = contract_info.get_range_info_for_outcome(adaptor_info, &outcomes, 0);
+    if let Some((sig_infos, range_info)) = info_opt {
+        let sigs: Vec<Vec<_>> = attestations
+            .iter()
+            .filter_map(|(i, a)| {
+                let sig_info = sig_infos.iter().find(|x| x.0 == *i)?;
+                Some(a.signatures.iter().take(sig_info.1).cloned().collect())
+            })
+            .collect();
+        return Ok((range_info, sigs));
+    }
+
+    Err(Error::InvalidState(
+        "Could not find closing info for given outcomes".to_string(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn id_computation_test() {
+        let transaction = bitcoin_test_utils::tx_from_string("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff020000ffffffff0101000000000000000000000000");
+        let output_index = 1;
+        let temporary_id = [34u8; 32];
+        let expected_id = bitcoin_test_utils::str_to_hex(
+            "81db60dcbef10a2d0cb92cb78400a96ee6a9b6da785d0230bdabf1e18a2d6ffb",
+        );
+
+        let id = compute_id(transaction.txid(), output_index, &temporary_id);
+
+        assert_eq!(expected_id, id);
+    }
 }
