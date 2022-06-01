@@ -81,6 +81,31 @@ impl MessageHandler {
     }
 }
 
+macro_rules! handle_read_dlc_messages {
+    ($msg_type:ident, $buffer:ident, $(($type_id:ident, $variant:ident)),*) => {{
+        let decoded = match $msg_type {
+            $(
+                $crate::$type_id => Message::$variant(Readable::read(&mut $buffer)?),
+            )*
+            _ => return Ok(None),
+        };
+        Ok(Some(WireMessage::Message(decoded)))
+    }};
+}
+
+fn read_dlc_message<R: ::std::io::Read>(
+    msg_type: u16,
+    mut buffer: &mut R,
+) -> Result<Option<WireMessage>, DecodeError> {
+    handle_read_dlc_messages!(
+        msg_type,
+        buffer,
+        (OFFER_TYPE, Offer),
+        (ACCEPT_TYPE, Accept),
+        (SIGN_TYPE, Sign)
+    )
+}
+
 /// Implementation of the `CustomMessageReader` trait is required to decode
 /// custom messages in the LDK.
 impl CustomMessageReader for MessageHandler {
@@ -91,18 +116,13 @@ impl CustomMessageReader for MessageHandler {
         mut buffer: &mut R,
     ) -> Result<Option<WireMessage>, DecodeError> {
         let decoded = match msg_type {
-            crate::OFFER_TYPE => WireMessage::Message(Message::Offer(Readable::read(&mut buffer)?)),
-            crate::ACCEPT_TYPE => {
-                WireMessage::Message(Message::Accept(Readable::read(&mut buffer)?))
-            }
-            crate::SIGN_TYPE => WireMessage::Message(Message::Sign(Readable::read(&mut buffer)?)),
             crate::segmentation::SEGMENT_START_TYPE => {
                 WireMessage::SegmentStart(Readable::read(&mut buffer)?)
             }
             crate::segmentation::SEGMENT_CHUNK_TYPE => {
                 WireMessage::SegmentChunk(Readable::read(&mut buffer)?)
             }
-            _ => return Ok(None),
+            _ => return read_dlc_message(msg_type, buffer),
         };
 
         Ok(Some(decoded))

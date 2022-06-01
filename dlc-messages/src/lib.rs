@@ -48,14 +48,22 @@ use secp256k1_zkp::{EcdsaAdaptorSignature, Signing};
 use secp256k1_zkp::{PublicKey, Signature};
 use segmentation::{SegmentChunk, SegmentStart};
 
-/// The type prefix for an [`OfferDlc`] message.
-pub const OFFER_TYPE: u16 = 42778;
+macro_rules! impl_type {
+    ($const_name: ident, $type_name: ident, $type_val: expr) => {
+        /// The type prefix for an [`$type_name`] message.
+        pub const $const_name: u16 = $type_val;
 
-/// The type prefix for an [`AcceptDlc`] message.
-pub const ACCEPT_TYPE: u16 = 42780;
+        impl Type for $type_name {
+            fn type_id(&self) -> u16 {
+                $const_name
+            }
+        }
+    };
+}
 
-/// The type prefix for a [`SignDlc`] message.
-pub const SIGN_TYPE: u16 = 42782;
+impl_type!(OFFER_TYPE, OfferDlc, 42778);
+impl_type!(ACCEPT_TYPE, AcceptDlc, 42780);
+impl_type!(SIGN_TYPE, SignDlc, 42782);
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
@@ -140,14 +148,24 @@ pub struct CetAdaptorSignatures {
     pub ecdsa_adaptor_signatures: Vec<CetAdaptorSignature>,
 }
 
-impl From<Vec<EcdsaAdaptorSignature>> for CetAdaptorSignatures {
-    fn from(signatures: Vec<EcdsaAdaptorSignature>) -> Self {
+impl From<&[EcdsaAdaptorSignature]> for CetAdaptorSignatures {
+    fn from(signatures: &[EcdsaAdaptorSignature]) -> Self {
         CetAdaptorSignatures {
             ecdsa_adaptor_signatures: signatures
                 .iter()
                 .map(|x| CetAdaptorSignature { signature: *x })
                 .collect(),
         }
+    }
+}
+
+impl From<&CetAdaptorSignatures> for Vec<EcdsaAdaptorSignature> {
+    fn from(signatures: &CetAdaptorSignatures) -> Vec<EcdsaAdaptorSignature> {
+        signatures
+            .ecdsa_adaptor_signatures
+            .iter()
+            .map(|x| x.signature)
+            .collect::<Vec<_>>()
     }
 }
 
@@ -305,12 +323,6 @@ pub struct OfferDlc {
     pub refund_locktime: u32,
 }
 
-impl Type for OfferDlc {
-    fn type_id(&self) -> u16 {
-        OFFER_TYPE
-    }
-}
-
 impl OfferDlc {
     /// Returns the total collateral locked in the contract.
     pub fn get_total_collateral(&self) -> u64 {
@@ -426,12 +438,6 @@ impl_dlc_writeable!(AcceptDlc, {
     (negotiation_fields, option)
 });
 
-impl Type for AcceptDlc {
-    fn type_id(&self) -> u16 {
-        ACCEPT_TYPE
-    }
-}
-
 /// Contains all the required signatures for the DLC transactions from the offering
 /// party.
 #[derive(Clone, Debug, PartialEq)]
@@ -468,12 +474,6 @@ impl_dlc_writeable!(SignDlc, {
     (funding_signatures, writeable)
 });
 
-impl Type for SignDlc {
-    fn type_id(&self) -> u16 {
-        SIGN_TYPE
-    }
-}
-
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -482,25 +482,32 @@ pub enum Message {
     Sign(SignDlc),
 }
 
-impl Type for Message {
-    fn type_id(&self) -> u16 {
-        match self {
-            Message::Offer(o) => o.type_id(),
-            Message::Accept(a) => a.type_id(),
-            Message::Sign(s) => s.type_id(),
-        }
-    }
+macro_rules! impl_type_writeable_for_enum {
+    ($type_name: ident, {$($variant_name: ident),*}) => {
+       impl Type for $type_name {
+           fn type_id(&self) -> u16 {
+               match self {
+                   $($type_name::$variant_name(v) => v.type_id(),)*
+               }
+           }
+       }
+
+       impl Writeable for $type_name {
+            fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
+                match self {
+                   $($type_name::$variant_name(v) => v.write(writer),)*
+                }
+            }
+       }
+    };
 }
 
-impl Writeable for Message {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        match self {
-            Message::Offer(o) => o.write(writer),
-            Message::Accept(a) => a.write(writer),
-            Message::Sign(s) => s.write(writer),
-        }
-    }
-}
+impl_type_writeable_for_enum!(Message,
+{
+    Offer,
+    Accept,
+    Sign
+});
 
 #[derive(Debug, Clone)]
 /// Wrapper for DLC related message and segmentation related messages.
@@ -524,25 +531,7 @@ impl Display for WireMessage {
     }
 }
 
-impl Type for WireMessage {
-    fn type_id(&self) -> u16 {
-        match self {
-            WireMessage::Message(m) => m.type_id(),
-            WireMessage::SegmentStart(s) => s.type_id(),
-            WireMessage::SegmentChunk(s) => s.type_id(),
-        }
-    }
-}
-
-impl Writeable for WireMessage {
-    fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
-        match self {
-            WireMessage::Message(m) => m.write(writer),
-            WireMessage::SegmentStart(s) => s.write(writer),
-            WireMessage::SegmentChunk(s) => s.write(writer),
-        }
-    }
-}
+impl_type_writeable_for_enum!(WireMessage, { Message, SegmentStart, SegmentChunk });
 
 #[cfg(test)]
 mod tests {
