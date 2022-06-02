@@ -535,11 +535,12 @@ pub fn create_refund_transaction(
     funding_input: TxIn,
     locktime: u32,
 ) -> Transaction {
+    let output = util::discard_dust(vec![offer_output, accept_output], DUST_LIMIT);
     Transaction {
         version: TX_VERSION,
         lock_time: locktime,
         input: vec![funding_input],
-        output: vec![offer_output, accept_output],
+        output,
     }
 }
 
@@ -834,12 +835,12 @@ mod tests {
 
     fn create_test_tx_io() -> (TxOut, TxOut, TxIn) {
         let offer = TxOut {
-            value: 1,
+            value: DUST_LIMIT + 1,
             script_pubkey: Script::new(),
         };
 
         let accept = TxOut {
-            value: 2,
+            value: DUST_LIMIT + 2,
             script_pubkey: Script::new(),
         };
 
@@ -860,8 +861,8 @@ mod tests {
         let refund_transaction = create_refund_transaction(offer, accept, funding, 0);
         assert_eq!(2, refund_transaction.version);
         assert_eq!(0, refund_transaction.lock_time);
-        assert_eq!(1, refund_transaction.output[0].value);
-        assert_eq!(2, refund_transaction.output[1].value);
+        assert_eq!(DUST_LIMIT + 1, refund_transaction.output[0].value);
+        assert_eq!(DUST_LIMIT + 2, refund_transaction.output[1].value);
         assert_eq!(3, refund_transaction.input[0].sequence);
     }
 
