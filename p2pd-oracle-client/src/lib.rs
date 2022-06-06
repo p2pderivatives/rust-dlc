@@ -21,10 +21,7 @@ extern crate serde;
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use dlc_manager::error::Error as DlcManagerError;
 use dlc_manager::Oracle;
-use dlc_messages::oracle_msgs::{
-    DigitDecompositionEventDescriptor, EventDescriptor as OracleEventDescriptor,
-    OracleAnnouncement, OracleAttestation, OracleEvent,
-};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use secp256k1_zkp::schnorrsig::{PublicKey, Signature};
 
 /// Enables interacting with a DLC oracle.
@@ -146,39 +143,8 @@ impl Oracle for P2PDOracleClient {
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DlcManagerError> {
         let (asset_id, date_time) = parse_event_id(event_id)?;
         let path = announcement_path(&self.host, &asset_id, &date_time);
-        let AnnoucementResponse {
-            oracle_public_key,
-            oracle_event,
-        } = get(&path)?;
-        let Event {
-            nonces,
-            event_maturity,
-            event_id,
-            event_descriptor,
-        } = oracle_event;
-        let EventDescriptor {
-            base,
-            is_signed,
-            unit,
-            precision,
-        } = event_descriptor;
-        Ok(OracleAnnouncement {
-            // TODO(tibo): fix once oracle provides signatures.
-            announcement_signature: "67159dad98bdc1ee51169bece3b1da1ab7f918697a084afce3db639388757d1bfacf0a4d725fc8e09ed97dac559a0e89648e04cb64405ae5a3ba3280c3eef1ff".parse().unwrap(),
-            oracle_public_key,
-            oracle_event: OracleEvent {
-                event_descriptor: OracleEventDescriptor::DigitDecompositionEvent(DigitDecompositionEventDescriptor {
-                    base,
-                    is_signed,
-                    unit,
-                    precision,
-                    nb_digits: nonces.len() as u16,
-                }),
-                oracle_nonces: nonces,
-                event_maturity_epoch: event_maturity.timestamp() as u32,
-                event_id,
-            }
-        })
+        let announcement = get(&path)?;
+        Ok(announcement)
     }
 
     fn get_attestation(
@@ -251,7 +217,7 @@ mod tests {
                 .unwrap()
                 .with_timezone(&Utc),
         );
-        let _m = mock("GET", path).with_body(r#"{"announcementSignature":"","oraclePublicKey":"ce4b7ad2b45de01f0897aa716f67b4c2f596e54506431e693f898712fe7e9bf3","oracleEvent":{"nonces":["67159dad98bdc1ee51169bece3b1da1ab7f918697a084afce3db639388757d1b","c16534f0d1af941c0ebf5ba6abfbc261e971c64760234dfd014ca3104ea92dd6","fabe57869a532b1c4897b6b0d91a46edf7aab42beba86222cd70938a01eaa31c","4b79ac4881f1d2a9fb08c8dba729efeac8dde8105beb52b8dc504e572c023cfc","2a70113f552fb13daeaede084f025c12b9adceec4b45cb9551786d0e1816f023","fc29bd5e51a3cd4d8e08fe048656902a7ec77faeb7ff7cceb87b61dcf0f836b3","cd02a305b00c56c3612a22f2e81229c57b8a485a7abd7bc392b6c65257004ee9","8db688a597a2093378756e8da5e9cdc197cbe9a1d4e9c2b574bb986c66d3d21b","97ad0813677160c2cb6c6edcbc56d5256522a03e26f64974bb22c85401ebfce3","4c74604c5c8d11948263f8071d7aa1cb89bfb495489775bea778eaa9612c1ba1","59970d93d54e75a1fecd2ce3394aed0c184ea4611d519411895874921172bf11","4a7e3e6bb7c2bc3e2e70c29f65ad7daf112229df0691ad4985e8d6f4fb2474ec","c2295ced31c1f0617717345c5177f7928e04ff35cf3d1ca45406efcfe52ed205","828f9cfa5fda87eccacea2514f21db6cbe952586b9124f10c605a5be8ebdc174","0fd3335a4314ff5fe03921fc25eb300613dfe57aedc5fa196a1027529aa1782b","eb97fa3225f9ef6a5c954f34754772691fe7b48b4c4e292c766fc83d8b2a7829","4fcc19540a059f240154357ba3a44966b32bd2696df34ce059e750fce15c2c91","93e932cd5c518f38ca36e87495f2bbd8926db3789f4c0cc6c0d7f585b0bf6107","b3b35b0ec2dc8b24812c67b77a5930960d606101b43b168e0f7b29fbfd5dc58b","167033cbecb3d07f23314e701de6728b5debbf568001317c06f74ae4355739ea"],"eventMaturity":"2021-06-29T05:10:00Z","eventDescriptor":{"base":2,"isSigned":false,"unit":"","precision":0},"eventId":"btcusd1624943400"}}"#).create();
+        let _m = mock("GET", path).with_body(r#"{"announcementSignature":"f83db0ca25e4c209b55156737b0c65470a9702fe9d1d19a129994786384289397895e403ff37710095a04a0841a95738e3e8bc35bdef6bce50bf34eeb182bd9b","oraclePublicKey":"10dc8cf51ae3ee1c7967ffb9c9633a5ab06206535d8e1319f005a01ba33bc05d","oracleEvent":{"oracleNonces":["aca32fc8dead13983c655638ef921f1d38ef2f5286e58b2a1dab32b6e086e208","89603f8179830590fdce45eb17ba8bdf74e295a4633b58b46c9ede8274774164","5f3fcdfbba9ec75cb0868e04ec1f97089b4153fb2076bd1e017048e9df633aa1","8436d00f7331491dc6512e560a1f2414be42e893992eccb495642eefc7c5bf37","0d2593764c9c27eba0be3ca6c71a2de4e49a5f4aa1ce1e2cc379be3939547501","414318491e96919e67583db7a47eb1f8b4f1194bcb5b5dcc4fd10492d89926e4","b9a5ded7295e0343f385e5abedfd9e5f4137de8f67de0afa9396f7e0f996ef79","badf0bfe230ed605161630d8e3a092d7448461042db38912bc6c6a0ab195ff71","6e4780213cd7ed9de1300146079b897cae89dec7800065f615974193f58aa6db","7b12b48ad95634ee4ca476dd57e634fddc328e10276e71d27e0ae626fad7d699","a8058604adf590a1c38f8be19aa44175eb2d1130eb4d7f39a34f89f0a3fbed27","ffc3208f60b585cdc778be1290b352c34c22652d5348a87885816bcf17a80116","cb34c13f80b49e729e863035f30e1f8ea7777618eedb6d666c3b1c85a5b8a637","5000991f4631c0bba5d026f02125fdbe77e019dde57d31ce7f23ae3601a18623","094433a2432b81bbb6d6b7d65dc3498e2a7c9de5f35672d67097d54d920eadd2","11dff6b40b0938e1943c7888633d88871c2a2a1c16f412b22b80ba7ed8af8788","d5957f1a199b4abbc06894479c722ad0c4f120f0d5afeb76d589127213e33170","80e09bb453e6a0a444ec3ba222a62ecd59540b9dd8280566a17bebdfdfbd7a9e","0fe775b79b2172cb961e7c1aa54d521360903680680aaa55ea8be0404ee3768c","bfcdbb2cbcffba41048149d4bcf2a41cd5fd0a713df6f48104ade3022c284575"],"eventMaturityEpoch":1653865200,"eventDescriptor":{"digitDecompositionEvent":{"base":2,"isSigned":false,"unit":"usd/btc","precision":0,"nbDigits":20}},"eventId":"btcusd1653865200"}}"#).create();
 
         let client = P2PDOracleClient::new(url).expect("Error creating client instance");
 
@@ -272,7 +238,7 @@ mod tests {
                 .with_timezone(&Utc),
         );
 
-        let _m = mock("GET", path).with_body(r#"{"eventId":"btcusd1624943400","signatures":["67159dad98bdc1ee51169bece3b1da1ab7f918697a084afce3db639388757d1bfacf0a4d725fc8e09ed97dac559a0e89648e04cb64405ae5a3ba3280c3eef1ff","c16534f0d1af941c0ebf5ba6abfbc261e971c64760234dfd014ca3104ea92dd65aa17d3431ee703d2041105a35e9e7b4e240a329df672cd92253eba003c4bd73","fabe57869a532b1c4897b6b0d91a46edf7aab42beba86222cd70938a01eaa31c3cad8670e60961688ec861b19a23bac52dca5a3e32e20873fa5e70cbd0c4ecfc","4b79ac4881f1d2a9fb08c8dba729efeac8dde8105beb52b8dc504e572c023cfc0b8eef8299fab553b16bcef2a38b48ecd8d54b64cc8cc19a9f9ab5afa3a31412","2a70113f552fb13daeaede084f025c12b9adceec4b45cb9551786d0e1816f0230c593dcc4f7f5087ce55badb34f7735e7495884189b7cc6870b90463f91cd85a","fc29bd5e51a3cd4d8e08fe048656902a7ec77faeb7ff7cceb87b61dcf0f836b3111b13301efc5b95109171476259819569167d83b99bee50273f5abd2bcd9e63","cd02a305b00c56c3612a22f2e81229c57b8a485a7abd7bc392b6c65257004ee9e119307cc7f46e95e6355bcfa28778d016c6dab4e65f54e2c45df117b34df9f2","8db688a597a2093378756e8da5e9cdc197cbe9a1d4e9c2b574bb986c66d3d21b045ce89846fd7ab014795070c31c9dfaa1240400a85414899aa502fc0bf2353e","97ad0813677160c2cb6c6edcbc56d5256522a03e26f64974bb22c85401ebfce3e0cdb1e26d762904c9b86f8a21bbee517c3e32df65e6a8077c60efd4a2b07c00","4c74604c5c8d11948263f8071d7aa1cb89bfb495489775bea778eaa9612c1ba139af8cb7816a96b449b5b2df65e233492484430a434af7aacb14dffd310c2d27","59970d93d54e75a1fecd2ce3394aed0c184ea4611d519411895874921172bf1188a760cb680e93798430828817f4ccad8dab23b15101570498a622de5f204680","4a7e3e6bb7c2bc3e2e70c29f65ad7daf112229df0691ad4985e8d6f4fb2474ecde0542ade92f85682302ee9dde4a294128a71fe2e89e6ed3704b8b299405c1ea","c2295ced31c1f0617717345c5177f7928e04ff35cf3d1ca45406efcfe52ed2055806cbe37a19f9bea8440c6b6f46dc6f39f1534852eb17acbb1f2460ac5814e0","828f9cfa5fda87eccacea2514f21db6cbe952586b9124f10c605a5be8ebdc174eee7eb28a32447a3556542709e0f6f1f31dccbc07bce87ef2603d25d0332921d","0fd3335a4314ff5fe03921fc25eb300613dfe57aedc5fa196a1027529aa1782b3cb111011298ddd2bd3d6143b634b90d3cb357390e4a5cd8a9f572d0d77ab928","eb97fa3225f9ef6a5c954f34754772691fe7b48b4c4e292c766fc83d8b2a7829aa08565f425bd968cece42814391501d3911a297629cbd995fb0caf0616aadd5","4fcc19540a059f240154357ba3a44966b32bd2696df34ce059e750fce15c2c91246ec329b5ebe48a928e17d6c3c9a48bb5922dbadc2f8b53091690dc29aafa35","93e932cd5c518f38ca36e87495f2bbd8926db3789f4c0cc6c0d7f585b0bf6107a452635270dcdd81bb5f9d72c58332bdca0d24310b59c6e0dd73ca8b854d0930","b3b35b0ec2dc8b24812c67b77a5930960d606101b43b168e0f7b29fbfd5dc58bf82d9e459a68d4600474d4c0330ff4eb8e27b823f2b570742c83c96c0ec25af0","167033cbecb3d07f23314e701de6728b5debbf568001317c06f74ae4355739eae0fe1b1dae4f7df55a44250b730c40a2907e63dd96b7b0bcdf64c09bbda65c6e"],"values":["0","0","0","0","1","0","0","0","0","1","1","1","1","0","1","1","1","1","1","0"]}"#).create();
+        let _m = mock("GET", path).with_body(r#"{"eventId":"btcusd1653517020","signatures":["ee05b1211d5f974732b10107dd302da062be47cd18f061c5080a50743412f9fd590cad90cfea762472e6fe865c4223bd388c877b7881a27892e15843ff1ac360","59ab83597089b48f5b3c2fd07c11edffa6b1180bdb6d9e7d6924979292d9c53fe79396ceb0782d5941c284d1642377136c06b2d9c2b85bda5969a773a971b5b0","d1f8c31a83bb34433da5b9808bb3692dd212b9022b7bc8f269fc817e96a7195db18262e934bebd4e68a3f2c96550826a5530350662df4c86c004f5cf1121ca67","e5cec554c39c4dd544d70175128271eecad77c1e3eaa6994c657e257d5c1c9dcd19b041ea8030e75448245b7f91705ad914c32761671a6172f928904b439ea6b","a209116d20f0931113c0880e8cd22d3f003609a32322ff8df241ef16e7d4efd1a9b723f582a22073e21188635f09f41f270f3126014542861be14b62b09c0ecc","f1da0b482f08f545a92338392b71cec33d948a5e5732ee4d5c0a87bd6b6cc12feeb1498da7afd93ae48ec4ce581ee79c0e92f338d3777c2ef06578e4ec1a853c","d9ab68244a3b47cc8cbd5a972f2f5059fc6b9711dba8d4a7a23607a99b9655593bab3abc1d3b02402cd0809c3c7016c741742efb363227de2bcfdcf290a053b3","c1146c1767a947f77794d05a2f58e50af824e3c8d70adde883e58d2dc1ddb157323b0aaf8cfb5b076a12395756bdcda64ab5d4799e43c88a41993659e6d49471","0d29d9383c9ee41055e1cb40104c9ca75280162779c0162cb6bf9aca2b223aba17de4b3f0f29ae6b749f22ba467b7e9f05456e8abb3ec328f62b7a924c6d4828","2bcc54002ceb271a940f24bc6dd0562b99c2d76cfb8f145f42ac37bc34fd3e94adba1194c5be91932b818c5715c73f287e066e228d796a373c4aec67fd777070","a91f77e3435c577682ff744d6f7da66c865a42e8645276dedf2ed2b8bc4c80285dff4b553b2231592e0fa8b4f242acb6888519fe82c457cc5204e5d9d511303a","546409d6bcdcfd5bef39957c8b1b09f7805b08ec2311bc73cf6927ae11f3567ffe8428aa7faa661518e9c02a702212ab05e494aab84624c3dd1a710f8c4c369b","9d601ee8a3d28dcdfdd05581f1b24d6e5a576f0b5544eb7c9921cb87a23fdb293c1edca89b43b5b84c1e305fbe52facbe6b03575aed8f95b4faccc90e0eb45ef","636b8028e9cd6cba6be5b3c1789b62aecfc17e9c28d7a621cfad2c3cf751046528028e1dbd6cee050d5d570cf5a3d8986471d73e7edca4093e36fc8e1097fb65","57c6337b52dc7fd8f49b29105f168fc9b4cb88ed2ba5f0e9a80a21e20836f87f875c3fe92afb437dd5647630b54eda6ba1be76ba6df8b641eb2e8be8ff1182dc","9e8843e32f9de4cd6d5bb9e938fd014babe11bb1faf35fc411d754259bc374f34dd841ed91f6bb3f030bc55a4791cdc41471c33b3f05fd35b9d1768fd381f953","97da4963747ab5e50534b93274065cba4fd24e6b7a9d3310db2596af24f70961fb03535e2a5ae272f7ea14e86daafa57073631596fecf7ceadf4ae3e6941b69e","94a414569743f87f1462a503be8cff1f229096d190b8b1349519c612b74eea872d5d763570aaaa54fad0605a43d742203bce489deea5570750030191e293c253","4d7117b89aad73eca7b341749bd54ffdd459b9b8b4ff128344d09273f66a3d2c01d2c86b61f7642d6e81f488580b456685cd68660458cff83b8858a05c9a1f4d","b12153a393a4fddac3079c1878cb89afccfe0ac8f539743c0608049f445e49ac7c89e33fcf832cda8d7e8a4f4dae94a303170f16c697feed8b78015873bd5ffc"],"values":["0","0","0","0","0","1","1","1","0","1","0","0","0","0","1","1","1","0","1","0"]}"#).create();
 
         let client = P2PDOracleClient::new(url).expect("Error creating client instance");
 
