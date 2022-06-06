@@ -915,8 +915,9 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let bob_sync_send = sync_send;
     let (alice_rpc, bob_rpc, sink_rpc) = init_clients();
 
-    let alice_bitcoin_core = Arc::new(BitcoinCoreProvider { client: alice_rpc });
-    let bob_bitcoin_core = Arc::new(BitcoinCoreProvider { client: bob_rpc });
+    let alice_bitcoin_core = Arc::new(BitcoinCoreProvider::new_from_rpc_client(alice_rpc));
+
+    let bob_bitcoin_core = Arc::new(BitcoinCoreProvider::new_from_rpc_client(bob_rpc));
 
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
