@@ -32,7 +32,7 @@ pub mod manager;
 pub mod payout_curve;
 mod utils;
 
-use bitcoin::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use error::Error;
@@ -103,6 +103,10 @@ pub trait Blockchain {
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error>;
     /// Returns the network currently used (mainnet, testnet or regtest).
     fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error>;
+    /// Returns the height of the blockchain
+    fn get_blockchain_height(&self) -> Result<u64, Error>;
+    /// Returns the block at given height
+    fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.
