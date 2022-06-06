@@ -33,6 +33,7 @@ pub(crate) type DlcManager = dlc_manager::manager::Manager<
     Box<dlc_sled_storage_provider::SledStorageProvider>,
     Box<P2PDOracleClient>,
     Arc<SystemTimeProvider>,
+    Arc<BitcoinCoreProvider>,
 >;
 
 #[tokio::main]
@@ -74,16 +75,20 @@ async fn main() {
     oracles.insert(oracle.get_public_key(), Box::new(oracle));
 
     // Instantiate a DlcManager.
-    let dlc_manager = Arc::new(Mutex::new(dlc_manager::manager::Manager::new(
-        bitcoind_provider.clone(),
-        bitcoind_provider.clone(),
-        Box::new(
-            dlc_sled_storage_provider::SledStorageProvider::new(&config.storage_dir_path)
-                .expect("Error creating storage."),
-        ),
-        oracles,
-        Arc::new(dlc_manager::SystemTimeProvider {}),
-    )));
+    let dlc_manager = Arc::new(Mutex::new(
+        dlc_manager::manager::Manager::new(
+            bitcoind_provider.clone(),
+            bitcoind_provider.clone(),
+            Box::new(
+                dlc_sled_storage_provider::SledStorageProvider::new(&config.storage_dir_path)
+                    .expect("Error creating storage."),
+            ),
+            oracles,
+            Arc::new(dlc_manager::SystemTimeProvider {}),
+            bitcoind_provider.clone(),
+        )
+        .expect("Could not create manager."),
+    ));
 
     let dlc_data_dir = format!("{}/.dlc", config.storage_dir_path);
     let logger = Arc::new(FilesystemLogger::new(dlc_data_dir.clone()));

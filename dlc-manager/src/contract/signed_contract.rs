@@ -1,6 +1,7 @@
 //! #SignedContract
 
 use crate::conversion_utils::PROTOCOL_VERSION;
+use crate::ChannelId;
 
 use super::accepted_contract::AcceptedContract;
 use dlc_messages::CetAdaptorSignature;
@@ -21,6 +22,8 @@ pub struct SignedContract {
     pub offer_refund_signature: Signature,
     /// The signatures for the funding inputs of the offering party.
     pub funding_signatures: FundingSignatures,
+    /// The [`ChannelId`] to which the contract was associated if any.
+    pub channel_id: Option<ChannelId>,
 }
 
 impl SignedContract {
