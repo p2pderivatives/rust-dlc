@@ -26,6 +26,7 @@ extern crate serde;
 #[cfg(test)]
 extern crate serde_json;
 
+pub mod channel;
 pub mod contract_msgs;
 pub mod message_handler;
 pub mod oracle_msgs;
@@ -38,6 +39,11 @@ use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
 use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
+use channel::{
+    AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
+    RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
+    SignChannel,
+};
 use contract_msgs::ContractInfo;
 use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
@@ -64,6 +70,23 @@ macro_rules! impl_type {
 impl_type!(OFFER_TYPE, OfferDlc, 42778);
 impl_type!(ACCEPT_TYPE, AcceptDlc, 42780);
 impl_type!(SIGN_TYPE, SignDlc, 42782);
+impl_type!(OFFER_CHANNEL_TYPE, OfferChannel, 43000);
+impl_type!(ACCEPT_CHANNEL_TYPE, AcceptChannel, 43002);
+impl_type!(SIGN_CHANNEL_TYPE, SignChannel, 43004);
+impl_type!(SETTLE_CHANNEL_OFFER_TYPE, SettleOffer, 43006);
+impl_type!(SETTLE_CHANNEL_ACCEPT_TYPE, SettleAccept, 43008);
+impl_type!(SETTLE_CHANNEL_CONFIRM_TYPE, SettleConfirm, 43010);
+impl_type!(SETTLE_CHANNEL_FINALIZE_TYPE, SettleFinalize, 43012);
+impl_type!(RENEW_CHANNEL_OFFER_TYPE, RenewOffer, 43014);
+impl_type!(RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept, 43016);
+impl_type!(RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm, 43018);
+impl_type!(RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize, 43020);
+impl_type!(
+    COLLABORATIVE_CLOSE_OFFER_TYPE,
+    CollaborativeCloseOffer,
+    43022
+);
+impl_type!(REJECT, Reject, 43024);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
@@ -480,6 +503,19 @@ pub enum Message {
     Offer(OfferDlc),
     Accept(AcceptDlc),
     Sign(SignDlc),
+    OfferChannel(OfferChannel),
+    AcceptChannel(AcceptChannel),
+    SignChannel(SignChannel),
+    SettleOffer(SettleOffer),
+    SettleAccept(SettleAccept),
+    SettleConfirm(SettleConfirm),
+    SettleFinalize(SettleFinalize),
+    RenewOffer(RenewOffer),
+    RenewAccept(RenewAccept),
+    RenewConfirm(RenewConfirm),
+    RenewFinalize(RenewFinalize),
+    CollaborativeCloseOffer(CollaborativeCloseOffer),
+    Reject(Reject),
 }
 
 macro_rules! impl_type_writeable_for_enum {
@@ -506,7 +542,20 @@ impl_type_writeable_for_enum!(Message,
 {
     Offer,
     Accept,
-    Sign
+    Sign,
+    OfferChannel,
+    AcceptChannel,
+    SignChannel,
+    SettleOffer,
+    SettleAccept,
+    SettleConfirm,
+    SettleFinalize,
+    RenewOffer,
+    RenewAccept,
+    RenewConfirm,
+    RenewFinalize,
+    CollaborativeCloseOffer,
+    Reject
 });
 
 #[derive(Debug, Clone)]

@@ -122,6 +122,7 @@ where
                 self.on_sign_message(s, &counter_party)?;
                 Ok(None)
             }
+            _ => unimplemented!(),
         }
     }
 
