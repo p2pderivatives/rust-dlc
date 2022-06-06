@@ -14,6 +14,7 @@
 
 extern crate bitcoin;
 extern crate core;
+extern crate miniscript;
 extern crate secp256k1_sys;
 extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
@@ -31,6 +32,7 @@ use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verific
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub mod channel;
 pub mod secp_utils;
 pub mod util;
 
@@ -127,7 +129,7 @@ impl DlcTransactions {
 }
 
 /// Contains info about a utxo used for funding a DLC contract
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
@@ -187,7 +189,7 @@ impl fmt::Display for Error {
 /// Contains the parameters required for creating DLC transactions for a single
 /// party. Specifically these are the common fields between Offer and Accept
 /// messages.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
