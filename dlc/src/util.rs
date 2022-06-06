@@ -219,3 +219,7 @@ pub(crate) fn get_sequence(lock_time: u32) -> u32 {
         ENABLE_LOCKTIME
     }
 }
+
+pub(crate) fn compute_var_int_prefix_size(len: usize) -> usize {
+    bitcoin::VarInt(len as u64).len()
+}
