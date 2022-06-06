@@ -1,7 +1,7 @@
 {
   "offerCollateral": 100000000,
   "acceptCollateral": 100000000,
-  "maturityTime": 1632829584,
+  "maturityTime": 1653378780,
   "feeRate": 2,
   "contractInfos": [
     {
@@ -67,19 +67,18 @@
               }
             ]
           },
-          "info": {
+          "differenceParams": null,
+          "oracleNumericInfos": {
             "base": 2,
-            "nbDigits": 20,
-            "unit": "sats/sec"
-          },
-          "differenceParams": null
+            "nbDigits": [20]
+          }
         }
       },
       "oracles": {
         "publicKeys": [
           "ce4b7ad2b45de01f0897aa716f67b4c2f596e54506431e693f898712fe7e9bf3"
         ],
-        "eventId": "btcusd1631682600",
+        "eventId": "btcusd1653378780",
         "threshold": 1
       }
     }
