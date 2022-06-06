@@ -20,7 +20,7 @@ use crate::{
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
-    Signer, Wallet,
+    ChannelId, Signer, Wallet,
 };
 
 /// Creates an [`OfferedContract`] and [`OfferDlc`] message from the provided
@@ -271,6 +271,7 @@ where
         None,
         None,
         &dlc_transactions,
+        None,
     )?;
 
     let signed_msg: SignDlc = signed_contract.get_sign_dlc(adaptor_sigs);
@@ -291,6 +292,7 @@ pub(crate) fn verify_accepted_and_sign_contract_internal<S: Deref>(
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
     dlc_transactions: &DlcTransactions,
+    channel_id: Option<ChannelId>,
 ) -> Result<(SignedContract, Vec<EcdsaAdaptorSignature>), Error>
 where
     S::Target: Signer,
@@ -468,6 +470,7 @@ where
         adaptor_signatures: None,
         offer_refund_signature,
         funding_signatures: FundingSignatures { funding_signatures },
+        channel_id,
     };
 
     Ok((signed_contract, own_signatures))
@@ -496,6 +499,7 @@ where
         None,
         None,
         signer,
+        None,
     )
 }
 
@@ -509,6 +513,7 @@ pub(crate) fn verify_signed_contract_internal<S: Deref>(
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
     signer: &S,
+    channel_id: Option<ChannelId>,
 ) -> Result<(SignedContract, Transaction), Error>
 where
     S::Target: Signer,
@@ -613,6 +618,7 @@ where
         adaptor_signatures: Some(cet_adaptor_signatures.to_vec()),
         offer_refund_signature: *refund_signature,
         funding_signatures: funding_signatures.clone(),
+        channel_id,
     };
 
     Ok((signed_contract, fund_tx))

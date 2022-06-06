@@ -142,7 +142,7 @@ impl OfferChannel {
 /// information is sufficient for the offering party to re-build the set of
 /// transactions representing the contract and its terms, and guarantees the offering
 /// party that they can safely provide signatures for their funding input.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -210,7 +210,7 @@ impl_dlc_writeable!(AcceptChannel, {
     (negotiation_fields, option)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -246,7 +246,7 @@ impl_dlc_writeable!(SignChannel, {
     (funding_signatures, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -276,7 +276,7 @@ impl_dlc_writeable!(SettleOffer, {
     (next_per_update_point, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -307,7 +307,7 @@ impl_dlc_writeable!(SettleAccept, {
     (settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature})
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -338,7 +338,7 @@ impl_dlc_writeable!(SettleConfirm, {
     (settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature})
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -411,7 +411,7 @@ impl_dlc_writeable!(RenewOffer, {
     (cet_nsequence, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -448,7 +448,7 @@ impl_dlc_writeable!(RenewAccept, {
     (refund_signature, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -485,7 +485,7 @@ impl_dlc_writeable!(RenewConfirm, {
     (refund_signature, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -512,7 +512,7 @@ impl_dlc_writeable!(RenewFinalize, {
     (per_update_secret, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -541,7 +541,7 @@ impl_dlc_writeable!(CollaborativeCloseOffer, {
     (close_signature, writeable)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),

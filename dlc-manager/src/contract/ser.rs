@@ -7,9 +7,10 @@ use crate::contract::enum_descriptor::EnumDescriptor;
 use crate::contract::numerical_descriptor::{DifferenceParams, NumericalDescriptor};
 use crate::contract::offered_contract::OfferedContract;
 use crate::contract::signed_contract::SignedContract;
+use crate::contract::AdaptorInfo;
 use crate::contract::{
-    AdaptorInfo, ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract,
-    FundingInputInfo, PreClosedContract,
+    ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, FundingInputInfo,
+    PreClosedContract,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
@@ -122,7 +123,8 @@ impl_dlc_writeable!(SignedContract, {
     (accepted_contract, writeable),
     (adaptor_signatures, {option_cb, write_ecdsa_adaptor_signatures, read_ecdsa_adaptor_signatures }),
     (offer_refund_signature, writeable),
-    (funding_signatures, writeable)
+    (funding_signatures, writeable),
+    (channel_id, option)
 });
 impl_dlc_writeable!(PreClosedContract, {
     (signed_contract, writeable),
