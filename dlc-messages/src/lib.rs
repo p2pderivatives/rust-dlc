@@ -235,7 +235,7 @@ pub enum NegotiationFields {
     Disjoint(DisjointNegotiationFields),
 }
 
-impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;);
+impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;;);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
