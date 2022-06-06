@@ -74,7 +74,7 @@ impl OracleInfo {
 }
 
 impl_dlc_writeable_enum!(
-    OracleInfo, (0, Single), (1, Multi);;
+    OracleInfo, (0, Single), (1, Multi);;;
 );
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -172,6 +172,7 @@ impl OracleAnnouncement {
         self.oracle_event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
+
         let msg =
             Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
         secp.schnorrsig_verify(&self.announcement_signature, &msg, &self.oracle_public_key)?;
