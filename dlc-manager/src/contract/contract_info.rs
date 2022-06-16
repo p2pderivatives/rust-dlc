@@ -1,10 +1,13 @@
 //! #ContractInfo
 
+use std::convert::TryInto;
+
 use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
+use dlc_messages::oracle_msgs::OracleScheme;
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::{DlcTrie, RangeInfo};
 use secp256k1_zkp::{
@@ -55,8 +58,11 @@ impl ContractInfo {
 
     /// Utility function returning a set of OracleInfo created using the set
     /// of oracle announcements defined for the contract.
-    pub fn get_oracle_infos(&self) -> Vec<OracleInfo> {
-        self.oracle_announcements.iter().map(|x| x.into()).collect()
+    pub fn get_oracle_infos(&self) -> Result<Vec<OracleInfo>, Error> {
+        self.oracle_announcements
+            .iter()
+            .map(|x| x.try_into().map_err(|e: dlc::Error| e.into()))
+            .collect::<Result<Vec<_>, Error>>()
     }
 
     /// Uses the provided AdaptorInfo and SecretKey to generate the set of
@@ -74,7 +80,7 @@ impl ContractInfo {
             AdaptorInfo::Enum => match &self.contract_descriptor {
                 ContractDescriptor::Enum(e) => e.get_adaptor_signatures(
                     secp,
-                    &self.get_oracle_infos(),
+                    &self.get_oracle_infos()?,
                     self.threshold,
                     cets,
                     fund_privkey,
@@ -115,7 +121,7 @@ impl ContractInfo {
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
     ) -> Result<(AdaptorInfo, usize), Error> {
-        let oracle_infos = self.get_oracle_infos();
+        let oracle_infos = self.get_oracle_infos()?;
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.verify_and_get_adaptor_info(
                 secp,
@@ -191,7 +197,7 @@ impl ContractInfo {
         adaptor_sig_start: usize,
         adaptor_info: &AdaptorInfo,
     ) -> Result<usize, Error> {
-        let oracle_infos = self.get_oracle_infos();
+        let oracle_infos = self.get_oracle_infos()?;
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.verify_adaptor_info(
                 secp,
@@ -241,7 +247,7 @@ impl ContractInfo {
     ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => {
-                let oracle_infos = self.get_oracle_infos();
+                let oracle_infos = self.get_oracle_infos()?;
                 Ok(e.get_adaptor_info(
                     secp,
                     &oracle_infos,
@@ -273,8 +279,14 @@ impl ContractInfo {
         self.oracle_announcements
             .iter()
             .map(|x| {
-                let pubkey = &x.oracle_public_key;
-                let nonces = &x.oracle_event.oracle_nonces;
+                let (pubkey, nonces) = {
+                    let OracleScheme::Schnorr {
+                        attestation_public_key,
+                        oracle_nonces,
+                    } = &x.oracle_metadata.oracle_schemes[0];
+                    (attestation_public_key, oracle_nonces)
+                };
+
                 match &x.oracle_event.event_descriptor {
                     EventDescriptor::DigitDecompositionEvent(d) => {
                         let base = d.base as usize;

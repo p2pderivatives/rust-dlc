@@ -42,10 +42,9 @@ where
         contract_input.fee_rate,
         wallet,
     )?;
-
-    let closest_maturity_date = oracle_announcements
+    let latest_maturity_date = oracle_announcements
         .iter()
-        .flat_map(|x| x.iter().map(|y| y.oracle_event.event_maturity_epoch))
+        .flat_map(|x| x.iter().map(|y| y.oracle_event.timestamp.get_latest_time()))
         .min()
         .expect("to have a minimum.");
 
@@ -54,7 +53,7 @@ where
         oracle_announcements,
         &party_params,
         &funding_inputs_info,
-        closest_maturity_date + refund_delay,
+        latest_maturity_date + refund_delay,
         counter_party,
     );
 

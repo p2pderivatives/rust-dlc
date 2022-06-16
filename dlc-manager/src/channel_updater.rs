@@ -81,13 +81,13 @@ where
     let (offer_params, _, funding_inputs_info) =
         crate::utils::get_party_params(secp, contract.offer_collateral, contract.fee_rate, wallet)?;
     let party_points = crate::utils::get_party_base_points(secp, wallet)?;
-    let closest_maturity_date = oracle_announcements
+    let latest_maturity_date = oracle_announcements
         .iter()
-        .flat_map(|x| x.iter().map(|y| y.oracle_event.event_maturity_epoch))
+        .flat_map(|x| x.iter().map(|y| y.oracle_event.timestamp.get_latest_time()))
         .min()
         .expect("to have a minimum.");
 
-    let refund_locktime = closest_maturity_date + refund_delay;
+    let refund_locktime = latest_maturity_date + refund_delay;
 
     let offered_contract = OfferedContract::new(
         contract,

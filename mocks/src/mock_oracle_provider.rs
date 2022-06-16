@@ -1,9 +1,9 @@
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
-    EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent,
+    EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent, OracleMetadata,
+    OracleScheme, OracleTimestamp,
 };
-use lightning::util::ser::Writeable;
 use secp256k1_zkp::rand::thread_rng;
 use secp256k1_zkp::SecretKey;
 use secp256k1_zkp::{All, Message, Secp256k1};
@@ -13,37 +13,45 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct MockOracle {
-    key_pair: KeyPair,
+    announcement_key_pair: KeyPair,
+    attestation_key_pair: KeyPair,
     secp: Secp256k1<All>,
     announcements: HashMap<String, OracleAnnouncement>,
     attestations: HashMap<String, OracleAttestation>,
     nonces: HashMap<String, Vec<SecretKey>>,
+    name: String,
 }
 
 impl MockOracle {
     pub fn new() -> Self {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::new(&secp, &mut thread_rng());
+        let announcement_key_pair = KeyPair::new(&secp, &mut thread_rng());
+        let attestation_key_pair = KeyPair::new(&secp, &mut thread_rng());
 
         MockOracle {
             secp,
-            key_pair,
+            announcement_key_pair,
+            attestation_key_pair,
             announcements: HashMap::new(),
             attestations: HashMap::new(),
             nonces: HashMap::new(),
+            name: "MockOracle".to_string(),
         }
     }
 
-    pub fn from_secret_key(sk: &SecretKey) -> Self {
+    pub fn from_secret_keys(announcement_sk: &SecretKey, attestation_sk: &SecretKey) -> Self {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::from_secret_key(&secp, *sk);
+        let announcement_key_pair = KeyPair::from_secret_key(&secp, *announcement_sk);
+        let attestation_key_pair = KeyPair::from_secret_key(&secp, *attestation_sk);
 
         MockOracle {
             secp,
-            key_pair,
+            announcement_key_pair,
+            attestation_key_pair,
             announcements: HashMap::new(),
             attestations: HashMap::new(),
             nonces: HashMap::new(),
+            name: "MockOracle".to_string(),
         }
     }
 }
@@ -55,8 +63,12 @@ impl Default for MockOracle {
 }
 
 impl Oracle for MockOracle {
-    fn get_public_key(&self) -> XOnlyPublicKey {
-        XOnlyPublicKey::from_keypair(&self.key_pair)
+    fn get_announcement_public_key(&self) -> XOnlyPublicKey {
+        XOnlyPublicKey::from_keypair(&self.announcement_key_pair)
+    }
+
+    fn get_attestation_public_key(&self) -> XOnlyPublicKey {
+        XOnlyPublicKey::from_keypair(&self.attestation_key_pair)
     }
 
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
@@ -105,22 +117,32 @@ impl MockOracle {
     pub fn add_event(&mut self, event_id: &str, event_descriptor: &EventDescriptor, maturity: u32) {
         let oracle_nonces = self.generate_nonces_for_event(event_id, event_descriptor);
         let oracle_event = OracleEvent {
-            oracle_nonces,
-            event_maturity_epoch: maturity,
+            timestamp: OracleTimestamp::FixedOracleEventTimestamp {
+                expected_time_epoch: maturity,
+            },
             event_descriptor: event_descriptor.clone(),
             event_id: event_id.to_string(),
         };
-        let mut event_hex = Vec::new();
-        oracle_event
-            .write(&mut event_hex)
-            .expect("Error writing oracle event");
-        let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
-        let sig = self.secp.sign_schnorr(&msg, &self.key_pair);
-        let announcement = OracleAnnouncement {
+        let announcement = OracleAnnouncement::try_new_signed(
+            &self.secp,
+            &self.announcement_key_pair,
+            OracleMetadata::try_new_signed(
+                &self.secp,
+                &self.announcement_key_pair,
+                self.name.clone(),
+                "mock oracle".to_string(),
+                1,
+                vec![OracleScheme::Schnorr {
+                    attestation_public_key: XOnlyPublicKey::from_keypair(
+                        &self.attestation_key_pair,
+                    ),
+                    oracle_nonces,
+                }],
+            )
+            .unwrap(),
             oracle_event,
-            oracle_public_key: self.get_public_key(),
-            announcement_signature: sig,
-        };
+        )
+        .unwrap();
         self.announcements
             .insert(event_id.to_string(), announcement);
     }
@@ -136,13 +158,13 @@ impl MockOracle {
                 dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &self.secp,
                     &msg,
-                    &self.key_pair,
+                    &self.attestation_key_pair,
                     nonce.as_ref(),
                 )
             })
             .collect();
         let attestation = OracleAttestation {
-            oracle_public_key: self.get_public_key(),
+            oracle_public_key: self.get_attestation_public_key(),
             signatures,
             outcomes: outcomes.to_vec(),
         };

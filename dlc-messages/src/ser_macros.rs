@@ -33,6 +33,9 @@ macro_rules! field_write {
     ($stream: expr, $field: expr, option) => {
         $crate::ser_impls::write_option(&$field, $stream)?;
     };
+    ($stream: expr, $field: expr, {vec_tlv, $st:ident,$(($variant_id: expr, $variant_name: ident, {$(($field_in: ident, $field_ty_in:tt)),*})),*; $(($tuple_variant_id: expr, $tuple_variant_name: ident)),*}) => {
+        write_vec_enum_tlv_stream!($stream, &$field, $st,$(($variant_id, $variant_name, {$(($field_in, $field_ty_in)),*})),*; $(($tuple_variant_id, $tuple_variant_name)),*);
+    };
 }
 
 /// Reads a field from a reader.
@@ -67,6 +70,13 @@ macro_rules! field_read {
     };
     ($stream: expr, option) => {
         $crate::ser_impls::read_option($stream)?
+    };
+    ($stream: expr, {vec_tlv, $st:ident,$(($variant_id: expr, $variant_name: ident, {$(($field: ident, $field_ty:tt)),*})),*; $(($tuple_variant_id: expr, $tuple_variant_name: ident)),*}) => {
+        {
+            let mut vec = Vec::new();
+            read_vec_enum_tlv!($stream, vec, $st,$(($variant_id, $variant_name, {$(($field, $field_ty)),*})),*; $(($tuple_variant_id, $tuple_variant_name)),*);
+            vec
+        }
     };
 }
 
@@ -126,6 +136,73 @@ macro_rules! impl_dlc_writeable_external {
     };
 }
 
+/// Writes a vec of enum as a TLV stream.
+#[macro_export]
+macro_rules! write_vec_enum_tlv_stream {
+    ($stream:expr, $vec: expr, $st:ident,$(($variant_id: expr, $variant_name: ident, {$(($field: ident, $field_ty:tt)),*})),*; $(($tuple_variant_id: expr, $tuple_variant_name: ident)),*) => {
+        $crate::ser_impls::BigSize($vec.len() as u64).write($stream)?;
+        for el in $vec {
+            match el {
+                $($st::$tuple_variant_name(ref field) => {
+                    $crate::ser_impls::BigSize($tuple_variant_id as u64).write($stream)?;
+                    $crate::ser_impls::BigSize(field.serialized_length() as u64).write($stream)?;
+                    field.write($stream)?;
+                }),*
+                $($st::$variant_name{ $(ref $field),* } => {
+                    $crate::ser_impls::BigSize($variant_id as u64).write($stream)?;
+                    let mut size : usize = 0;
+                    $(
+                        let mut length_calc = crate::ser_impls::LengthCalculatingWriter(0);
+                        field_write!(&mut length_calc, $field, $field_ty);
+                        size += length_calc.0;
+                    )*
+                    $crate::ser_impls::BigSize(size as u64).write($stream)?;
+                    $(
+                        field_write!($stream, $field, $field_ty);
+                    )*
+                }),*
+            };
+        }
+    }
+}
+
+///
+#[macro_export]
+macro_rules! read_vec_enum_tlv {
+    ($stream: expr, $vec:ident, $st:ident,$(($variant_id: expr, $variant_name: ident, {$(($field: ident, $field_ty:tt)),*})),*; $(($tuple_variant_id: expr, $tuple_variant_name: ident)),*) => {
+            let size : $crate::ser_impls::BigSize = Readable::read($stream)?;
+            let mut last_seen = None;
+            for _ in 0..(size.0 as usize) {
+                let id: $crate::ser_impls::BigSize = Readable::read($stream)?;
+                let size : $crate::ser_impls::BigSize = Readable::read($stream)?;
+                if let Some(last) = last_seen {
+                    if last == id || last >= id {
+                        return Err(DecodeError::InvalidValue);
+                    }
+                }
+                last_seen = Some(id.clone());
+                match id.0 {
+                    $($tuple_variant_id => {
+                        $vec.push($st::$tuple_variant_name(Readable::read($stream)));
+                    }),*
+                    $($variant_id => {
+                        $vec.push($st::$variant_name {
+                            $(
+                                $field: field_read!($stream, $field_ty)
+                            ),*
+                        });
+                    }),*
+                    x if x % 2 == 0 => {
+                        return Err(DecodeError::UnknownRequiredFeature)
+                    },
+                    _ => {
+                        $stream.read_exact(&mut vec![0u8; size.0 as usize])?;
+                    }
+                }
+        }
+    }
+}
+
 /// Implements the [`lightning::util::ser::Writeable`] trait for an enum external
 /// to this crate.
 #[macro_export]
@@ -150,40 +227,6 @@ macro_rules! impl_dlc_writeable_external_enum {
                 match id {
                     $($variant_id => {
 						Ok($st::$variant_name($variant_mod::read(r)?))
-					}),*
-					_ => {
-						Err(DecodeError::UnknownRequiredFeature)
-					},
-                }
-            }
-        }
-    };
-}
-
-/// Implements the [`lightning::util::ser::Writeable`] trait for an enum as a TLV.
-#[macro_export]
-macro_rules! impl_dlc_writeable_enum_as_tlv {
-    ($st:ident, $(($variant_id: expr, $variant_name: ident)), *;) => {
-        impl Writeable for $st {
-			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::std::io::Error> {
-                match self {
-                    $($st::$variant_name(ref field) => {
-                        $crate::ser_impls::BigSize($variant_id as u64).write(w)?;
-                        $crate::ser_impls::BigSize(field.serialized_length() as u64).write(w)?;
-                        field.write(w)?;
-                    }),*
-                };
-				Ok(())
-            }
-        }
-
-        impl Readable for $st {
-			fn read<R: std::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
-                let id: $crate::ser_impls::BigSize = Readable::read(r)?;
-                match id.0 {
-                    $($variant_id => {
-                        let _ : $crate::ser_impls::BigSize = Readable::read(r)?;
-						Ok($st::$variant_name(Readable::read(r)?))
 					}),*
 					_ => {
 						Err(DecodeError::UnknownRequiredFeature)

@@ -505,7 +505,8 @@ where
                 .oracle_announcements
                 .iter()
                 .filter(|x| {
-                    (x.oracle_event.event_maturity_epoch as u64) <= self.time.unix_time_now()
+                    (x.oracle_event.timestamp.get_earliest_time() as u64)
+                        <= self.time.unix_time_now()
                 })
                 .enumerate()
                 .collect();
@@ -513,7 +514,9 @@ where
                 let attestations: Vec<_> = matured
                     .iter()
                     .filter_map(|(i, announcement)| {
-                        let oracle = self.oracles.get(&announcement.oracle_public_key)?;
+                        let oracle = self
+                            .oracles
+                            .get(&announcement.oracle_metadata.announcement_public_key)?;
                         Some((
                             *i,
                             oracle
