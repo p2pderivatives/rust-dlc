@@ -80,6 +80,13 @@ macro_rules! receive_loop {
 #[macro_export]
 macro_rules! write_contract {
     ($contract: ident, $state: ident) => {
+        match &$contract {
+            Contract::Offered(o) => {
+                serde_json::to_writer_pretty(&std::fs::File::create("offer.json").unwrap(), &o)
+                    .unwrap();
+            }
+            _ => {}
+        }
         match $contract {
             Contract::$state(s) => {
                 let mut buf = Vec::new();
@@ -275,7 +282,10 @@ pub fn get_enum_test_params(
     let contract_info = ContractInputInfo {
         contract_descriptor,
         oracles: OracleInput {
-            public_keys: oracles.iter().map(|x| x.get_public_key()).collect(),
+            public_keys: oracles
+                .iter()
+                .map(|x| x.get_announcement_public_key())
+                .collect(),
             event_id: EVENT_ID.to_owned(),
             threshold: threshold as u16,
         },
@@ -381,7 +391,7 @@ pub fn get_numerical_contract_descriptor(
 pub fn get_digit_decomposition_oracle(nb_digits: u16) -> MockOracle {
     let mut oracle = MockOracle::new();
     let event = DigitDecompositionEventDescriptor {
-        base: BASE as u16,
+        base: BASE as u8,
         is_signed: false,
         unit: "sats/sec".to_owned(),
         precision: 0,
@@ -478,7 +488,10 @@ pub fn get_numerical_test_params(
         get_digit_decomposition_oracles(oracle_numeric_infos, threshold, with_diff, use_max_value);
     let contract_info = ContractInputInfo {
         oracles: OracleInput {
-            public_keys: oracles.iter().map(|x| x.get_public_key()).collect(),
+            public_keys: oracles
+                .iter()
+                .map(|x| x.get_announcement_public_key())
+                .collect(),
             event_id: EVENT_ID.to_owned(),
             threshold: threshold as u16,
         },
@@ -510,7 +523,10 @@ pub fn get_enum_and_numerical_test_params(
     let enum_contract_descriptor = get_enum_contract_descriptor();
     let enum_contract_info = ContractInputInfo {
         oracles: OracleInput {
-            public_keys: enum_oracles.iter().map(|x| x.get_public_key()).collect(),
+            public_keys: enum_oracles
+                .iter()
+                .map(|x| x.get_announcement_public_key())
+                .collect(),
             event_id: EVENT_ID.to_owned(),
             threshold: threshold as u16,
         },
@@ -527,7 +543,7 @@ pub fn get_enum_and_numerical_test_params(
         oracles: OracleInput {
             public_keys: numerical_oracles
                 .iter()
-                .map(|x| x.get_public_key())
+                .map(|x| x.get_announcement_public_key())
                 .collect(),
             event_id: EVENT_ID.to_owned(),
             threshold: threshold as u16,

@@ -16,6 +16,7 @@ use crate::payout_curve::{
     PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
 };
 use dlc::DlcTransactions;
+pub use dlc_messages::ser_impls::Serializable;
 use dlc_messages::ser_impls::{
     read_ecdsa_adaptor_signatures, read_option_cb, read_usize, read_vec_cb,
     write_ecdsa_adaptor_signatures, write_option_cb, write_usize, write_vec_cb,
@@ -28,32 +29,6 @@ use dlc_trie::{OracleNumericInfo, RangeInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use std::io::Read;
-
-/// Trait used to de/serialize an object to/from a vector of bytes.
-pub trait Serializable
-where
-    Self: Sized,
-{
-    /// Serialize the object.
-    fn serialize(&self) -> Result<Vec<u8>, ::std::io::Error>;
-    /// Deserialize the object.
-    fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DecodeError>;
-}
-
-impl<T> Serializable for T
-where
-    T: Writeable + Readable,
-{
-    fn serialize(&self) -> Result<Vec<u8>, ::std::io::Error> {
-        let mut buffer = Vec::new();
-        self.write(&mut buffer)?;
-        Ok(buffer)
-    }
-
-    fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
-        Readable::read(reader)
-    }
-}
 
 impl_dlc_writeable!(PayoutPoint, { (event_outcome, writeable), (outcome_payout, writeable), (extra_precision, writeable) });
 impl_dlc_writeable_enum!(

@@ -162,7 +162,9 @@ pub trait Storage {
 /// Oracle trait provides access to oracle information.
 pub trait Oracle {
     /// Returns the public key of the oracle.
-    fn get_public_key(&self) -> XOnlyPublicKey;
+    fn get_announcement_public_key(&self) -> XOnlyPublicKey;
+    /// Returns the public key of the oracle.
+    fn get_attestation_public_key(&self) -> XOnlyPublicKey;
     /// Returns the announcement for the event with the given id if found.
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.

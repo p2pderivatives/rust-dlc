@@ -2,7 +2,7 @@
 
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use oracle_msgs::OracleInfo;
+use crate::oracle_msgs::OracleInfo;
 
 #[derive(Clone, PartialEq, Debug)]
 #[cfg_attr(

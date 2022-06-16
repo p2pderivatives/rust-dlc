@@ -420,8 +420,8 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     for oracle in test_params.oracles {
         let oracle = Arc::new(oracle);
-        alice_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
-        bob_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
+        alice_oracles.insert(oracle.get_announcement_public_key(), Arc::clone(&oracle));
+        bob_oracles.insert(oracle.get_announcement_public_key(), Arc::clone(&oracle));
     }
 
     let alice_store = mocks::memory_storage_provider::MemoryStorage::new();

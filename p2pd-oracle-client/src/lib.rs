@@ -136,7 +136,7 @@ fn parse_event_id(event_id: &str) -> Result<(String, DateTime<Utc>), DlcManagerE
 }
 
 impl Oracle for P2PDOracleClient {
-    fn get_public_key(&self) -> XOnlyPublicKey {
+    fn get_announcement_public_key(&self) -> XOnlyPublicKey {
         self.public_key
     }
 
@@ -164,6 +164,10 @@ impl Oracle for P2PDOracleClient {
             signatures,
             outcomes: values,
         })
+    }
+
+    fn get_attestation_public_key(&self) -> XOnlyPublicKey {
+        todo!()
     }
 }
 
@@ -203,7 +207,7 @@ mod tests {
 
         let client = P2PDOracleClient::new(url).expect("Error creating client instance.");
 
-        assert_eq!(expected_pk, client.get_public_key());
+        assert_eq!(expected_pk, client.get_announcement_public_key());
     }
 
     #[test]

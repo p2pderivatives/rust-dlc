@@ -11,6 +11,32 @@ use std::io::Read;
 
 const MAX_VEC_SIZE: u64 = 1000000;
 
+/// Trait used to de/serialize an object to/from a vector of bytes.
+pub trait Serializable
+where
+    Self: Sized,
+{
+    /// Serialize the object.
+    fn serialize(&self) -> Result<Vec<u8>, ::std::io::Error>;
+    /// Deserialize the object.
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DecodeError>;
+}
+
+impl<T> Serializable for T
+where
+    T: Writeable + Readable,
+{
+    fn serialize(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut buffer = Vec::new();
+        self.write(&mut buffer)?;
+        Ok(buffer)
+    }
+
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self, DecodeError> {
+        Readable::read(reader)
+    }
+}
+
 /// Taken from rust-lightning: <https://github.com/rust-bitcoin/rust-lightning/blob/v0.0.101/lightning/src/util/ser.rs#L295>
 ///
 /// Lightning TLV uses a custom variable-length integer called BigSize. It is similar to Bitcoin's
@@ -20,6 +46,7 @@ const MAX_VEC_SIZE: u64 = 1000000;
 /// encoded in several different ways, which we must check for at deserialization-time. Thus, if
 /// you're looking for an example of a variable-length integer to use for your own project, move
 /// along, this is a rather poor design.
+#[derive(PartialEq, PartialOrd, Clone)]
 pub struct BigSize(pub u64);
 impl Writeable for BigSize {
     #[inline]
@@ -72,6 +99,17 @@ impl Readable for BigSize {
             }
             n => Ok(BigSize(n as u64)),
         }
+    }
+}
+
+/// Writer that only tracks the amount of data written - useful if you need to calculate the length
+/// of some data when serialized but don't yet need the full data.
+pub(crate) struct LengthCalculatingWriter(pub usize);
+impl Writer for LengthCalculatingWriter {
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
+        self.0 += buf.len();
+        Ok(())
     }
 }
 

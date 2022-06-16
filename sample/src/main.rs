@@ -72,7 +72,7 @@ async fn main() {
     .await
     .unwrap();
     let mut oracles = HashMap::new();
-    oracles.insert(oracle.get_public_key(), Box::new(oracle));
+    oracles.insert(oracle.get_announcement_public_key(), Box::new(oracle));
 
     // Instantiate a DlcManager.
     let dlc_manager = Arc::new(Mutex::new(
