@@ -19,7 +19,7 @@ unstable = []
 use-serde = ["serde", "bitcoin/use-serde", "secp256k1-zkp/use-serde"]
 
 [dev-dependencies]
-bitcoin = {version = "0.27", features = ["use-serde"]}
+bitcoin = {version = "0.27", features = ["use-serde", "bitcoinconsensus"]}
 bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
 bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}

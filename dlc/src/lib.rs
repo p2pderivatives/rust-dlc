@@ -1265,9 +1265,11 @@ mod tests {
         )
         .unwrap();
 
+        let mut x = cets[0].clone();
+
         let sign_res = sign_cet(
             &secp,
-            &mut cets[0].clone(),
+            &mut x,
             &cet_sigs[0],
             &oracle_sigs,
             &accept_fund_sk,
@@ -1275,6 +1277,14 @@ mod tests {
             &funding_script_pubkey,
             fund_output_value,
         );
+
+        x.verify(|_| {
+            Some(TxOut {
+                value: fund_output_value,
+                script_pubkey: funding_script_pubkey.to_v0_p2wsh(),
+            })
+        })
+        .expect("to be valid.");
 
         let adaptor_secret = signatures_to_secret(&oracle_sigs).unwrap();
         let adapted_sig = cet_sigs[0].decrypt(&adaptor_secret).unwrap();
