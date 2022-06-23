@@ -283,6 +283,7 @@ impl ContractInfo {
                     let OracleScheme::Schnorr {
                         attestation_public_key,
                         oracle_nonces,
+                        ..
                     } = &x.oracle_metadata.oracle_schemes[0];
                     (attestation_public_key, oracle_nonces)
                 };

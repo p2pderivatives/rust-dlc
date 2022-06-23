@@ -15,5 +15,5 @@ use-serde = ["serde", "dlc/use-serde"]
 bitcoin = {version = "0.28"}
 dlc = {version = "0.1.0", path = "../dlc"}
 rayon = {version = "1.5", optional = true}
-secp256k1-zkp = {version = "0.6.0"}
+secp256k1-zkp = {version = "0.6.0", git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "musig2"}
 serde = {version = "1.0", optional = true, default_features = false, features = ["derive"]}

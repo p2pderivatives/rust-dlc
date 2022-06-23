@@ -9,4 +9,4 @@ dlc = {version = "0.1.0", path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {version = "0.1.0", path = "../dlc-messages"}
 lightning = {version = "0.0.107"}
-secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
+secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "musig2"}

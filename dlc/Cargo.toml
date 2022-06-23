@@ -11,7 +11,7 @@ version = "0.1.0"
 bitcoin = {version = "0.28"}
 miniscript = "7.0.0"
 secp256k1-sys = {version = "0.5.2"}
-secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand-std"]}
+secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand-std"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "musig2"}
 serde = {version = "1.0", default-features = false, optional = true}
 
 [features]
@@ -26,4 +26,4 @@ bitcoincore-rpc = {version = "0.15.0"}
 bitcoincore-rpc-json = {version = "0.15.0"}
 dlc-trie = {path = "../dlc-trie"}
 rayon = "1.5"
-secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std", "serde", "global-context"]}
+secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std", "serde", "global-context"], git = "https://github.com/p2pderivatives/rust-secp256k1-zkp", branch = "musig2"}
