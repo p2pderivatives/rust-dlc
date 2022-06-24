@@ -32,6 +32,7 @@ pub mod payout_curve;
 mod utils;
 
 use bitcoin::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use error::Error;
@@ -120,6 +121,9 @@ pub trait Storage {
     fn get_signed_contracts(&self) -> Result<Vec<SignedContract>, Error>;
     /// Returns the set of confirmed contracts.
     fn get_confirmed_contracts(&self) -> Result<Vec<SignedContract>, Error>;
+    /// Returns the set of contracts whos broadcasted cet has not been verified to be confirmed on
+    /// blockchain
+    fn get_preclosed_contracts(&self) -> Result<Vec<PreClosedContract>, Error>;
 }
 
 /// Oracle trait provides access to oracle information.

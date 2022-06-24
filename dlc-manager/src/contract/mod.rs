@@ -37,7 +37,9 @@ pub enum Contract {
     Signed(signed_contract::SignedContract),
     /// A contract whose funding transaction was included in the blockchain.
     Confirmed(signed_contract::SignedContract),
-    /// A contract for which a CET was broadcast.
+    /// A contract for which a CET was broadcasted, but not neccesarily confirmed to blockchain
+    PreClosed(PreClosedContract),
+    /// A contract for which a CET was confirmed to blockchain
     Closed(ClosedContract),
     /// A contract whose refund transaction was broadcast.
     Refunded(signed_contract::SignedContract),
@@ -54,6 +56,7 @@ impl std::fmt::Debug for Contract {
             Contract::Accepted(_) => "accepted",
             Contract::Signed(_) => "signed",
             Contract::Confirmed(_) => "confirmed",
+            Contract::PreClosed(_) => "pre-closed",
             Contract::Closed(_) => "closed",
             Contract::Refunded(_) => "refunded",
             Contract::FailedAccept(_) => "failed accept",
@@ -75,6 +78,7 @@ impl Contract {
             }
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.get_contract_id(),
+            Contract::PreClosed(c) => c.signed_contract.accepted_contract.get_contract_id(),
             Contract::Closed(c) => c.signed_contract.accepted_contract.get_contract_id(),
         }
     }
@@ -89,6 +93,7 @@ impl Contract {
             }
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.offered_contract.id,
+            Contract::PreClosed(c) => c.signed_contract.accepted_contract.offered_contract.id,
             Contract::Closed(c) => c.signed_contract.accepted_contract.offered_contract.id,
         }
     }
@@ -100,6 +105,12 @@ impl Contract {
             Contract::Accepted(a) => a.offered_contract.counter_party,
             Contract::Signed(s) | Contract::Confirmed(s) | Contract::Refunded(s) => {
                 s.accepted_contract.offered_contract.counter_party
+            }
+            Contract::PreClosed(c) => {
+                c.signed_contract
+                    .accepted_contract
+                    .offered_contract
+                    .counter_party
             }
             Contract::Closed(c) => {
                 c.signed_contract
@@ -149,8 +160,19 @@ pub struct FailedSignContract {
     pub error_message: String,
 }
 
+/// Information about a contract that is almost closed by a broadcasted, but not confirmed CET.
 #[derive(Clone)]
-/// Information about a contract that was closed by broadcasting a CET.
+pub struct PreClosedContract {
+    /// The signed contract that was closed.
+    pub signed_contract: SignedContract,
+    /// The attestations that were used to decrypt the broadcast CET.
+    pub attestations: Vec<OracleAttestation>,
+    /// The index of the CET that was broadcasted
+    pub cet_index: usize,
+}
+
+/// Information about a contract that was closed by a CET that was confirmed on the blockchain.
+#[derive(Clone)]
 pub struct ClosedContract {
     /// The signed contract that was closed.
     pub signed_contract: SignedContract,

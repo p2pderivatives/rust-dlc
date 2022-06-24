@@ -18,7 +18,9 @@ use dlc_manager::contract::accepted_contract::AcceptedContract;
 use dlc_manager::contract::offered_contract::OfferedContract;
 use dlc_manager::contract::ser::Serializable;
 use dlc_manager::contract::signed_contract::SignedContract;
-use dlc_manager::contract::{ClosedContract, Contract, FailedAcceptContract, FailedSignContract};
+use dlc_manager::contract::{
+    ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
+};
 use dlc_manager::{error::Error, ContractId, Storage};
 use sled::Db;
 use std::convert::TryInto;
@@ -63,6 +65,7 @@ convertible_enum!(
         Accepted,
         Signed,
         Confirmed,
+        PreClosed,
         Closed,
         FailedAccept,
         FailedSign,
@@ -76,6 +79,7 @@ fn get_prefix(contract: &Contract) -> u8 {
         Contract::Accepted(_) => ContractPrefix::Accepted,
         Contract::Signed(_) => ContractPrefix::Signed,
         Contract::Confirmed(_) => ContractPrefix::Confirmed,
+        Contract::PreClosed(_) => ContractPrefix::PreClosed,
         Contract::Closed(_) => ContractPrefix::Closed,
         Contract::FailedAccept(_) => ContractPrefix::FailedAccept,
         Contract::FailedSign(_) => ContractPrefix::FailedSign,
@@ -178,6 +182,10 @@ impl Storage for SledStorageProvider {
     fn get_contract_offers(&self) -> Result<Vec<OfferedContract>, Error> {
         self.get_contracts_with_prefix(ContractPrefix::Offered.into())
     }
+
+    fn get_preclosed_contracts(&self) -> Result<Vec<PreClosedContract>, Error> {
+        self.get_contracts_with_prefix(ContractPrefix::PreClosed.into())
+    }
 }
 
 fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, ::std::io::Error> {
@@ -187,6 +195,7 @@ fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, ::std::io::Error> 
         Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => o.serialize(),
         Contract::FailedAccept(c) => c.serialize(),
         Contract::FailedSign(c) => c.serialize(),
+        Contract::PreClosed(c) => c.serialize(),
         Contract::Closed(c) => c.serialize(),
     };
     let mut serialized = serialized?;
@@ -214,6 +223,9 @@ fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
         ContractPrefix::Confirmed => {
             Contract::Confirmed(SignedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
+        ContractPrefix::PreClosed => Contract::PreClosed(
+            PreClosedContract::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
         ContractPrefix::Closed => {
             Contract::Closed(ClosedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
         }

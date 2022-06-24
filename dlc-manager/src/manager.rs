@@ -6,6 +6,7 @@ use crate::contract::{
     contract_input::ContractInput, contract_input::ContractInputInfo, contract_input::OracleInput,
     offered_contract::OfferedContract, signed_contract::SignedContract, AdaptorInfo,
     ClosedContract, Contract, FailedAcceptContract, FailedSignContract, FundingInputInfo,
+    PreClosedContract,
 };
 use crate::conversion_utils::get_tx_input_infos;
 use crate::error::Error;
@@ -807,6 +808,7 @@ where
     pub fn periodic_check(&mut self) -> Result<(), Error> {
         self.check_signed_contracts()?;
         self.check_confirmed_contracts()?;
+        self.check_preclosed_contracts()?;
 
         Ok(())
     }
@@ -903,6 +905,45 @@ where
         Ok(())
     }
 
+    fn check_preclosed_contracts(&mut self) -> Result<(), Error> {
+        for c in self.store.get_preclosed_contracts()? {
+            if let Err(e) = self.check_preclosed_contract(&c) {
+                error!(
+                    "Error checking confirmed contract {}: {}",
+                    c.signed_contract.accepted_contract.get_contract_id_string(),
+                    e
+                )
+            }
+        }
+
+        Ok(())
+    }
+
+    fn check_preclosed_contract(&mut self, contract: &PreClosedContract) -> Result<(), Error> {
+        let broadcasted_cet = contract
+            .signed_contract
+            .accepted_contract
+            .dlc_transactions
+            .cets[contract.cet_index]
+            .clone();
+        let broadcasted_txid = broadcasted_cet.txid();
+        let confirmations = self
+            .wallet
+            .get_transaction_confirmations(&broadcasted_txid)
+            .unwrap();
+        if confirmations >= 1 {
+            let closed_contract = ClosedContract {
+                signed_contract: contract.signed_contract.clone(),
+                attestations: contract.attestations.clone(),
+                cet_index: contract.cet_index,
+            };
+            self.store
+                .update_contract(&Contract::Closed(closed_contract))?;
+        }
+
+        Ok(())
+    }
+
     fn try_close_contract(
         &mut self,
         contract: &SignedContract,
@@ -976,16 +1017,25 @@ where
                 // not much to be done apart from possibly extracting a fraud
                 // proof but ideally it should be handled.
                 self.blockchain.send_transaction(&cet)?;
+
+                let preclosed_contract = PreClosedContract {
+                    signed_contract: contract.clone(),
+                    attestations: attestations.iter().map(|x| x.1.clone()).collect(),
+                    cet_index: range_info.cet_index,
+                };
+
+                self.store
+                    .update_contract(&Contract::PreClosed(preclosed_contract))?;
+            } else {
+                let closed_contract = ClosedContract {
+                    signed_contract: contract.clone(),
+                    attestations: attestations.iter().map(|x| x.1.clone()).collect(),
+                    cet_index: range_info.cet_index,
+                };
+
+                self.store
+                    .update_contract(&Contract::Closed(closed_contract))?;
             }
-
-            let closed_contract = ClosedContract {
-                signed_contract: contract.clone(),
-                attestations: attestations.iter().map(|x| x.1.clone()).collect(),
-                cet_index: range_info.cet_index,
-            };
-
-            self.store
-                .update_contract(&Contract::Closed(closed_contract))?;
         }
 
         Ok(())
