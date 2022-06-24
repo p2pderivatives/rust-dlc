@@ -909,7 +909,7 @@ where
         for c in self.store.get_preclosed_contracts()? {
             if let Err(e) = self.check_preclosed_contract(&c) {
                 error!(
-                    "Error checking confirmed contract {}: {}",
+                    "Error checking pre-closed contract {}: {}",
                     c.signed_contract.accepted_contract.get_contract_id_string(),
                     e
                 )
@@ -920,18 +920,16 @@ where
     }
 
     fn check_preclosed_contract(&mut self, contract: &PreClosedContract) -> Result<(), Error> {
-        let broadcasted_cet = contract
+        let broadcasted_cet = &contract
             .signed_contract
             .accepted_contract
             .dlc_transactions
-            .cets[contract.cet_index]
-            .clone();
+            .cets[contract.cet_index];
         let broadcasted_txid = broadcasted_cet.txid();
         let confirmations = self
             .wallet
-            .get_transaction_confirmations(&broadcasted_txid)
-            .unwrap();
-        if confirmations >= 1 {
+            .get_transaction_confirmations(&broadcasted_txid)?;
+        if confirmations >= NB_CONFIRMATIONS {
             let closed_contract = ClosedContract {
                 signed_contract: contract.signed_contract.clone(),
                 attestations: contract.attestations.clone(),
@@ -968,10 +966,7 @@ where
             let mut cet =
                 contract.accepted_contract.dlc_transactions.cets[range_info.cet_index].clone();
 
-            let confirmations = self
-                .wallet
-                .get_transaction_confirmations(&cet.txid())
-                .unwrap();
+            let confirmations = self.wallet.get_transaction_confirmations(&cet.txid())?;
 
             if confirmations < 1 {
                 let (adaptor_sigs, fund_pubkey, other_pubkey) = if offered_contract.is_offer_party {
@@ -1024,6 +1019,14 @@ where
                     cet_index: range_info.cet_index,
                 };
 
+                self.store
+                    .update_contract(&Contract::PreClosed(preclosed_contract))?;
+            } else if confirmations < NB_CONFIRMATIONS {
+                let preclosed_contract = PreClosedContract {
+                    signed_contract: contract.clone(),
+                    attestations: attestations.iter().map(|x| x.1.clone()).collect(),
+                    cet_index: range_info.cet_index,
+                };
                 self.store
                     .update_contract(&Contract::PreClosed(preclosed_contract))?;
             } else {

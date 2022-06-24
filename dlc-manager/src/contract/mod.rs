@@ -171,6 +171,8 @@ pub struct PreClosedContract {
     pub cet_index: usize,
 }
 
+// TODO: this struct is currently identity to the `PreClosedContract`. At some point remove fields
+// from this struct for pruning
 /// Information about a contract that was closed by a CET that was confirmed on the blockchain.
 #[derive(Clone)]
 pub struct ClosedContract {
