@@ -1,7 +1,7 @@
 extern crate dlc_manager;
 
 use dlc_manager::contract::{
-    offered_contract::OfferedContract, signed_contract::SignedContract, Contract,
+    offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ContractId};
@@ -106,6 +106,20 @@ impl Storage for MemoryStorage {
 
         for (_, val) in map.iter() {
             if let Contract::Offered(c) = val {
+                res.push(c.clone());
+            }
+        }
+
+        Ok(res)
+    }
+
+    fn get_preclosed_contracts(&self) -> Result<Vec<PreClosedContract>, DaemonError> {
+        let map = self.contracts.read().expect("Could not get read lock");
+
+        let mut res: Vec<PreClosedContract> = Vec::new();
+
+        for (_, val) in map.iter() {
+            if let Contract::PreClosed(c) = val {
                 res.push(c.clone());
             }
         }

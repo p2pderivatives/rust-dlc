@@ -10,6 +10,7 @@ use crate::contract::signed_contract::SignedContract;
 use crate::contract::AdaptorInfo;
 use crate::contract::{
     ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, FundingInputInfo,
+    PreClosedContract,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
@@ -123,6 +124,11 @@ impl_dlc_writeable!(SignedContract, {
     (adaptor_signatures, {option_cb, write_ecdsa_adaptor_signatures, read_ecdsa_adaptor_signatures }),
     (offer_refund_signature, writeable),
     (funding_signatures, writeable)
+});
+impl_dlc_writeable!(PreClosedContract, {
+    (signed_contract, writeable),
+    (attestations, vec),
+    (cet_index, usize)
 });
 impl_dlc_writeable!(ClosedContract, {
     (signed_contract, writeable),

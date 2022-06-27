@@ -1085,16 +1085,28 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             match path {
                 TestPath::Close => {
-                    periodic_check!(first, contract_id, Closed);
+                    periodic_check!(first, contract_id, PreClosed);
 
                     // Randomly check with or without having the CET mined
-                    if thread_rng().next_u32() % 2 == 0 {
+                    let case = thread_rng().next_u64() % 3;
+                    if case == 2 {
+                        // cet becomes fully confirmed to blockchain
+                        sink_rpc
+                            .generate_to_address(6, &sink_address)
+                            .expect("RPC Error");
+                        periodic_check!(first, contract_id, Closed);
+                        periodic_check!(second, contract_id, Closed);
+                    } else if case == 1 {
+                        // cet is not yet fully confirmed to blockchain
                         sink_rpc
                             .generate_to_address(1, &sink_address)
                             .expect("RPC Error");
+                        periodic_check!(first, contract_id, PreClosed);
+                        periodic_check!(second, contract_id, PreClosed);
+                    } else {
+                        periodic_check!(first, contract_id, PreClosed);
+                        periodic_check!(second, contract_id, PreClosed);
                     }
-
-                    periodic_check!(second, contract_id, Closed);
                 }
                 TestPath::Refund => {
                     periodic_check!(first, contract_id, Confirmed);
