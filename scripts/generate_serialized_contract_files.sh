@@ -2,7 +2,7 @@
 
 set -e
 
-TEST_FILES=("Offered" "Accepted" "Confirmed" "Confirmed1" "Signed" "Signed1" "Closed")
+TEST_FILES=("Offered" "Accepted" "Confirmed" "Confirmed1" "Signed" "Signed1" "PreClosed" "Closed")
 DEST=${PWD}/dlc-sled-storage-provider/test_files/
 
 for FILE in ${TEST_FILES[@]}

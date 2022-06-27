@@ -365,6 +365,12 @@ mod tests {
         storage
             .update_contract(&confirmed_contract)
             .expect("Error creating contract");
+
+        let serialized = include_bytes!("../test_files/PreClosed");
+        let preclosed_contract = Contract::PreClosed(deserialize_contract(serialized));
+        storage
+            .update_contract(&preclosed_contract)
+            .expect("Error creating contract");
     }
 
     sled_test!(
@@ -403,6 +409,19 @@ mod tests {
                 .expect("Error retrieving signed contracts");
 
             assert_eq!(1, offered_contracts.len());
+        }
+    );
+
+    sled_test!(
+        get_preclosed_contracts_only_preclosed,
+        |mut storage: SledStorageProvider| {
+            insert_offered_signed_and_confirmed(&mut storage);
+
+            let preclosed_contracts = storage
+                .get_preclosed_contracts()
+                .expect("Error retrieving preclosed contracts");
+
+            assert_eq!(1, preclosed_contracts.len());
         }
     );
 }
