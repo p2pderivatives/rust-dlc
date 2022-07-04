@@ -21,7 +21,7 @@ For example within the `dlc-manager` folder:
 cargo test -- --ignored two_of_five_oracle_numerical_test
 ```
 
-Or run all the integration tests with 
+Or run all the tests including all integration tests with 
 ```
 cargo test -- --include-ignored
 ```
