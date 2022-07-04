@@ -13,12 +13,17 @@ In the `dlc` or `dlc-manager` directory, run `../scripts/start_node.sh` to start
 
 Then run
 ```
-cargo test --ignored test_name
+cargo test -- --ignored test_name
 ```
 replacing `test_name` with the test you want to run.
 For example within the `dlc-manager` folder:
 ```
-cargo test --ignored two_of_five_oracle_numerical_test
+cargo test -- --ignored two_of_five_oracle_numerical_test
+```
+
+Or run all the tests including all integration tests with 
+```
+cargo test -- --include-ignored
 ```
 
 ## Running fuzz tests
