@@ -52,6 +52,6 @@ Now in yet another terminal (still from the same location) run:
 
 This will generate some blocks so that the fund transaction is confirmed.
 
-Typing `listcontracts` in either instance should now show the contract as `Confirmed`.
+Typing `listcontracts` in either instance should now show the contract as `Confirmed`. If you see the contract listed as `Rejected` try running the `generate_blocks.sh` command again, and then running `listoffers`.
 
 Once the maturity of the contract is reached, typing `listcontracts` once more will retrieve the attestation from the oracle and close the contract, displaying the event outcome (in decomposed binary format) and the profit and loss for the given instance.
