@@ -2,6 +2,7 @@
 
 use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
+use bitcoin::Transaction;
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::AcceptDlc;
 use secp256k1_zkp::ecdsa::Signature;
@@ -71,5 +72,29 @@ impl AcceptedContract {
             refund_signature: self.accept_refund_signature,
             negotiation_fields: None,
         }
+    }
+
+    /// Compute the profit and loss for this contract and an assciated cet index
+    pub fn compute_pnl(&self, cet: &Transaction) -> i64 {
+        let offer = &self.offered_contract;
+        let party_params = if offer.is_offer_party {
+            &offer.offer_params
+        } else {
+            &self.accept_params
+        };
+        let collateral = party_params.collateral as i64;
+        let v0_witness_payout_script = &party_params.payout_script_pubkey;
+        let final_payout = cet
+            .output
+            .iter()
+            .find_map(|x| {
+                if &x.script_pubkey == v0_witness_payout_script {
+                    Some(x.value)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0) as i64;
+        final_payout - collateral
     }
 }

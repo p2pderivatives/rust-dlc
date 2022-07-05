@@ -8,7 +8,7 @@ use bitcoin::secp256k1::PublicKey;
 use dlc_manager::channel::signed_channel::SignedChannelState;
 use dlc_manager::channel::signed_channel::SignedChannelStateType;
 use dlc_manager::contract::contract_input::ContractInput;
-use dlc_manager::contract::{ClosedContract, Contract};
+use dlc_manager::contract::Contract;
 use dlc_manager::Storage;
 use dlc_messages::Message as DlcMessage;
 use hex_utils::{hex_str, to_slice};
@@ -287,7 +287,7 @@ pub(crate) async fn poll_for_user_input(
                                             .map(|x| x.outcomes.clone())
                                             .collect::<Vec<_>>()
                                     );
-                                    println!("PnL: {} sats", compute_pnl(&closed))
+                                    println!("PnL: {} sats", closed.pnl)
                                 }
                                 Contract::Refunded(_) => {
                                     println!("Refunded contract: {}", id);
@@ -614,31 +614,6 @@ pub(crate) fn parse_peer_info(
     }
 
     Ok((pubkey.unwrap(), peer_addr.unwrap().unwrap()))
-}
-
-fn compute_pnl(contract: &ClosedContract) -> i64 {
-    let offer = &contract.signed_contract.accepted_contract.offered_contract;
-    let accepted_contract = &contract.signed_contract.accepted_contract;
-    let party_params = if offer.is_offer_party {
-        &offer.offer_params
-    } else {
-        &accepted_contract.accept_params
-    };
-    let collateral = party_params.collateral as i64;
-    let cet = &contract.signed_cet;
-    let v0_witness_payout_script = &party_params.payout_script_pubkey;
-    let final_payout = cet
-        .output
-        .iter()
-        .find_map(|x| {
-            if &x.script_pubkey == v0_witness_payout_script {
-                Some(x.value)
-            } else {
-                None
-            }
-        })
-        .unwrap_or(0) as i64;
-    final_payout - collateral
 }
 
 fn process_incoming_messages(

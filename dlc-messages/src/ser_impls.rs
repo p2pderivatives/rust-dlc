@@ -8,6 +8,7 @@ use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::hash::Hash;
 use std::io::Read;
 
@@ -537,6 +538,23 @@ pub fn write_i32<W: Writer>(i: &i32, writer: &mut W) -> Result<(), ::std::io::Er
 pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> {
     let v: [u8; 4] = Readable::read(reader)?;
     Ok(i32::from_be_bytes(v))
+}
+
+/// Writes an `i64` value to the given writer.
+pub fn write_i64<W: Writer>(i: &i64, writer: &mut W) -> Result<(), ::std::io::Error> {
+    let i = i.to_be_bytes();
+    let i1: [u8; 4] = i[0..4].try_into().unwrap();
+    let i2: [u8; 4] = i[4..8].try_into().unwrap();
+    i1.write(writer)?;
+    i2.write(writer)
+}
+
+/// Reads an `i64` value from the given reader.
+pub fn read_i64<R: ::std::io::Read>(reader: &mut R) -> Result<i64, DecodeError> {
+    let v1: [u8; 4] = Readable::read(reader)?;
+    let v2: [u8; 4] = Readable::read(reader)?;
+    let v = [v1, v2].concat();
+    Ok(i64::from_be_bytes(v.try_into().unwrap()))
 }
 
 /// Writes a [`lightning::util::ser::Writeable`] value to the given writer as a TLV.

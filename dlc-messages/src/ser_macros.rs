@@ -27,6 +27,9 @@ macro_rules! field_write {
     ($stream: expr, $field: expr, usize) => {
         $crate::ser_impls::write_usize(&$field, $stream)?;
     };
+    ($stream: expr, $field: expr, i64) => {
+        $crate::ser_impls::write_i64(&$field, $stream)?;
+    };
     ($stream: expr, $field: expr, {option_cb, $w_cb: expr, $r_cb: expr}) => {
         $crate::ser_impls::write_option_cb(&$field, $stream, &$w_cb)?;
     };
@@ -61,6 +64,9 @@ macro_rules! field_read {
     };
     ($stream: expr, usize) => {
         $crate::ser_impls::read_usize($stream)?
+    };
+    ($stream: expr, i64) => {
+        $crate::ser_impls::read_i64($stream)?
     };
     ($stream: expr, {option_cb, $w_cb: expr, $r_cb: expr}) => {
         $crate::ser_impls::read_option_cb($stream, &$r_cb)?

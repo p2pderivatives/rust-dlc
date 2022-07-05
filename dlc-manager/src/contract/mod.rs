@@ -82,7 +82,7 @@ impl Contract {
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.get_contract_id(),
             Contract::PreClosed(c) => c.signed_contract.accepted_contract.get_contract_id(),
-            Contract::Closed(c) => c.signed_contract.accepted_contract.get_contract_id(),
+            Contract::Closed(c) => c.contract_id,
         }
     }
 
@@ -97,7 +97,7 @@ impl Contract {
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.offered_contract.id,
             Contract::PreClosed(c) => c.signed_contract.accepted_contract.offered_contract.id,
-            Contract::Closed(c) => c.signed_contract.accepted_contract.offered_contract.id,
+            Contract::Closed(c) => c.temporary_contract_id,
         }
     }
 
@@ -115,12 +115,7 @@ impl Contract {
                     .offered_contract
                     .counter_party
             }
-            Contract::Closed(c) => {
-                c.signed_contract
-                    .accepted_contract
-                    .offered_contract
-                    .counter_party
-            }
+            Contract::Closed(c) => c.counter_party_id,
             Contract::FailedAccept(f) => f.offered_contract.counter_party,
             Contract::FailedSign(f) => f.accepted_contract.offered_contract.counter_party,
         }
@@ -174,17 +169,21 @@ pub struct PreClosedContract {
     pub signed_cet: Transaction,
 }
 
-// TODO: this struct is currently identity to the `PreClosedContract`. At some point remove fields
-// from this struct for pruning
 /// Information about a contract that was closed by a CET that was confirmed on the blockchain.
 #[derive(Clone)]
 pub struct ClosedContract {
-    /// The signed contract that was closed.
-    pub signed_contract: SignedContract,
     /// The attestations that were used to decrypt the broadcast CET.
     pub attestations: Vec<OracleAttestation>,
     /// The signed version of the CET that was broadcast.
     pub signed_cet: Transaction,
+    /// The id of the contract
+    pub contract_id: ContractId,
+    /// The temporary id of the contract.
+    pub temporary_contract_id: ContractId,
+    /// The public key of the counter-party's node.
+    pub counter_party_id: PublicKey,
+    /// The profit and loss for the given contract
+    pub pnl: i64,
 }
 
 /// Information about the adaptor signatures and the CET for which they are
