@@ -115,7 +115,7 @@ impl MockOracle {
     }
 
     pub fn add_event(&mut self, event_id: &str, event_descriptor: &EventDescriptor, maturity: u32) {
-        let oracle_nonces = self.generate_nonces_for_event(event_id, event_descriptor);
+        self.generate_nonces_for_event(event_id, event_descriptor);
         let oracle_event = OracleEvent {
             timestamp: OracleTimestamp::FixedOracleEventTimestamp {
                 expected_time_epoch: maturity,
@@ -132,12 +132,18 @@ impl MockOracle {
                 self.name.clone(),
                 "mock oracle".to_string(),
                 1,
-                vec![OracleScheme::Schnorr {
-                    attestation_public_key: XOnlyPublicKey::from_keypair(
-                        &self.attestation_key_pair,
-                    ),
-                    oracle_nonces,
-                }],
+                vec![OracleScheme::try_new_schnorr_scheme(
+                    &self.secp,
+                    &self.attestation_key_pair,
+                    &self
+                        .nonces
+                        .get(event_id)
+                        .unwrap()
+                        .iter()
+                        .map(|x| KeyPair::from_secret_key(&self.secp, *x))
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()],
             )
             .unwrap(),
             oracle_event,

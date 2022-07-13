@@ -11,7 +11,7 @@ use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{hashes::*, schnorr::Signature, KeyPair, Message, Secp256k1, XOnlyPublicKey};
-use secp256k1_zkp::{Signing, Verification};
+use secp256k1_zkp::{All, Signing, Verification};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +29,8 @@ const ORACLE_ANNOUNCEMENT_MIDSTATE: [u8; 32] = [
     43, 14, 155, 124, 254, 144, 191, 54, 143, 23, 160, 6, 229, 47, 246, 49, 130, 189, 90, 180, 57,
     21, 106, 44, 63, 247, 104, 198, 169, 184, 109, 91,
 ];
+
+const ORACLE_POK_MSG: &str = "dlcoraclepok";
 
 sha256t_hash_newtype!(
     OracleMetadataHash,
@@ -199,6 +201,41 @@ impl_dlc_writeable!(OracleParams, {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+/// Enum containing different ways of proving knowledge of the pre-image
+/// of an EC point).
+pub enum ProofOfKnowledge {
+    /// A proof of knowledge using Schnorr signatures.
+    Schnorr(SchnorrProofOfKnowledge),
+}
+
+impl_dlc_writeable_enum!(ProofOfKnowledge,
+    (0, Schnorr);;;
+);
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// Structure containing proofs of knowledge of an attestation public key
+/// and nonces in the form of Schnorr signatures.
+pub struct SchnorrProofOfKnowledge {
+    attestation_public_key_proof: Signature,
+    nonce_proofs: Vec<Signature>,
+}
+
+impl_dlc_writeable!(SchnorrProofOfKnowledge, {
+    (attestation_public_key_proof, {cb_writeable, write_schnorrsig, read_schnorrsig}),
+    (nonce_proofs, {vec_cb, write_schnorrsig, read_schnorrsig})
+});
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 /// An oracle scheme represent a way in which an oracle will attest to an event
 /// outcome and contains the necessary data to make use of the associated
 /// attestation.
@@ -210,7 +247,76 @@ pub enum OracleScheme {
         attestation_public_key: XOnlyPublicKey,
         /// The nonce(s) that the oracle will use to create the Schnorr signature(s).
         oracle_nonces: Vec<XOnlyPublicKey>,
+        ///
+        proof_of_knowledge: ProofOfKnowledge,
     },
+}
+
+impl OracleScheme {
+    ///
+    pub fn try_new_schnorr_scheme(
+        secp: &Secp256k1<All>,
+        attestation_key_pair: &KeyPair,
+        oracle_nonce_secrets: &[KeyPair],
+    ) -> Result<Self, Error> {
+        if oracle_nonce_secrets.is_empty() {
+            return Err(Error::InvalidArgument);
+        }
+
+        let msg = Message::from_hashed_data::<sha256::Hash>(ORACLE_POK_MSG.as_bytes());
+
+        let attestation_public_key_proof = secp.sign_schnorr(&msg, &attestation_key_pair);
+        let nonce_proofs = oracle_nonce_secrets
+            .iter()
+            .map(|x| secp.sign_schnorr(&msg, x))
+            .collect::<Vec<_>>();
+
+        let proof_of_knowledge = ProofOfKnowledge::Schnorr(SchnorrProofOfKnowledge {
+            attestation_public_key_proof,
+            nonce_proofs,
+        });
+
+        Ok(Self::Schnorr {
+            attestation_public_key: attestation_key_pair.public_key(),
+            oracle_nonces: oracle_nonce_secrets
+                .iter()
+                .map(|x| x.public_key())
+                .collect::<Vec<_>>(),
+            proof_of_knowledge,
+        })
+    }
+
+    ///
+    pub fn validate<C: Verification>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
+        let Self::Schnorr {
+            attestation_public_key,
+            oracle_nonces,
+            proof_of_knowledge,
+        } = self;
+
+        let ProofOfKnowledge::Schnorr(schnorr_proof_of_knowledge) = proof_of_knowledge;
+
+        if oracle_nonces.len() != schnorr_proof_of_knowledge.nonce_proofs.len() {
+            return Err(Error::InvalidArgument);
+        }
+
+        let msg = Message::from_hashed_data::<sha256::Hash>(ORACLE_POK_MSG.as_bytes());
+
+        secp.verify_schnorr(
+            &schnorr_proof_of_knowledge.attestation_public_key_proof,
+            &msg,
+            &attestation_public_key,
+        )?;
+
+        for (nonce, proof) in oracle_nonces
+            .iter()
+            .zip(schnorr_proof_of_knowledge.nonce_proofs.iter())
+        {
+            secp.verify_schnorr(proof, &msg, nonce)?;
+        }
+
+        Ok(())
+    }
 }
 
 struct SignedOracleMetadata {
@@ -233,7 +339,7 @@ impl_dlc_writeable!(SignedOracleMetadata, {
     (oracle_name, string),
     (oracle_description, string),
     (timestamp, writeable),
-    (oracle_schemes, {vec_tlv, OracleScheme, (1, Schnorr, {(attestation_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}), (oracle_nonces, {vec_cb, write_schnorr_pubkey, read_schnorr_pubkey})});})
+    (oracle_schemes, {vec_tlv, OracleScheme, (1, Schnorr, {(attestation_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}), (oracle_nonces, {vec_cb, write_schnorr_pubkey, read_schnorr_pubkey}), (proof_of_knowledge, writeable)});})
 });
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -320,6 +426,10 @@ impl OracleMetadata {
             &self.announcement_public_key,
         )?;
 
+        for scheme in &self.oracle_schemes {
+            scheme.validate(secp)?;
+        }
+
         let OracleScheme::Schnorr {
             attestation_public_key,
             ..
@@ -338,7 +448,7 @@ impl_dlc_writeable!(OracleMetadata, {
     (oracle_name, string),
     (oracle_description, string),
     (timestamp, writeable),
-    (oracle_schemes, {vec_tlv, OracleScheme, (1, Schnorr, {(attestation_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}), (oracle_nonces, {vec_cb, write_schnorr_pubkey, read_schnorr_pubkey})});}),
+    (oracle_schemes, {vec_tlv, OracleScheme, (1, Schnorr, {(attestation_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}), (oracle_nonces, {vec_cb, write_schnorr_pubkey, read_schnorr_pubkey}), (proof_of_knowledge, writeable)});}),
     (oracle_meta_data_signature, {cb_writeable, write_schnorrsig, read_schnorrsig})
 });
 
@@ -430,6 +540,7 @@ impl TryFrom<&OracleAnnouncement> for DlcOracleInfo {
             let OracleScheme::Schnorr {
                 attestation_public_key,
                 oracle_nonces,
+                ..
             } = input
                 .oracle_metadata
                 .oracle_schemes
@@ -684,7 +795,7 @@ impl_dlc_writeable!(OracleAttestation, {
 mod tests {
     use super::*;
     use secp256k1_zkp::{rand::thread_rng, SECP256K1};
-    use secp256k1_zkp::{schnorr::Signature, KeyPair, XOnlyPublicKey};
+    use secp256k1_zkp::{schnorr::Signature, KeyPair};
 
     fn enum_descriptor() -> EnumEventDescriptor {
         EnumEventDescriptor {
@@ -700,11 +811,6 @@ mod tests {
             precision: 1,
             nb_digits: 10,
         }
-    }
-
-    fn some_schnorr_pubkey() -> XOnlyPublicKey {
-        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        XOnlyPublicKey::from_keypair(&key_pair)
     }
 
     fn digit_event() -> OracleEvent {
@@ -730,17 +836,21 @@ mod tests {
     fn get_oracle_announcement(oracle_event: OracleEvent, nb_nonces: usize) -> OracleAnnouncement {
         let announcement_key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
         let attestation_key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_attestation_pubkey = XOnlyPublicKey::from_keypair(&attestation_key_pair);
+        let oracle_nonce_secrets = (0..nb_nonces)
+            .map(|_| KeyPair::new(SECP256K1, &mut thread_rng()))
+            .collect::<Vec<_>>();
         let oracle_metadata = OracleMetadata::try_new_signed(
             SECP256K1,
             &announcement_key_pair,
             "Olivia".to_string(),
             "Super honest oracle".to_string(),
             1,
-            vec![OracleScheme::Schnorr {
-                attestation_public_key: oracle_attestation_pubkey,
-                oracle_nonces: (0..nb_nonces).map(|_| some_schnorr_pubkey()).collect(),
-            }],
+            vec![OracleScheme::try_new_schnorr_scheme(
+                SECP256K1,
+                &attestation_key_pair,
+                &oracle_nonce_secrets,
+            )
+            .unwrap()],
         )
         .unwrap();
         OracleAnnouncement::try_new_signed(
@@ -820,17 +930,21 @@ mod tests {
         let announcement = {
             let announcement_key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
             let attestation_key_pair = announcement_key_pair.clone();
-            let oracle_attestation_pubkey = XOnlyPublicKey::from_keypair(&attestation_key_pair);
+            let oracle_nonce_secrets = (0..nb_nonces)
+                .map(|_| KeyPair::new(SECP256K1, &mut thread_rng()))
+                .collect::<Vec<_>>();
             let oracle_metadata = OracleMetadata::try_new_signed(
                 SECP256K1,
                 &announcement_key_pair,
                 "Olivia".to_string(),
                 "Super honest oracle".to_string(),
                 1,
-                vec![OracleScheme::Schnorr {
-                    attestation_public_key: oracle_attestation_pubkey,
-                    oracle_nonces: (0..nb_nonces).map(|_| some_schnorr_pubkey()).collect(),
-                }],
+                vec![OracleScheme::try_new_schnorr_scheme(
+                    SECP256K1,
+                    &attestation_key_pair,
+                    &oracle_nonce_secrets,
+                )
+                .unwrap()],
             )
             .unwrap();
             OracleAnnouncement::try_new_signed(
