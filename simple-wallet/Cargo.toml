@@ -1,19 +1,14 @@
 [package]
-authors = ["Crypto Garage"]
-description = "Sled backend for persisting Discreet Log Contracts (DLC)."
 edition = "2018"
-homepage = "https://github.com/p2pderivatives/rust-dlc"
-license-file = "../LICENSE"
-name = "dlc-sled-storage-provider"
-repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-sled-storage-provider"
+name = "simple-wallet"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 bitcoin = "0.29"
+dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
 lightning = {version = "0.0.112", git = "https://github.com/p2pderivatives/rust-lightning/", branch = "split-tx-experiment"}
+rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
 secp256k1-zkp = {version = "0.7.0"}
-simple-wallet = {path = "../simple-wallet"}
-sled = "0.34"

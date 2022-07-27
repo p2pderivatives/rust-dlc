@@ -11,4 +11,6 @@ members = [
   "mocks",
   "sample",
   "dlc-sled-storage-provider",
+  "electrs-blockchain-provider",
+  "simple-wallet",
 ]

@@ -1,6 +1,7 @@
 //! # Bitcoin rpc provider
 
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -8,6 +9,7 @@ use std::time::Duration;
 use bitcoin::consensus::encode::Error as EncodeError;
 use bitcoin::secp256k1::rand::thread_rng;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
+use bitcoin::util::uint::Uint256;
 use bitcoin::{
     consensus::Decodable, network::constants::Network, Amount, PrivateKey, Script, Transaction,
     Txid,
@@ -18,7 +20,8 @@ use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
 use dlc_manager::{Blockchain, Signer, Utxo, Wallet};
 use json::EstimateMode;
-use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
+use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
+use lightning_block_sync::{BlockData, BlockHeaderData, BlockSource};
 use log::error;
 use rust_bitcoin_coin_selection::select_coins;
 
@@ -118,6 +121,10 @@ impl BitcoinCoreProvider {
         let fees = Arc::new(fees);
         poll_for_fee_estimates(client.clone(), fees.clone());
         BitcoinCoreProvider { client, fees }
+    }
+
+    pub fn get_client(&self) -> Arc<Mutex<Client>> {
+        self.client.clone()
     }
 }
 
@@ -247,6 +254,7 @@ impl Wallet for BitcoinCoreProvider {
             .map_err(rpc_err_to_manager_err)?;
         let mut utxo_pool: Vec<UtxoWrap> = utxo_res
             .iter()
+            .filter(|x| x.script_pub_key.is_v0_p2wpkh())
             .map(|x| {
                 Ok(UtxoWrap(Utxo {
                     tx_out: TxOut {
@@ -259,6 +267,7 @@ impl Wallet for BitcoinCoreProvider {
                     },
                     address: x.address.as_ref().ok_or(Error::InvalidState)?.clone(),
                     redeem_script: x.redeem_script.as_ref().unwrap_or(&Script::new()).clone(),
+                    reserved: false,
                 }))
             })
             .collect::<Result<Vec<UtxoWrap>, Error>>()?;
@@ -282,48 +291,18 @@ impl Wallet for BitcoinCoreProvider {
             .import_address(address, None, Some(false))
             .map_err(rpc_err_to_manager_err)
     }
-
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
-        let tx_info = self
-            .client
-            .lock()
-            .unwrap()
-            .get_transaction(tx_id, None)
-            .map_err(rpc_err_to_manager_err)?;
-        let tx = Transaction::consensus_decode(&mut tx_info.hex.as_slice())
-            .or(Err(Error::BitcoinError))?;
-        Ok(tx)
-    }
-
-    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
-        let tx_info_res = self.client.lock().unwrap().get_transaction(tx_id, None);
-        match tx_info_res {
-            Ok(tx_info) => Ok(tx_info.info.confirmations as u32),
-            Err(e) => match e {
-                bitcoincore_rpc::Error::JsonRpc(json_rpc_err) => match json_rpc_err {
-                    bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error) => {
-                        if rpc_error.code == -5
-                            && rpc_error.message == *"Invalid or non-wallet transaction id"
-                        {
-                            return Ok(0);
-                        }
-
-                        Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
-                            bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error),
-                        )))
-                    }
-                    other => Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
-                        other,
-                    ))),
-                },
-                _ => Err(rpc_err_to_manager_err(e)),
-            },
-        }
-    }
 }
 
 impl Blockchain for BitcoinCoreProvider {
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), ManagerError> {
+        use bitcoin::consensus::Encodable;
+        use std::fmt::Write;
+        let mut writer = Vec::new();
+        transaction.consensus_encode(&mut writer).unwrap();
+        let mut serialized = String::new();
+        for x in writer {
+            let _ = write!(&mut serialized, "{:02x}", x).unwrap();
+        }
         self.client
             .lock()
             .unwrap()
@@ -367,6 +346,44 @@ impl Blockchain for BitcoinCoreProvider {
             .map_err(rpc_err_to_manager_err)?;
         client.get_block(&hash).map_err(rpc_err_to_manager_err)
     }
+
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
+        let tx_info = self
+            .client
+            .lock()
+            .unwrap()
+            .get_transaction(tx_id, None)
+            .map_err(rpc_err_to_manager_err)?;
+        let tx = Transaction::consensus_decode(&mut std::io::Cursor::new(&*tx_info.hex))
+            .or(Err(Error::BitcoinError))?;
+        Ok(tx)
+    }
+
+    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
+        let tx_info_res = self.client.lock().unwrap().get_transaction(tx_id, None);
+        match tx_info_res {
+            Ok(tx_info) => Ok(tx_info.info.confirmations as u32),
+            Err(e) => match e {
+                bitcoincore_rpc::Error::JsonRpc(json_rpc_err) => match json_rpc_err {
+                    bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error) => {
+                        if rpc_error.code == -5
+                            && rpc_error.message == *"Invalid or non-wallet transaction id"
+                        {
+                            return Ok(0);
+                        }
+
+                        Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
+                            bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error),
+                        )))
+                    }
+                    other => Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
+                        other,
+                    ))),
+                },
+                _ => Err(rpc_err_to_manager_err(e)),
+            },
+        }
+    }
 }
 
 impl FeeEstimator for BitcoinCoreProvider {
@@ -374,7 +391,7 @@ impl FeeEstimator for BitcoinCoreProvider {
         &self,
         confirmation_target: lightning::chain::chaininterface::ConfirmationTarget,
     ) -> u32 {
-        match confirmation_target {
+        let est = match confirmation_target {
             ConfirmationTarget::Background => self
                 .fees
                 .get(&Target::Background)
@@ -390,7 +407,8 @@ impl FeeEstimator for BitcoinCoreProvider {
                 .get(&Target::HighPriority)
                 .unwrap()
                 .load(Ordering::Acquire),
-        }
+        };
+        est
     }
 }
 
@@ -429,4 +447,44 @@ fn poll_for_fee_estimates(client: Arc<Mutex<Client>>, fees: Arc<HashMap<Target, 
 
         std::thread::sleep(Duration::from_secs(60));
     });
+}
+
+impl BroadcasterInterface for BitcoinCoreProvider {
+    fn broadcast_transaction(&self, tx: &Transaction) {
+        self.send_transaction(tx).expect("Not to error.");
+    }
+}
+
+impl BlockSource for BitcoinCoreProvider {
+    fn get_header<'a>(
+        &'a self,
+        header_hash: &'a bitcoin::BlockHash,
+        _height_hint: Option<u32>,
+    ) -> lightning_block_sync::AsyncBlockSourceResult<'a, lightning_block_sync::BlockHeaderData>
+    {
+        let client = self.client.lock().unwrap();
+        let header_info = client.get_block_header_info(header_hash).unwrap();
+        let header = client.get_block_header(header_hash).unwrap();
+        let block_header_data = BlockHeaderData {
+            header,
+            height: header_info.height as u32,
+            chainwork: Uint256::from_be_bytes(header_info.chainwork.try_into().unwrap()),
+        };
+        Box::pin(core::future::ready(Ok(block_header_data)))
+    }
+
+    fn get_block<'a>(
+        &'a self,
+        header_hash: &'a bitcoin::BlockHash,
+    ) -> lightning_block_sync::AsyncBlockSourceResult<'a, BlockData> {
+        let block = self.client.lock().unwrap().get_block(header_hash).unwrap();
+        Box::pin(core::future::ready(Ok(BlockData::FullBlock(block))))
+    }
+
+    fn get_best_block<'a>(
+        &'a self,
+    ) -> lightning_block_sync::AsyncBlockSourceResult<(bitcoin::BlockHash, Option<u32>)> {
+        let best_block = self.client.lock().unwrap().get_best_block_hash().unwrap();
+        Box::pin(core::future::ready(Ok((best_block, None))))
+    }
 }

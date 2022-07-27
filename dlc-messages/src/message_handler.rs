@@ -19,6 +19,7 @@ use secp256k1_zkp::PublicKey;
 
 use crate::{
     segmentation::{get_segments, segment_reader::SegmentReader},
+    sub_channel::SubChannelMessage,
     Message, WireMessage,
 };
 
@@ -29,6 +30,7 @@ use crate::{
 pub struct MessageHandler {
     msg_events: Mutex<VecDeque<(PublicKey, WireMessage)>>,
     msg_received: Mutex<Vec<(PublicKey, Message)>>,
+    sub_channel_msg_received: Mutex<Vec<(PublicKey, SubChannelMessage)>>,
     segment_readers: Mutex<HashMap<PublicKey, SegmentReader>>,
 }
 
@@ -44,6 +46,7 @@ impl MessageHandler {
         MessageHandler {
             msg_events: Mutex::new(VecDeque::new()),
             msg_received: Mutex::new(Vec::new()),
+            sub_channel_msg_received: Mutex::new(Vec::new()),
             segment_readers: Mutex::new(HashMap::new()),
         }
     }
@@ -53,6 +56,19 @@ impl MessageHandler {
     pub fn get_and_clear_received_messages(&self) -> Vec<(PublicKey, Message)> {
         let mut ret = Vec::new();
         std::mem::swap(&mut *self.msg_received.lock().unwrap(), &mut ret);
+        ret
+    }
+
+    /// Returns the messages received by the message handler and empty the
+    /// receiving buffer.
+    pub fn get_and_clear_received_sub_channel_messages(
+        &self,
+    ) -> Vec<(PublicKey, SubChannelMessage)> {
+        let mut ret = Vec::new();
+        std::mem::swap(
+            &mut *self.sub_channel_msg_received.lock().unwrap(),
+            &mut ret,
+        );
         ret
     }
 
@@ -72,6 +88,25 @@ impl MessageHandler {
                 .lock()
                 .unwrap()
                 .push_back((node_id, WireMessage::Message(msg)));
+        }
+    }
+
+    /// Send a message to the peer with given node id. Not that the message is not
+    /// sent right away, but only when the LDK
+    /// [`lightning::ln::peer_handler::PeerManager::process_events`] is next called.
+    pub fn send_subchannel_message(&self, node_id: PublicKey, msg: SubChannelMessage) {
+        if msg.serialized_length() > MAX_BUF_SIZE {
+            let (seg_start, seg_chunks) = get_segments(msg.encode(), msg.type_id());
+            let mut msg_events = self.msg_events.lock().unwrap();
+            msg_events.push_back((node_id, WireMessage::SegmentStart(seg_start)));
+            for chunk in seg_chunks {
+                msg_events.push_back((node_id, WireMessage::SegmentChunk(chunk)));
+            }
+        } else {
+            self.msg_events
+                .lock()
+                .unwrap()
+                .push_back((node_id, WireMessage::SubChannel(msg)));
         }
     }
 
@@ -118,6 +153,32 @@ fn read_dlc_message<R: ::std::io::Read>(
     )
 }
 
+macro_rules! handle_read_dlc_sub_channel_messages {
+    ($msg_type:ident, $buffer:ident, $(($type_id:ident, $variant:ident)),*) => {{
+        let decoded = match $msg_type {
+            $(
+                $crate::$type_id => SubChannelMessage::$variant(Readable::read(&mut $buffer)?),
+            )*
+            _ => return Ok(None),
+        };
+        Ok(Some(WireMessage::SubChannel(decoded)))
+    }};
+}
+
+fn read_dlc_sub_channel_message<R: ::std::io::Read>(
+    msg_type: u16,
+    mut buffer: &mut R,
+) -> Result<Option<WireMessage>, DecodeError> {
+    handle_read_dlc_sub_channel_messages!(
+        msg_type,
+        buffer,
+        (SUB_CHANNEL_OFFER, Request),
+        (SUB_CHANNEL_ACCEPT, Accept),
+        (SUB_CHANNEL_CONFIRM, Confirm),
+        (SUB_CHANNEL_FINALIZE, Finalize)
+    )
+}
+
 /// Implementation of the `CustomMessageReader` trait is required to decode
 /// custom messages in the LDK.
 impl CustomMessageReader for MessageHandler {
@@ -134,7 +195,13 @@ impl CustomMessageReader for MessageHandler {
             crate::segmentation::SEGMENT_CHUNK_TYPE => {
                 WireMessage::SegmentChunk(Readable::read(&mut buffer)?)
             }
-            _ => return read_dlc_message(msg_type, buffer),
+            _ => {
+                let res = read_dlc_message(msg_type, buffer);
+                if let Ok(None) = res {
+                    return read_dlc_sub_channel_message(msg_type, buffer);
+                }
+                return res;
+            }
         };
 
         Ok(Some(decoded))
@@ -165,19 +232,27 @@ impl CustomMessageHandler for MessageHandler {
                         let message_type = <u16 as Readable>::read(&mut buf).map_err(|e| {
                             to_ln_error(e, "Could not reconstruct message from segments")
                         })?;
-                        if let WireMessage::Message(m) = self
+                        let res = self
                             .read(message_type, &mut buf)
                             .map_err(|e| {
                                 to_ln_error(e, "Could not reconstruct message from segments")
                             })?
-                            .expect("to have a message")
-                        {
-                            self.msg_received.lock().unwrap().push((*org, m));
-                        } else {
-                            return Err(to_ln_error(
-                                "Unexpected message type",
-                                &message_type.to_string(),
-                            ));
+                            .expect("to have a message");
+                        match res {
+                            WireMessage::Message(m) => {
+                                self.msg_received.lock().unwrap().push((*org, m))
+                            }
+                            WireMessage::SubChannel(m) => self
+                                .sub_channel_msg_received
+                                .lock()
+                                .unwrap()
+                                .push((*org, m)),
+                            _ => {
+                                return Err(to_ln_error(
+                                    "Unexpected message type",
+                                    &message_type.to_string(),
+                                ))
+                            }
                         }
                     }
                     return Ok(());
@@ -200,6 +275,12 @@ impl CustomMessageHandler for MessageHandler {
                     err: "Received a SegmentChunk while not expecting one.".to_string(),
                     action: lightning::ln::msgs::ErrorAction::DisconnectPeer { msg: None },
                 });
+            }
+            WireMessage::SubChannel(s) => {
+                self.sub_channel_msg_received
+                    .lock()
+                    .unwrap()
+                    .push((*org, s));
             }
         };
         Ok(())

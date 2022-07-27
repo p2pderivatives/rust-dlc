@@ -45,7 +45,7 @@ pub mod util;
 /// Minimum value that can be included in a transaction output. Under this value,
 /// outputs are discarded
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#change-outputs
-const DUST_LIMIT: u64 = 1000;
+pub const DUST_LIMIT: u64 = 1000;
 
 /// The transaction version
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#funding-transaction
@@ -57,7 +57,7 @@ const FUND_TX_BASE_WEIGHT: usize = 214;
 
 /// The weight of a CET excluding payout outputs
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
-const CET_BASE_WEIGHT: usize = 500;
+pub const CET_BASE_WEIGHT: usize = 500;
 
 /// The base weight of a transaction input computed as: (outpoint(36) + sequence(4) + scriptPubKeySize(1)) * 4
 /// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>

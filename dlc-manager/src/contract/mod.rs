@@ -267,7 +267,7 @@ impl ContractDescriptor {
                         .ok_or_else(|| {
                             Error::InvalidParameters("Could not compute max value".to_string())
                         })?;
-                    n.validate(max_value as u64)
+                    n.validate((max_value - 1) as u64)
                 }
                 _ => Err(Error::InvalidParameters(
                     "Event descriptor from contract and oracle differ.".to_string(),

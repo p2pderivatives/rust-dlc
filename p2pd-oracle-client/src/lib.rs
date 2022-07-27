@@ -25,6 +25,7 @@ use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use secp256k1_zkp::{schnorr::Signature, XOnlyPublicKey};
 
 /// Enables interacting with a DLC oracle.
+#[derive(Debug, Clone)]
 pub struct P2PDOracleClient {
     host: String,
     public_key: XOnlyPublicKey,

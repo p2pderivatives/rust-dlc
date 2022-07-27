@@ -11,9 +11,11 @@ use bitcoin::{
 };
 use miniscript::Descriptor;
 use secp256k1_zkp::{
-    schnorr::Signature as SchnorrSignature, EcdsaAdaptorSignature, PublicKey as SecpPublicKey,
-    Secp256k1, SecretKey, Signing, Verification,
+    ecdsa::Signature, schnorr::Signature as SchnorrSignature, EcdsaAdaptorSignature,
+    PublicKey as SecpPublicKey, Secp256k1, SecretKey, Signing, Verification,
 };
+
+pub mod sub_channel;
 
 /**
  * Weight of the buffer transaction:
@@ -31,7 +33,7 @@ use secp256k1_zkp::{
  * scriptPubkey -> 34 * 4
  * TOTAL: 599
 */
-const BUFFER_TX_WEIGHT: usize = 599;
+pub const BUFFER_TX_WEIGHT: usize = 599;
 
 /**
  * Due to the buffer output script being more complex than the funding output
@@ -47,7 +49,7 @@ const BUFFER_TX_WEIGHT: usize = 599;
  * Regular CET witness size: 220
  * Extra size => 330
  */
-const CET_EXTRA_WEIGHT: usize = 330;
+pub const CET_EXTRA_WEIGHT: usize = 330;
 
 // Same as buffer input
 const SETTLE_INPUT_WEIGHT: usize = 428;
@@ -163,7 +165,7 @@ pub fn verify_tx_adaptor_signature<C: Verification>(
 
 /// Returns a settle transaction.
 pub fn create_settle_transaction(
-    fund_tx_in: &TxIn,
+    prev_outpoint: &OutPoint,
     offer_revoke_params: &RevokeParams,
     accept_revoke_params: &RevokeParams,
     offer_payout: u64,
@@ -213,10 +215,17 @@ pub fn create_settle_transaction(
         o.value += remaining_fee;
     }
 
+    let input = TxIn {
+        previous_output: prev_outpoint.clone(),
+        script_sig: Script::default(),
+        sequence: crate::util::get_sequence(lock_time),
+        witness: Witness::default(),
+    };
+
     Transaction {
         version: super::TX_VERSION,
         lock_time: PackedLockTime(lock_time),
-        input: vec![fund_tx_in.clone()],
+        input: vec![input],
         output,
     }
 }
@@ -258,6 +267,8 @@ pub fn create_channel_transactions(
         fee_rate_per_vb,
         cet_lock_time,
         cet_nsequence,
+        None,
+        None,
     )
 }
 
@@ -275,13 +286,24 @@ pub fn create_renewal_channel_transactions(
     fee_rate_per_vb: u64,
     cet_lock_time: u32,
     cet_nsequence: Sequence,
+    fund_vout: Option<usize>,
+    buffer_nsequence: Option<Sequence>,
 ) -> Result<DlcChannelTransactions, Error> {
     let extra_fee =
         super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb);
 
-    let (fund_vout, fund_output) =
-        super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_v0_p2wsh())
-            .expect("to find the funding script pubkey");
+    let (fund_vout, fund_output) = {
+        if let Some(fund_vout) = fund_vout {
+            (fund_vout, &fund_tx.output[fund_vout])
+        } else {
+            super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_v0_p2wsh())
+                .expect("to find the funding script pubkey")
+        }
+    };
+
+    if fund_output.value <= extra_fee + super::DUST_LIMIT {
+        return Err(Error::InvalidArgument);
+    }
 
     let outpoint = OutPoint {
         txid: fund_tx.txid(),
@@ -290,7 +312,7 @@ pub fn create_renewal_channel_transactions(
 
     let tx_in = TxIn {
         previous_output: outpoint,
-        sequence: super::util::get_sequence(cet_lock_time),
+        sequence: buffer_nsequence.unwrap_or(crate::util::get_sequence(cet_lock_time)),
         script_sig: Script::default(),
         witness: Witness::default(),
     };
@@ -370,6 +392,35 @@ pub fn sign_cet<C: Signing>(
 
     descriptor
         .satisfy(&mut cet.input[0], sigs)
+        .map_err(|_| Error::InvalidArgument)?;
+
+    Ok(())
+}
+
+///
+pub fn satisfy_buffer_descriptor(
+    tx: &mut Transaction,
+    offer_params: &RevokeParams,
+    accept_params: &RevokeParams,
+    own_pubkey: &SecpPublicKey,
+    own_signature: &Signature,
+    counter_pubkey: &PublicKey,
+    counter_signature: &Signature,
+) -> Result<(), Error> {
+    let descriptor = buffer_descriptor(offer_params, accept_params);
+    let sigs = HashMap::from([
+        (
+            PublicKey {
+                inner: *own_pubkey,
+                compressed: true,
+            },
+            EcdsaSig::sighash_all(*own_signature),
+        ),
+        (*counter_pubkey, EcdsaSig::sighash_all(*counter_signature)),
+    ]);
+
+    descriptor
+        .satisfy(&mut tx.input[0], sigs)
         .map_err(|_| Error::InvalidArgument)?;
 
     Ok(())
@@ -795,7 +846,7 @@ mod tests {
         let payout = 100000000;
         let csv_timelock = 100;
         let settle_tx = create_settle_transaction(
-            &TxIn::default(),
+            &OutPoint::default(),
             &offer_params,
             &accept_params,
             payout,

@@ -31,6 +31,7 @@ pub mod contract_msgs;
 pub mod message_handler;
 pub mod oracle_msgs;
 pub mod segmentation;
+pub mod sub_channel;
 
 #[cfg(any(test, feature = "serde"))]
 pub mod serde_utils;
@@ -52,6 +53,9 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
 use segmentation::{SegmentChunk, SegmentStart};
+use sub_channel::{
+    SubChannelAccept, SubChannelConfirm, SubChannelFinalize, SubChannelMessage, SubChannelOffer,
+};
 
 macro_rules! impl_type {
     ($const_name: ident, $type_name: ident, $type_val: expr) => {
@@ -86,6 +90,10 @@ impl_type!(
     43022
 );
 impl_type!(REJECT, Reject, 43024);
+impl_type!(SUB_CHANNEL_OFFER, SubChannelOffer, 43034);
+impl_type!(SUB_CHANNEL_ACCEPT, SubChannelAccept, 43036);
+impl_type!(SUB_CHANNEL_CONFIRM, SubChannelConfirm, 43038);
+impl_type!(SUB_CHANNEL_FINALIZE, SubChannelFinalize, 43040);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
@@ -557,6 +565,14 @@ impl_type_writeable_for_enum!(Message,
     Reject
 });
 
+impl_type_writeable_for_enum!(SubChannelMessage,
+{
+    Request,
+    Accept,
+    Confirm,
+    Finalize
+});
+
 #[derive(Debug, Clone)]
 /// Wrapper for DLC related message and segmentation related messages.
 pub enum WireMessage {
@@ -566,6 +582,8 @@ pub enum WireMessage {
     SegmentStart(SegmentStart),
     /// Message providing a chunk of a segmented message.
     SegmentChunk(SegmentChunk),
+    ///
+    SubChannel(SubChannelMessage),
 }
 
 impl Display for WireMessage {
@@ -574,12 +592,13 @@ impl Display for WireMessage {
             Self::Message(_) => "Message",
             Self::SegmentStart(_) => "SegmentStart",
             Self::SegmentChunk(_) => "SegmentChunk",
+            Self::SubChannel(_) => "SubChannel",
         };
         f.write_str(name)
     }
 }
 
-impl_type_writeable_for_enum!(WireMessage, { Message, SegmentStart, SegmentChunk });
+impl_type_writeable_for_enum!(WireMessage, { Message, SegmentStart, SegmentChunk, SubChannel });
 
 #[cfg(test)]
 mod tests {

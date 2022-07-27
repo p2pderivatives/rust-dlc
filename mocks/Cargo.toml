@@ -5,8 +5,10 @@ name = "mocks"
 version = "0.1.0"
 
 [dependencies]
+bitcoin = "0.29"
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {version = "0.3.0", path = "../dlc-messages"}
-lightning = {version = "0.0.112" }
+lightning = {version = "0.0.112", git = "https://github.com/p2pderivatives/rust-lightning/", branch = "split-tx-experiment"}
 secp256k1-zkp = {version = "0.7.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
+simple-wallet = {path = "../simple-wallet"}

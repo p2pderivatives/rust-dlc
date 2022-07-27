@@ -355,4 +355,6 @@ pub struct SignedChannel {
     pub counter_party_commitment_secrets: CounterpartyCommitmentSecrets,
     /// The current fee rate to be used to create transactions.
     pub fee_rate_per_vb: u64,
+    ///
+    pub is_sub_channel: bool,
 }

@@ -1,3 +1,4 @@
+use bitcoin::{Address, OutPoint, Txid};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::{
     offered_channel::OfferedChannel,
@@ -7,16 +8,23 @@ use dlc_manager::channel::{
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
+use dlc_manager::sub_channel_manager::{OfferedSubChannel, SubChannel};
 use dlc_manager::Storage;
-use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId};
+use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
+use secp256k1_zkp::{PublicKey, SecretKey};
+use simple_wallet::WalletStorage;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
     channels: RwLock<HashMap<ChannelId, Channel>>,
-    contracts_saved: Option<HashMap<ContractId, Contract>>,
-    channels_saved: Option<HashMap<ChannelId, Channel>>,
+    sub_channels: RwLock<HashMap<ChannelId, SubChannel>>,
+    contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
+    channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
+    addresses: RwLock<HashMap<Address, SecretKey>>,
+    utxos: RwLock<HashMap<OutPoint, Utxo>>,
+    key_pairs: RwLock<HashMap<PublicKey, SecretKey>>,
 }
 
 impl MemoryStorage {
@@ -24,19 +32,26 @@ impl MemoryStorage {
         MemoryStorage {
             contracts: RwLock::new(HashMap::new()),
             channels: RwLock::new(HashMap::new()),
-            contracts_saved: None,
-            channels_saved: None,
+            sub_channels: RwLock::new(HashMap::new()),
+            contracts_saved: Mutex::new(None),
+            channels_saved: Mutex::new(None),
+            addresses: RwLock::new(HashMap::new()),
+            utxos: RwLock::new(HashMap::new()),
+            key_pairs: RwLock::new(HashMap::new()),
         }
     }
 
-    pub fn save(&mut self) {
-        self.contracts_saved = Some(
+    pub fn save(&self) {
+        let mut contracts_saved = self.contracts_saved.lock().unwrap();
+
+        *contracts_saved = Some(
             self.contracts
                 .read()
                 .expect("Could not get read lock")
                 .clone(),
         );
-        self.channels_saved = Some(
+        let mut channels_saved = self.channels_saved.lock().unwrap();
+        *channels_saved = Some(
             self.channels
                 .read()
                 .expect("Could not get read lock")
@@ -44,9 +59,18 @@ impl MemoryStorage {
         );
     }
 
-    pub fn rollback(&mut self) {
-        self.contracts = RwLock::new(std::mem::replace(&mut self.contracts_saved, None).unwrap());
-        self.channels = RwLock::new(std::mem::replace(&mut self.channels_saved, None).unwrap());
+    pub fn rollback(&self) {
+        let mut contracts = self.contracts.write().unwrap();
+        let mut contracts_saved = self.contracts_saved.lock().unwrap();
+        let mut tmp = None;
+        std::mem::swap(&mut tmp, &mut *contracts_saved);
+        std::mem::swap(&mut *contracts, &mut tmp.unwrap());
+
+        let mut channels = self.channels.write().unwrap();
+        let mut channels_saved = self.channels_saved.lock().unwrap();
+        let mut tmp = None;
+        std::mem::swap(&mut tmp, &mut *channels_saved);
+        std::mem::swap(&mut *channels, &mut tmp.unwrap());
     }
 }
 
@@ -72,7 +96,7 @@ impl Storage for MemoryStorage {
             .collect())
     }
 
-    fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), DaemonError> {
+    fn create_contract(&self, contract: &OfferedContract) -> Result<(), DaemonError> {
         let mut map = self.contracts.write().expect("Could not get write lock");
         let res = map.insert(contract.id, Contract::Offered(contract.clone()));
         match res {
@@ -83,13 +107,13 @@ impl Storage for MemoryStorage {
         }
     }
 
-    fn delete_contract(&mut self, id: &ContractId) -> Result<(), DaemonError> {
+    fn delete_contract(&self, id: &ContractId) -> Result<(), DaemonError> {
         let mut map = self.contracts.write().expect("Could not get write lock");
         map.remove(id);
         Ok(())
     }
 
-    fn update_contract(&mut self, contract: &Contract) -> Result<(), DaemonError> {
+    fn update_contract(&self, contract: &Contract) -> Result<(), DaemonError> {
         let mut map = self.contracts.write().expect("Could not get write lock");
         match contract {
             a @ Contract::Accepted(_) | a @ Contract::Signed(_) => {
@@ -156,7 +180,7 @@ impl Storage for MemoryStorage {
         Ok(res)
     }
     fn upsert_channel(
-        &mut self,
+        &self,
         channel: Channel,
         contract: Option<Contract>,
     ) -> Result<(), DaemonError> {
@@ -176,14 +200,14 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn delete_channel(&mut self, channel_id: &ChannelId) -> Result<(), DaemonError> {
+    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), DaemonError> {
         let mut map = self.channels.write().expect("Could not get write lock");
         map.remove(channel_id);
         Ok(())
     }
 
     fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, DaemonError> {
-        let map = self.channels.read().expect("Could not get read lock");
+        let map = self.channels.read().expect("could not get read lock");
         Ok(map.get(channel_id).cloned())
     }
 
@@ -225,12 +249,167 @@ impl Storage for MemoryStorage {
         Ok(res)
     }
 
-    fn persist_chain_monitor(&mut self, _: &ChainMonitor) -> Result<(), DaemonError> {
+    fn persist_chain_monitor(&self, _: &ChainMonitor) -> Result<(), DaemonError> {
         // No need to persist for mocks
         Ok(())
     }
 
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, DaemonError> {
         Ok(None)
+    }
+
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), DaemonError> {
+        let mut map = self.sub_channels.write().expect("Could not get write lock");
+        map.insert(subchannel.get_id(), subchannel.clone());
+        Ok(())
+    }
+
+    fn get_sub_channel(
+        &self,
+        channel_id: dlc_manager::ChannelId,
+    ) -> Result<Option<dlc_manager::sub_channel_manager::SubChannel>, DaemonError> {
+        let map = self.sub_channels.read().expect("could not get read lock");
+        Ok(map.get(&channel_id).cloned())
+    }
+
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, DaemonError> {
+        Ok(self
+            .sub_channels
+            .read()
+            .expect("Could not get read lock")
+            .values()
+            .cloned()
+            .collect())
+    }
+
+    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, DaemonError> {
+        let map = self.sub_channels.read().expect("Could not get read lock");
+
+        let mut res: Vec<OfferedSubChannel> = Vec::new();
+
+        for (_, val) in map.iter() {
+            if let SubChannel::Offered(c) = val {
+                res.push(c.clone())
+            }
+        }
+
+        Ok(res)
+    }
+}
+
+impl WalletStorage for MemoryStorage {
+    fn upsert_address(
+        &self,
+        address: &Address,
+        privkey: &secp256k1_zkp::SecretKey,
+    ) -> Result<(), DaemonError> {
+        self.addresses
+            .write()
+            .expect("Could not get write lock")
+            .insert(address.clone(), *privkey);
+        Ok(())
+    }
+
+    fn delete_address(&self, address: &Address) -> Result<(), DaemonError> {
+        self.addresses
+            .write()
+            .expect("Could not get write lock")
+            .remove(address);
+        Ok(())
+    }
+
+    fn get_addresses(&self) -> Result<Vec<Address>, DaemonError> {
+        Ok(self
+            .addresses
+            .read()
+            .expect("Could not get read lock")
+            .keys()
+            .cloned()
+            .collect())
+    }
+
+    fn get_priv_key_for_address(
+        &self,
+        address: &Address,
+    ) -> Result<Option<secp256k1_zkp::SecretKey>, DaemonError> {
+        Ok(self
+            .addresses
+            .read()
+            .expect("Could not get read lock")
+            .get(address)
+            .cloned())
+    }
+
+    fn upsert_key_pair(
+        &self,
+        public_key: &secp256k1_zkp::PublicKey,
+        privkey: &secp256k1_zkp::SecretKey,
+    ) -> Result<(), DaemonError> {
+        self.key_pairs
+            .write()
+            .expect("Could not get write lock")
+            .insert(public_key.clone(), privkey.clone());
+
+        Ok(())
+    }
+
+    fn get_priv_key_for_pubkey(
+        &self,
+        public_key: &secp256k1_zkp::PublicKey,
+    ) -> Result<Option<secp256k1_zkp::SecretKey>, DaemonError> {
+        Ok(self
+            .key_pairs
+            .read()
+            .expect("Could not get read lock")
+            .get(public_key)
+            .cloned())
+    }
+
+    fn upsert_utxo(&self, utxo: &Utxo) -> Result<(), DaemonError> {
+        self.utxos
+            .write()
+            .expect("Could not get write lock")
+            .insert(utxo.outpoint.clone(), utxo.clone());
+        Ok(())
+    }
+
+    fn has_utxo(&self, utxo: &Utxo) -> Result<bool, DaemonError> {
+        Ok(self
+            .utxos
+            .read()
+            .expect("Could not get read lock")
+            .contains_key(&utxo.outpoint))
+    }
+
+    fn delete_utxo(&self, utxo: &Utxo) -> Result<(), DaemonError> {
+        self.utxos
+            .write()
+            .expect("Could not get write lock")
+            .remove(&utxo.outpoint);
+        Ok(())
+    }
+
+    fn get_utxos(&self) -> Result<Vec<Utxo>, DaemonError> {
+        Ok(self
+            .utxos
+            .read()
+            .expect("Could not get read lock")
+            .values()
+            .cloned()
+            .collect())
+    }
+
+    fn unreserve_utxo(&self, txid: &Txid, vout: u32) -> Result<(), DaemonError> {
+        let outpoint = OutPoint {
+            txid: txid.clone(),
+            vout,
+        };
+        self.utxos
+            .write()
+            .expect("Could not get write lock")
+            .get_mut(&outpoint)
+            .expect("Could not get value")
+            .reserved = false;
+        Ok(())
     }
 }

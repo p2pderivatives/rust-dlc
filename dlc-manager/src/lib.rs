@@ -25,16 +25,20 @@ extern crate log;
 extern crate rand_chacha;
 extern crate secp256k1_zkp;
 
+#[macro_use]
+mod utils;
+
 pub mod chain_monitor;
 pub mod channel;
 pub mod channel_updater;
 pub mod contract;
 pub mod contract_updater;
 mod conversion_utils;
+pub mod custom_signer;
 pub mod error;
 pub mod manager;
 pub mod payout_curve;
-mod utils;
+pub mod sub_channel_manager;
 
 use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
@@ -44,9 +48,13 @@ use channel::Channel;
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
+use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
+use lightning::ln::msgs::DecodeError;
+use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
+use sub_channel_manager::{OfferedSubChannel, SubChannel};
 
 /// Type alias for a contract id.
 pub type ContractId = [u8; 32];
@@ -103,10 +111,6 @@ pub trait Wallet: Signer {
     ) -> Result<Vec<Utxo>, Error>;
     /// Import the provided address.
     fn import_address(&self, address: &Address) -> Result<(), Error>;
-    /// Get the transaction with given id.
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
-    /// Get the number of confirmation for the transaction with given id.
-    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
 }
 
 /// Blockchain trait provides access to the bitcoin blockchain.
@@ -119,6 +123,10 @@ pub trait Blockchain {
     fn get_blockchain_height(&self) -> Result<u64, Error>;
     /// Returns the block at given height
     fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
+    /// Get the transaction with given id.
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+    /// Get the number of confirmation for the transaction with given id.
+    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.
@@ -128,11 +136,11 @@ pub trait Storage {
     /// Return all contracts
     fn get_contracts(&self) -> Result<Vec<Contract>, Error>;
     /// Create a record for the given contract.
-    fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error>;
+    fn create_contract(&self, contract: &OfferedContract) -> Result<(), Error>;
     /// Delete the record for the contract with the given id.
-    fn delete_contract(&mut self, id: &ContractId) -> Result<(), Error>;
+    fn delete_contract(&self, id: &ContractId) -> Result<(), Error>;
     /// Update the given contract.
-    fn update_contract(&mut self, contract: &Contract) -> Result<(), Error>;
+    fn update_contract(&self, contract: &Contract) -> Result<(), Error>;
     /// Returns the set of contracts in offered state.
     fn get_contract_offers(&self) -> Result<Vec<OfferedContract>, Error>;
     /// Returns the set of contracts in signed state.
@@ -144,10 +152,9 @@ pub trait Storage {
     fn get_preclosed_contracts(&self) -> Result<Vec<PreClosedContract>, Error>;
     /// Update the state of the channel and optionally its associated contract
     /// atomically.
-    fn upsert_channel(&mut self, channel: Channel, contract: Option<Contract>)
-        -> Result<(), Error>;
+    fn upsert_channel(&self, channel: Channel, contract: Option<Contract>) -> Result<(), Error>;
     /// Delete the channel with given [`ChannelId`] if any.
-    fn delete_channel(&mut self, channel_id: &ChannelId) -> Result<(), Error>;
+    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), Error>;
     /// Returns the channel with given [`ChannelId`] if any.
     fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, Error>;
     /// Returns the set of [`SignedChannel`] in the store. Returns only the one
@@ -159,9 +166,17 @@ pub trait Storage {
     /// Returns the set of channels in offer state.
     fn get_offered_channels(&self) -> Result<Vec<OfferedChannel>, Error>;
     /// Writes the [`ChainMonitor`] data to the store.
-    fn persist_chain_monitor(&mut self, monitor: &ChainMonitor) -> Result<(), Error>;
+    fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error>;
     /// Returns the latest [`ChainMonitor`] in the store if any.
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
+    ///
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error>;
+    ///
+    fn get_sub_channel(&self, channel_id: ChannelId) -> Result<Option<SubChannel>, Error>;
+    ///
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error>;
+    ///
+    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, Error>;
 }
 
 /// Oracle trait provides access to oracle information.
@@ -185,4 +200,14 @@ pub struct Utxo {
     pub address: Address,
     /// The redeem script for the referenced output.
     pub redeem_script: Script,
+    ///
+    pub reserved: bool,
 }
+
+impl_dlc_writeable!(Utxo, {
+    (tx_out, writeable),
+    (outpoint, writeable),
+    (address, {cb_writeable, write_address, read_address}),
+    (redeem_script, writeable),
+    (reserved, writeable)
+});

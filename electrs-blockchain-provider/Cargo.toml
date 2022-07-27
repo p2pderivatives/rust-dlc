@@ -1,16 +1,18 @@
 [package]
-authors = ["Crypto Garage"]
-edition = '2018'
-name = "bitcoin-rpc-provider"
+edition = "2021"
+name = "electrs-blockchain-provider"
 version = "0.1.0"
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [dependencies]
-bitcoin = {version = "0.29.2"}
-bitcoincore-rpc = {version = "0.16.0"}
-bitcoincore-rpc-json = {version = "0.16.0"}
-dlc = {path = "../dlc"}
+bitcoin = {version = "0.29"}
+bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 dlc-manager = {path = "../dlc-manager"}
 lightning = {version = "0.0.112", git = "https://github.com/p2pderivatives/rust-lightning/", branch = "split-tx-experiment"}
 lightning-block-sync = {version = "0.0.112", git = "https://github.com/p2pderivatives/rust-lightning/", branch = "split-tx-experiment"}
-log = "0.4.14"
+reqwest = {version = "0.11", features = ["blocking", "json"]}
 rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
+serde = {version = "*", features = ["derive"]}
+simple-wallet = {path = "../simple-wallet"}
+tokio = "1"
