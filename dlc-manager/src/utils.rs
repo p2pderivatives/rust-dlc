@@ -21,6 +21,40 @@ use crate::{
 const APPROXIMATE_CET_VBYTES: u64 = 190;
 const APPROXIMATE_CLOSING_VBYTES: u64 = 168;
 
+#[macro_export]
+///
+macro_rules! get_object_in_state {
+    ($manager: ident, $id: expr, $state: ident, $peer_id: expr, $object_type: ident, $get_call: ident) => {{
+        let object = $manager.store.$get_call($id)?;
+        match object {
+            Some(c) => {
+                if let Some(p) = $peer_id as Option<PublicKey> {
+                    if c.get_counter_party_id() != p {
+                        return Err(Error::InvalidParameters(format!(
+                            "Peer {:02x?} is not involved with {} {:02x?}.",
+                            $peer_id,
+                            stringify!($object_type),
+                            $id
+                        )));
+                    }
+                }
+                match c {
+                    $object_type::$state(s) => Ok(s),
+                    _ => Err(Error::InvalidState(format!(
+                        "Invalid state {:?} expected {}.",
+                        c,
+                        stringify!($state),
+                    ))),
+                }
+            }
+            None => Err(Error::InvalidParameters(format!(
+                "Unknown {} id.",
+                stringify!($object_type)
+            ))),
+        }
+    }};
+}
+
 pub fn get_common_fee(fee_rate: u64) -> u64 {
     (APPROXIMATE_CET_VBYTES + APPROXIMATE_CLOSING_VBYTES) * fee_rate
 }
@@ -71,6 +105,7 @@ pub(crate) fn get_party_params<C: Signing, W: Deref, B: Deref>(
     fee_rate: u64,
     wallet: &W,
     blockchain: &B,
+    needs_utxo: bool,
 ) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
 where
     W::Target: Wallet,
@@ -86,35 +121,37 @@ where
     let change_spk = change_addr.script_pubkey();
     let change_serial_id = get_new_serial_id();
 
-    let appr_required_amount = own_collateral + get_half_common_fee(fee_rate);
-    let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
-
     let mut funding_inputs_info: Vec<FundingInputInfo> = Vec::new();
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
     let mut total_input = 0;
-    for utxo in utxos {
-        let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;
-        let mut writer = Vec::new();
-        prev_tx.consensus_encode(&mut writer)?;
-        let prev_tx_vout = utxo.outpoint.vout;
-        let sequence = 0xffffffff;
-        // TODO(tibo): this assumes P2WPKH with low R
-        let max_witness_len = 107;
-        let funding_input = FundingInput {
-            input_serial_id: get_new_serial_id(),
-            prev_tx: writer,
-            prev_tx_vout,
-            sequence,
-            max_witness_len,
-            redeem_script: utxo.redeem_script,
-        };
-        total_input += prev_tx.output[prev_tx_vout as usize].value;
-        funding_tx_info.push((&funding_input).into());
-        let funding_input_info = FundingInputInfo {
-            funding_input,
-            address: Some(utxo.address.clone()),
-        };
-        funding_inputs_info.push(funding_input_info);
+
+    if needs_utxo {
+        let appr_required_amount = own_collateral + get_half_common_fee(fee_rate);
+        let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+        for utxo in utxos {
+            let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;
+            let mut writer = Vec::new();
+            prev_tx.consensus_encode(&mut writer)?;
+            let prev_tx_vout = utxo.outpoint.vout;
+            let sequence = 0xffffffff;
+            // TODO(tibo): this assumes P2WPKH with low R
+            let max_witness_len = 107;
+            let funding_input = FundingInput {
+                input_serial_id: get_new_serial_id(),
+                prev_tx: writer,
+                prev_tx_vout,
+                sequence,
+                max_witness_len,
+                redeem_script: utxo.redeem_script,
+            };
+            total_input += prev_tx.output[prev_tx_vout as usize].value;
+            funding_tx_info.push((&funding_input).into());
+            let funding_input_info = FundingInputInfo {
+                funding_input,
+                address: Some(utxo.address.clone()),
+            };
+            funding_inputs_info.push(funding_input_info);
+        }
     }
 
     let party_params = PartyParams {

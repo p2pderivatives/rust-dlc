@@ -45,7 +45,8 @@ impl_dlc_writeable!(SignedChannel, {
     (roll_back_state, option),
     (own_per_update_seed, writeable),
     (counter_party_commitment_secrets, writeable),
-    (fee_rate_per_vb, writeable)
+    (fee_rate_per_vb, writeable),
+    (is_sub_channel, writeable)
 });
 
 impl_dlc_writeable_enum!(

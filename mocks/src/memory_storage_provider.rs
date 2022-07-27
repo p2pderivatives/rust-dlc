@@ -8,6 +8,7 @@ use dlc_manager::channel::{
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
+use dlc_manager::sub_channel_manager::{OfferedSubChannel, SubChannel};
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -18,6 +19,7 @@ use std::sync::{Mutex, RwLock};
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
     channels: RwLock<HashMap<ChannelId, Channel>>,
+    sub_channels: RwLock<HashMap<ChannelId, SubChannel>>,
     contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
     channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
     addresses: RwLock<HashMap<Address, SecretKey>>,
@@ -30,6 +32,7 @@ impl MemoryStorage {
         MemoryStorage {
             contracts: RwLock::new(HashMap::new()),
             channels: RwLock::new(HashMap::new()),
+            sub_channels: RwLock::new(HashMap::new()),
             contracts_saved: Mutex::new(None),
             channels_saved: Mutex::new(None),
             addresses: RwLock::new(HashMap::new()),
@@ -254,6 +257,44 @@ impl Storage for MemoryStorage {
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, DaemonError> {
         Ok(None)
     }
+
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), DaemonError> {
+        let mut map = self.sub_channels.write().expect("Could not get write lock");
+        map.insert(subchannel.get_id(), subchannel.clone());
+        Ok(())
+    }
+
+    fn get_sub_channel(
+        &self,
+        channel_id: dlc_manager::ChannelId,
+    ) -> Result<Option<dlc_manager::sub_channel_manager::SubChannel>, DaemonError> {
+        let map = self.sub_channels.read().expect("could not get read lock");
+        Ok(map.get(&channel_id).cloned())
+    }
+
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, DaemonError> {
+        Ok(self
+            .sub_channels
+            .read()
+            .expect("Could not get read lock")
+            .values()
+            .cloned()
+            .collect())
+    }
+
+    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, DaemonError> {
+        let map = self.sub_channels.read().expect("Could not get read lock");
+
+        let mut res: Vec<OfferedSubChannel> = Vec::new();
+
+        for (_, val) in map.iter() {
+            if let SubChannel::Offered(c) = val {
+                res.push(c.clone())
+            }
+        }
+
+        Ok(res)
+    }
 }
 
 impl WalletStorage for MemoryStorage {
@@ -307,7 +348,7 @@ impl WalletStorage for MemoryStorage {
         self.key_pairs
             .write()
             .expect("Could not get write lock")
-            .insert(*public_key, *privkey);
+            .insert(public_key.clone(), privkey.clone());
 
         Ok(())
     }
@@ -328,7 +369,7 @@ impl WalletStorage for MemoryStorage {
         self.utxos
             .write()
             .expect("Could not get write lock")
-            .insert(utxo.outpoint, utxo.clone());
+            .insert(utxo.outpoint.clone(), utxo.clone());
         Ok(())
     }
 
@@ -359,7 +400,10 @@ impl WalletStorage for MemoryStorage {
     }
 
     fn unreserve_utxo(&self, txid: &Txid, vout: u32) -> Result<(), DaemonError> {
-        let outpoint = OutPoint { txid: *txid, vout };
+        let outpoint = OutPoint {
+            txid: txid.clone(),
+            vout,
+        };
         self.utxos
             .write()
             .expect("Could not get write lock")

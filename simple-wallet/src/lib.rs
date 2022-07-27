@@ -58,9 +58,8 @@ where
         }
     }
 
-    /// Refresh the wallet checking and updating the UTXO states.
     pub fn refresh(&self) -> Result<()> {
-        let utxos: Vec<Utxo> = self.storage.get_utxos()?;
+        let utxos = self.storage.get_utxos()?;
 
         for utxo in &utxos {
             let is_spent = self

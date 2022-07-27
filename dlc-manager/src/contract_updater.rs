@@ -48,6 +48,7 @@ where
         contract_input.fee_rate,
         wallet,
         blockchain,
+        true,
     )?;
 
     let offered_contract = OfferedContract::new(
@@ -85,6 +86,7 @@ where
         offered_contract.fee_rate_per_vb,
         wallet,
         blockchain,
+        true,
     )?;
 
     let dlc_transactions = dlc::create_dlc_transactions(

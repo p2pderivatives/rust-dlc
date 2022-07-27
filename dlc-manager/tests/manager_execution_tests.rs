@@ -11,7 +11,6 @@ mod test_utils;
 use bitcoin::Amount;
 use dlc_manager::payout_curve::PayoutFunctionPiece;
 use electrs_blockchain_provider::ElectrsBlockchainProvider;
-use simple_wallet::SimpleWallet;
 use test_utils::*;
 
 use bitcoin_test_utils::rpc_helpers::init_clients;

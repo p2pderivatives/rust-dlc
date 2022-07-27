@@ -25,16 +25,20 @@ extern crate log;
 extern crate rand_chacha;
 extern crate secp256k1_zkp;
 
+#[macro_use]
+mod utils;
+
 pub mod chain_monitor;
 pub mod channel;
 pub mod channel_updater;
 pub mod contract;
 pub mod contract_updater;
 mod conversion_utils;
+pub mod custom_signer;
 pub mod error;
 pub mod manager;
 pub mod payout_curve;
-mod utils;
+pub mod sub_channel_manager;
 
 use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
@@ -50,6 +54,7 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
+use sub_channel_manager::{OfferedSubChannel, SubChannel};
 
 /// Type alias for a contract id.
 pub type ContractId = [u8; 32];
@@ -164,6 +169,14 @@ pub trait Storage {
     fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error>;
     /// Returns the latest [`ChainMonitor`] in the store if any.
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
+    ///
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error>;
+    ///
+    fn get_sub_channel(&self, channel_id: ChannelId) -> Result<Option<SubChannel>, Error>;
+    ///
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error>;
+    ///
+    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, Error>;
 }
 
 /// Oracle trait provides access to oracle information.

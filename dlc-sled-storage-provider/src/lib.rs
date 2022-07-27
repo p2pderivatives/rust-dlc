@@ -28,6 +28,9 @@ use dlc_manager::contract::signed_contract::SignedContract;
 use dlc_manager::contract::{
     ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
+use dlc_manager::sub_channel_manager::{
+    ClosingSubChannel, OfferedSubChannel, SignedSubChannel, SubChannel,
+};
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
 use dlc_manager::{error::Error, ContractId, Storage};
@@ -50,6 +53,7 @@ const CHAIN_MONITOR_KEY: u8 = 4;
 const UTXO_TREE: u8 = 6;
 #[cfg(feature = "wallet")]
 const KEY_PAIR_TREE: u8 = 7;
+const SUB_CHANNEL_TREE: u8 = 3;
 #[cfg(feature = "wallet")]
 const ADDRESS_TREE: u8 = 8;
 
@@ -60,7 +64,7 @@ pub struct SledStorageProvider {
 
 macro_rules! convertible_enum {
     (enum $name:ident {
-        $($vname:ident $(= $val:expr)?,)*;
+        $($vname:ident $(= $val:expr)? $(; $subprefix:ident, $subfield:ident)?,)*;
         $($tname:ident $(= $tval:expr)?,)*
     }, $input:ident) => {
         #[derive(Debug)]
@@ -82,7 +86,7 @@ macro_rules! convertible_enum {
                 match v {
                     $(x if x == u8::from($name::$vname) => Ok($name::$vname),)*
                     $(x if x == u8::from($name::$tname) => Ok($name::$tname),)*
-                    _ => Err(Error::StorageError("Unknown prefix".to_string())),
+                    x => Err(Error::StorageError(format!("Unknown prefix {}", x))),
                 }
             }
         }
@@ -119,7 +123,7 @@ convertible_enum!(
     enum ChannelPrefix {
         Offered = 100,
         Accepted,
-        Signed,
+        Signed; SignedChannelPrefix, state,
         FailedAccept,
         FailedSign,;
     },
@@ -145,6 +149,16 @@ convertible_enum!(
         RenewConfirmed,
     },
     SignedChannelStateType
+);
+
+convertible_enum!(
+    enum SubChannelPrefix {;
+        Offered = 500,
+        Accepted,
+        Signed,
+        Closing,
+    },
+    SubChannel
 );
 
 fn to_storage_error<T>(e: T) -> Error
@@ -199,6 +213,10 @@ impl SledStorageProvider {
 
     fn channel_tree(&self) -> Result<Tree, Error> {
         self.open_tree(&[CHANNEL_TREE])
+    }
+
+    fn sub_channel_tree(&self) -> Result<Tree, Error> {
+        self.open_tree(&[SUB_CHANNEL_TREE])
     }
 }
 
@@ -402,6 +420,44 @@ impl Storage for SledStorageProvider {
             None => None,
         };
         Ok(deserialized)
+    }
+
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
+        let serialized = serialize_sub_channel(&subchannel)?;
+        self.sub_channel_tree()?
+            .insert(subchannel.get_id(), serialized)
+            .map_err(to_storage_error)?;
+        Ok(())
+    }
+
+    fn get_sub_channel(
+        &self,
+        channel_id: dlc_manager::ChannelId,
+    ) -> Result<Option<dlc_manager::sub_channel_manager::SubChannel>, Error> {
+        match self
+            .sub_channel_tree()?
+            .get(channel_id)
+            .map_err(to_storage_error)?
+        {
+            Some(res) => Ok(Some(deserialize_sub_channel(&res)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
+        self.sub_channel_tree()?
+            .iter()
+            .values()
+            .map(|x| deserialize_sub_channel(&x.unwrap()))
+            .collect::<Result<Vec<SubChannel>, Error>>()
+    }
+
+    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, Error> {
+        self.get_data_with_prefix(
+            &self.sub_channel_tree()?,
+            &[SubChannelPrefix::Offered.into()],
+            None,
+        )
     }
 }
 
@@ -639,6 +695,43 @@ fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
         ChannelPrefix::FailedSign => {
             Channel::FailedSign(FailedSign::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
+    };
+    Ok(channel)
+}
+
+fn serialize_sub_channel(channel: &SubChannel) -> Result<Vec<u8>, ::std::io::Error> {
+    let serialized = match channel {
+        SubChannel::Offered(o) => o.serialize(),
+        SubChannel::Signed(o) => o.serialize(),
+        SubChannel::Closing(o) => o.serialize(),
+        SubChannel::Accepted(o) => o.serialize(),
+    };
+    let mut serialized = serialized?;
+    let mut res: Vec<u8> = Vec::with_capacity(serialized.len() + 1);
+    res.push(SubChannelPrefix::get_prefix(channel));
+    res.append(&mut serialized);
+    Ok(res)
+}
+
+fn deserialize_sub_channel(buff: &sled::IVec) -> Result<SubChannel, Error> {
+    let mut cursor = ::std::io::Cursor::new(buff);
+    let mut prefix = [0u8; 1];
+    cursor.read_exact(&mut prefix)?;
+    let channel_prefix: SubChannelPrefix = prefix[0].try_into()?;
+    let channel = match channel_prefix {
+        SubChannelPrefix::Offered => SubChannel::Offered(
+            OfferedSubChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
+        SubChannelPrefix::Accepted => SubChannel::Accepted(
+            dlc_manager::sub_channel_manager::AcceptedSubChannel::deserialize(&mut cursor)
+                .map_err(to_storage_error)?,
+        ),
+        SubChannelPrefix::Signed => SubChannel::Signed(
+            SignedSubChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
+        SubChannelPrefix::Closing => SubChannel::Closing(
+            ClosingSubChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
     };
     Ok(channel)
 }
@@ -901,6 +994,8 @@ mod tests {
                 ..
             } = &signed_channels[0].state
             {
+                let channel_id = signed_channels[0].channel_id;
+                storage.get_channel(&channel_id).unwrap();
             } else {
                 panic!(
                     "Expected established state got {:?}",
