@@ -5,7 +5,7 @@ use std::ops::Deref;
 use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::{
-    oracle_msgs::{OracleAnnouncement, OracleAttestation},
+    oracle_msgs::{OracleAnnouncement, SchnorrAttestation},
     AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
 };
 use secp256k1_zkp::{
@@ -633,7 +633,7 @@ pub fn get_signed_cet<C: Signing, S: Deref>(
     contract: &SignedContract,
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
-    attestations: &[(usize, OracleAttestation)],
+    attestations: &[(usize, SchnorrAttestation)],
     signer: &S,
 ) -> Result<Transaction, Error>
 where

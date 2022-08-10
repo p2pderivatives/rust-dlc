@@ -49,6 +49,7 @@ use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
+use oracle_msgs::SchnorrAttestation;
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
 use segmentation::{SegmentChunk, SegmentStart};
@@ -86,6 +87,7 @@ impl_type!(
     43022
 );
 impl_type!(REJECT, Reject, 43024);
+impl_type!(ATTESTATION_TYPE, SchnorrAttestation, 55356);
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(

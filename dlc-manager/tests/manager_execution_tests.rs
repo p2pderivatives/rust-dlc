@@ -9,6 +9,7 @@ extern crate dlc_manager;
 mod test_utils;
 
 use dlc_manager::payout_curve::PayoutFunctionPiece;
+use dlc_messages::oracle_msgs::SchnorrAttestation;
 use test_utils::*;
 
 use bitcoin_rpc_provider::BitcoinCoreProvider;
@@ -33,6 +34,7 @@ use std::sync::{
 use std::thread;
 
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TestVectorPart<T> {
     message: T,
     #[cfg_attr(
@@ -46,20 +48,20 @@ struct TestVectorPart<T> {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TestVector {
     offer_message: TestVectorPart<OfferDlc>,
     accept_message: TestVectorPart<AcceptDlc>,
     sign_message: TestVectorPart<SignDlc>,
+    attestations: Vec<TestVectorPart<SchnorrAttestation>>,
 }
 
 fn write_message<T: Writeable + serde::Serialize + Type>(msg_name: &str, s: T) {
     if std::env::var("GENERATE_TEST_VECTOR").is_ok() {
-        let mut buf = Vec::new();
-        s.type_id().write(&mut buf).unwrap();
-        s.write(&mut buf).unwrap();
+        let serialized = get_serialized_message(&s);
         let t = TestVectorPart {
             message: s,
-            serialized: buf,
+            serialized,
         };
         to_writer_pretty(
             &std::fs::File::create(format!("{}.json", msg_name)).unwrap(),
@@ -69,7 +71,14 @@ fn write_message<T: Writeable + serde::Serialize + Type>(msg_name: &str, s: T) {
     }
 }
 
-fn create_test_vector() {
+fn get_serialized_message<T: Writeable + Type>(msg: &T) -> Vec<u8> {
+    let mut buf = Vec::new();
+    msg.type_id().write(&mut buf).unwrap();
+    msg.write(&mut buf).unwrap();
+    buf
+}
+
+fn create_test_vector(attestations: &[SchnorrAttestation]) {
     if std::env::var("GENERATE_TEST_VECTOR").is_ok() {
         let test_vector = TestVector {
             offer_message: from_str(&std::fs::read_to_string("offer_message.json").unwrap())
@@ -77,6 +86,13 @@ fn create_test_vector() {
             accept_message: from_str(&std::fs::read_to_string("accept_message.json").unwrap())
                 .unwrap(),
             sign_message: from_str(&std::fs::read_to_string("sign_message.json").unwrap()).unwrap(),
+            attestations: attestations
+                .iter()
+                .map(|x| TestVectorPart {
+                    message: x.clone(),
+                    serialized: get_serialized_message(x),
+                })
+                .collect::<Vec<_>>(),
         };
         let file_name = std::env::var("TEST_VECTOR_OUTPUT_NAME")
             .unwrap_or_else(|_| "test_vector.json".to_string());
@@ -418,6 +434,23 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
 
+    let mut attestations = Vec::new();
+
+    let event_ids = test_params
+        .contract_input
+        .contract_infos
+        .iter()
+        .map(|x| x.oracles.event_id.clone())
+        .collect::<Vec<_>>();
+
+    for event_id in event_ids {
+        for oracle in &test_params.oracles {
+            if let Ok(attestation) = oracle.get_attestation(&event_id) {
+                attestations.push(attestation);
+            }
+        }
+    }
+
     for oracle in test_params.oracles {
         let oracle = Arc::new(oracle);
         alice_oracles.insert(oracle.get_announcement_public_key(), Arc::clone(&oracle));
@@ -646,5 +679,5 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     alice_handle.join().unwrap();
     bob_handle.join().unwrap();
 
-    create_test_vector();
+    create_test_vector(&attestations);
 }

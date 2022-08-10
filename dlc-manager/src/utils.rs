@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
 use dlc::{PartyParams, TxInputInfo};
-use dlc_messages::{oracle_msgs::OracleAttestation, FundingInput};
+use dlc_messages::{oracle_msgs::SchnorrAttestation, FundingInput};
 use dlc_trie::RangeInfo;
 #[cfg(not(feature = "fuzztarget"))]
 use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
@@ -148,7 +148,7 @@ fn get_half_common_fee(fee_rate: u64) -> u64 {
 pub(crate) fn get_range_info_and_oracle_sigs(
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
-    attestations: &[(usize, OracleAttestation)],
+    attestations: &[(usize, SchnorrAttestation)],
 ) -> Result<(RangeInfo, Vec<Vec<secp256k1_zkp::schnorr::Signature>>), Error> {
     let outcomes = attestations
         .iter()

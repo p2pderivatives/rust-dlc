@@ -24,7 +24,7 @@ use dlc_messages::channel::{
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
     SignChannel,
 };
-use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, SchnorrAttestation};
 use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc};
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
@@ -50,7 +50,7 @@ pub const PEER_TIMEOUT: u64 = 3600;
 type ClosableContractInfo<'a> = Option<(
     &'a ContractInfo,
     &'a AdaptorInfo,
-    Vec<(usize, OracleAttestation)>,
+    Vec<(usize, SchnorrAttestation)>,
 )>;
 
 /// Used to create and update DLCs.
@@ -574,7 +574,7 @@ where
         &self,
         contract: &SignedContract,
         signed_cet: Transaction,
-        attestations: Vec<OracleAttestation>,
+        attestations: Vec<SchnorrAttestation>,
     ) -> Result<ClosedContract, Error> {
         let confirmations = self
             .wallet

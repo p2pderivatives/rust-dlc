@@ -1,8 +1,8 @@
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
-    EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent, OracleMetadata,
-    OracleScheme, OracleTimestamp,
+    EventDescriptor, OracleAnnouncement, OracleEvent, OracleMetadata, OracleTimestamp,
+    SchnorrAttestation, SchnorrAttestationScheme,
 };
 use secp256k1_zkp::rand::thread_rng;
 use secp256k1_zkp::SecretKey;
@@ -17,7 +17,7 @@ pub struct MockOracle {
     attestation_key_pair: KeyPair,
     secp: Secp256k1<All>,
     announcements: HashMap<String, OracleAnnouncement>,
-    attestations: HashMap<String, OracleAttestation>,
+    attestations: HashMap<String, SchnorrAttestation>,
     nonces: HashMap<String, Vec<SecretKey>>,
     name: String,
 }
@@ -79,7 +79,7 @@ impl Oracle for MockOracle {
         Ok(res.clone())
     }
 
-    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
+    fn get_attestation(&self, event_id: &str) -> Result<SchnorrAttestation, DaemonError> {
         let res = self
             .attestations
             .get(event_id)
@@ -132,7 +132,7 @@ impl MockOracle {
                 self.name.clone(),
                 "mock oracle".to_string(),
                 1,
-                vec![OracleScheme::try_new_schnorr_scheme(
+                SchnorrAttestationScheme::try_new_schnorr_scheme(
                     &self.secp,
                     &self.attestation_key_pair,
                     &self
@@ -143,7 +143,7 @@ impl MockOracle {
                         .map(|x| KeyPair::from_secret_key(&self.secp, *x))
                         .collect::<Vec<_>>(),
                 )
-                .unwrap()],
+                .unwrap(),
             )
             .unwrap(),
             oracle_event,
@@ -169,7 +169,8 @@ impl MockOracle {
                 )
             })
             .collect();
-        let attestation = OracleAttestation {
+        let attestation = SchnorrAttestation {
+            event_id: event_id.to_string(),
             oracle_public_key: self.get_attestation_public_key(),
             signatures,
             outcomes: outcomes.to_vec(),

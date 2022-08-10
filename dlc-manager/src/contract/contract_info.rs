@@ -7,7 +7,6 @@ use super::ContractDescriptor;
 use crate::error::Error;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
-use dlc_messages::oracle_msgs::OracleScheme;
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::{DlcTrie, RangeInfo};
 use secp256k1_zkp::{
@@ -280,12 +279,10 @@ impl ContractInfo {
             .iter()
             .map(|x| {
                 let (pubkey, nonces) = {
-                    let OracleScheme::Schnorr {
-                        attestation_public_key,
-                        oracle_nonces,
-                        ..
-                    } = &x.oracle_metadata.oracle_schemes[0];
-                    (attestation_public_key, oracle_nonces)
+                    (
+                        &x.oracle_metadata.attestation_scheme.attestation_public_key,
+                        &x.oracle_metadata.attestation_scheme.oracle_nonces,
+                    )
                 };
 
                 match &x.oracle_event.event_descriptor {

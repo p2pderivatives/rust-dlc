@@ -32,7 +32,7 @@ use dlc_messages::{
         AcceptChannel, CollaborativeCloseOffer, Reject, RenewAccept, RenewConfirm, RenewFinalize,
         RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer, SignChannel,
     },
-    oracle_msgs::{OracleAnnouncement, OracleAttestation},
+    oracle_msgs::{OracleAnnouncement, SchnorrAttestation},
     FundingSignatures,
 };
 use lightning::ln::chan_utils::{
@@ -1747,7 +1747,7 @@ pub fn initiate_unilateral_close_established_channel<S: Deref>(
     signed_channel: &mut SignedChannel,
     confirmed_contract: &SignedContract,
     contract_info: &ContractInfo,
-    attestations: &[(usize, OracleAttestation)],
+    attestations: &[(usize, SchnorrAttestation)],
     adaptor_info: &AdaptorInfo,
     signer: &S,
 ) -> Result<(), Error>

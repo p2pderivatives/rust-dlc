@@ -4,7 +4,7 @@
 
 use bitcoin::{Script, Transaction, Txid};
 use dlc::PartyParams;
-use dlc_messages::oracle_msgs::OracleAttestation;
+use dlc_messages::oracle_msgs::SchnorrAttestation;
 use lightning::ln::chan_utils::CounterpartyCommitmentSecrets;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey};
 
@@ -257,7 +257,7 @@ typed_enum!(
             /// the channel.
             contract_id: ContractId,
             /// The attestations used to decrypt the CET adaptor signature.
-            attestations: Vec<OracleAttestation>,
+            attestations: Vec<SchnorrAttestation>,
         },
         /// A [`SignedChannel`] is in `Closed` state when it was force closed by
         /// the local party.

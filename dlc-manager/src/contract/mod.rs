@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::ContractId;
 use bitcoin::{Address, Transaction};
 use dlc_messages::{
-    oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation},
+    oracle_msgs::{EventDescriptor, OracleAnnouncement, SchnorrAttestation},
     AcceptDlc, FundingInput, SignDlc,
 };
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
@@ -158,7 +158,7 @@ pub struct ClosedContract {
     /// The signed contract that was closed.
     pub signed_contract: SignedContract,
     /// The attestations that were used to decrypt the broadcast CET.
-    pub attestations: Vec<OracleAttestation>,
+    pub attestations: Vec<SchnorrAttestation>,
     /// The signed version of the CET that was broadcast.
     pub signed_cet: Transaction,
 }

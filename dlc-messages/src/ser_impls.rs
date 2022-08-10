@@ -4,7 +4,6 @@ use bitcoin::network::constants::Network;
 use bitcoin::Address;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
-use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
 use std::io::Read;
@@ -170,34 +169,6 @@ pub fn read_strings<R: ::std::io::Read>(
     }
     let mut res = Vec::<String>::new();
     for _ in 0..len.0 {
-        res.push(read_string(reader)?);
-    }
-
-    Ok(res)
-}
-
-/// Writes a set of strings to the given writer, using `u16` prefixes, compared
-/// to [`write_strings`] which uses `BigSize` prefixes.
-pub fn write_strings_u16<W: Writer>(
-    inputs: &[String],
-    writer: &mut W,
-) -> Result<(), ::std::io::Error> {
-    (inputs.len() as u16).write(writer)?;
-    for s in inputs {
-        write_string(s, writer)?;
-    }
-
-    Ok(())
-}
-
-/// Reads a set of string from the given reader, assuming `u16` prefixes, compared
-/// to [`read_strings`] which assumes `BigSize` prefixes.
-pub fn read_strings_u16<R: ::std::io::Read>(
-    reader: &mut R,
-) -> Result<Vec<String>, lightning::ln::msgs::DecodeError> {
-    let len: u16 = lightning::util::ser::Readable::read(reader)?;
-    let mut res = Vec::<String>::new();
-    for _ in 0..len {
         res.push(read_string(reader)?);
     }
 
@@ -379,63 +350,6 @@ where
     Ok(res)
 }
 
-/// Writes a vector of values to the given writer. This function differs from
-/// [`write_vec`] in that it uses `u16` prefixes to give the length of the vector
-/// instead of a `BigSize`.
-pub fn write_vec_u16<W: Writer, T>(input: &[T], writer: &mut W) -> Result<(), ::std::io::Error>
-where
-    T: Writeable,
-{
-    write_vec_u16_cb(input, writer, &<T as Writeable>::write)
-}
-
-/// Reads a vector of values from the given reader. This function differs from
-/// [`read_vec`] in that it uses `u16` prefixes to read the length of the vector
-/// instead of a `BigSize`.
-pub fn read_vec_u16<R: ::std::io::Read, T>(reader: &mut R) -> Result<Vec<T>, DecodeError>
-where
-    T: Readable,
-{
-    read_vec_u16_cb(reader, &Readable::read)
-}
-
-/// Writes a vector of values to the given writer using the provided callback to
-/// serialize each value. This function differs from [`write_vec_cb`] in that it
-/// uses `u16` prefixes to give the length of the vector instead of a `BigSize`.
-pub fn write_vec_u16_cb<W: Writer, T, F>(
-    input: &[T],
-    writer: &mut W,
-    cb: &F,
-) -> Result<(), ::std::io::Error>
-where
-    F: Fn(&T, &mut W) -> Result<(), ::std::io::Error>,
-{
-    (input.len() as u16).write(writer)?;
-    for s in input {
-        cb(s, writer)?;
-    }
-    Ok(())
-}
-
-/// Reads a vector of values from the given reader using the provided callback to
-/// deserialize each value. This function differs from [`read_vec_cb`] in that it
-/// uses `u16` prefixes to read the length of the vector instead of a `BigSize`.
-pub fn read_vec_u16_cb<R: ::std::io::Read, T, F>(
-    reader: &mut R,
-    cb: &F,
-) -> Result<Vec<T>, DecodeError>
-where
-    F: Fn(&mut R) -> Result<T, DecodeError>,
-{
-    let len: u16 = Readable::read(reader)?;
-    let mut res = Vec::<T>::new();
-    for _ in 0..len {
-        res.push(cb(reader)?);
-    }
-
-    Ok(res)
-}
-
 /// Writes a usize value as a u64 to the given writer.
 pub fn write_usize<W: Writer>(i: &usize, writer: &mut W) -> Result<(), ::std::io::Error> {
     <u64 as Writeable>::write(&(*i as u64), writer)
@@ -573,28 +487,6 @@ pub fn write_i32<W: Writer>(i: &i32, writer: &mut W) -> Result<(), ::std::io::Er
 pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> {
     let v: [u8; 4] = Readable::read(reader)?;
     Ok(i32::from_be_bytes(v))
-}
-
-/// Writes a [`lightning::util::ser::Writeable`] value to the given writer as a TLV.
-pub fn write_as_tlv<T: Type + Writeable, W: Writer>(
-    e: &T,
-    writer: &mut W,
-) -> Result<(), ::std::io::Error> {
-    BigSize(e.type_id() as u64).write(writer)?;
-    BigSize(e.serialized_length() as u64).write(writer)?;
-    e.write(writer)
-}
-
-/// Read a [`lightning::util::ser::Writeable`] value from the given reader as a TLV.
-pub fn read_as_tlv<T: Type + Readable, R: ::std::io::Read>(
-    reader: &mut R,
-) -> Result<T, DecodeError> {
-    // TODO(tibo): consider checking type here.
-    // This retrieves type as BigSize. Will be u16 once specs are updated.
-    let _: BigSize = Readable::read(reader)?;
-    // This retrieves the length, will be removed once oracle specs are updated.
-    let _: BigSize = Readable::read(reader)?;
-    Readable::read(reader)
 }
 
 impl_dlc_writeable_external!(Payout, payout, { (offer, writeable), (accept, writeable) });

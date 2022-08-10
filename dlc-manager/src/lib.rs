@@ -41,7 +41,7 @@ use channel::offered_channel::OfferedChannel;
 use channel::signed_channel::{SignedChannel, SignedChannelStateType};
 use channel::Channel;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
-use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, SchnorrAttestation};
 use error::Error;
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -168,7 +168,7 @@ pub trait Oracle {
     /// Returns the announcement for the event with the given id if found.
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.
-    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, Error>;
+    fn get_attestation(&self, event_id: &str) -> Result<SchnorrAttestation, Error>;
 }
 
 /// Represents a UTXO.

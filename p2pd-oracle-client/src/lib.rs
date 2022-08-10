@@ -21,7 +21,7 @@ extern crate serde;
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use dlc_manager::error::Error as DlcManagerError;
 use dlc_manager::Oracle;
-use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
+use dlc_messages::oracle_msgs::{OracleAnnouncement, SchnorrAttestation};
 use secp256k1_zkp::{schnorr::Signature, XOnlyPublicKey};
 
 /// Enables interacting with a DLC oracle.
@@ -150,16 +150,17 @@ impl Oracle for P2PDOracleClient {
     fn get_attestation(
         &self,
         event_id: &str,
-    ) -> Result<OracleAttestation, dlc_manager::error::Error> {
+    ) -> Result<SchnorrAttestation, dlc_manager::error::Error> {
         let (asset_id, date_time) = parse_event_id(event_id)?;
         let path = attestation_path(&self.host, &asset_id, &date_time);
         let AttestationResponse {
-            event_id: _,
+            event_id,
             signatures,
             values,
         } = get::<AttestationResponse>(&path)?;
 
-        Ok(OracleAttestation {
+        Ok(SchnorrAttestation {
+            event_id,
             oracle_public_key: self.public_key,
             signatures,
             outcomes: values,

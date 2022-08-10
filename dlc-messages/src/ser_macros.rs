@@ -18,9 +18,6 @@ macro_rules! field_write {
     ($stream: expr, $field: expr, {vec_cb, $w_cb: expr, $r_cb: expr}) => {
         $crate::ser_impls::write_vec_cb(&$field, $stream, &$w_cb)?;
     };
-    ($stream: expr, $field: expr, {vec_u16_cb, $w_cb: expr, $r_cb: expr}) => {
-        $crate::ser_impls::write_vec_u16_cb(&$field, $stream, &$w_cb)?;
-    };
     ($stream: expr, $field: expr, float) => {
         $crate::ser_impls::write_f64($field, $stream)?;
     };
@@ -55,9 +52,6 @@ macro_rules! field_read {
     };
     ($stream: expr, {vec_cb, $w_cb: expr, $r_cb: expr}) => {
         $crate::ser_impls::read_vec_cb($stream, &$r_cb)?
-    };
-    ($stream: expr, {vec_u16_cb, $w_cb: expr, $r_cb: expr}) => {
-        $crate::ser_impls::read_vec_u16_cb($stream, &$r_cb)?
     };
     ($stream: expr, float) => {
         $crate::ser_impls::read_f64($stream)?
