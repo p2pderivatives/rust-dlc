@@ -101,6 +101,7 @@ pub struct EnumerationPayout {
 
 /// Contains the necessary transactions for establishing a DLC
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DlcTransactions {
     /// The fund transaction locking both parties collaterals
     pub fund: Transaction,
