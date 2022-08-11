@@ -1,5 +1,7 @@
 use bitcoin::secp256k1::key::PublicKey;
 
+use std::fmt::Write as _;
+
 pub fn to_vec(hex: &str) -> Option<Vec<u8>> {
     let len = hex.len() / 2;
     let mut out = Vec::with_capacity(hex.len() / 2);
@@ -34,7 +36,7 @@ pub fn to_slice(hex: &str, arr: &mut [u8]) -> Result<(), ()> {
 pub fn hex_str(value: &[u8]) -> String {
     let mut res = String::with_capacity(64);
     for v in value {
-        res += &format!("{:02x}", v);
+        write!(res, "{:02x}", v).unwrap();
     }
     res
 }

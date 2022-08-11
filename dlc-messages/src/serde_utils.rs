@@ -1,5 +1,7 @@
 //! Utility functions to serialize hexadecimal values as strings in json.
 
+use std::fmt::Write;
+
 /// Serialize an hexadecimal value.
 pub fn serialize_hex<S>(hex: &[u8], s: S) -> Result<S::Ok, S::Error>
 where
@@ -7,7 +9,7 @@ where
 {
     if s.is_human_readable() {
         let string = hex.iter().fold(String::new(), |mut s, e| {
-            s.push_str(&format!("{:02x}", e));
+            write!(s, "{:02x}", e).unwrap();
             s
         });
         assert!(string.len() % 2 == 0);
