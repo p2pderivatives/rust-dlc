@@ -152,7 +152,7 @@ fn create_oracle_announcements() -> Vec<OracleAnnouncement> {
             oracle_public_key: get_schnorr_pubkey(),
             oracle_event: OracleEvent{
                 event_descriptor: EventDescriptor::DigitDecompositionEvent(DigitDecompositionEventDescriptor {
-                base: BASE as u64,
+                base: BASE as u16,
                 is_signed: false,
                 unit: "sats/sec".to_owned(),
                 precision: 0,
@@ -224,7 +224,7 @@ fn offer_seckey() -> SecretKey {
 /// Benchmark to measure the adaptor signature creation time.
 pub fn sign_bench(c: &mut Criterion) {
     let contract_info = create_contract_info();
-    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000));
+    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000).unwrap());
     let fund_output_value = dlc_transactions.get_fund_output().value;
 
     let seckey = accept_seckey();
@@ -250,7 +250,7 @@ pub fn sign_bench(c: &mut Criterion) {
 /// Benchmark to measure the adaptor signature verification time.
 pub fn verify_bench(c: &mut Criterion) {
     let contract_info = create_contract_info();
-    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000));
+    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000).unwrap());
     let fund_output_value = dlc_transactions.get_fund_output().value;
 
     let seckey = accept_seckey();
