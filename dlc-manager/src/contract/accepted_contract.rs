@@ -7,6 +7,8 @@ use dlc::{DlcTransactions, PartyParams};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::Signature;
 
+use std::fmt::Write as _;
+
 /// An AcceptedContract represents a contract in the accepted state.
 #[derive(Clone)]
 pub struct AcceptedContract {
@@ -45,7 +47,7 @@ impl AcceptedContract {
         string_id.push_str("0x");
         let id = self.get_contract_id();
         for i in &id {
-            string_id.push_str(&std::format!("{:02x}", i));
+            write!(string_id, "{:02x}", i).unwrap();
         }
 
         string_id
