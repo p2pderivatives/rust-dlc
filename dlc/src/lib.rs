@@ -19,6 +19,8 @@ extern crate secp256k1_sys;
 extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
 extern crate serde;
+#[cfg(feature = "typescript-definitions")]
+extern crate typescript_definitions;
 
 use bitcoin::{
     blockdata::{
@@ -71,6 +73,10 @@ pub const P2WPKH_WITNESS_SIZE: usize = 107;
 /// accepting the contract.
 #[derive(PartialEq, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "typescript-definitions",
+    derive(typescript_definitions::TypeScriptify)
+)]
 pub struct Payout {
     /// Payout for the offering party
     pub offer: u64,
@@ -141,6 +147,10 @@ impl DlcTransactions {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(
+    feature = "typescript-definitions",
+    derive(typescript_definitions::TypeScriptify)
+)]
 pub struct TxInputInfo {
     /// The outpoint for the utxo
     pub outpoint: OutPoint,
@@ -155,6 +165,15 @@ pub struct TxInputInfo {
 
 /// Structure containing oracle information for a single event.
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+#[cfg_attr(
+    feature = "typescript-definitions",
+    derive(typescript_definitions::TypeScriptify)
+)]
 pub struct OracleInfo {
     /// The public key of the oracle.
     pub public_key: XOnlyPublicKey,
@@ -218,6 +237,10 @@ impl fmt::Display for Error {
     feature = "serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
+)]
+#[cfg_attr(
+    feature = "typescript-definitions",
+    derive(typescript_definitions::TypeScriptify)
 )]
 pub struct PartyParams {
     /// The public key for the fund multisig script
@@ -1218,6 +1241,21 @@ mod tests {
         let (offer_party_params, _) = get_party_params(1000000000, 100000000, None);
         let (accept_party_params, _) = get_party_params(1000000000, 100000000, None);
 
+        println!("{:?}", offer_party_params);
+        println!("{:?}", accept_party_params);
+        println!("{:?}", payouts());
+        println!("{}", offer_party_params.fund_pubkey);
+        println!("{}", accept_party_params.fund_pubkey);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&offer_party_params).unwrap()
+        );
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&accept_party_params).unwrap()
+        );
+        println!("{}", serde_json::to_string_pretty(&payouts()).unwrap());
+
         // Act
         let dlc_txs = create_dlc_transactions(
             &offer_party_params,
@@ -1467,5 +1505,40 @@ mod tests {
             )
             .expect("Could not find fund output");
         }
+    }
+
+    #[cfg(feature = "typescript-definitions")]
+    #[test]
+    fn generate_typescript_interfaces() {
+        use std::fmt::Write;
+        use typescript_definitions::TypeScriptifyTrait;
+        let mut base = include_str!("../typescript/base.d.ts").to_string();
+
+        macro_rules! generate {
+            ($($type:ty),*) => {
+               $(
+                write!(base, "{}\n", <$type>::type_script_ify()).unwrap();
+               )*
+            };
+        }
+
+        macro_rules! replace {
+            ($($type:ty),*) => {
+                $(
+                    base = base.replace(&format!(" {}", stringify!($type)), " string");
+                )*
+            };
+        }
+
+        generate!(PartyParams, Payout, TxInputInfo, OracleInfo);
+        replace!(
+            Script,
+            PublicKey,
+            XOnlyPublicKey,
+            EcdsaAdaptorSignature,
+            SecretKey
+        );
+
+        std::fs::write("./typescript/rust-dlc.d.ts", base).unwrap();
     }
 }
