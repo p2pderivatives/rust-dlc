@@ -4,6 +4,7 @@ use bitcoin::network::constants::Network;
 use bitcoin::Address;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
+use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
 use std::io::Read;
