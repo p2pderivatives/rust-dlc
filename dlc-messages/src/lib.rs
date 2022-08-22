@@ -57,7 +57,7 @@ pub const ACCEPT_TYPE: u16 = 42780;
 /// The type prefix for a [`SignDlc`] message.
 pub const SIGN_TYPE: u16 = 42782;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -112,7 +112,7 @@ impl From<&FundingInput> for TxInputInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -128,7 +128,7 @@ impl_dlc_writeable!(CetAdaptorSignature, {
      (signature, { cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature })
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -153,7 +153,7 @@ impl From<Vec<EcdsaAdaptorSignature>> for CetAdaptorSignatures {
 
 impl_dlc_writeable!(CetAdaptorSignatures, { (ecdsa_adaptor_signatures, vec) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -167,7 +167,7 @@ pub struct FundingSignature {
 
 impl_dlc_writeable!(FundingSignature, { (witness_elements, vec) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -182,7 +182,7 @@ pub struct FundingSignatures {
 
 impl_dlc_writeable!(FundingSignatures, { (funding_signatures, vec) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -203,7 +203,7 @@ pub struct WitnessElement {
 
 impl_dlc_writeable!(WitnessElement, { (witness, vec) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -219,7 +219,7 @@ pub enum NegotiationFields {
 
 impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -233,7 +233,7 @@ pub struct SingleNegotiationFields {
 
 impl_dlc_writeable!(SingleNegotiationFields, { (rounding_intervals, writeable) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -371,7 +371,7 @@ impl_dlc_writeable!(OfferDlc, {
 /// information is sufficient for the offering party to re-build the set of
 /// transactions representing the contract and its terms, and guarantees the offering
 /// party that they can safely provide signatures for their funding input.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -434,7 +434,7 @@ impl Type for AcceptDlc {
 
 /// Contains all the required signatures for the DLC transactions from the offering
 /// party.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
