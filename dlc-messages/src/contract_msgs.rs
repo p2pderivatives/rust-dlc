@@ -15,11 +15,11 @@ use oracle_msgs::OracleInfo;
 pub struct ContractOutcome {
     /// The outcome represented as a string.
     pub outcome: String,
-    /// The payout of the local party for the outcome.
-    pub local_payout: u64,
+    /// The payout of the offer party for the outcome.
+    pub offer_payout: u64,
 }
 
-impl_dlc_writeable!(ContractOutcome, {(outcome, string), (local_payout, writeable)});
+impl_dlc_writeable!(ContractOutcome, {(outcome, string), (offer_payout, writeable)});
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
