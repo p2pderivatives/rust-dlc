@@ -4,7 +4,7 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use oracle_msgs::OracleInfo;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
     any(test, feature = "serde"),
     derive(serde::Deserialize, serde::Serialize),
@@ -132,7 +132,7 @@ impl_dlc_writeable_enum!(
     ContractDescriptor, (0, EnumeratedContractDescriptor), (1, NumericOutcomeContractDescriptor);;
 );
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -217,7 +217,7 @@ impl_dlc_writeable_enum!(PayoutCurvePiece,
   (1, HyperbolaPayoutCurvePiece);;
 );
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -231,7 +231,7 @@ pub struct PolynomialPayoutCurvePiece {
 
 impl_dlc_writeable!(PolynomialPayoutCurvePiece, { (payout_points, vec) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -284,7 +284,7 @@ impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
     (d, float)
 });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -301,7 +301,7 @@ pub struct RoundingInterval {
 
 impl_dlc_writeable!(RoundingInterval, { (begin_interval, writeable), (rounding_mod, writeable) });
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),

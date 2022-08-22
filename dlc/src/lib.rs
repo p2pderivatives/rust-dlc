@@ -69,7 +69,7 @@ const ENABLE_LOCKTIME: u32 = 0xfffffffe;
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
 /// accepting the contract.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Payout {
     /// Payout for the offering party
@@ -78,7 +78,7 @@ pub struct Payout {
     pub accept: u64,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 /// Representation of a set of contiguous outcomes that share a single payout.
 pub struct RangePayout {
     /// The start of the range

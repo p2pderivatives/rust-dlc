@@ -28,7 +28,7 @@ pub mod segment_reader;
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Message indicating that an incoming message has been split and needs to be
 /// reconstructed.
 pub struct SegmentStart {
@@ -54,7 +54,7 @@ impl Type for SegmentStart {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Message providing a chunk of a split message.
 pub struct SegmentChunk {
     /// The data to be appended to previously received chunks.

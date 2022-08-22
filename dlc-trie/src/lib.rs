@@ -63,7 +63,7 @@ pub enum Node<TLeaf, TNode> {
     Node(TNode),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Eq)]
 /// Structure that stores the indexes at which the CET and adaptor signature
 /// related to a given outcome are located in CET and adaptor signatures arrays
 /// respectively.
