@@ -14,7 +14,8 @@ use secp256k1_zkp::{
     Verification, XOnlyPublicKey,
 };
 
-const BIP340_MIDSTATE: [u8; 32] = [
+///
+pub const BIP340_MIDSTATE: [u8; 32] = [
     0x9c, 0xec, 0xba, 0x11, 0x23, 0x92, 0x53, 0x81, 0x11, 0x67, 0x91, 0x12, 0xd1, 0x62, 0x7e, 0x0f,
     0x97, 0xc8, 0x75, 0x50, 0x00, 0x3c, 0xc7, 0x65, 0x90, 0xf6, 0x11, 0x64, 0x33, 0xe9, 0xb6, 0x6a,
 ];
@@ -94,7 +95,12 @@ extern "C" fn constant_nonce_fn(
     1
 }
 
-fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPublicKey) -> Vec<u8> {
+///
+pub fn create_schnorr_hash(
+    msg: &Message,
+    nonce: &XOnlyPublicKey,
+    pubkey: &XOnlyPublicKey,
+) -> Vec<u8> {
     let mut buf = Vec::<u8>::new();
     buf.extend(&nonce.serialize());
     buf.extend(&pubkey.serialize());
@@ -102,7 +108,8 @@ fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPubl
     BIP340Hash::hash(&buf).into_inner().to_vec()
 }
 
-fn schnorr_pubkey_to_pubkey(schnorr_pubkey: &XOnlyPublicKey) -> Result<PublicKey, Error> {
+///
+pub fn schnorr_pubkey_to_pubkey(schnorr_pubkey: &XOnlyPublicKey) -> Result<PublicKey, Error> {
     let mut buf = Vec::<u8>::with_capacity(33);
     buf.push(0x02);
     buf.extend(&schnorr_pubkey.serialize());
