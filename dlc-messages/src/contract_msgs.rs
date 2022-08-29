@@ -1,8 +1,8 @@
 //! Structure containing information about contract details.
 
+use crate::oracle_msgs::OracleInfo;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use crate::oracle_msgs::OracleInfo;
 
 #[derive(Clone, PartialEq, Debug)]
 #[cfg_attr(
@@ -16,10 +16,10 @@ pub struct ContractOutcome {
     /// The outcome represented as a string.
     pub outcome: String,
     /// The payout of the local party for the outcome.
-    pub local_payout: u64,
+    pub offer_payout: u64,
 }
 
-impl_dlc_writeable!(ContractOutcome, {(outcome, string), (local_payout, writeable)});
+impl_dlc_writeable!(ContractOutcome, {(outcome, string), (offer_payout, writeable)});
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
@@ -157,14 +157,14 @@ impl_dlc_writeable!(EnumeratedContractDescriptor, { (payouts, vec) });
 /// outcome event.
 pub struct NumericOutcomeContractDescriptor {
     /// The number of digits used by the oracle with smallest number of digits.
-    pub num_digits: u16,
+    pub nb_digits: u16,
     /// The function representing the payout depending on the outcomes.
     pub payout_function: PayoutFunction,
     /// The rounding intervals to be applied to the payouts.
     pub rounding_intervals: RoundingIntervals,
 }
 
-impl_dlc_writeable!(NumericOutcomeContractDescriptor, { (num_digits, writeable), (payout_function, writeable), (rounding_intervals, writeable) });
+impl_dlc_writeable!(NumericOutcomeContractDescriptor, { (nb_digits, writeable), (payout_function, writeable), (rounding_intervals, writeable) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(

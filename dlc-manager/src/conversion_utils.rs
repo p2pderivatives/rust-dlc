@@ -119,8 +119,8 @@ pub(crate) fn get_contract_info_and_announcements(
                     .map(|x| EnumerationPayout {
                         outcome: x.outcome.clone(),
                         payout: Payout {
-                            offer: x.local_payout,
-                            accept: total_collateral - x.local_payout,
+                            offer: x.offer_payout,
+                            accept: total_collateral - x.offer_payout,
                         },
                     })
                     .collect();
@@ -280,7 +280,7 @@ impl From<&EnumDescriptor> for EnumeratedContractDescriptor {
             .iter()
             .map(|x| ContractOutcome {
                 outcome: x.outcome.clone(),
-                local_payout: x.payout.offer,
+                offer_payout: x.payout.offer,
             })
             .collect();
         EnumeratedContractDescriptor { payouts }
@@ -290,7 +290,7 @@ impl From<&EnumDescriptor> for EnumeratedContractDescriptor {
 impl From<&NumericalDescriptor> for NumericOutcomeContractDescriptor {
     fn from(num_descriptor: &NumericalDescriptor) -> NumericOutcomeContractDescriptor {
         NumericOutcomeContractDescriptor {
-            num_digits: *num_descriptor
+            nb_digits: *num_descriptor
                 .oracle_numeric_infos
                 .nb_digits
                 .iter()
