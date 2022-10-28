@@ -4,8 +4,8 @@ use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
 use bitcoin::Txid;
 use dlc::{DlcTransactions, PartyParams};
+use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
-use secp256k1_zkp::Signature;
 
 use std::fmt::Write as _;
 

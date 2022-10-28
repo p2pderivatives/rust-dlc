@@ -12,8 +12,8 @@ chrono = {version = "0.4.19", features = ["serde"]}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {path = "../dlc-messages", features = ["use-serde"]}
 reqwest = {version = "0.11", features = ["blocking", "json"]}
-secp256k1-zkp = {version = "0.5.0"}
+secp256k1-zkp = {version = "0.7.0" }
 serde = {version = "*", features = ["derive"]}
 
 [dev-dependencies]
-mockito = "0.30.0"
+mockito = "0.31.0"

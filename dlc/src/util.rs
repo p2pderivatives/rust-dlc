@@ -1,11 +1,12 @@
 //! Utility functions not uniquely related to DLC
 
-use bitcoin::util::bip143::SigHashCache;
+use bitcoin::util::sighash::SighashCache;
 use bitcoin::{
-    blockdata::script::Builder, hash_types::PubkeyHash, util::address::Payload, Script,
-    SigHashType, Transaction, TxOut,
+    blockdata::script::Builder, hash_types::PubkeyHash, util::address::Payload, EcdsaSighashType,
+    Script, Transaction, TxOut, Witness,
 };
-use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Signing};
+use secp256k1_zkp::ecdsa::Signature;
+use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signing};
 
 /// Get a BIP143 (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
 /// signature hash with sighash all flag for a segwit transaction input as
@@ -16,17 +17,18 @@ pub(crate) fn get_sig_hash_msg(
     script_pubkey: &Script,
     value: u64,
 ) -> Message {
-    let sig_hash =
-        SigHashCache::new(tx).signature_hash(input_index, script_pubkey, value, SigHashType::All);
+    let sig_hash = SighashCache::new(tx)
+        .segwit_signature_hash(input_index, script_pubkey, value, EcdsaSighashType::All)
+        .unwrap();
     Message::from_slice(&sig_hash).unwrap()
 }
 
 /// Convert a raw signature to DER encoded and append the sighash type, to use
 /// a signature in a signature script
-pub(crate) fn finalize_sig(sig: &Signature, sig_hash_type: SigHashType) -> Vec<u8> {
+pub(crate) fn finalize_sig(sig: &Signature, sig_hash_type: EcdsaSighashType) -> Vec<u8> {
     [
         sig.serialize_der().as_ref(),
-        &[sig_hash_type.as_u32() as u8],
+        &[sig_hash_type.to_u32() as u8],
     ]
     .concat()
 }
@@ -41,7 +43,7 @@ pub fn get_raw_sig_for_tx_input<C: Signing>(
     sk: &SecretKey,
 ) -> Signature {
     let sig_hash_msg = get_sig_hash_msg(tx, input_index, script_pubkey, value);
-    secp.sign_low_r(&sig_hash_msg, sk)
+    secp.sign_ecdsa_low_r(&sig_hash_msg, sk)
 }
 
 /// Returns a DER encoded signature with appended sighash for the specified input
@@ -52,7 +54,7 @@ pub fn get_sig_for_tx_input<C: Signing>(
     input_index: usize,
     script_pubkey: &Script,
     value: u64,
-    sig_hash_type: SigHashType,
+    sig_hash_type: EcdsaSighashType,
     sk: &SecretKey,
 ) -> Vec<u8> {
     let sig = get_raw_sig_for_tx_input(secp, tx, input_index, script_pubkey, value, sk);
@@ -66,7 +68,7 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
     tx: &Transaction,
     input_index: usize,
     value: u64,
-    sig_hash_type: SigHashType,
+    sig_hash_type: EcdsaSighashType,
 ) -> Vec<u8> {
     let script_pubkey = get_pkh_script_pubkey_from_sk(secp, sk);
     get_sig_for_tx_input(
@@ -86,10 +88,8 @@ pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> u64 {
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {
     use bitcoin::hashes::*;
-    let pk = bitcoin::PublicKey {
-        compressed: true,
-        key: PublicKey::from_secret_key(secp, sk),
-    };
+    let secp_pk = PublicKey::from_secret_key(secp, sk);
+    let pk = bitcoin::PublicKey::new(secp_pk);
     let mut hash_engine = PubkeyHash::engine();
     pk.write_into(&mut hash_engine)
         .expect("Error writing hash.");
@@ -104,7 +104,7 @@ pub fn sign_p2wpkh_input<C: Signing>(
     sk: &SecretKey,
     tx: &mut Transaction,
     input_index: usize,
-    sig_hash_type: SigHashType,
+    sig_hash_type: EcdsaSighashType,
     value: u64,
 ) {
     tx.input[input_index].witness =
@@ -117,14 +117,14 @@ pub fn get_witness_for_p2wpkh_input<C: Signing>(
     sk: &SecretKey,
     tx: &Transaction,
     input_index: usize,
-    sig_hash_type: SigHashType,
+    sig_hash_type: EcdsaSighashType,
     value: u64,
-) -> Vec<Vec<u8>> {
+) -> Witness {
     let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type);
-    vec![
+    Witness::from_vec(vec![
         full_sig,
         PublicKey::from_secret_key(secp, sk).serialize().to_vec(),
-    ]
+    ])
 }
 
 /// Generates a signature for a given p2wsh transaction input using the given secret
@@ -147,28 +147,28 @@ pub fn sign_multi_sig_input<C: Signing>(
         input_index,
         script_pubkey,
         input_value,
-        SigHashType::All,
+        EcdsaSighashType::All,
         sk,
     );
 
     let own_pk = &PublicKey::from_secret_key(secp, sk);
 
-    let other_finalized_sig = finalize_sig(other_sig, SigHashType::All);
+    let other_finalized_sig = finalize_sig(other_sig, EcdsaSighashType::All);
 
     transaction.input[input_index].witness = if own_pk < other_pk {
-        vec![
+        Witness::from_vec(vec![
             Vec::new(),
             own_sig,
             other_finalized_sig,
             script_pubkey.to_bytes(),
-        ]
+        ])
     } else {
-        vec![
+        Witness::from_vec(vec![
             Vec::new(),
             other_finalized_sig,
             own_sig,
             script_pubkey.to_bytes(),
-        ]
+        ])
     };
 }
 

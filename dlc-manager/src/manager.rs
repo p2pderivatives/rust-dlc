@@ -14,7 +14,7 @@ use crate::utils::get_new_serial_id;
 use crate::ContractId;
 use bitcoin::{
     consensus::{Decodable, Encodable},
-    Address, Transaction,
+    Address, Transaction, Witness, XOnlyPublicKey,
 };
 use dlc::{DlcTransactions, PartyParams, TxInputInfo};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
@@ -23,7 +23,7 @@ use dlc_messages::{
     SignDlc, WitnessElement,
 };
 use log::{error, warn};
-use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
+use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
@@ -44,7 +44,7 @@ where
     O::Target: Oracle,
     T::Target: Time,
 {
-    oracles: HashMap<SchnorrPublicKey, O>,
+    oracles: HashMap<XOnlyPublicKey, O>,
     wallet: W,
     blockchain: B,
     store: S,
@@ -92,7 +92,7 @@ where
         wallet: W,
         blockchain: B,
         store: S,
-        oracles: HashMap<SchnorrPublicKey, O>,
+        oracles: HashMap<XOnlyPublicKey, O>,
         time: T,
     ) -> Self {
         Manager {
@@ -545,8 +545,7 @@ where
             .collect();
         input_serial_ids.sort_unstable();
 
-        // Vec<Witness>
-        let witnesses: Vec<Vec<Vec<u8>>> = offered_contract
+        let witnesses: Vec<Witness> = offered_contract
             .funding_inputs_info
             .iter()
             .map(|x| {
@@ -559,8 +558,8 @@ where
                             x.funding_input.input_serial_id
                         ))
                     })?;
-                let tx =
-                    Transaction::consensus_decode(&*x.funding_input.prev_tx).map_err(|_| {
+                let tx = Transaction::consensus_decode(&mut x.funding_input.prev_tx.as_slice())
+                    .map_err(|_| {
                         Error::InvalidParameters(
                             "Could not decode funding input previous tx parameter".to_string(),
                         )
@@ -584,6 +583,7 @@ where
             .into_iter()
             .map(|witness| {
                 let witness_elements = witness
+                    .to_vec()
                     .into_iter()
                     .map(|z| WitnessElement { witness: z })
                     .collect();
@@ -714,11 +714,13 @@ where
                     ))
                 })?;
 
-            fund_tx.input[input_index].witness = funding_signatures
-                .witness_elements
-                .iter()
-                .map(|x| x.witness.clone())
-                .collect();
+            fund_tx.input[input_index].witness = Witness::from_vec(
+                funding_signatures
+                    .witness_elements
+                    .iter()
+                    .map(|x| x.witness.clone())
+                    .collect(),
+            );
         }
 
         for funding_input_info in &accepted_contract.funding_inputs {
@@ -731,12 +733,14 @@ where
                         funding_input_info.funding_input.input_serial_id,
                     ))
                 })?;
-            let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx)
-                .map_err(|_| {
-                    Error::InvalidParameters(
-                        "Could not decode funding input previous tx parameter".to_string(),
-                    )
-                })?;
+            let tx = Transaction::consensus_decode(
+                &mut funding_input_info.funding_input.prev_tx.as_slice(),
+            )
+            .map_err(|_| {
+                Error::InvalidParameters(
+                    "Could not decode funding input previous tx parameter".to_string(),
+                )
+            })?;
             let vout = funding_input_info.funding_input.prev_tx_vout;
             let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
                 Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
@@ -1046,7 +1050,12 @@ where
 
     fn check_refund(&mut self, contract: &SignedContract) -> Result<(), Error> {
         // TODO(tibo): should check for confirmation of refund before updating state
-        if contract.accepted_contract.dlc_transactions.refund.lock_time as u64
+        if contract
+            .accepted_contract
+            .dlc_transactions
+            .refund
+            .lock_time
+            .0 as u64
             <= self.time.unix_time_now()
         {
             let offered_contract = &contract.accepted_contract.offered_contract;

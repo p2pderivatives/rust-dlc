@@ -4,12 +4,13 @@ use crate::ser_impls::{
     read_as_tlv, read_i32, read_schnorr_pubkey, read_schnorrsig, read_strings_u16, write_as_tlv,
     write_i32, write_schnorr_pubkey, write_schnorrsig, write_strings_u16,
 };
+use bitcoin::XOnlyPublicKey;
 use dlc::{Error, OracleInfo as DlcOracleInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
-use secp256k1_zkp::{Message, Secp256k1, Signing};
+use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
+use secp256k1_zkp::{Message, Secp256k1, Signing, Verification};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -59,7 +60,7 @@ impl OracleInfo {
     }
 
     /// Checks that the info satisfies the validity conditions.
-    pub fn validate<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
+    pub fn validate<C: Signing + Verification>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
         match self {
             OracleInfo::Single(s) => s.oracle_announcement.validate(secp)?,
             OracleInfo::Multi(m) => {
@@ -154,7 +155,7 @@ pub struct OracleAnnouncement {
     /// The signature enabling verifying the origin of the announcement.
     pub announcement_signature: SchnorrSignature,
     /// The public key of the oracle.
-    pub oracle_public_key: SchnorrPublicKey,
+    pub oracle_public_key: XOnlyPublicKey,
     /// The description of the event and attesting.
     pub oracle_event: OracleEvent,
 }
@@ -167,14 +168,14 @@ impl Type for OracleAnnouncement {
 
 impl OracleAnnouncement {
     /// Returns whether the announcement satisfy validity checks.
-    pub fn validate<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
+    pub fn validate<C: Verification>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
         let mut event_hex = Vec::new();
         self.oracle_event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let msg =
-            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
-        secp.schnorrsig_verify(&self.announcement_signature, &msg, &self.oracle_public_key)?;
+        let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&event_hex);
+
+        secp.verify_schnorr(&self.announcement_signature, &msg, &self.oracle_public_key)?;
         self.oracle_event.validate()
     }
 }
@@ -203,7 +204,7 @@ impl From<&OracleAnnouncement> for DlcOracleInfo {
 /// Information about an event and the way that the oracle will attest to it.
 pub struct OracleEvent {
     /// The nonces that the oracle will use to attest to the event outcome.
-    pub oracle_nonces: Vec<SchnorrPublicKey>,
+    pub oracle_nonces: Vec<XOnlyPublicKey>,
     /// The expected maturity of the contract.
     // TODO(tibo): should validate that with the contract maturity.
     pub event_maturity_epoch: u32,
@@ -307,7 +308,7 @@ impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
 /// An attestation from an oracle providing signatures over an outcome value.
 pub struct OracleAttestation {
     /// The public key of the oracle.
-    pub oracle_public_key: SchnorrPublicKey,
+    pub oracle_public_key: XOnlyPublicKey,
     /// The signatures over the event outcome.
     pub signatures: Vec<SchnorrSignature>,
     /// The set of strings representing the outcome value.
@@ -329,7 +330,8 @@ impl_dlc_writeable!(OracleAttestation, {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1_zkp::schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey};
+    use bitcoin::KeyPair;
+    use bitcoin::XOnlyPublicKey;
     use secp256k1_zkp::{rand::thread_rng, Message, SECP256K1};
 
     fn enum_descriptor() -> EnumEventDescriptor {
@@ -348,9 +350,9 @@ mod tests {
         }
     }
 
-    fn some_schnorr_pubkey() -> SchnorrPublicKey {
+    fn some_schnorr_pubkey() -> XOnlyPublicKey {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        SchnorrPublicKey::from_keypair(SECP256K1, &key_pair)
+        XOnlyPublicKey::from_keypair(&key_pair).0
     }
 
     fn digit_event(nb_nonces: usize) -> OracleEvent {
@@ -374,17 +376,15 @@ mod tests {
     #[test]
     fn valid_oracle_announcement_passes_validation_test() {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_pubkey = SchnorrPublicKey::from_keypair(SECP256K1, &key_pair);
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let events = [digit_event(10), enum_event(1)];
         for event in events {
             let mut event_hex = Vec::new();
             event
                 .write(&mut event_hex)
                 .expect("Error writing oracle event");
-            let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
-                &event_hex,
-            );
-            let sig = SECP256K1.schnorrsig_sign(&msg, &key_pair);
+            let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&event_hex);
+            let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
             let valid_announcement = OracleAnnouncement {
                 announcement_signature: sig,
                 oracle_public_key: oracle_pubkey,
@@ -400,17 +400,15 @@ mod tests {
     #[test]
     fn invalid_oracle_announcement_fails_validation_test() {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_pubkey = SchnorrPublicKey::from_keypair(SECP256K1, &key_pair);
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let events = [digit_event(9), enum_event(2)];
         for event in events {
             let mut event_hex = Vec::new();
             event
                 .write(&mut event_hex)
                 .expect("Error writing oracle event");
-            let msg = Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(
-                &event_hex,
-            );
-            let sig = SECP256K1.schnorrsig_sign(&msg, &key_pair);
+            let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&event_hex);
+            let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
             let invalid_announcement = OracleAnnouncement {
                 announcement_signature: sig,
                 oracle_public_key: oracle_pubkey,
@@ -426,15 +424,14 @@ mod tests {
     #[test]
     fn invalid_oracle_announcement_signature_fails_validation_test() {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_pubkey = SchnorrPublicKey::from_keypair(SECP256K1, &key_pair);
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let event = digit_event(10);
         let mut event_hex = Vec::new();
         event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let msg =
-            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&event_hex);
-        let sig = SECP256K1.schnorrsig_sign(&msg, &key_pair);
+        let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&event_hex);
+        let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
         let mut sig_hex = sig.as_ref().clone();
         sig_hex[10] += 1;
         let sig = SchnorrSignature::from_slice(&sig_hex).unwrap();

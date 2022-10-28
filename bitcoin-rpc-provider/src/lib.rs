@@ -122,26 +122,16 @@ impl Wallet for BitcoinCoreProvider {
 
     fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
         let sk = SecretKey::new(&mut thread_rng());
+        let network = self.get_network()?;
         self.client
-            .import_private_key(
-                &PrivateKey {
-                    compressed: true,
-                    network: self.get_network()?,
-                    key: sk,
-                },
-                None,
-                Some(false),
-            )
+            .import_private_key(&PrivateKey::new(sk, network), None, Some(false))
             .map_err(rpc_err_to_manager_err)?;
 
         Ok(sk)
     }
 
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
-        let b_pubkey = bitcoin::PublicKey {
-            compressed: true,
-            key: *pubkey,
-        };
+        let b_pubkey = bitcoin::PublicKey::new(*pubkey);
         let address =
             Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
 
@@ -149,7 +139,7 @@ impl Wallet for BitcoinCoreProvider {
             .client
             .dump_private_key(&address)
             .map_err(rpc_err_to_manager_err)?;
-        Ok(pk.key)
+        Ok(pk.inner)
     }
 
     fn sign_tx_input(
@@ -173,8 +163,8 @@ impl Wallet for BitcoinCoreProvider {
             .client
             .sign_raw_transaction_with_wallet(&*tx, Some(&[input]), None)
             .map_err(rpc_err_to_manager_err)?;
-        let signed_tx =
-            Transaction::consensus_decode(&*sign_result.hex).map_err(enc_err_to_manager_err)?;
+        let signed_tx = Transaction::consensus_decode(&mut sign_result.hex.as_slice())
+            .map_err(enc_err_to_manager_err)?;
 
         tx.input[input_index].script_sig = signed_tx.input[input_index].script_sig.clone();
         tx.input[input_index].witness = signed_tx.input[input_index].witness.clone();
@@ -197,7 +187,7 @@ impl Wallet for BitcoinCoreProvider {
             .map(|x| {
                 Ok(UtxoWrap(Utxo {
                     tx_out: TxOut {
-                        value: x.amount.as_sat(),
+                        value: x.amount.to_sat(),
                         script_pubkey: x.script_pub_key.clone(),
                     },
                     outpoint: OutPoint {
@@ -233,7 +223,8 @@ impl Wallet for BitcoinCoreProvider {
             .client
             .get_transaction(tx_id, None)
             .map_err(rpc_err_to_manager_err)?;
-        let tx = Transaction::consensus_decode(&*tx_info.hex).or(Err(Error::BitcoinError))?;
+        let tx = Transaction::consensus_decode(&mut tx_info.hex.as_slice())
+            .or(Err(Error::BitcoinError))?;
         Ok(tx)
     }
 

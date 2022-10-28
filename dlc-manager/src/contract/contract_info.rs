@@ -8,8 +8,7 @@ use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::{DlcTrie, RangeInfo};
 use secp256k1_zkp::{
-    bitcoin_hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
-    Verification,
+    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
 };
 
 pub(super) type OracleIndexAndPrefixLength = Vec<(usize, usize)>;
@@ -288,7 +287,7 @@ impl ContractInfo {
                         for nonce in nonces {
                             let mut points = Vec::with_capacity(base);
                             for j in 0..base {
-                                let msg = Message::from_hashed_data::<sha256::Hash>(
+                                let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(
                                     j.to_string().as_bytes(),
                                 );
                                 let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(

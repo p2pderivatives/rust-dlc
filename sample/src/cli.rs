@@ -4,7 +4,7 @@ use crate::DlcManager;
 use crate::DlcMessageHandler;
 use crate::PeerManager;
 use bitcoin::network::constants::Network;
-use bitcoin::secp256k1::key::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::contract::{ClosedContract, Contract};
 use dlc_manager::Storage;

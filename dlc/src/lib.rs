@@ -22,11 +22,14 @@ extern crate serde;
 use bitcoin::blockdata::{
     opcodes,
     script::{Builder, Script},
-    transaction::{OutPoint, Transaction, TxIn, TxOut},
+    transaction::{OutPoint, Sequence, Transaction, TxIn, TxOut},
+    witness::Witness,
 };
-use secp256k1_zkp::schnorrsig::{PublicKey as SchnorrPublicKey, Signature as SchnorrSignature};
-use secp256k1_zkp::EcdsaAdaptorSignature;
-use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Signature, Verification};
+use bitcoin::{PackedLockTime, XOnlyPublicKey};
+use secp256k1_zkp::ecdsa::Signature;
+use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
+use secp256k1_zkp::{EcdsaAdaptorSignature, Scalar};
+use secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey, Verification};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -61,10 +64,10 @@ pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
 // Setting the nSequence for every input of a transaction to this value disables
 // both RBF and nLockTime usage.
-const DISABLE_LOCKTIME: u32 = 0xffffffff;
+const DISABLE_LOCKTIME: Sequence = Sequence(0xffffffff);
 // Setting the nSequence for every input of a transaction to this value disables
 // RBF but enables nLockTime usage.
-const ENABLE_LOCKTIME: u32 = 0xfffffffe;
+const ENABLE_LOCKTIME: Sequence = Sequence(0xfffffffe);
 
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
@@ -156,9 +159,9 @@ pub struct TxInputInfo {
 #[derive(Clone)]
 pub struct OracleInfo {
     /// The public key of the oracle.
-    pub public_key: SchnorrPublicKey,
+    pub public_key: XOnlyPublicKey,
     /// The nonces that the oracle will use to attest to the event.
-    pub nonces: Vec<SchnorrPublicKey>,
+    pub nonces: Vec<XOnlyPublicKey>,
 }
 
 /// An error code.
@@ -273,7 +276,7 @@ impl PartyParams {
         Ok((change_output, fund_fee, cet_or_refund_fee))
     }
 
-    fn get_unsigned_tx_inputs_and_serial_ids(&self, sequence: u32) -> (Vec<TxIn>, Vec<u64>) {
+    fn get_unsigned_tx_inputs_and_serial_ids(&self, sequence: Sequence) -> (Vec<TxIn>, Vec<u64>) {
         let mut tx_ins = Vec::with_capacity(self.inputs.len());
         let mut serial_ids = Vec::with_capacity(self.inputs.len());
 
@@ -282,7 +285,7 @@ impl PartyParams {
                 previous_output: input.outpoint,
                 script_sig: util::redeem_script_to_script_sig(&input.redeem_script),
                 sequence,
-                witness: Vec::new(),
+                witness: Witness::new(),
             };
             tx_ins.push(tx_in);
             serial_ids.push(input.serial_id);
@@ -338,7 +341,7 @@ pub fn create_dlc_transactions(
             + accept_fund_fee
     );
 
-    fn get_sequence(lock_time: u32) -> u32 {
+    fn get_sequence(lock_time: u32) -> Sequence {
         if lock_time == 0 {
             DISABLE_LOCKTIME
         } else {
@@ -380,7 +383,7 @@ pub fn create_dlc_transactions(
 
     let fund_tx_in = TxIn {
         previous_output: fund_outpoint,
-        witness: Vec::new(),
+        witness: Witness::new(),
         script_sig: Script::new(),
         sequence: get_sequence(cet_lock_time),
     };
@@ -439,7 +442,7 @@ pub fn create_cet(
 
     Transaction {
         version: TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
     }
@@ -522,7 +525,7 @@ pub fn create_funding_transaction(
 
     Transaction {
         version: TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input,
         output,
     }
@@ -538,7 +541,7 @@ pub fn create_refund_transaction(
     let output = util::discard_dust(vec![offer_output, accept_output], DUST_LIMIT);
     Transaction {
         version: TX_VERSION,
-        lock_time: locktime,
+        lock_time: PackedLockTime(locktime),
         input: vec![funding_input],
         output,
     }
@@ -700,12 +703,14 @@ fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKe
             Err(err) => Err(err),
         })
         .collect::<Result<Vec<&[u8]>, Error>>()?;
-    let mut secret = SecretKey::from_slice(s_values[0])?;
-    for s in s_values.iter().skip(1) {
-        secret.add_assign(s)?;
-    }
+    let secret = SecretKey::from_slice(s_values[0])?;
 
-    Ok(secret)
+    let result = s_values.iter().skip(1).fold(secret, |accum, s| {
+        let sec = SecretKey::from_slice(s).unwrap();
+        accum.add_tweak(&Scalar::from(sec)).unwrap()
+    });
+
+    Ok(result)
 }
 
 /// Sign the given cet using own private key, adapt the counter party signature
@@ -789,7 +794,7 @@ pub fn verify_tx_input_sig<V: Verification>(
     pk: &PublicKey,
 ) -> Result<(), Error> {
     let sig_hash_msg = util::get_sig_hash_msg(tx, input_index, script_pubkey, value);
-    secp.verify(&sig_hash_msg, signature, pk)?;
+    secp.verify_ecdsa(&sig_hash_msg, signature, pk)?;
     Ok(())
 }
 
@@ -797,13 +802,13 @@ pub fn verify_tx_input_sig<V: Verification>(
 mod tests {
     use super::*;
     use bitcoin::blockdata::script::Script;
-    use bitcoin::blockdata::transaction::{OutPoint, SigHashType};
+    use bitcoin::blockdata::transaction::{EcdsaSighashType, OutPoint};
     use bitcoin::consensus::encode::Encodable;
     use bitcoin::hashes::hex::FromHex;
+    use bitcoin::KeyPair;
     use bitcoin::{network::constants::Network, Address, Txid};
     use secp256k1_zkp::{
         rand::{Rng, RngCore},
-        schnorrsig::KeyPair,
         PublicKey, Secp256k1, SecretKey, Signing,
     };
     use std::fmt::Write;
@@ -815,8 +820,8 @@ mod tests {
         let txin = TxIn {
             previous_output: OutPoint::default(),
             script_sig: Script::new(),
-            sequence,
-            witness: Vec::new(),
+            sequence: Sequence(sequence),
+            witness: Witness::new(),
         };
         inputs.push(txin);
         inputs
@@ -847,8 +852,8 @@ mod tests {
         let funding = TxIn {
             previous_output: OutPoint::default(),
             script_sig: Script::new(),
-            sequence: 3,
-            witness: Vec::new(),
+            sequence: Sequence(3),
+            witness: Witness::new(),
         };
 
         (offer, accept, funding)
@@ -860,10 +865,10 @@ mod tests {
 
         let refund_transaction = create_refund_transaction(offer, accept, funding, 0);
         assert_eq!(2, refund_transaction.version);
-        assert_eq!(0, refund_transaction.lock_time);
+        assert_eq!(0, refund_transaction.lock_time.0);
         assert_eq!(DUST_LIMIT + 1, refund_transaction.output[0].value);
         assert_eq!(DUST_LIMIT + 2, refund_transaction.output[1].value);
-        assert_eq!(3, refund_transaction.input[0].sequence);
+        assert_eq!(3, refund_transaction.input[0].sequence.0);
     }
 
     #[test]
@@ -902,8 +907,8 @@ mod tests {
             0,
         );
 
-        assert_eq!(transaction.input[0].sequence, 0);
-        assert_eq!(transaction.input[1].sequence, 1);
+        assert_eq!(transaction.input[0].sequence.0, 0);
+        assert_eq!(transaction.input[1].sequence.0, 1);
 
         assert_eq!(transaction.output[0].value, total_collateral);
         assert_eq!(transaction.output[1].value, change);
@@ -981,8 +986,8 @@ mod tests {
                 vout: 0,
             },
             script_sig: Script::new(),
-            sequence: 0xffffffff,
-            witness: vec![Script::new().to_bytes()],
+            sequence: Sequence(0xffffffff),
+            witness: Witness::from_vec(vec![Script::new().to_bytes()]),
         };
 
         let accept_input = TxIn {
@@ -994,8 +999,8 @@ mod tests {
                 vout: 0,
             },
             script_sig: Script::new(),
-            sequence: 0xffffffff,
-            witness: vec![Script::new().to_bytes()],
+            sequence: Sequence(0xffffffff),
+            witness: Witness::from_vec(vec![Script::new().to_bytes()]),
         };
         let offer_fund_sk =
             SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001")
@@ -1037,7 +1042,7 @@ mod tests {
             &offer_input_sk,
             &mut fund_tx,
             0,
-            SigHashType::All,
+            EcdsaSighashType::All,
             input_amount,
         );
 
@@ -1046,7 +1051,7 @@ mod tests {
             &accept_input_sk,
             &mut fund_tx,
             1,
-            SigHashType::All,
+            EcdsaSighashType::All,
             input_amount,
         );
 
@@ -1064,11 +1069,7 @@ mod tests {
         secp: &Secp256k1<C>,
         rng: &mut R,
     ) -> Script {
-        let sk = bitcoin::PrivateKey {
-            key: SecretKey::new(rng),
-            network: Network::Testnet,
-            compressed: true,
-        };
+        let sk = bitcoin::PrivateKey::new(SecretKey::new(rng), Network::Testnet);
         let pk = bitcoin::PublicKey::from_private_key(secp, &sk);
         Address::p2wpkh(&pk, Network::Testnet)
             .unwrap()
@@ -1168,9 +1169,9 @@ mod tests {
         .unwrap();
 
         // Assert
-        assert_eq!(10, dlc_txs.fund.lock_time);
-        assert_eq!(100, dlc_txs.refund.lock_time);
-        assert!(dlc_txs.cets.iter().all(|x| x.lock_time == 10));
+        assert_eq!(10, dlc_txs.fund.lock_time.0);
+        assert_eq!(100, dlc_txs.refund.lock_time.0);
+        assert!(dlc_txs.cets.iter().all(|x| x.lock_time.0 == 10));
     }
 
     #[test]
@@ -1207,9 +1208,10 @@ mod tests {
                     .map(|y| {
                         (0..NB_DIGITS)
                             .map(|z| {
-                                Message::from_hashed_data::<
-                                    secp256k1_zkp::bitcoin_hashes::sha256::Hash,
-                                >(&[((y + x + z) as u8)])
+                                Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&[((y
+                                    + x
+                                    + z)
+                                    as u8)])
                             })
                             .collect()
                     })
@@ -1218,17 +1220,16 @@ mod tests {
             .collect();
 
         for i in 0..NB_ORACLES {
-            let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(&mut rng);
-            let mut nonces: Vec<SchnorrPublicKey> = Vec::with_capacity(NB_DIGITS);
+            let oracle_kp = KeyPair::new(&secp, &mut rng);
+            let oracle_pubkey = oracle_kp.x_only_public_key().0;
+            let mut nonces: Vec<XOnlyPublicKey> = Vec::with_capacity(NB_DIGITS);
             let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(NB_DIGITS);
             oracle_sigs.push(Vec::with_capacity(NB_DIGITS));
             for j in 0..NB_DIGITS {
                 let mut sk_nonce = [0u8; 32];
                 rng.fill_bytes(&mut sk_nonce);
-                let oracle_r_kp =
-                    secp256k1_zkp::schnorrsig::KeyPair::from_seckey_slice(&secp, &sk_nonce)
-                        .unwrap();
-                let nonce = SchnorrPublicKey::from_keypair(&secp, &oracle_r_kp);
+                let oracle_r_kp = KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
+                let nonce = XOnlyPublicKey::from_keypair(&oracle_r_kp).0;
                 let sig = secp_utils::schnorrsig_sign_with_nonce(
                     &secp,
                     &messages[0][i][j],

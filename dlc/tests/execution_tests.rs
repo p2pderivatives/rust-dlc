@@ -6,7 +6,7 @@ extern crate dlc;
 extern crate dlc_trie;
 extern crate secp256k1_zkp;
 
-use bitcoin::{OutPoint, Script, SigHashType};
+use bitcoin::{EcdsaSighashType, KeyPair, OutPoint, Script, XOnlyPublicKey};
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::{Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
@@ -14,10 +14,9 @@ use dlc::{DlcTransactions, OracleInfo, PartyParams, Payout, RangePayout, TxInput
 use dlc_trie::digit_decomposition::{decompose_value, pad_range_payouts};
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::DlcTrie;
-use secp256k1_zkp::bitcoin_hashes::*;
 use secp256k1_zkp::{
     rand::{seq::SliceRandom, thread_rng, Rng, RngCore},
-    schnorrsig::{KeyPair, PublicKey as SchnorrPublicKey, Signature as SchnorrSignature},
+    schnorr::Signature as SchnorrSignature,
     EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Signing,
 };
 
@@ -78,11 +77,10 @@ fn get_base_test_msgs(
                 .map(|y| {
                     (0..nb_digits)
                         .map(|z| {
-                            Message::from_hashed_data::<secp256k1_zkp::bitcoin_hashes::sha256::Hash>(&[((y
+                            Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&[((y
                                 + x
                                 + z)
-                                as u8)
-                                ])
+                                as u8)])
                         })
                         .collect()
                 })
@@ -122,15 +120,15 @@ fn get_oracle_infos<C: Signing, R: Rng + ?Sized>(
     let mut oracle_infos: Vec<OraclePrivInfo> = Vec::with_capacity(nb_oracles);
 
     for _ in 0..nb_oracles {
-        let (oracle_kp, oracle_pubkey) = secp.generate_schnorrsig_keypair(rng);
-        let mut nonces: Vec<SchnorrPublicKey> = Vec::with_capacity(nb_digits);
+        let oracle_kp = KeyPair::new(secp, rng);
+        let oracle_pubkey = oracle_kp.x_only_public_key().0;
+        let mut nonces: Vec<XOnlyPublicKey> = Vec::with_capacity(nb_digits);
         let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(nb_digits);
         for _ in 0..nb_digits {
             let mut sk_nonce = [0u8; 32];
             rng.fill_bytes(&mut sk_nonce);
-            let oracle_r_kp =
-                secp256k1_zkp::schnorrsig::KeyPair::from_seckey_slice(secp, &sk_nonce).unwrap();
-            let nonce = SchnorrPublicKey::from_keypair(secp, &oracle_r_kp);
+            let oracle_r_kp = KeyPair::from_seckey_slice(secp, &sk_nonce).unwrap();
+            let nonce = XOnlyPublicKey::from_keypair(&oracle_r_kp).0;
             nonces.push(nonce);
             sk_nonces.push(sk_nonce);
         }
@@ -181,7 +179,7 @@ fn generate_dlc_parameters<C: secp256k1_zkp::Signing>(
     let fund_address = rpc
         .get_new_address(None, Some(AddressType::Bech32))
         .unwrap();
-    let fund_priv_key = rpc.dump_private_key(&fund_address).unwrap().key;
+    let fund_priv_key = rpc.dump_private_key(&fund_address).unwrap().inner;
     let mut utxos = rpc
         .list_unspent(None, None, None, Some(false), None)
         .unwrap();
@@ -189,7 +187,7 @@ fn generate_dlc_parameters<C: secp256k1_zkp::Signing>(
     let input_priv_key = {
         let address = utxo.address.clone().unwrap();
         let privkey = rpc.dump_private_key(&address).unwrap();
-        privkey.key
+        privkey.inner
     };
 
     PartyTestParams {
@@ -208,7 +206,7 @@ fn generate_dlc_parameters<C: secp256k1_zkp::Signing>(
                 redeem_script: Script::new(),
                 serial_id: rng.next_u64(),
             }],
-            input_amount: utxo.amount.as_sat(),
+            input_amount: utxo.amount.to_sat(),
             collateral,
         },
         fund_priv_key,
@@ -307,7 +305,9 @@ fn integration_tests_decomposed_common(
             for nonce in nonces {
                 let mut points = Vec::with_capacity(base);
                 for j in 0..base {
-                    let msg = Message::from_hashed_data::<sha256::Hash>(j.to_string().as_bytes());
+                    let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(
+                        j.to_string().as_bytes(),
+                    );
                     let sig_point =
                         dlc::secp_utils::schnorrsig_compute_sig_point(&secp, pubkey, nonce, &msg)
                             .unwrap();
@@ -315,10 +315,9 @@ fn integration_tests_decomposed_common(
                 }
                 d_points.push(points);
             }
-            Ok(d_points)
+            d_points
         })
-        .collect::<Result<Vec<Vec<Vec<PublicKey>>>, Error>>()
-        .unwrap();
+        .collect::<Vec<Vec<Vec<PublicKey>>>>();
 
     let funding_script_pubkey = dlc::make_funding_redeemscript(
         &offer_params.params.fund_pubkey,
@@ -411,7 +410,9 @@ fn integration_tests_decomposed_common(
             .iter()
             .enumerate()
             .map(|(i, x)| {
-                let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
+                let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(
+                    x.to_string().as_bytes(),
+                );
                 dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &secp,
                     &msg,
@@ -450,7 +451,9 @@ fn integration_tests_decomposed_common(
                 .iter()
                 .enumerate()
                 .map(|(i, x)| {
-                    let msg = Message::from_hashed_data::<sha256::Hash>(x.to_string().as_bytes());
+                    let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(
+                        x.to_string().as_bytes(),
+                    );
                     dlc::secp_utils::schnorrsig_sign_with_nonce(
                         &secp,
                         &msg,
@@ -656,7 +659,7 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
             .iter()
             .position(|&x| x == test_params.offer_params.params.inputs[0].serial_id)
             .unwrap(),
-        SigHashType::All,
+        EcdsaSighashType::All,
         test_params.offer_params.params.input_amount,
     );
 
@@ -668,7 +671,7 @@ fn integration_tests_common<C: Signing>(test_params: &mut TestParams<C>, test_ca
             .iter()
             .position(|&x| x == test_params.accept_params.params.inputs[0].serial_id)
             .unwrap(),
-        SigHashType::All,
+        EcdsaSighashType::All,
         test_params.accept_params.params.input_amount,
     );
 

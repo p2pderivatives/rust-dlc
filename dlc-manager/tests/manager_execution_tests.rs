@@ -33,7 +33,7 @@ use lightning::ln::wire::Type;
 use lightning::util::ser::Writeable;
 use mocks::mock_oracle_provider::MockOracle;
 use secp256k1_zkp::rand::{seq::SliceRandom, thread_rng, RngCore};
-use secp256k1_zkp::{EcdsaAdaptorSignature, Signature};
+use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature};
 use serde_json::{from_str, to_writer_pretty};
 use std::collections::HashMap;
 use std::sync::{

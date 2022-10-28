@@ -63,5 +63,5 @@ pub fn tx_to_string(tx: &Transaction) -> String {
 /// Panics if given invalid hex or data.
 pub fn tx_from_string(tx_str: &str) -> Transaction {
     let tx_hex = str_to_hex(tx_str);
-    Transaction::consensus_decode(&tx_hex[..]).unwrap()
+    Transaction::consensus_decode(&mut tx_hex.as_slice()).unwrap()
 }

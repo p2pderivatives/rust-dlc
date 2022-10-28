@@ -11,7 +11,7 @@ extern crate test;
 #[cfg(all(test, feature = "unstable"))]
 mod benches {
 
-    use bitcoin::{Script, Transaction};
+    use bitcoin::{KeyPair, Script, Transaction};
     use bitcoin_test_utils::tx_from_string;
     use dlc::*;
     use rayon::prelude::*;
@@ -28,10 +28,13 @@ mod benches {
     const ALL_BASE: usize = 2;
 
     fn generate_oracle_info(nb_nonces: usize) -> OracleInfo {
-        let public_key = SECP256K1.generate_schnorrsig_keypair(&mut thread_rng()).1;
+        let oracle_kp = KeyPair::new(SECP256K1, &mut thread_rng());
+        let public_key = oracle_kp.x_only_public_key().0;
         let mut nonces = Vec::with_capacity(nb_nonces);
         for _ in 0..nb_nonces {
-            nonces.push(SECP256K1.generate_schnorrsig_keypair(&mut thread_rng()).1);
+            let kp = KeyPair::new(SECP256K1, &mut thread_rng());
+            let public_key = kp.x_only_public_key().0;
+            nonces.push(public_key);
         }
 
         OracleInfo { public_key, nonces }

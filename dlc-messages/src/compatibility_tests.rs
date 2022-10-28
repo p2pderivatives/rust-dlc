@@ -17,7 +17,7 @@ use lightning::ln::wire::{write, Encode};
 use lightning::util::ser::Writeable;
 use secp256k1::{
     ecdsa_adaptor::{AdaptorProof, AdaptorSignature},
-    schnorrsig::Signature as SchnorrSignature,
+    schnorr::Signature as SchnorrSignature,
     Message, PublicKey, Secp256k1, SecretKey, Signature, Signing,
 };
 use std::str::FromStr;

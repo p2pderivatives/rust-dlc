@@ -4,6 +4,7 @@ mod hex_utils;
 
 use disk::FilesystemLogger;
 
+use bitcoin::hashes::hex::ToHex;
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
@@ -18,10 +19,12 @@ use std::collections::hash_map::HashMap;
 use std::env;
 use std::fs;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 pub(crate) type PeerManager = LdkPeerManager<
     SocketDescriptor,
     Arc<ErroringMessageHandler>,
+    Arc<IgnoringMessageHandler>,
     Arc<IgnoringMessageHandler>,
     Arc<FilesystemLogger>,
     Arc<DlcMessageHandler>,
@@ -99,7 +102,7 @@ async fn main() {
         sk_str.parse().expect("Error parsing secret key file")
     } else {
         let sk = SecretKey::new(&mut thread_rng());
-        let sk_str = sk.to_string();
+        let sk_str = sk.secret_bytes().to_hex();
         fs::write(sk_path, sk_str).expect("Error writing secret key file.");
         sk
     };
@@ -111,13 +114,19 @@ async fn main() {
         PublicKey::from_secret_key(&Secp256k1::new(), &sk)
     );
 
+    let time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
+
     // The peer manager helps us establish connections and communicate with our peers.
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         MessageHandler {
             chan_handler: Arc::new(ErroringMessageHandler::new()),
             route_handler: Arc::new(IgnoringMessageHandler {}),
+            onion_message_handler: Arc::new(IgnoringMessageHandler {}),
         },
         sk,
+        time.as_secs() as u32,
         &ephemeral_bytes,
         logger.clone(),
         dlc_message_handler.clone(),
