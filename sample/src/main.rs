@@ -18,10 +18,12 @@ use std::collections::hash_map::HashMap;
 use std::env;
 use std::fs;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 pub(crate) type PeerManager = LdkPeerManager<
     SocketDescriptor,
     Arc<ErroringMessageHandler>,
+    Arc<IgnoringMessageHandler>,
     Arc<IgnoringMessageHandler>,
     Arc<FilesystemLogger>,
     Arc<DlcMessageHandler>,
@@ -116,13 +118,19 @@ async fn main() {
         PublicKey::from_secret_key(&Secp256k1::new(), &sk)
     );
 
+    let time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
+
     // The peer manager helps us establish connections and communicate with our peers.
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         MessageHandler {
             chan_handler: Arc::new(ErroringMessageHandler::new()),
             route_handler: Arc::new(IgnoringMessageHandler {}),
+            onion_message_handler: Arc::new(IgnoringMessageHandler {}),
         },
         sk,
+        time.as_secs() as u32,
         &ephemeral_bytes,
         logger.clone(),
         dlc_message_handler.clone(),

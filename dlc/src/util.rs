@@ -1,21 +1,21 @@
 //! Utility functions not uniquely related to DLC
 
 use bitcoin::util::sighash::SighashCache;
-use bitcoin::Witness;
 use bitcoin::{
     blockdata::script::Builder, hash_types::PubkeyHash, util::address::Payload, EcdsaSighashType,
     Script, Transaction, TxOut,
 };
+use bitcoin::{Sequence, Witness};
 use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::Error;
 
 // Setting the nSequence for every input of a transaction to this value disables
 // both RBF and nLockTime usage.
-pub(crate) const DISABLE_LOCKTIME: u32 = 0xffffffff;
+pub(crate) const DISABLE_LOCKTIME: Sequence = Sequence(0xffffffff);
 // Setting the nSequence for every input of a transaction to this value disables
 // RBF but enables nLockTime usage.
-pub(crate) const ENABLE_LOCKTIME: u32 = 0xfffffffe;
+pub(crate) const ENABLE_LOCKTIME: Sequence = Sequence(0xfffffffe);
 
 /// Get a BIP143 (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
 /// signature hash with sighash all flag for a segwit transaction input as
@@ -222,7 +222,7 @@ pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
     txs.into_iter().filter(|x| x.value >= dust_limit).collect()
 }
 
-pub(crate) fn get_sequence(lock_time: u32) -> u32 {
+pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
     if lock_time == 0 {
         DISABLE_LOCKTIME
     } else {

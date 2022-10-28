@@ -10,8 +10,8 @@ use secp256k1_sys::{
 use secp256k1_zkp::hashes::Hash;
 use secp256k1_zkp::hashes::*;
 use secp256k1_zkp::{
-    schnorr::Signature as SchnorrSignature, KeyPair, Message, PublicKey, Secp256k1, Signing,
-    Verification, XOnlyPublicKey,
+    schnorr::Signature as SchnorrSignature, KeyPair, Message, PublicKey, Scalar, Secp256k1,
+    Signing, Verification, XOnlyPublicKey,
 };
 
 const BIP340_MIDSTATE: [u8; 32] = [
@@ -63,10 +63,11 @@ pub fn schnorrsig_compute_sig_point<C: Verification>(
     message: &Message,
 ) -> Result<PublicKey, Error> {
     let hash = create_schnorr_hash(message, nonce, pubkey);
-    let mut pk = schnorr_pubkey_to_pubkey(pubkey)?;
-    pk.mul_assign(secp, &hash)?;
+    let pk = schnorr_pubkey_to_pubkey(pubkey)?;
+    let scalar = Scalar::from_be_bytes(hash).unwrap();
+    let tweaked = pk.mul_tweak(secp, &scalar)?;
     let npk = schnorr_pubkey_to_pubkey(nonce)?;
-    Ok(npk.combine(&pk)?)
+    Ok(npk.combine(&tweaked)?)
 }
 
 /// Decompose a bip340 signature into a nonce and a secret key (as byte array)
@@ -93,12 +94,12 @@ extern "C" fn constant_nonce_fn(
     1
 }
 
-fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPublicKey) -> Vec<u8> {
+fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPublicKey) -> [u8; 32] {
     let mut buf = Vec::<u8>::new();
     buf.extend(&nonce.serialize());
     buf.extend(&pubkey.serialize());
     buf.extend(msg.as_ref().to_vec());
-    BIP340Hash::hash(&buf).into_inner().to_vec()
+    BIP340Hash::hash(&buf).into_inner()
 }
 
 fn schnorr_pubkey_to_pubkey(schnorr_pubkey: &XOnlyPublicKey) -> Result<PublicKey, Error> {

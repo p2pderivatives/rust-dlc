@@ -36,7 +36,7 @@ impl MockOracle {
 
     pub fn from_secret_key(sk: &SecretKey) -> Self {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::from_secret_key(&secp, *sk);
+        let key_pair = KeyPair::from_secret_key(&secp, sk);
 
         MockOracle {
             secp,
@@ -56,7 +56,7 @@ impl Default for MockOracle {
 
 impl Oracle for MockOracle {
     fn get_public_key(&self) -> XOnlyPublicKey {
-        XOnlyPublicKey::from_keypair(&self.key_pair)
+        XOnlyPublicKey::from_keypair(&self.key_pair).0
     }
 
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
@@ -95,7 +95,10 @@ impl MockOracle {
             .map(|x| KeyPair::from_seckey_slice(&self.secp, x.as_ref()).unwrap())
             .collect();
 
-        let nonces = key_pairs.iter().map(XOnlyPublicKey::from_keypair).collect();
+        let nonces = key_pairs
+            .iter()
+            .map(|k| XOnlyPublicKey::from_keypair(k).0)
+            .collect();
 
         self.nonces.insert(event_id.to_string(), priv_nonces);
 

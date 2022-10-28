@@ -75,7 +75,7 @@ pub fn get_tx_input_infos(
     let mut inputs = Vec::new();
 
     for fund_input in funding_inputs {
-        let tx = Transaction::consensus_decode(&*fund_input.prev_tx)?;
+        let tx = Transaction::consensus_decode(&mut fund_input.prev_tx.as_slice())?;
         let vout = fund_input.prev_tx_vout;
         let tx_out = tx
             .output

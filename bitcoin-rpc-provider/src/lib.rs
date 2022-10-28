@@ -130,7 +130,7 @@ fn query_fee_estimate(
     let resp = client.estimate_smart_fee(conf_target, Some(estimate_mode))?;
     let res = match resp.fee_rate {
         Some(feerate) => std::cmp::max(
-            (feerate.as_btc() * 100_000_000.0 / 4.0).round() as u32,
+            (feerate.to_btc() * 100_000_000.0 / 4.0).round() as u32,
             MIN_FEERATE,
         ),
         None => MIN_FEERATE,
@@ -196,8 +196,8 @@ impl Signer for BitcoinCoreProvider {
             .unwrap()
             .sign_raw_transaction_with_wallet(&*tx, Some(&[input]), None)
             .map_err(rpc_err_to_manager_err)?;
-        let signed_tx =
-            Transaction::consensus_decode(&*sign_result.hex).map_err(enc_err_to_manager_err)?;
+        let signed_tx = Transaction::consensus_decode(&mut sign_result.hex.as_slice())
+            .map_err(enc_err_to_manager_err)?;
 
         tx.input[input_index].script_sig = signed_tx.input[input_index].script_sig.clone();
         tx.input[input_index].witness = signed_tx.input[input_index].witness.clone();
@@ -250,7 +250,7 @@ impl Wallet for BitcoinCoreProvider {
             .map(|x| {
                 Ok(UtxoWrap(Utxo {
                     tx_out: TxOut {
-                        value: x.amount.as_sat(),
+                        value: x.amount.to_sat(),
                         script_pubkey: x.script_pub_key.clone(),
                     },
                     outpoint: OutPoint {
@@ -290,7 +290,8 @@ impl Wallet for BitcoinCoreProvider {
             .unwrap()
             .get_transaction(tx_id, None)
             .map_err(rpc_err_to_manager_err)?;
-        let tx = Transaction::consensus_decode(&*tx_info.hex).or(Err(Error::BitcoinError))?;
+        let tx = Transaction::consensus_decode(&mut tx_info.hex.as_slice())
+            .or(Err(Error::BitcoinError))?;
         Ok(tx)
     }
 

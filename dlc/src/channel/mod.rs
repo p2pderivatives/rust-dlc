@@ -6,10 +6,10 @@ use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, Party
 
 use super::Error;
 use bitcoin::{
-    hashes::hash160::Hash, Address, EcdsaSig, OutPoint, PublicKey, Script, Transaction, TxIn,
-    TxOut, Witness,
+    hashes::hash160::Hash, Address, EcdsaSig, OutPoint, PackedLockTime, PublicKey, Script,
+    Sequence, Transaction, TxIn, TxOut, Witness,
 };
-use miniscript::{Descriptor, DescriptorTrait};
+use miniscript::Descriptor;
 use secp256k1_zkp::{
     schnorr::Signature as SchnorrSignature, EcdsaAdaptorSignature, PublicKey as SecpPublicKey,
     Secp256k1, SecretKey, Signing, Verification,
@@ -124,7 +124,7 @@ pub fn create_buffer_transaction(
 ) -> Transaction {
     Transaction {
         version: super::TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input: vec![fund_tx_in.clone()],
         output: vec![TxOut {
             value: total_collateral,
@@ -225,7 +225,7 @@ pub fn create_settle_transaction(
 
     Transaction {
         version: super::TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
     }
@@ -243,7 +243,7 @@ pub fn create_channel_transactions(
     fund_lock_time: u32,
     cet_lock_time: u32,
     fund_output_serial_id: u64,
-    cet_nsequence: u32,
+    cet_nsequence: Sequence,
 ) -> Result<DlcChannelTransactions, Error> {
     let extra_fee =
         super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb);
@@ -284,7 +284,7 @@ pub fn create_renewal_channel_transactions(
     refund_lock_time: u32,
     fee_rate_per_vb: u64,
     cet_lock_time: u32,
-    cet_nsequence: u32,
+    cet_nsequence: Sequence,
 ) -> Result<DlcChannelTransactions, Error> {
     let extra_fee =
         super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb);
@@ -406,7 +406,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
             txid: prev_tx.txid(),
             vout: 0,
         },
-        sequence: 0,
+        sequence: Sequence::ZERO,
         script_sig: Script::default(),
         witness: Witness::default(),
     };
@@ -421,7 +421,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
             value: output_value,
@@ -491,7 +491,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
             txid: prev_tx.txid(),
             vout,
         },
-        sequence: 0,
+        sequence: Sequence::ZERO,
         script_sig: Script::default(),
         witness: Witness::default(),
     };
@@ -506,7 +506,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
             value: input_value - tx_fee,
@@ -578,7 +578,7 @@ pub fn create_collaborative_close_transaction(
 
     Transaction {
         version: crate::TX_VERSION,
-        lock_time: 0,
+        lock_time: PackedLockTime::ZERO,
         input: vec![input],
         output,
     }
@@ -612,6 +612,7 @@ pub fn buffer_descriptor(
         accept_revoke_pk_hash = accept_revoke_pkh,
         offer_publish_pk_hash = offer_publish_pkh,
         offer_revoke_pk_hash = offer_revoke_pkh);
+    println!("{script}");
     script.parse().expect("a valid miniscript")
 }
 
@@ -912,10 +913,10 @@ mod tests {
         descriptor
             .satisfy(
                 &mut TxIn {
-                    sequence: csv + 1,
+                    sequence: Sequence(csv + 1),
                     ..Default::default()
                 },
-                (satisfier, miniscript::miniscript::satisfy::Older(csv)),
+                (satisfier, Sequence(csv)),
             )
             .expect("to be able to satisfy the descriptor");
     }

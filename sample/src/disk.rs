@@ -20,7 +20,7 @@ impl Logger for FilesystemLogger {
         let raw_log = record.args.to_string();
         let log = format!(
             "{} {:<5} [{}:{}] {}\n",
-            OffsetDateTime::now_utc().format("%F %T"),
+            OffsetDateTime::now_utc().unix_timestamp(),
             record.level,
             record.module_path,
             record.line,

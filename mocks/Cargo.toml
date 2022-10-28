@@ -7,6 +7,6 @@ version = "0.1.0"
 [dependencies]
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
-dlc-messages = {path = "../dlc-messages"}
-lightning = {version = "0.0.107"}
-secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
+dlc-messages = {version = "0.3.0", path = "../dlc-messages"}
+lightning = {version = "0.0.112" }
+secp256k1-zkp = {version = "0.7.0", features = ["bitcoin_hashes", "rand", "rand-std"]}

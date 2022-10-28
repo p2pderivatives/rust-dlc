@@ -22,7 +22,7 @@ use crate::{
     utils::get_new_temporary_id,
     Signer, Time, Wallet,
 };
-use bitcoin::{OutPoint, Script, Transaction, TxIn, Witness};
+use bitcoin::{OutPoint, Script, Sequence, Transaction, TxIn, Witness};
 use dlc::{
     channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions},
     PartyParams,
@@ -188,7 +188,7 @@ where
         0,
         offered_contract.contract_maturity_bound,
         offered_contract.fund_output_serial_id,
-        offered_channel.cet_nsequence,
+        Sequence(offered_channel.cet_nsequence),
     )?;
 
     let own_base_secret_key = wallet.get_secret_key_for_pubkey(&accept_points.own_basepoint)?;
@@ -324,7 +324,7 @@ where
         0,
         offered_contract.contract_maturity_bound,
         offered_contract.fund_output_serial_id,
-        cet_nsequence,
+        Sequence(cet_nsequence),
     )?;
 
     let channel_id = crate::utils::compute_id(
@@ -1122,7 +1122,7 @@ where
         offered_contract.contract_timeout,
         offered_contract.fee_rate_per_vb,
         0,
-        cet_nsequence,
+        Sequence(cet_nsequence),
     )?;
 
     let buffer_adaptor_signature = get_tx_adaptor_signature(
@@ -1232,7 +1232,7 @@ where
         offered_contract.contract_timeout,
         offered_contract.fee_rate_per_vb,
         0,
-        cet_nsequence,
+        Sequence(cet_nsequence),
     )?;
 
     let offer_own_sk = derive_private_key(secp, &offer_per_update_point, &own_base_secret_key)?;
@@ -1652,7 +1652,7 @@ fn get_settle_tx_and_adaptor_sig(
             vout: fund_vout as u32,
         },
         script_sig: Script::new(),
-        sequence: 0xffffffff,
+        sequence: Sequence::MAX,
         witness: Witness::default(),
     };
 
