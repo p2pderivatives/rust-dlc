@@ -5,14 +5,14 @@ homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "dlc-messages"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-messages"
-version = "0.2.0"
+version = "0.3.0"
 
 [features]
 use-serde = ["serde", "bitcoin/use-serde", "secp256k1-zkp/use-serde"]
 
 [dependencies]
 bitcoin = {version = "0.27"}
-dlc = {version = "0.2.0", path = "../dlc"}
+dlc = {version = "0.3.0", path = "../dlc"}
 lightning = {version = "0.0.106"}
 secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
 serde = {version = "1.0", features = ["derive"], optional = true}
