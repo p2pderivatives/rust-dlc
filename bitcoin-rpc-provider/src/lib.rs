@@ -17,7 +17,7 @@ use bitcoin::{Address, OutPoint, TxOut};
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
-use dlc_manager::{Blockchain, Utxo, Wallet};
+use dlc_manager::{Blockchain, Signer, Utxo, Wallet};
 use rust_bitcoin_coin_selection::select_coins;
 
 pub struct BitcoinCoreProvider {
@@ -113,30 +113,7 @@ fn enc_err_to_manager_err(_e: EncodeError) -> ManagerError {
     Error::BitcoinError.into()
 }
 
-impl Wallet for BitcoinCoreProvider {
-    fn get_new_address(&self) -> Result<Address, ManagerError> {
-        self.client
-            .get_new_address(None, Some(AddressType::Bech32))
-            .map_err(rpc_err_to_manager_err)
-    }
-
-    fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
-        let sk = SecretKey::new(&mut thread_rng());
-        self.client
-            .import_private_key(
-                &PrivateKey {
-                    compressed: true,
-                    network: self.get_network()?,
-                    key: sk,
-                },
-                None,
-                Some(false),
-            )
-            .map_err(rpc_err_to_manager_err)?;
-
-        Ok(sk)
-    }
-
+impl Signer for BitcoinCoreProvider {
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
         let b_pubkey = bitcoin::PublicKey {
             compressed: true,
@@ -180,6 +157,31 @@ impl Wallet for BitcoinCoreProvider {
         tx.input[input_index].witness = signed_tx.input[input_index].witness.clone();
 
         Ok(())
+    }
+}
+
+impl Wallet for BitcoinCoreProvider {
+    fn get_new_address(&self) -> Result<Address, ManagerError> {
+        self.client
+            .get_new_address(None, Some(AddressType::Bech32))
+            .map_err(rpc_err_to_manager_err)
+    }
+
+    fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
+        let sk = SecretKey::new(&mut thread_rng());
+        self.client
+            .import_private_key(
+                &PrivateKey {
+                    compressed: true,
+                    network: self.get_network()?,
+                    key: sk,
+                },
+                None,
+                Some(false),
+            )
+            .map_err(rpc_err_to_manager_err)?;
+
+        Ok(sk)
     }
 
     fn get_utxos_for_amount(

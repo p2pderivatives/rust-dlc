@@ -81,6 +81,31 @@ impl MessageHandler {
     }
 }
 
+macro_rules! handle_read_dlc_messages {
+    ($msg_type:ident, $buffer:ident, $(($type_id:ident, $variant:ident)),*) => {{
+        let decoded = match $msg_type {
+            $(
+                $crate::$type_id => Message::$variant(Readable::read(&mut $buffer)?),
+            )*
+            _ => return Ok(None),
+        };
+        Ok(Some(WireMessage::Message(decoded)))
+    }};
+}
+
+fn read_dlc_message<R: ::std::io::Read>(
+    msg_type: u16,
+    mut buffer: &mut R,
+) -> Result<Option<WireMessage>, DecodeError> {
+    handle_read_dlc_messages!(
+        msg_type,
+        buffer,
+        (OFFER_TYPE, Offer),
+        (ACCEPT_TYPE, Accept),
+        (SIGN_TYPE, Sign)
+    )
+}
+
 /// Implementation of the `CustomMessageReader` trait is required to decode
 /// custom messages in the LDK.
 impl CustomMessageReader for MessageHandler {
@@ -91,18 +116,13 @@ impl CustomMessageReader for MessageHandler {
         mut buffer: &mut R,
     ) -> Result<Option<WireMessage>, DecodeError> {
         let decoded = match msg_type {
-            crate::OFFER_TYPE => WireMessage::Message(Message::Offer(Readable::read(&mut buffer)?)),
-            crate::ACCEPT_TYPE => {
-                WireMessage::Message(Message::Accept(Readable::read(&mut buffer)?))
-            }
-            crate::SIGN_TYPE => WireMessage::Message(Message::Sign(Readable::read(&mut buffer)?)),
             crate::segmentation::SEGMENT_START_TYPE => {
                 WireMessage::SegmentStart(Readable::read(&mut buffer)?)
             }
             crate::segmentation::SEGMENT_CHUNK_TYPE => {
                 WireMessage::SegmentChunk(Readable::read(&mut buffer)?)
             }
-            _ => return Ok(None),
+            _ => return read_dlc_message(msg_type, buffer),
         };
 
         Ok(Some(decoded))
@@ -270,7 +290,7 @@ mod tests {
     #[test]
     fn send_regular_message_test() {
         let input = include_str!("./test_inputs/offer_msg.json");
-        let msg: OfferDlc = serde_json::from_str(&input).unwrap();
+        let msg: OfferDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
         handler.send_message(some_pk(), Message::Offer(msg));
         assert_eq!(handler.msg_events.lock().unwrap().len(), 1);
@@ -279,7 +299,7 @@ mod tests {
     #[test]
     fn send_large_message_segmented_test() {
         let input = include_str!("./test_inputs/accept_msg.json");
-        let msg: AcceptDlc = serde_json::from_str(&input).unwrap();
+        let msg: AcceptDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
         handler.send_message(some_pk(), Message::Accept(msg));
         assert!(handler.msg_events.lock().unwrap().len() > 1);
@@ -288,7 +308,7 @@ mod tests {
     #[test]
     fn is_empty_after_clearing_msg_events_test() {
         let input = include_str!("./test_inputs/accept_msg.json");
-        let msg: AcceptDlc = serde_json::from_str(&input).unwrap();
+        let msg: AcceptDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
         handler.send_message(some_pk(), Message::Accept(msg));
         handler.get_and_clear_pending_msg();
@@ -299,8 +319,8 @@ mod tests {
     fn rebuilds_segments_properly_test() {
         let input1 = include_str!("./test_inputs/segment_start_msg.json");
         let input2 = include_str!("./test_inputs/segment_chunk_msg.json");
-        let segment_start: SegmentStart = serde_json::from_str(&input1).unwrap();
-        let segment_chunk: SegmentChunk = serde_json::from_str(&input2).unwrap();
+        let segment_start: SegmentStart = serde_json::from_str(input1).unwrap();
+        let segment_chunk: SegmentChunk = serde_json::from_str(input2).unwrap();
 
         let handler = MessageHandler::new();
         handler
