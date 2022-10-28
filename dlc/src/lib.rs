@@ -1090,7 +1090,7 @@ mod tests {
         fund_tx.consensus_encode(&mut writer).unwrap();
         let mut serialized = String::new();
         for x in writer {
-            let _ = write!(&mut serialized, "{:02X}", x).unwrap();
+            write!(&mut serialized, "{:02X}", x).unwrap();
         }
 
         assert_eq!(expected_serialized, serialized);

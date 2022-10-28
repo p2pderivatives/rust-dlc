@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn valid_offer_message_passes_validation() {
         let input = include_str!("./test_inputs/offer_msg.json");
-        let valid_offer: OfferDlc = serde_json::from_str(&input).unwrap();
+        let valid_offer: OfferDlc = serde_json::from_str(input).unwrap();
         valid_offer
             .validate(SECP256K1, 86400 * 7, 86400 * 14)
             .expect("to validate valid offer messages.");
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn invalid_offer_messages_fail_validation() {
         let input = include_str!("./test_inputs/offer_msg.json");
-        let offer: OfferDlc = serde_json::from_str(&input).unwrap();
+        let offer: OfferDlc = serde_json::from_str(input).unwrap();
 
         let mut invalid_maturity = offer.clone();
         invalid_maturity.cet_locktime += 3;
@@ -592,7 +592,7 @@ mod tests {
         let mut too_short_timeout = offer.clone();
         too_short_timeout.refund_locktime -= 100;
 
-        let mut too_long_timeout = offer.clone();
+        let mut too_long_timeout = offer;
         too_long_timeout.refund_locktime -= 100;
 
         for invalid in &[invalid_maturity, too_short_timeout, too_long_timeout] {

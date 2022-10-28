@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn send_regular_message_test() {
         let input = include_str!("./test_inputs/offer_msg.json");
-        let msg: OfferDlc = serde_json::from_str(&input).unwrap();
+        let msg: OfferDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
         handler.send_message(some_pk(), Message::Offer(msg));
         assert_eq!(handler.msg_events.lock().unwrap().len(), 1);
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn send_large_message_segmented_test() {
         let input = include_str!("./test_inputs/accept_msg.json");
-        let msg: AcceptDlc = serde_json::from_str(&input).unwrap();
+        let msg: AcceptDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
         handler.send_message(some_pk(), Message::Accept(msg));
         assert!(handler.msg_events.lock().unwrap().len() > 1);
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn is_empty_after_clearing_msg_events_test() {
         let input = include_str!("./test_inputs/accept_msg.json");
-        let msg: AcceptDlc = serde_json::from_str(&input).unwrap();
+        let msg: AcceptDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
         handler.send_message(some_pk(), Message::Accept(msg));
         handler.get_and_clear_pending_msg();
@@ -319,8 +319,8 @@ mod tests {
     fn rebuilds_segments_properly_test() {
         let input1 = include_str!("./test_inputs/segment_start_msg.json");
         let input2 = include_str!("./test_inputs/segment_chunk_msg.json");
-        let segment_start: SegmentStart = serde_json::from_str(&input1).unwrap();
-        let segment_chunk: SegmentChunk = serde_json::from_str(&input2).unwrap();
+        let segment_start: SegmentStart = serde_json::from_str(input1).unwrap();
+        let segment_chunk: SegmentChunk = serde_json::from_str(input2).unwrap();
 
         let handler = MessageHandler::new();
         handler
