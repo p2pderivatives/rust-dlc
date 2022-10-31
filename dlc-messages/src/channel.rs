@@ -4,7 +4,9 @@ use bitcoin::Script;
 use dlc::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signature, Signing};
+use secp256k1_zkp::{
+    ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification,
+};
 
 use crate::FundingSignatures;
 use crate::{
@@ -107,7 +109,7 @@ impl_dlc_writeable!(OfferChannel, {
 
 impl OfferChannel {
     /// Returns whether the message satisfies validity requirements.
-    pub fn validate<C: Signing>(
+    pub fn validate<C: Verification>(
         &self,
         secp: &Secp256k1<C>,
         min_timeout_interval: u32,

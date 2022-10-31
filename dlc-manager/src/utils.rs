@@ -149,7 +149,7 @@ pub(crate) fn get_range_info_and_oracle_sigs(
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
     attestations: &[(usize, OracleAttestation)],
-) -> Result<(RangeInfo, Vec<Vec<secp256k1_zkp::schnorrsig::Signature>>), Error> {
+) -> Result<(RangeInfo, Vec<Vec<secp256k1_zkp::schnorr::Signature>>), Error> {
     let outcomes = attestations
         .iter()
         .map(|(i, x)| (*i, &x.outcomes))

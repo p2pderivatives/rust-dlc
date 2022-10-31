@@ -4,6 +4,6 @@ name = "bitcoin-test-utils"
 version = "0.1.0"
 
 [dependencies]
-bitcoin = {version = "0.27"}
-bitcoincore-rpc = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
-bitcoincore-rpc-json = {version = "0.13.0", git = "https://github.com/p2pderivatives/rust-bitcoincore-rpc", branch = "dlc-version"}
+bitcoin = {version = "0.28"}
+bitcoincore-rpc = {version = "0.15"}
+bitcoincore-rpc-json = {version = "0.15"}

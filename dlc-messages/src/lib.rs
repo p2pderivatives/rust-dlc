@@ -49,9 +49,8 @@ use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::Secp256k1;
-use secp256k1_zkp::{EcdsaAdaptorSignature, Signing};
-use secp256k1_zkp::{PublicKey, Signature};
+use secp256k1_zkp::Verification;
+use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
 use segmentation::{SegmentChunk, SegmentStart};
 
 macro_rules! impl_type {
@@ -356,7 +355,7 @@ impl OfferDlc {
     }
 
     /// Returns whether the message satisfies validity requirements.
-    pub fn validate<C: Signing>(
+    pub fn validate<C: Verification>(
         &self,
         secp: &Secp256k1<C>,
         min_timeout_interval: u32,

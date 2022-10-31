@@ -241,7 +241,7 @@ impl EnumDescriptor {
             .iter()
             .map(|x| {
                 let message = vec![Message::from_hashed_data::<
-                    secp256k1_zkp::bitcoin_hashes::sha256::Hash,
+                    secp256k1_zkp::hashes::sha256::Hash,
                 >(x.outcome.as_bytes())];
                 std::iter::repeat(message).take(threshold).collect()
             })

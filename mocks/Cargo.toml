@@ -8,5 +8,5 @@ version = "0.1.0"
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {path = "../dlc-messages"}
-lightning = {version = "0.0.106"}
-secp256k1-zkp = {version = "0.5.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
+lightning = {version = "0.0.107"}
+secp256k1-zkp = {version = "0.6.0", features = ["bitcoin_hashes", "rand", "rand-std"]}

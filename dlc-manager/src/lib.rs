@@ -44,7 +44,7 @@ use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use error::Error;
-use secp256k1_zkp::schnorrsig::PublicKey as SchnorrPublicKey;
+use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
 
 /// Type alias for a contract id.
@@ -166,7 +166,7 @@ pub trait Storage {
 /// Oracle trait provides access to oracle information.
 pub trait Oracle {
     /// Returns the public key of the oracle.
-    fn get_public_key(&self) -> SchnorrPublicKey;
+    fn get_public_key(&self) -> XOnlyPublicKey;
     /// Returns the announcement for the event with the given id if found.
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.

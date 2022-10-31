@@ -22,18 +22,18 @@ use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use dlc_manager::error::Error as DlcManagerError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
-use secp256k1_zkp::schnorrsig::{PublicKey, Signature};
+use secp256k1_zkp::{schnorr::Signature, XOnlyPublicKey};
 
 /// Enables interacting with a DLC oracle.
 pub struct P2PDOracleClient {
     host: String,
-    public_key: PublicKey,
+    public_key: XOnlyPublicKey,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PublicKeyResponse {
-    public_key: PublicKey,
+    public_key: XOnlyPublicKey,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -48,7 +48,7 @@ struct EventDescriptor {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Event {
-    nonces: Vec<PublicKey>,
+    nonces: Vec<XOnlyPublicKey>,
     event_maturity: DateTime<Utc>,
     event_id: String,
     event_descriptor: EventDescriptor,
@@ -57,7 +57,7 @@ struct Event {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AnnoucementResponse {
-    oracle_public_key: PublicKey,
+    oracle_public_key: XOnlyPublicKey,
     oracle_event: Event,
 }
 
@@ -136,7 +136,7 @@ fn parse_event_id(event_id: &str) -> Result<(String, DateTime<Utc>), DlcManagerE
 }
 
 impl Oracle for P2PDOracleClient {
-    fn get_public_key(&self) -> PublicKey {
+    fn get_public_key(&self) -> XOnlyPublicKey {
         self.public_key
     }
 
@@ -196,7 +196,7 @@ mod tests {
     fn get_public_key_test() {
         let url = &mockito::server_url();
         let _m = pubkey_mock();
-        let expected_pk: PublicKey =
+        let expected_pk: XOnlyPublicKey =
             "ce4b7ad2b45de01f0897aa716f67b4c2f596e54506431e693f898712fe7e9bf3"
                 .parse()
                 .unwrap();

@@ -6,12 +6,12 @@ use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, Party
 
 use super::Error;
 use bitcoin::{
-    hashes::hash160::Hash, Address, OutPoint, PublicKey, Script, SigHashType, Transaction, TxIn,
-    TxOut,
+    hashes::hash160::Hash, Address, EcdsaSig, OutPoint, PublicKey, Script, Transaction, TxIn,
+    TxOut, Witness,
 };
 use miniscript::{Descriptor, DescriptorTrait};
 use secp256k1_zkp::{
-    schnorrsig::Signature as SchnorrSignature, EcdsaAdaptorSignature, PublicKey as SecpPublicKey,
+    schnorr::Signature as SchnorrSignature, EcdsaAdaptorSignature, PublicKey as SecpPublicKey,
     Secp256k1, SecretKey, Signing, Verification,
 };
 
@@ -142,10 +142,15 @@ pub fn get_tx_adaptor_signature<C: Signing>(
     script_pubkey: &Script,
     own_fund_sk: &SecretKey,
     other_publish_key: &SecpPublicKey,
-) -> EcdsaAdaptorSignature {
-    let sighash = get_sig_hash_msg(tx, 0, script_pubkey, input_value);
+) -> Result<EcdsaAdaptorSignature, Error> {
+    let sighash = get_sig_hash_msg(tx, 0, script_pubkey, input_value)?;
 
-    EcdsaAdaptorSignature::encrypt(secp, &sighash, own_fund_sk, other_publish_key)
+    Ok(EcdsaAdaptorSignature::encrypt(
+        secp,
+        &sighash,
+        own_fund_sk,
+        other_publish_key,
+    ))
 }
 
 /// Verify that the given adaptor signature is valid with respect to the given
@@ -159,7 +164,7 @@ pub fn verify_tx_adaptor_signature<C: Verification>(
     own_publish_key: &SecpPublicKey,
     adaptor_sig: &EcdsaAdaptorSignature,
 ) -> Result<(), Error> {
-    let sighash = get_sig_hash_msg(tx, 0, script_pubkey, input_value);
+    let sighash = get_sig_hash_msg(tx, 0, script_pubkey, input_value)?;
 
     adaptor_sig.verify(secp, &sighash, other_fund_pk, own_publish_key)?;
 
@@ -296,8 +301,8 @@ pub fn create_renewal_channel_transactions(
     let tx_in = TxIn {
         previous_output: outpoint,
         sequence: super::util::get_sequence(cet_lock_time),
-        script_sig: Script::new(),
-        witness: Vec::new(),
+        script_sig: Script::default(),
+        witness: Witness::default(),
     };
 
     let buffer_descriptor = buffer_descriptor(offer_revoke_params, accept_revoke_params);
@@ -332,7 +337,7 @@ pub fn create_renewal_channel_transactions(
             funding_script_pubkey: funding_script_pubkey.clone(),
         },
         buffer_transaction,
-        buffer_script_pubkey: buffer_descriptor.script_code(),
+        buffer_script_pubkey: buffer_descriptor.script_code()?,
     })
 }
 
@@ -356,21 +361,21 @@ pub fn sign_cet<C: Signing>(
         secp,
         cet,
         0,
-        &descriptor.script_code(),
+        &descriptor.script_code()?,
         input_amount,
         own_sk,
-    );
+    )?;
     let own_pk = SecpPublicKey::from_secret_key(secp, own_sk);
 
     let sigs = HashMap::from([
         (
             PublicKey {
-                key: own_pk,
+                inner: own_pk,
                 compressed: true,
             },
-            (own_sig, SigHashType::All),
+            EcdsaSig::sighash_all(own_sig),
         ),
-        (*counter_pubkey, (adapted_sig, SigHashType::All)),
+        (*counter_pubkey, EcdsaSig::sighash_all(adapted_sig)),
     ]);
 
     descriptor
@@ -402,8 +407,8 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
             vout: 0,
         },
         sequence: 0,
-        script_sig: Script::new(),
-        witness: Vec::new(),
+        script_sig: Script::default(),
+        witness: Witness::default(),
     };
 
     let dest_script_pk_len = dest_address.script_pubkey().len();
@@ -428,7 +433,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
 
     for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
         let pk = PublicKey {
-            key: SecpPublicKey::from_secret_key(secp, sk),
+            inner: SecpPublicKey::from_secret_key(secp, sk),
             compressed: true,
         };
 
@@ -437,17 +442,14 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
             pkh,
             (
                 pk,
-                (
-                    super::util::get_raw_sig_for_tx_input(
-                        secp,
-                        &tx,
-                        0,
-                        &descriptor.script_code(),
-                        prev_tx.output[0].value,
-                        sk,
-                    ),
-                    bitcoin::SigHashType::All,
-                ),
+                EcdsaSig::sighash_all(super::util::get_raw_sig_for_tx_input(
+                    secp,
+                    &tx,
+                    0,
+                    &descriptor.script_code()?,
+                    prev_tx.output[0].value,
+                    sk,
+                )?),
             ),
         );
     }
@@ -490,8 +492,8 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
             vout,
         },
         sequence: 0,
-        script_sig: Script::new(),
-        witness: Vec::new(),
+        script_sig: Script::default(),
+        witness: Witness::default(),
     };
 
     let input_value = prev_tx.output[vout as usize].value;
@@ -516,22 +518,19 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
         let pk = PublicKey {
-            key: SecpPublicKey::from_secret_key(secp, sk),
+            inner: SecpPublicKey::from_secret_key(secp, sk),
             compressed: true,
         };
         sigs.insert(
             pk,
-            (
-                super::util::get_raw_sig_for_tx_input(
-                    secp,
-                    &tx,
-                    0,
-                    &descriptor.script_code(),
-                    input_value,
-                    sk,
-                ),
-                bitcoin::SigHashType::All,
-            ),
+            EcdsaSig::sighash_all(super::util::get_raw_sig_for_tx_input(
+                secp,
+                &tx,
+                0,
+                &descriptor.script_code()?,
+                input_value,
+                sk,
+            )?),
         );
     }
 
@@ -553,8 +552,8 @@ pub fn create_collaborative_close_transaction(
 ) -> Transaction {
     let input = TxIn {
         previous_output: fund_outpoint,
-        witness: Vec::new(),
-        script_sig: Script::new(),
+        witness: Witness::default(),
+        script_sig: Script::default(),
         sequence: crate::util::DISABLE_LOCKTIME,
     };
 
@@ -703,9 +702,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &offer_priv_params.own_priv.key,
-            &accept_priv_params.publish_priv.key,
-            &accept_priv_params.revoke_priv.key,
+            &offer_priv_params.own_priv.inner,
+            &accept_priv_params.publish_priv.inner,
+            &accept_priv_params.revoke_priv.inner,
             &buffer_tx,
             &dest_address,
             0,
@@ -718,9 +717,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &accept_priv_params.own_priv.key,
-            &offer_priv_params.publish_priv.key,
-            &offer_priv_params.revoke_priv.key,
+            &accept_priv_params.own_priv.inner,
+            &offer_priv_params.publish_priv.inner,
+            &offer_priv_params.revoke_priv.inner,
             &buffer_tx,
             &dest_address,
             0,
@@ -733,9 +732,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &offer_priv_params.own_priv.key,
-            &offer_priv_params.publish_priv.key,
-            &offer_priv_params.revoke_priv.key,
+            &offer_priv_params.own_priv.inner,
+            &offer_priv_params.publish_priv.inner,
+            &offer_priv_params.revoke_priv.inner,
             &buffer_tx,
             &dest_address,
             0,
@@ -748,9 +747,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &accept_priv_params.own_priv.key,
-            &accept_priv_params.publish_priv.key,
-            &accept_priv_params.revoke_priv.key,
+            &accept_priv_params.own_priv.inner,
+            &accept_priv_params.publish_priv.inner,
+            &accept_priv_params.revoke_priv.inner,
             &buffer_tx,
             &dest_address,
             0,
@@ -769,8 +768,8 @@ mod tests {
         let descriptor = buffer_descriptor(&offer_params, &accept_params);
 
         // Use random signature as it doesn't matter.
-        let sig = (
-            secp256k1_zkp::Signature::from_str(
+        let sig = bitcoin::EcdsaSig::sighash_all(
+            secp256k1_zkp::ecdsa::Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -778,7 +777,6 @@ mod tests {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
             )
             .unwrap(),
-            bitcoin::SigHashType::All,
         );
 
         let satisfier = HashMap::from_iter(vec![
@@ -823,9 +821,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &offer_priv_params.own_priv.key,
-            &accept_priv_params.publish_priv.key,
-            &accept_priv_params.revoke_priv.key,
+            &offer_priv_params.own_priv.inner,
+            &accept_priv_params.publish_priv.inner,
+            &accept_priv_params.revoke_priv.inner,
             &settle_tx,
             &dest_address,
             csv_timelock,
@@ -840,9 +838,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &accept_priv_params.own_priv.key,
-            &offer_priv_params.publish_priv.key,
-            &offer_priv_params.revoke_priv.key,
+            &accept_priv_params.own_priv.inner,
+            &offer_priv_params.publish_priv.inner,
+            &offer_priv_params.revoke_priv.inner,
             &settle_tx,
             &dest_address,
             csv_timelock,
@@ -857,9 +855,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &offer_priv_params.own_priv.key,
-            &offer_priv_params.publish_priv.key,
-            &offer_priv_params.revoke_priv.key,
+            &offer_priv_params.own_priv.inner,
+            &offer_priv_params.publish_priv.inner,
+            &offer_priv_params.revoke_priv.inner,
             &settle_tx,
             &dest_address,
             csv_timelock,
@@ -874,9 +872,9 @@ mod tests {
             SECP256K1,
             &offer_params,
             &accept_params,
-            &accept_priv_params.own_priv.key,
-            &accept_priv_params.publish_priv.key,
-            &accept_priv_params.revoke_priv.key,
+            &accept_priv_params.own_priv.inner,
+            &accept_priv_params.publish_priv.inner,
+            &accept_priv_params.revoke_priv.inner,
             &settle_tx,
             &dest_address,
             csv_timelock,
@@ -898,8 +896,8 @@ mod tests {
         let descriptor = settle_descriptor(&offer_params, &accept_params.own_pk, csv);
 
         // Use random signature as it doesn't matter.
-        let sig = (
-            secp256k1_zkp::Signature::from_str(
+        let sig = bitcoin::EcdsaSig::sighash_all(
+            secp256k1_zkp::ecdsa::Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -907,7 +905,6 @@ mod tests {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
             )
             .unwrap(),
-            bitcoin::SigHashType::All,
         );
 
         let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig.clone())]);
@@ -944,18 +941,19 @@ mod tests {
             SECP256K1,
             &buffer_tx,
             input_value,
-            &descriptor.script_code(),
+            &descriptor.script_code().expect("a valid script code"),
             &adaptor_sec_key,
-            &accept_params.publish_pk.key,
-        );
+            &accept_params.publish_pk.inner,
+        )
+        .expect("to be able to create the adaptor sig");
 
         verify_tx_adaptor_signature(
             SECP256K1,
             &buffer_tx,
             input_value,
-            &descriptor.script_code(),
+            &descriptor.script_code().expect("a valid script code"),
             &secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &adaptor_sec_key),
-            &accept_params.publish_pk.key,
+            &accept_params.publish_pk.inner,
             &adaptor_sig,
         )
         .expect("the signature to be valid");
