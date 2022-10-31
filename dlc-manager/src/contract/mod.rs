@@ -47,6 +47,8 @@ pub enum Contract {
     FailedAccept(FailedAcceptContract),
     /// A contract that failed when verifying information from a sign message.
     FailedSign(FailedSignContract),
+    /// A contract that was rejected by the party to whom it was offered.
+    Rejected(offered_contract::OfferedContract),
 }
 
 impl std::fmt::Debug for Contract {
@@ -61,6 +63,7 @@ impl std::fmt::Debug for Contract {
             Contract::Refunded(_) => "refunded",
             Contract::FailedAccept(_) => "failed accept",
             Contract::FailedSign(_) => "failed sign",
+            Contract::Rejected(_) => "rejected",
         };
         f.debug_struct("Contract").field("state", &state).finish()
     }
@@ -71,7 +74,7 @@ impl Contract {
     /// and failed accept contracts.
     pub fn get_id(&self) -> ContractId {
         match self {
-            Contract::Offered(o) => o.id,
+            Contract::Offered(o) | Contract::Rejected(o) => o.id,
             Contract::Accepted(o) => o.get_contract_id(),
             Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
                 o.accepted_contract.get_contract_id()
@@ -86,7 +89,7 @@ impl Contract {
     /// Returns the temporary contract id of a contract.
     pub fn get_temporary_id(&self) -> ContractId {
         match self {
-            Contract::Offered(o) => o.id,
+            Contract::Offered(o) | Contract::Rejected(o) => o.id,
             Contract::Accepted(o) => o.offered_contract.id,
             Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
                 o.accepted_contract.offered_contract.id
@@ -101,7 +104,7 @@ impl Contract {
     /// Returns the public key of the counter party's node.
     pub fn get_counter_party_id(&self) -> PublicKey {
         match self {
-            Contract::Offered(o) => o.counter_party,
+            Contract::Offered(o) | Contract::Rejected(o) => o.counter_party,
             Contract::Accepted(a) => a.offered_contract.counter_party,
             Contract::Signed(s) | Contract::Confirmed(s) | Contract::Refunded(s) => {
                 s.accepted_contract.offered_contract.counter_party

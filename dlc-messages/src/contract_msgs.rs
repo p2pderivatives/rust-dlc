@@ -36,7 +36,7 @@ pub enum ContractInfo {
 }
 
 impl_dlc_writeable_enum!(ContractInfo,
-    (0, SingleContractInfo), (1, DisjointContractInfo);;
+    (0, SingleContractInfo), (1, DisjointContractInfo);;;
 );
 
 impl ContractInfo {
@@ -129,7 +129,7 @@ pub enum ContractDescriptor {
 }
 
 impl_dlc_writeable_enum!(
-    ContractDescriptor, (0, EnumeratedContractDescriptor), (1, NumericOutcomeContractDescriptor);;
+    ContractDescriptor, (0, EnumeratedContractDescriptor), (1, NumericOutcomeContractDescriptor);;;
 );
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -214,7 +214,7 @@ pub enum PayoutCurvePiece {
 
 impl_dlc_writeable_enum!(PayoutCurvePiece,
   (0, PolynomialPayoutCurvePiece),
-  (1, HyperbolaPayoutCurvePiece);;
+  (1, HyperbolaPayoutCurvePiece);;;
 );
 
 #[derive(Clone, Debug, PartialEq, Eq)]

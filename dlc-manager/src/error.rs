@@ -23,6 +23,8 @@ pub enum Error {
     OracleError(String),
     /// An error occurred in the DLC library.
     DlcError(dlc::Error),
+    /// An error occurred in the Secp library.
+    SecpError(secp256k1_zkp::Error),
 }
 
 impl fmt::Display for Error {
@@ -37,6 +39,7 @@ impl fmt::Display for Error {
             Error::StorageError(ref s) => write!(f, "Storage error {}", s),
             Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
+            Error::SecpError(ref s) => write!(f, "Secp error {}", s),
         }
     }
 }
@@ -56,5 +59,17 @@ impl From<dlc::Error> for Error {
 impl From<crate::conversion_utils::Error> for Error {
     fn from(e: crate::conversion_utils::Error) -> Error {
         Error::Conversion(e)
+    }
+}
+
+impl From<secp256k1_zkp::Error> for Error {
+    fn from(e: secp256k1_zkp::Error) -> Error {
+        Error::SecpError(e)
+    }
+}
+
+impl From<secp256k1_zkp::UpstreamError> for Error {
+    fn from(e: secp256k1_zkp::UpstreamError) -> Error {
+        Error::SecpError(secp256k1_zkp::Error::Upstream(e))
     }
 }

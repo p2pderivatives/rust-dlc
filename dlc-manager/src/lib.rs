@@ -24,6 +24,9 @@ extern crate log;
 extern crate rand_chacha;
 extern crate secp256k1_zkp;
 
+pub mod chain_monitor;
+pub mod channel;
+pub mod channel_updater;
 pub mod contract;
 pub mod contract_updater;
 mod conversion_utils;
@@ -32,7 +35,11 @@ pub mod manager;
 pub mod payout_curve;
 mod utils;
 
-use bitcoin::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
+use chain_monitor::ChainMonitor;
+use channel::offered_channel::OfferedChannel;
+use channel::signed_channel::{SignedChannel, SignedChannelStateType};
+use channel::Channel;
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
@@ -42,6 +49,9 @@ use secp256k1_zkp::{PublicKey, SecretKey};
 
 /// Type alias for a contract id.
 pub type ContractId = [u8; 32];
+
+/// Type alias for a channel id.
+pub type ChannelId = [u8; 32];
 
 /// Time trait to provide current unix time. Mainly defined to facilitate testing.
 pub trait Time {
@@ -104,6 +114,10 @@ pub trait Blockchain {
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error>;
     /// Returns the network currently used (mainnet, testnet or regtest).
     fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error>;
+    /// Returns the height of the blockchain
+    fn get_blockchain_height(&self) -> Result<u64, Error>;
+    /// Returns the block at given height
+    fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.
@@ -127,6 +141,26 @@ pub trait Storage {
     /// Returns the set of contracts whos broadcasted cet has not been verified to be confirmed on
     /// blockchain
     fn get_preclosed_contracts(&self) -> Result<Vec<PreClosedContract>, Error>;
+    /// Update the state of the channel and optionally its associated contract
+    /// atomically.
+    fn upsert_channel(&mut self, channel: Channel, contract: Option<Contract>)
+        -> Result<(), Error>;
+    /// Delete the channel with given [`ChannelId`] if any.
+    fn delete_channel(&mut self, channel_id: &ChannelId) -> Result<(), Error>;
+    /// Returns the channel with given [`ChannelId`] if any.
+    fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, Error>;
+    /// Returns the set of [`SignedChannel`] in the store. Returns only the one
+    /// with matching `channel_state` if set.
+    fn get_signed_channels(
+        &self,
+        channel_state: Option<SignedChannelStateType>,
+    ) -> Result<Vec<SignedChannel>, Error>;
+    /// Returns the set of channels in offer state.
+    fn get_offered_channels(&self) -> Result<Vec<OfferedChannel>, Error>;
+    /// Writes the [`ChainMonitor`] data to the store.
+    fn persist_chain_monitor(&mut self, monitor: &ChainMonitor) -> Result<(), Error>;
+    /// Returns the latest [`ChainMonitor`] in the store if any.
+    fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
 }
 
 /// Oracle trait provides access to oracle information.

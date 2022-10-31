@@ -35,7 +35,7 @@ jobs:
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - uses: actions/checkout@v2
       - id: set-matrix
-        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager)"
+        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager channel_execution)"
   integration_tests:
     name: integration-tests
     needs: integration_tests_prepare

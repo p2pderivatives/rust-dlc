@@ -104,6 +104,7 @@ impl MockOracle {
 
         nonces
     }
+
     pub fn add_event(&mut self, event_id: &str, event_descriptor: &EventDescriptor, maturity: u32) {
         let oracle_nonces = self.generate_nonces_for_event(event_id, event_descriptor);
         let oracle_event = OracleEvent {

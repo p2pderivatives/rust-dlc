@@ -5,6 +5,8 @@ use crate::DlcMessageHandler;
 use crate::PeerManager;
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::key::PublicKey;
+use dlc_manager::channel::signed_channel::SignedChannelState;
+use dlc_manager::channel::signed_channel::SignedChannelStateType;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::contract::{ClosedContract, Contract};
 use dlc_manager::Storage;
@@ -19,6 +21,7 @@ use std::io;
 use std::io::{BufRead, Write};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
+use std::str::SplitWhitespace;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -101,6 +104,15 @@ pub(crate) fn parse_config(config_path: &str) -> Result<Configuration, String> {
     serde_yaml::from_str(&config_file).map_err(|e| e.to_string())
 }
 
+macro_rules! read_id_or_continue {
+    ($words: ident, $err_cmd: expr, $err_arg: expr) => {
+        match read_id(&mut $words, $err_cmd, $err_arg) {
+            Ok(res) => res,
+            Err(()) => continue,
+        }
+    };
+}
+
 pub(crate) async fn poll_for_user_input(
     peer_manager: Arc<PeerManager>,
     dlc_message_handler: Arc<DlcMessageHandler>,
@@ -113,6 +125,7 @@ pub(crate) async fn poll_for_user_input(
     print!("> ");
     io::stdout().flush().unwrap(); // Without flushing, the `>` doesn't print
     for line in stdin.lock().lines() {
+        process_incoming_messages(&peer_manager, &dlc_manager, &dlc_message_handler);
         let line = line.unwrap();
         let mut words = line.split_whitespace();
         if let Some(word) = words.next() {
@@ -144,7 +157,7 @@ pub(crate) async fn poll_for_user_input(
                     }
                 }
                 "listpeers" => list_peers(peer_manager.clone()),
-                "offercontract" => {
+                o @ "offercontract" | o @ "offerchannel" => {
                     let (peer_pubkey_and_ip_addr, contract_path) = match (
                         words.next(),
                         words.next(),
@@ -178,21 +191,32 @@ pub(crate) async fn poll_for_user_input(
                     let contract_input: ContractInput = serde_json::from_str(&contract_input_str)
                         .expect("Error deserializing contract input.");
                     let manager_clone = dlc_manager.clone();
+                    let is_contract = o == "offercontract";
                     let offer = tokio::task::spawn_blocking(move || {
-                        manager_clone
-                            .lock()
-                            .unwrap()
-                            .send_offer(&contract_input, pubkey)
-                            .expect("Error sending offer")
+                        if is_contract {
+                            DlcMessage::Offer(
+                                manager_clone
+                                    .lock()
+                                    .unwrap()
+                                    .send_offer(&contract_input, pubkey)
+                                    .expect("Error sending offer"),
+                            )
+                        } else {
+                            DlcMessage::OfferChannel(
+                                manager_clone
+                                    .lock()
+                                    .unwrap()
+                                    .offer_channel(&contract_input, pubkey)
+                                    .expect("Error sending offer channel"),
+                            )
+                        }
                     })
                     .await
                     .unwrap();
-                    dlc_message_handler.send_message(pubkey, DlcMessage::Offer(offer));
+                    dlc_message_handler.send_message(pubkey, offer);
                     peer_manager.process_events();
                 }
                 "listoffers" => {
-                    process_incoming_messages(&peer_manager, &dlc_manager, &dlc_message_handler);
-
                     let locked_manager = dlc_manager.lock().unwrap();
                     for offer in locked_manager
                         .get_store()
@@ -212,23 +236,8 @@ pub(crate) async fn poll_for_user_input(
                         println!("Offer {:?} from {}", offer_id, offer.counter_party);
                     }
                 }
-                "acceptoffer" => {
-                    let contract_id = match words.next() {
-                        None => {
-                            println!("ERROR: acceptoffer expects the contract id as parameter.");
-                            continue;
-                        }
-                        Some(s) => {
-                            let mut res = [0u8; 32];
-                            match to_slice(s, &mut res) {
-                                Err(_) => {
-                                    println!("ERROR: invalid contract id.");
-                                    continue;
-                                }
-                                Ok(_) => res,
-                            }
-                        }
-                    };
+                a @ "acceptoffer" => {
+                    let contract_id = read_id_or_continue!(words, a, "contract id");
 
                     let (_, node_id, msg) = dlc_manager
                         .lock()
@@ -239,7 +248,6 @@ pub(crate) async fn poll_for_user_input(
                     peer_manager.process_events();
                 }
                 "listcontracts" => {
-                    process_incoming_messages(&peer_manager, &dlc_manager, &dlc_message_handler);
                     let manager_clone = dlc_manager.clone();
                     // Because the oracle client is currently blocking we need to use `spawn_blocking` here.
                     tokio::task::spawn_blocking(move || {
@@ -287,12 +295,194 @@ pub(crate) async fn poll_for_user_input(
                                 Contract::FailedAccept(_) | Contract::FailedSign(_) => {
                                     println!("Failed contract: {}", id);
                                 }
+                                Contract::Rejected(_) => println!("Rejected contract: {}", id),
                                 Contract::PreClosed(_) => println!("Pre-closed contract: {}", id),
                             }
                         }
                     })
                     .await
                     .expect("Error listing contract info");
+                }
+                "listchanneloffers" => {
+                    let locked_manager = dlc_manager.lock().unwrap();
+                    for offer in locked_manager
+                        .get_store()
+                        .get_offered_channels()
+                        .unwrap()
+                        .iter()
+                        .filter(|x| !x.is_offer_party)
+                    {
+                        let channel_id = hex_str(&offer.temporary_channel_id);
+                        let channel_offer_json_path =
+                            format!("{}/{}.json", offers_path, channel_id);
+                        if fs::metadata(&channel_offer_json_path).is_err() {
+                            let offer_str = serde_json::to_string_pretty(&offer)
+                                .expect("Error serializing offered channel");
+                            fs::write(&channel_offer_json_path, offer_str)
+                                .expect("Error saving offer channel json");
+                        }
+                        println!(
+                            "Offer channel {:?} from {}",
+                            channel_id, offer.counter_party
+                        );
+                    }
+                }
+                a @ "acceptchannel" => {
+                    let channel_id = read_id_or_continue!(words, a, "channel id");
+
+                    let (msg, _, _, node_id) = dlc_manager
+                        .lock()
+                        .unwrap()
+                        .accept_channel(&channel_id)
+                        .expect("Error accepting channel.");
+                    dlc_message_handler.send_message(node_id, DlcMessage::AcceptChannel(msg));
+                    peer_manager.process_events();
+                }
+                s @ "offersettlechannel" => {
+                    let channel_id = read_id_or_continue!(words, s, "channel id");
+                    let counter_payout: u64 = match words.next().map(|w| w.parse().ok()) {
+                        Some(Some(p)) => p,
+                        _ => {
+                            println!("Missing or invalid counter payout parameter");
+                            continue;
+                        }
+                    };
+
+                    let (msg, node_id) = dlc_manager
+                        .lock()
+                        .unwrap()
+                        .settle_offer(&channel_id, counter_payout)
+                        .expect("Error getting settle offer message.");
+                    dlc_message_handler.send_message(node_id, DlcMessage::SettleOffer(msg));
+                    peer_manager.process_events();
+                }
+                l @ "acceptsettlechanneloffer" => {
+                    let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let (msg, node_id) = dlc_manager
+                        .lock()
+                        .unwrap()
+                        .accept_settle_offer(&channel_id)
+                        .expect("Error accepting settle channel offer.");
+                    dlc_message_handler.send_message(node_id, DlcMessage::SettleAccept(msg));
+                    peer_manager.process_events();
+                }
+                l @ "rejectsettlechanneloffer" => {
+                    let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let (msg, node_id) = dlc_manager
+                        .lock()
+                        .unwrap()
+                        .reject_settle_offer(&channel_id)
+                        .expect("Error rejecting settle channel offer.");
+                    dlc_message_handler.send_message(node_id, DlcMessage::Reject(msg));
+                    peer_manager.process_events();
+                }
+                "listsettlechanneloffers" => {
+                    let locked_manager = dlc_manager.lock().unwrap();
+                    for channel in locked_manager
+                        .get_store()
+                        .get_signed_channels(Some(SignedChannelStateType::SettledReceived))
+                        .unwrap()
+                        .iter()
+                    {
+                        let channel_id = hex_str(&channel.channel_id);
+                        let own_payout = match channel.state {
+                            SignedChannelState::SettledReceived { own_payout, .. } => own_payout,
+                            _ => continue,
+                        };
+                        println!(
+                            "Settle offer channel {:?} from {} with own payout: {}",
+                            channel_id, channel.counter_party, own_payout
+                        );
+                    }
+                }
+                o @ "offerchannelrenew" => {
+                    let channel_id = read_id_or_continue!(words, o, "channel id");
+                    let (counter_payout, contract_path) =
+                        match (words.next().map(|x| x.parse()), words.next()) {
+                            (Some(Ok(payout)), Some(s)) => (payout, s),
+                            _ => continue,
+                        };
+                    let contract_input_str = fs::read_to_string(&contract_path)
+                        .expect("Error reading contract input file.");
+                    let contract_input: ContractInput = serde_json::from_str(&contract_input_str)
+                        .expect("Error deserializing contract input.");
+                    let manager_clone = dlc_manager.clone();
+                    let (renew_offer, node_id) = tokio::task::spawn_blocking(move || {
+                        manager_clone
+                            .lock()
+                            .unwrap()
+                            .renew_offer(&channel_id, counter_payout, &contract_input)
+                            .expect("Error sending offer")
+                    })
+                    .await
+                    .unwrap();
+                    dlc_message_handler.send_message(node_id, DlcMessage::RenewOffer(renew_offer));
+                    peer_manager.process_events();
+                }
+                "listrenewchanneloffers" => {
+                    let locked_manager = dlc_manager.lock().unwrap();
+                    for channel in locked_manager
+                        .get_store()
+                        .get_signed_channels(Some(SignedChannelStateType::RenewOffered))
+                        .unwrap()
+                        .iter()
+                    {
+                        let channel_id = hex_str(&channel.channel_id);
+                        let own_payout = match channel.state {
+                            SignedChannelState::RenewOffered {
+                                counter_payout,
+                                is_offer,
+                                ..
+                            } => {
+                                if is_offer {
+                                    continue;
+                                } else {
+                                    counter_payout
+                                }
+                            }
+
+                            _ => continue,
+                        };
+                        println!(
+                            "Settle offer channel {:?} from {} with own payout: {}",
+                            channel_id, channel.counter_party, own_payout
+                        );
+                    }
+                }
+                l @ "acceptrenewchannel" => {
+                    let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let (msg, node_id) = dlc_manager
+                        .lock()
+                        .unwrap()
+                        .accept_renew_offer(&channel_id)
+                        .expect("Error accepting channel.");
+                    dlc_message_handler.send_message(node_id, DlcMessage::RenewAccept(msg));
+                    peer_manager.process_events();
+                }
+                l @ "rejectrenewchanneloffer" => {
+                    let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let (msg, node_id) = dlc_manager
+                        .lock()
+                        .unwrap()
+                        .reject_renew_offer(&channel_id)
+                        .expect("Error rejecting settle channel offer.");
+                    dlc_message_handler.send_message(node_id, DlcMessage::Reject(msg));
+                    peer_manager.process_events();
+                }
+                "listsignedchannels" => {
+                    let locked_manager = dlc_manager.lock().unwrap();
+                    for channel in locked_manager
+                        .get_store()
+                        .get_signed_channels(None)
+                        .unwrap()
+                        .iter()
+                    {
+                        let channel_id = hex_str(&channel.channel_id);
+                        println!(
+                            "Signed channel {:?} with {}",
+                            channel_id, channel.counter_party
+                        );
+                    }
                 }
                 _ => println!("Unknown command. See `\"help\" for available commands."),
             }
@@ -302,13 +492,44 @@ pub(crate) async fn poll_for_user_input(
     }
 }
 
+fn read_id(words: &mut SplitWhitespace, err_cmd: &str, err_arg: &str) -> Result<[u8; 32], ()> {
+    match words.next() {
+        None => {
+            println!("ERROR: {} expects the {} as parameter.", err_cmd, err_arg);
+            Err(())
+        }
+        Some(s) => {
+            let mut res = [0u8; 32];
+            match to_slice(s, &mut res) {
+                Err(_) => {
+                    println!("ERROR: invalid {}.", err_arg);
+                    Err(())
+                }
+                Ok(_) => Ok(res),
+            }
+        }
+    }
+}
+
 fn help() {
     println!("connectpeer <pubkey@host:port>");
     println!("listpeers");
-    println!("offercontract <path_to_contract_input_json>");
+    println!("offercontract <pubkey@host:port> <path_to_contract_input_json>");
     println!("listoffers");
     println!("acceptoffer <contract_id>");
     println!("listcontracts");
+    println!("offerchannel <pubkey@host:port> <path_to_contract_input_json>");
+    println!("listchanneloffers");
+    println!("acceptchannel <channel_id>");
+    println!("offersettlechannel <channel_id> <counter_payout>");
+    println!("listsettlechanneloffers");
+    println!("acceptsettlechanneloffer <channel_id>");
+    println!("rejectsettlechanneloffer <channel_id>");
+    println!("offerrenewchannel <channel_id> <path_to_contract_input_json>");
+    println!("listrenewchanneloffers");
+    println!("acceptrenewchannel <channel_id>");
+    println!("rejectrenewchannel <channel_id>");
+    println!("listsignedchannels");
 }
 
 fn list_peers(peer_manager: Arc<PeerManager>) {
@@ -425,6 +646,7 @@ fn process_incoming_messages(
     dlc_manager: &Arc<Mutex<DlcManager>>,
     dlc_message_handler: &Arc<DlcMessageHandler>,
 ) {
+    println!("Checking for messages");
     let messages = dlc_message_handler.get_and_clear_received_messages();
 
     for (node_id, message) in messages {
