@@ -6,8 +6,8 @@ use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, Party
 
 use super::Error;
 use bitcoin::{
-    hashes::hash160::Hash, Address, EcdsaSig, OutPoint, PackedLockTime, PublicKey, Script,
-    Sequence, Transaction, TxIn, TxOut, Witness,
+    Address, EcdsaSig, OutPoint, PackedLockTime, PublicKey, Script, Sequence, Transaction, TxIn,
+    TxOut, Witness,
 };
 use miniscript::Descriptor;
 use secp256k1_zkp::{
@@ -103,16 +103,6 @@ pub struct DlcChannelTransactions {
     pub buffer_transaction: Transaction,
     /// Script pubkey of the buffer transaction.
     pub buffer_script_pubkey: Script,
-}
-
-impl RevokeParams {
-    fn get_pubkey_hashes(&self) -> (Hash, Hash, Hash) {
-        (
-            self.own_pk.pubkey_hash().as_hash(),
-            self.publish_pk.pubkey_hash().as_hash(),
-            self.revoke_pk.pubkey_hash().as_hash(),
-        )
-    }
 }
 
 /// Creates a buffer transaction using the given descriptor.
@@ -589,12 +579,12 @@ pub fn buffer_descriptor(
     offer_revoke_params: &RevokeParams,
     accept_revoke_params: &RevokeParams,
 ) -> Descriptor<PublicKey> {
-    let (offer_pkh, offer_publish_pkh, offer_revoke_pkh) = offer_revoke_params.get_pubkey_hashes();
-    let (accept_pkh, accept_publish_pkh, accept_revoke_pkh) =
-        accept_revoke_params.get_pubkey_hashes();
-
     let offer_pk = offer_revoke_params.own_pk;
     let accept_pk = accept_revoke_params.own_pk;
+    let accept_publish_pk = accept_revoke_params.publish_pk;
+    let accept_revoke_pk = accept_revoke_params.revoke_pk;
+    let offer_publish_pk = offer_revoke_params.publish_pk;
+    let offer_revoke_pk = offer_revoke_params.revoke_pk;
 
     let (first_pk, second_pk) = if offer_pk < accept_pk {
         (offer_pk, accept_pk)
@@ -606,13 +596,12 @@ pub fn buffer_descriptor(
     let script = format!("wsh(c:andor(pk({first_pk}),pk_k({second_pk}),or_i(and_v(v:pkh({offer_pk_hash}),and_v(v:pkh({accept_publish_pk_hash}),pk_h({accept_revoke_pk_hash}))),and_v(v:pkh({accept_pk_hash}),and_v(v:pkh({offer_publish_pk_hash}),pk_h({offer_revoke_pk_hash}))))))",
         first_pk = first_pk,
         second_pk = second_pk,
-        offer_pk_hash = offer_pkh,
-        accept_pk_hash = accept_pkh,
-        accept_publish_pk_hash = accept_publish_pkh,
-        accept_revoke_pk_hash = accept_revoke_pkh,
-        offer_publish_pk_hash = offer_publish_pkh,
-        offer_revoke_pk_hash = offer_revoke_pkh);
-    println!("{script}");
+        offer_pk_hash = offer_pk,
+        accept_pk_hash = accept_pk,
+        accept_publish_pk_hash = accept_publish_pk,
+        accept_revoke_pk_hash = accept_revoke_pk,
+        offer_publish_pk_hash = offer_publish_pk,
+        offer_revoke_pk_hash = offer_revoke_pk);
     script.parse().expect("a valid miniscript")
 }
 
