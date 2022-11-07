@@ -644,7 +644,12 @@ where
 
     fn check_refund(&mut self, contract: &SignedContract) -> Result<(), Error> {
         // TODO(tibo): should check for confirmation of refund before updating state
-        if contract.accepted_contract.dlc_transactions.refund.lock_time as u64
+        if contract
+            .accepted_contract
+            .dlc_transactions
+            .refund
+            .lock_time
+            .0 as u64
             <= self.time.unix_time_now()
         {
             let accepted_contract = &contract.accepted_contract;

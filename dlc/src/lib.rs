@@ -20,13 +20,14 @@ extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
 extern crate serde;
 
+use bitcoin::secp256k1::Scalar;
 use bitcoin::{
     blockdata::{
         opcodes,
         script::{Builder, Script},
         transaction::{OutPoint, Transaction, TxIn, TxOut},
     },
-    Witness,
+    PackedLockTime, Sequence, Witness,
 };
 use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
 use secp256k1_zkp::{
@@ -292,7 +293,7 @@ impl PartyParams {
         Ok((change_output, fund_fee, cet_or_refund_fee))
     }
 
-    fn get_unsigned_tx_inputs_and_serial_ids(&self, sequence: u32) -> (Vec<TxIn>, Vec<u64>) {
+    fn get_unsigned_tx_inputs_and_serial_ids(&self, sequence: Sequence) -> (Vec<TxIn>, Vec<u64>) {
         let mut tx_ins = Vec::with_capacity(self.inputs.len());
         let mut serial_ids = Vec::with_capacity(self.inputs.len());
 
@@ -425,7 +426,7 @@ pub(crate) fn create_cets_and_refund_tx(
     payouts: &[Payout],
     refund_lock_time: u32,
     cet_lock_time: u32,
-    cet_nsequence: Option<u32>,
+    cet_nsequence: Option<Sequence>,
 ) -> Result<(Vec<Transaction>, Transaction), Error> {
     let total_collateral = offer_params.collateral + accept_params.collateral;
 
@@ -500,7 +501,7 @@ pub fn create_cet(
 
     Transaction {
         version: TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
     }
@@ -583,7 +584,7 @@ pub fn create_funding_transaction(
 
     Transaction {
         version: TX_VERSION,
-        lock_time,
+        lock_time: PackedLockTime(lock_time),
         input,
         output,
     }
@@ -599,7 +600,7 @@ pub fn create_refund_transaction(
     let output = util::discard_dust(vec![offer_output, accept_output], DUST_LIMIT);
     Transaction {
         version: TX_VERSION,
-        lock_time: locktime,
+        lock_time: PackedLockTime(locktime),
         input: vec![funding_input],
         output,
     }
@@ -761,12 +762,14 @@ fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKe
             Err(err) => Err(err),
         })
         .collect::<Result<Vec<&[u8]>, Error>>()?;
-    let mut secret = SecretKey::from_slice(s_values[0])?;
-    for s in s_values.iter().skip(1) {
-        secret.add_assign(s)?;
-    }
+    let secret = SecretKey::from_slice(s_values[0])?;
 
-    Ok(secret)
+    let result = s_values.iter().skip(1).fold(secret, |accum, s| {
+        let sec = SecretKey::from_slice(s).unwrap();
+        accum.add_tweak(&Scalar::from(sec)).unwrap()
+    });
+
+    Ok(result)
 }
 
 /// Sign the given cet using own private key, adapt the counter party signature
@@ -870,7 +873,7 @@ mod tests {
     use std::str::FromStr;
     use util;
 
-    fn create_txin_vec(sequence: u32) -> Vec<TxIn> {
+    fn create_txin_vec(sequence: Sequence) -> Vec<TxIn> {
         let mut inputs = Vec::new();
         let txin = TxIn {
             previous_output: OutPoint::default(),
@@ -907,7 +910,7 @@ mod tests {
         let funding = TxIn {
             previous_output: OutPoint::default(),
             script_sig: Script::new(),
-            sequence: 3,
+            sequence: Sequence(3),
             witness: Witness::new(),
         };
 
@@ -920,18 +923,18 @@ mod tests {
 
         let refund_transaction = create_refund_transaction(offer, accept, funding, 0);
         assert_eq!(2, refund_transaction.version);
-        assert_eq!(0, refund_transaction.lock_time);
+        assert_eq!(0, refund_transaction.lock_time.0);
         assert_eq!(DUST_LIMIT + 1, refund_transaction.output[0].value);
         assert_eq!(DUST_LIMIT + 2, refund_transaction.output[1].value);
-        assert_eq!(3, refund_transaction.input[0].sequence);
+        assert_eq!(3, refund_transaction.input[0].sequence.0);
     }
 
     #[test]
     fn create_funding_transaction_test() {
         let (pk, pk1) = create_multi_party_pub_keys();
 
-        let offer_inputs = create_txin_vec(0);
-        let accept_inputs = create_txin_vec(1);
+        let offer_inputs = create_txin_vec(Sequence::ZERO);
+        let accept_inputs = create_txin_vec(Sequence(1));
 
         let change = 1000;
 
@@ -962,8 +965,8 @@ mod tests {
             0,
         );
 
-        assert_eq!(transaction.input[0].sequence, 0);
-        assert_eq!(transaction.input[1].sequence, 1);
+        assert_eq!(transaction.input[0].sequence.0, 0);
+        assert_eq!(transaction.input[1].sequence.0, 1);
 
         assert_eq!(transaction.output[0].value, total_collateral);
         assert_eq!(transaction.output[1].value, change);
@@ -975,8 +978,8 @@ mod tests {
     fn create_funding_transaction_with_outputs_less_than_dust_limit_test() {
         let (pk, pk1) = create_multi_party_pub_keys();
 
-        let offer_inputs = create_txin_vec(0);
-        let accept_inputs = create_txin_vec(1);
+        let offer_inputs = create_txin_vec(Sequence::ZERO);
+        let accept_inputs = create_txin_vec(Sequence(1));
 
         let total_collateral = 31415;
         let change = 999;
@@ -1041,7 +1044,7 @@ mod tests {
                 vout: 0,
             },
             script_sig: Script::new(),
-            sequence: 0xffffffff,
+            sequence: Sequence(0xffffffff),
             witness: Witness::from_vec(vec![Script::new().to_bytes()]),
         };
 
@@ -1054,7 +1057,7 @@ mod tests {
                 vout: 0,
             },
             script_sig: Script::new(),
-            sequence: 0xffffffff,
+            sequence: Sequence(0xffffffff),
             witness: Witness::from_vec(vec![Script::new().to_bytes()]),
         };
         let offer_fund_sk =
@@ -1231,9 +1234,9 @@ mod tests {
         .unwrap();
 
         // Assert
-        assert_eq!(10, dlc_txs.fund.lock_time);
-        assert_eq!(100, dlc_txs.refund.lock_time);
-        assert!(dlc_txs.cets.iter().all(|x| x.lock_time == 10));
+        assert_eq!(10, dlc_txs.fund.lock_time.0);
+        assert_eq!(100, dlc_txs.refund.lock_time.0);
+        assert!(dlc_txs.cets.iter().all(|x| x.lock_time.0 == 10));
     }
 
     #[test]
@@ -1282,7 +1285,7 @@ mod tests {
 
         for i in 0..NB_ORACLES {
             let oracle_kp = KeyPair::new(&secp, &mut rng);
-            let oracle_pubkey = oracle_kp.public_key();
+            let oracle_pubkey = oracle_kp.x_only_public_key().0;
             let mut nonces: Vec<XOnlyPublicKey> = Vec::with_capacity(NB_DIGITS);
             let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(NB_DIGITS);
             oracle_sigs.push(Vec::with_capacity(NB_DIGITS));
@@ -1290,7 +1293,7 @@ mod tests {
                 let mut sk_nonce = [0u8; 32];
                 rng.fill_bytes(&mut sk_nonce);
                 let oracle_r_kp = KeyPair::from_seckey_slice(&secp, &sk_nonce).unwrap();
-                let nonce = XOnlyPublicKey::from_keypair(&oracle_r_kp);
+                let nonce = XOnlyPublicKey::from_keypair(&oracle_r_kp).0;
                 let sig = secp_utils::schnorrsig_sign_with_nonce(
                     &secp,
                     &messages[0][i][j],

@@ -409,11 +409,12 @@ where
                         x.funding_input.input_serial_id
                     ))
                 })?;
-            let tx = Transaction::consensus_decode(&*x.funding_input.prev_tx).map_err(|_| {
-                Error::InvalidParameters(
-                    "Could not decode funding input previous tx parameter".to_string(),
-                )
-            })?;
+            let tx = Transaction::consensus_decode(&mut x.funding_input.prev_tx.as_slice())
+                .map_err(|_| {
+                    Error::InvalidParameters(
+                        "Could not decode funding input previous tx parameter".to_string(),
+                    )
+                })?;
             let vout = x.funding_input.prev_tx_vout;
             let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
                 Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
@@ -603,12 +604,13 @@ where
                     funding_input_info.funding_input.input_serial_id,
                 ))
             })?;
-        let tx = Transaction::consensus_decode(&*funding_input_info.funding_input.prev_tx)
-            .map_err(|_| {
-                Error::InvalidParameters(
-                    "Could not decode funding input previous tx parameter".to_string(),
-                )
-            })?;
+        let tx =
+            Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
+                .map_err(|_| {
+                    Error::InvalidParameters(
+                        "Could not decode funding input previous tx parameter".to_string(),
+                    )
+                })?;
         let vout = funding_input_info.funding_input.prev_tx_vout;
         let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
             Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))

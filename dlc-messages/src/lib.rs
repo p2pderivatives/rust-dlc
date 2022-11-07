@@ -130,7 +130,7 @@ impl From<&FundingInput> for TxInputInfo {
     fn from(funding_input: &FundingInput) -> TxInputInfo {
         TxInputInfo {
             outpoint: OutPoint {
-                txid: Transaction::consensus_decode(&funding_input.prev_tx[..])
+                txid: Transaction::consensus_decode(&mut funding_input.prev_tx.as_slice())
                     .expect("Transaction Decode Error")
                     .txid(),
                 vout: funding_input.prev_tx_vout,

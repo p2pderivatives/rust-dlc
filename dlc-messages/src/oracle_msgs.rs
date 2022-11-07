@@ -350,7 +350,7 @@ mod tests {
 
     fn some_schnorr_pubkey() -> XOnlyPublicKey {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        XOnlyPublicKey::from_keypair(&key_pair)
+        XOnlyPublicKey::from_keypair(&key_pair).0
     }
 
     fn digit_event(nb_nonces: usize) -> OracleEvent {
@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn valid_oracle_announcement_passes_validation_test() {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair);
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let events = [digit_event(10), enum_event(1)];
         for event in events {
             let mut event_hex = Vec::new();
@@ -398,7 +398,7 @@ mod tests {
     #[test]
     fn invalid_oracle_announcement_fails_validation_test() {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair);
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let events = [digit_event(9), enum_event(2)];
         for event in events {
             let mut event_hex = Vec::new();
@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn invalid_oracle_announcement_signature_fails_validation_test() {
         let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
-        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair);
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let event = digit_event(10);
         let mut event_hex = Vec::new();
         event

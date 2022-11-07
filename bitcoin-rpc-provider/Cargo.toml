@@ -5,10 +5,10 @@ name = "bitcoin-rpc-provider"
 version = "0.1.0"
 
 [dependencies]
-bitcoin = {version = "0.28"}
-bitcoincore-rpc = {version = "0.15.0"}
-bitcoincore-rpc-json = {version = "0.15.0"}
+bitcoin = {version = "0.29.2"}
+bitcoincore-rpc = {version = "0.16.0"}
+bitcoincore-rpc-json = {version = "0.16.0"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.107"}
+lightning = {version = "0.0.112"}
 log = "0.4.14"
 rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
