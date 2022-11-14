@@ -11,4 +11,5 @@ members = [
   "mocks",
   "sample",
   "dlc-sled-storage-provider",
+  "suredbits-oracle-client",
 ]
