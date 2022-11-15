@@ -10,5 +10,6 @@ members = [
   "dlc-manager",
   "mocks",
   "sample",
+  "simple-wallet",
   "dlc-sled-storage-provider",
 ]

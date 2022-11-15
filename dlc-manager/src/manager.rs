@@ -285,6 +285,7 @@ where
             REFUND_DELAY,
             &counter_party,
             &self.wallet,
+            &self.blockchain,
         )?;
 
         offered_contract.validate()?;
@@ -304,8 +305,12 @@ where
 
         let counter_party = offered_contract.counter_party;
 
-        let (accepted_contract, accept_msg) =
-            accept_contract(&self.secp, &offered_contract, &self.wallet)?;
+        let (accepted_contract, accept_msg) = accept_contract(
+            &self.secp,
+            &offered_contract,
+            &self.wallet,
+            &self.blockchain,
+        )?;
 
         self.wallet.import_address(&Address::p2wsh(
             &accepted_contract.dlc_transactions.funding_script_pubkey,
@@ -456,7 +461,7 @@ where
     }
 
     fn check_signed_contract(&mut self, contract: &SignedContract) -> Result<(), Error> {
-        let confirmations = self.wallet.get_transaction_confirmations(
+        let confirmations = self.blockchain.get_transaction_confirmations(
             &contract.accepted_contract.dlc_transactions.fund.txid(),
         )?;
         if confirmations >= NB_CONFIRMATIONS {
@@ -587,7 +592,7 @@ where
     fn check_preclosed_contract(&mut self, contract: &PreClosedContract) -> Result<(), Error> {
         let broadcasted_txid = contract.signed_cet.txid();
         let confirmations = self
-            .wallet
+            .blockchain
             .get_transaction_confirmations(&broadcasted_txid)?;
         if confirmations >= NB_CONFIRMATIONS {
             let closed_contract = ClosedContract {
@@ -609,7 +614,7 @@ where
         attestations: Vec<OracleAttestation>,
     ) -> Result<Contract, Error> {
         let confirmations = self
-            .wallet
+            .blockchain
             .get_transaction_confirmations(&signed_cet.txid())?;
 
         if confirmations < 1 {
@@ -657,7 +662,9 @@ where
         {
             let accepted_contract = &contract.accepted_contract;
             let refund = accepted_contract.dlc_transactions.refund.clone();
-            let confirmations = self.wallet.get_transaction_confirmations(&refund.txid())?;
+            let confirmations = self
+                .blockchain
+                .get_transaction_confirmations(&refund.txid())?;
             if confirmations == 0 {
                 let refund =
                     crate::contract_updater::get_signed_refund(&self.secp, contract, &self.wallet)?;
@@ -702,6 +709,7 @@ where
             CET_NSEQUENCE,
             REFUND_DELAY,
             &self.wallet,
+            &self.blockchain,
         )?;
 
         let msg = offered_channel.get_offer_channel_msg(&offered_contract);
@@ -743,6 +751,7 @@ where
                 &offered_channel,
                 &offered_contract,
                 &self.wallet,
+                &self.blockchain,
             )?;
 
         self.wallet.import_address(&Address::p2wsh(
@@ -1028,7 +1037,7 @@ where
         )?;
 
         if self
-            .wallet
+            .blockchain
             .get_transaction_confirmations(&buffer_tx.txid())?
             > CET_NSEQUENCE
         {
