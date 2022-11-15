@@ -10,7 +10,7 @@ pub(crate) fn get_majority_combination(
         let index = outcome.0;
         let outcome_value = outcome.1;
 
-        let index_set = hash_set.entry(outcome_value).or_insert(Vec::new());
+        let index_set = hash_set.entry(outcome_value).or_default();
         index_set.push(index);
     }
 

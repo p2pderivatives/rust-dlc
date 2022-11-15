@@ -96,8 +96,8 @@ extern "C" fn constant_nonce_fn(
 
 fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPublicKey) -> [u8; 32] {
     let mut buf = Vec::<u8>::new();
-    buf.extend(&nonce.serialize());
-    buf.extend(&pubkey.serialize());
+    buf.extend(nonce.serialize());
+    buf.extend(pubkey.serialize());
     buf.extend(msg.as_ref().to_vec());
     BIP340Hash::hash(&buf).into_inner()
 }
@@ -105,6 +105,6 @@ fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPubl
 fn schnorr_pubkey_to_pubkey(schnorr_pubkey: &XOnlyPublicKey) -> Result<PublicKey, Error> {
     let mut buf = Vec::<u8>::with_capacity(33);
     buf.push(0x02);
-    buf.extend(&schnorr_pubkey.serialize());
+    buf.extend(schnorr_pubkey.serialize());
     Ok(PublicKey::from_slice(&buf)?)
 }

@@ -570,12 +570,14 @@ mod tests {
         get_variable_oracle_numeric_infos, same_num_digits_oracle_numeric_infos,
     };
 
+    type ExpectedIter = Vec<Vec<(usize, Vec<usize>)>>;
+
     fn tests_common(
         m_trie: &mut MultiTrie<usize>,
         path: Vec<usize>,
         good_paths: Vec<Vec<(usize, Vec<usize>)>>,
         bad_paths: Vec<Vec<(usize, Vec<usize>)>>,
-        expected_iter: Option<Vec<Vec<(usize, Vec<usize>)>>>,
+        expected_iter: Option<ExpectedIter>,
     ) {
         let mut get_value = |_: &[Vec<usize>], _: &[usize]| -> Result<usize, Error> { Ok(2) };
 
@@ -598,7 +600,7 @@ mod tests {
         }
 
         if let Some(expected) = expected_iter {
-            let iter = MultiTrieIterator::new(&m_trie);
+            let iter = MultiTrieIterator::new(m_trie);
 
             for (i, res) in iter.enumerate() {
                 assert_eq!(expected[i], res.path);
@@ -1031,10 +1033,8 @@ mod tests {
 
         unordered.sort();
 
-        let mut prev_index = 0;
-        for i in unordered.iter().skip(1) {
+        for (prev_index, i) in unordered.iter().skip(1).enumerate() {
             assert_eq!(*i, prev_index + 1);
-            prev_index += 1;
         }
     }
 }

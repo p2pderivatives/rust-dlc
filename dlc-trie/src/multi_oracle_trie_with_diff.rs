@@ -244,10 +244,8 @@ mod tests {
 
         indexes.sort();
 
-        let mut prev_index = 0;
-        for i in indexes.iter().skip(1) {
+        for (prev_index, i) in indexes.iter().skip(1).enumerate() {
             assert_eq!(*i, prev_index + 1);
-            prev_index += 1;
         }
 
         let mut indexes: Vec<_> = multi_oracle_trie
@@ -257,10 +255,8 @@ mod tests {
 
         indexes.sort();
 
-        let mut prev_index = 0;
-        for i in indexes.iter().skip(1) {
+        for (prev_index, i) in indexes.iter().skip(1).enumerate() {
             assert_eq!(*i, prev_index + 1);
-            prev_index += 1;
         }
 
         let iter_res = multi_oracle_trie

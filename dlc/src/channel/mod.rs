@@ -474,7 +474,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     let descriptor = settle_descriptor(counter_params, &own_params.own_pk, csv_timelock);
 
-    let vout = if is_offer { 1 } else { 0 };
+    let vout = u32::from(is_offer);
 
     let tx_in = TxIn {
         previous_output: OutPoint {
@@ -770,8 +770,8 @@ mod tests {
         );
 
         let satisfier = HashMap::from_iter(vec![
-            (offer_params.own_pk, sig.clone()),
-            (accept_params.own_pk, sig.clone()),
+            (offer_params.own_pk, sig),
+            (accept_params.own_pk, sig),
         ]);
 
         descriptor
@@ -897,7 +897,7 @@ mod tests {
             .unwrap(),
         );
 
-        let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig.clone())]);
+        let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig)]);
 
         descriptor
             .satisfy(
