@@ -209,14 +209,14 @@ impl Storage for SledStorageProvider {
     fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error> {
         let serialized = serialize_contract(&Contract::Offered(contract.clone()))?;
         self.contract_tree()?
-            .insert(&contract.id, serialized)
+            .insert(contract.id, serialized)
             .map_err(to_storage_error)?;
         Ok(())
     }
 
     fn delete_contract(&mut self, contract_id: &ContractId) -> Result<(), Error> {
         self.contract_tree()?
-            .remove(&contract_id)
+            .remove(contract_id)
             .map_err(to_storage_error)?;
         Ok(())
     }
@@ -358,14 +358,14 @@ impl Storage for SledStorageProvider {
 
     fn persist_chain_monitor(&mut self, monitor: &ChainMonitor) -> Result<(), Error> {
         self.open_tree(&[CHAIN_MONITOR_TREE])?
-            .insert(&[CHAIN_MONITOR_KEY], monitor.serialize()?)
+            .insert([CHAIN_MONITOR_KEY], monitor.serialize()?)
             .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {}", e)))?;
         Ok(())
     }
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, dlc_manager::error::Error> {
         let serialized = self
             .open_tree(&[CHAIN_MONITOR_TREE])?
-            .get(&[CHAIN_MONITOR_KEY])
+            .get([CHAIN_MONITOR_KEY])
             .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {}", e)))?;
         let deserialized = match serialized {
             Some(s) => Some(

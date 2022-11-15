@@ -315,12 +315,9 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let path_copy = path.clone();
     let alter_sign = move |msg| match msg {
         Message::SignChannel(mut sign_channel) => {
-            match path_copy {
-                TestPath::BadSignBufferAdaptorSignature => {
-                    sign_channel.buffer_adaptor_signature =
-                        alter_adaptor_sig(&sign_channel.buffer_adaptor_signature);
-                }
-                _ => {}
+            if path_copy == TestPath::BadSignBufferAdaptorSignature {
+                sign_channel.buffer_adaptor_signature =
+                    alter_adaptor_sig(&sign_channel.buffer_adaptor_signature);
             }
             Some(Message::SignChannel(sign_channel))
         }
@@ -833,7 +830,7 @@ fn settle_race(
         .unwrap();
 
     second_send
-        .send(Some(Message::SettleOffer(settle_offer_2.clone())))
+        .send(Some(Message::SettleOffer(settle_offer_2)))
         .unwrap();
 
     // Process 2 offers + 2 rejects

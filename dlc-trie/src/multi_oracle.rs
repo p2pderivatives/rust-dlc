@@ -406,12 +406,14 @@ mod tests {
     };
     use secp256k1_zkp::rand::{thread_rng, RngCore};
 
+    type CoveringCetsMinMax = (Vec<(Vec<usize>, Vec<usize>)>, Vec<(Vec<usize>, Vec<usize>)>);
+
     fn compute_covering_cets_min_and_max(
         oracle_digits_infos: &[usize],
         main_outcome_prefix: &[usize],
         max_error_exp: usize,
         min_support_exp: usize,
-    ) -> (Vec<(Vec<usize>, Vec<usize>)>, Vec<(Vec<usize>, Vec<usize>)>) {
+    ) -> CoveringCetsMinMax {
         let covering_max = compute_outcome_combinations(
             oracle_digits_infos,
             main_outcome_prefix,
