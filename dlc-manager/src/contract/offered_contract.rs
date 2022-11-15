@@ -7,7 +7,7 @@ use crate::utils::get_new_serial_id;
 
 use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
-use super::FundingInputInfo;
+use super::{ContractDescriptor, FundingInputInfo};
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::OfferDlc;
@@ -52,6 +52,18 @@ impl OfferedContract {
     pub fn validate(&self) -> Result<(), crate::error::Error> {
         for info in &self.contract_info {
             info.validate()?;
+            let payouts = match &info.contract_descriptor {
+                ContractDescriptor::Enum(e) => e.get_payouts(),
+                ContractDescriptor::Numerical(e) => e.get_payouts(self.total_collateral)?,
+            };
+            let valid = payouts
+                .iter()
+                .all(|p| p.accept + p.offer == self.total_collateral);
+            if !valid {
+                return Err(crate::error::Error::InvalidParameters(
+                    "Sum of payout doesn't equal total collateral".to_string(),
+                ));
+            }
         }
 
         Ok(())
@@ -197,6 +209,20 @@ mod tests {
     fn offer_numerical_non_continuous() {
         validate_offer_test_common(include_str!(
             "../../test_inputs/offer_numerical_non_continuous.json"
+        ));
+    }
+
+    #[test]
+    fn offer_enum_collateral_not_equal_payout() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_enum_collateral_not_equal_payout.json"
+        ));
+    }
+
+    #[test]
+    fn offer_numerical_collateral_less_than_payout() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_numerical_collateral_less_than_payout.json"
         ));
     }
 }
