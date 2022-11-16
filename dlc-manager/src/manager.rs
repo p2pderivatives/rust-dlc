@@ -287,6 +287,8 @@ where
             &self.wallet,
         )?;
 
+        offered_contract.validate()?;
+
         self.store.create_contract(&offered_contract)?;
 
         Ok(offer_msg)
@@ -337,6 +339,7 @@ where
         offered_message.validate(&self.secp, REFUND_DELAY, REFUND_DELAY * 2)?;
         let contract: OfferedContract =
             OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
+        contract.validate()?;
         self.store.create_contract(&contract)?;
 
         Ok(())
@@ -1058,6 +1061,8 @@ where
         )?;
 
         let (channel, contract) = OfferedChannel::from_offer_channel(offer_channel, counter_party)?;
+
+        contract.validate()?;
 
         self.store
             .upsert_channel(Channel::Offered(channel), Some(Contract::Offered(contract)))?;
