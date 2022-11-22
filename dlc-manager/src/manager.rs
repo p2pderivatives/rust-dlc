@@ -280,7 +280,7 @@ where
         let total_collateral = offered_contract.total_collateral;
 
         let (accept_params, fund_secret_key, funding_inputs) = self.get_party_params(
-            offered_contract.offer_params.collateral,
+            total_collateral - offered_contract.offer_params.collateral,
             offered_contract.fee_rate_per_vb,
         )?;
 

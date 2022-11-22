@@ -729,6 +729,24 @@ fn enum_single_oracle_test() {
 
 #[test]
 #[ignore]
+fn enum_single_oracle_offer_zero_collateral_test() {
+    let mut test_params = get_enum_test_params(1, 1, None);
+    test_params.contract_input.offer_collateral = 0;
+    test_params.contract_input.accept_collateral = 2 * COLLATERAL;
+    manager_execution_test(test_params, TestPath::Close);
+}
+
+#[test]
+#[ignore]
+fn enum_single_oracle_accept_zero_collateral_test() {
+    let mut test_params = get_enum_test_params(1, 1, None);
+    test_params.contract_input.offer_collateral = 2 * COLLATERAL;
+    test_params.contract_input.accept_collateral = 0;
+    manager_execution_test(test_params, TestPath::Close);
+}
+
+#[test]
+#[ignore]
 fn enum_3_of_3_test() {
     manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close);
 }
