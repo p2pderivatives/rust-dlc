@@ -235,19 +235,24 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     let mut unsorted = trie_info
         .map(|x| {
-            let adaptor_point = utils::get_adaptor_point_for_indexed_paths(
-                &x.indexes,
-                &x.paths,
-                precomputed_points,
-            )?;
-            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                secp,
-                &cets[x.value.cet_index],
-                &adaptor_point,
-                fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-            )?;
+            let adaptor_sig = if x.paths.iter().any(|p| p.iter().any(|v| *v == 1)) {
+                let adaptor_point = utils::get_adaptor_point_for_indexed_paths(
+                    &x.indexes,
+                    &x.paths,
+                    precomputed_points,
+                )?;
+                dlc::create_cet_adaptor_sig_from_point(
+                    secp,
+                    &cets[x.value.cet_index],
+                    &adaptor_point,
+                    fund_privkey,
+                    funding_script_pubkey,
+                    fund_output_value,
+                )?
+            } else {
+                "02819ce590aea5806cea12626150becc7108d531294d9341998a9ff545df474539024c7b34cb6568b5bd0ab4fc2a60ced5bab7f41d464d278443a63d5a65b14261a20bfa40b2a055f44bbfae1d5bf4d61b4b625c4930601e5b04cdba7b1473632ea439ca1a528031c024064e263b128bbdb9c8323e1a5e057c931cd157f6c1816094d17015ab43be99bd0b7f29b9ed46e255127dc2775d7e27c0bbf8b7550979cc49".parse().unwrap()
+            };
+
             Ok((x.value.adaptor_index, adaptor_sig))
         })
         .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
@@ -302,6 +307,9 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
 ) -> Result<usize, Error> {
     let mut max_adaptor_index = 0;
     for x in trie_info {
+        if x.paths.iter().all(|p| p.iter().all(|v| *v == 0)) {
+            continue;
+        }
         let adaptor_point =
             utils::get_adaptor_point_for_indexed_paths(&x.indexes, &x.paths, precomputed_points)?;
         let adaptor_sig = adaptor_sigs[x.value.adaptor_index];

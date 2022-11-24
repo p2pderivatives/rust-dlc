@@ -75,7 +75,7 @@ fn create_contract_descriptor() -> ContractDescriptor {
                         extra_precision: 0,
                     },
                     PayoutPoint {
-                        event_outcome: CAP,
+                        event_outcome: max_value() as u64,
                         outcome_payout: TOTAL_COLLATERAL,
                         extra_precision: 0,
                     },

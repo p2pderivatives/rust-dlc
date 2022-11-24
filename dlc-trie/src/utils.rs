@@ -28,6 +28,7 @@ pub(crate) fn get_adaptor_point_for_indexed_paths(
         let k: Vec<&PublicKey> = precomputed_points[*j]
             .iter()
             .zip(path.iter())
+            .filter(|(_, p)| **p == 1)
             .map(|(y, p)| &y[*p])
             .collect();
         keys.extend(k);
