@@ -30,18 +30,18 @@ use std::str::FromStr;
 /// The base in which the outcome values are decomposed.
 const BASE: u32 = 2;
 /// The point after which payout is constant.
-const FLOOR: u64 = 45000;
-const CAP: u64 = 55000;
+const FLOOR: u64 = 0;
+const CAP: u64 = 1023;
 /// The rounding modulus to use (1 means no rounding is done).
 const ROUNDING_MOD: u64 = 1;
 /// The number of digits used to represent outcome values.
-const NB_DIGITS: usize = 17;
+const NB_DIGITS: usize = 10;
 /// The minimum difference between oracle supported for the contract (as a power of 2).
 const MIN_SUPPORT_EXP: usize = 7;
 /// The maximum difference between oracle supported for the contract (as a power of 2).
 const MAX_ERROR_EXP: usize = 8;
 /// Whether to allow difference in oracle's attestation values.
-const USE_DIFF_PARAMS: bool = true;
+const USE_DIFF_PARAMS: bool = false;
 /// The number of oracles used for the contract.
 const NB_ORACLES: usize = 3;
 /// The number of oracles required to be in agreement to close the contract.
@@ -75,37 +75,7 @@ fn create_contract_descriptor() -> ContractDescriptor {
                         extra_precision: 0,
                     },
                     PayoutPoint {
-                        event_outcome: FLOOR,
-                        outcome_payout: 0,
-                        extra_precision: 0,
-                    },
-                ])
-                .unwrap(),
-            ),
-            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
-                PolynomialPayoutCurvePiece::new(vec![
-                    PayoutPoint {
-                        event_outcome: FLOOR,
-                        outcome_payout: 0,
-                        extra_precision: 0,
-                    },
-                    PayoutPoint {
                         event_outcome: CAP,
-                        outcome_payout: TOTAL_COLLATERAL,
-                        extra_precision: 0,
-                    },
-                ])
-                .unwrap(),
-            ),
-            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
-                PolynomialPayoutCurvePiece::new(vec![
-                    PayoutPoint {
-                        event_outcome: CAP,
-                        outcome_payout: TOTAL_COLLATERAL,
-                        extra_precision: 0,
-                    },
-                    PayoutPoint {
-                        event_outcome: max_value() as u64,
                         outcome_payout: TOTAL_COLLATERAL,
                         extra_precision: 0,
                     },
@@ -286,7 +256,7 @@ pub fn verify_bench(c: &mut Criterion) {
 
 criterion_group! {
     name = sign_verify_bench;
-    config = Criterion::default().measurement_time(std::time::Duration::new(120, 0)).sample_size(10);
+    config = Criterion::default();
     targets = sign_bench, verify_bench
 }
 criterion_main!(sign_verify_bench);
