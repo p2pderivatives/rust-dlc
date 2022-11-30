@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use bitcoin::{Block, BlockHash, Transaction, Txid};
 use dlc_messages::ser_impls::{
-    read_ecdsa_adaptor_signature, read_vec, write_ecdsa_adaptor_signature, write_vec,
+    read_ecdsa_adaptor_signature, read_hash_map, read_vec, write_ecdsa_adaptor_signature,
+    write_hash_map, write_vec,
 };
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
@@ -23,7 +24,7 @@ pub struct ChainMonitor {
     pub(crate) last_block_hashes: Vec<BlockHash>,
 }
 
-impl_dlc_writeable!(ChainMonitor, { (watched_tx, writeable), (last_height, writeable), (last_block_hashes, { cb_writeable, write_vec, read_vec}) });
+impl_dlc_writeable!(ChainMonitor, { (watched_tx, { cb_writeable, write_hash_map, read_hash_map}), (last_height, writeable), (last_block_hashes, { cb_writeable, write_vec, read_vec}) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ChannelInfo {

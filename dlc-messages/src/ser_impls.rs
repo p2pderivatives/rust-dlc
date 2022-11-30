@@ -7,6 +7,8 @@ use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::{ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH, EcdsaAdaptorSignature};
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::io::Read;
 
 const MAX_VEC_SIZE: u64 = 1000000;
@@ -557,6 +559,42 @@ pub fn read_as_tlv<T: Type + Readable, R: ::std::io::Read>(
     // This retrieves the length, will be removed once oracle specs are updated.
     let _: BigSize = Readable::read(reader)?;
     Readable::read(reader)
+}
+
+/// Writes a [`HashMap`].
+pub fn write_hash_map<W: Writer, T, V>(
+    input: &HashMap<T, V>,
+    writer: &mut W,
+) -> Result<(), ::std::io::Error>
+where
+    T: Writeable,
+    V: Writeable,
+{
+    (input.len() as u64).write(writer)?;
+
+    for (key, value) in input.iter() {
+        key.write(writer)?;
+        value.write(writer)?;
+    }
+
+    Ok(())
+}
+
+/// Reads a [`HashMap`].
+pub fn read_hash_map<R: ::std::io::Read, T, V>(reader: &mut R) -> Result<HashMap<T, V>, DecodeError>
+where
+    T: Readable + Hash + Eq,
+    V: Readable,
+{
+    let len: u64 = Readable::read(reader)?;
+    let mut map = HashMap::new();
+    for _ in 0..len {
+        let key: T = Readable::read(reader)?;
+        let value: V = Readable::read(reader)?;
+        map.insert(key, value);
+    }
+
+    Ok(map)
 }
 
 impl_dlc_writeable_external!(Payout, payout, { (offer, writeable), (accept, writeable) });
