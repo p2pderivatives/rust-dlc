@@ -1,7 +1,13 @@
 //!
 //!
 
-use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Witness};
+use std::collections::HashMap;
+
+use bitcoin::{
+    Address, EcdsaSig, OutPoint, PackedLockTime, PublicKey, Script, Sequence, Transaction, TxIn,
+    TxOut, Witness,
+};
+use secp256k1_zkp::{PublicKey as SecpPublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::{channel::buffer_descriptor, Error};
 
@@ -31,12 +37,19 @@ pub const SPLIT_TX_WEIGHT: usize = 771;
 pub const LN_GLUE_TX_WEIGHT: usize = BUFFER_TX_WEIGHT;
 
 ///
-pub const DLC_CHANNEL_AND_SPLIT_MIN_WEIGHT: usize = crate::channel::sub_channel::SPLIT_TX_WEIGHT
-    + crate::channel::BUFFER_TX_WEIGHT
-    + crate::channel::CET_EXTRA_WEIGHT
-    + crate::CET_BASE_WEIGHT
-    + crate::P2WPKH_WITNESS_SIZE * 2
-    + 18;
+pub fn dlc_channel_and_split_fee(fee_rate_per_vb: u64) -> Result<u64, Error> {
+    Ok(crate::util::weight_to_fee(
+        crate::channel::sub_channel::SPLIT_TX_WEIGHT,
+        fee_rate_per_vb,
+    )? + crate::util::weight_to_fee(crate::channel::BUFFER_TX_WEIGHT, fee_rate_per_vb)?
+        + crate::util::weight_to_fee(
+            crate::channel::CET_EXTRA_WEIGHT
+                + crate::CET_BASE_WEIGHT
+                + crate::P2WPKH_WITNESS_SIZE * 2
+                + 18,
+            fee_rate_per_vb,
+        )?)
+}
 
 #[derive(Clone, Debug)]
 ///
@@ -58,14 +71,11 @@ pub fn create_split_tx(
 ) -> Result<SplitTx, Error> {
     let output_desc = buffer_descriptor(offer_revoke_params, accept_revoke_params);
 
-    let dlc_fee = crate::util::weight_to_fee(
-        super::BUFFER_TX_WEIGHT
-            + super::CET_EXTRA_WEIGHT
-            + crate::CET_BASE_WEIGHT
-            + 2 * crate::P2WPKH_WITNESS_SIZE
-            + 18,
-        fee_rate_per_vb,
-    )?;
+    let dlc_fee = crate::util::weight_to_fee(super::BUFFER_TX_WEIGHT, fee_rate_per_vb)?
+        + crate::util::weight_to_fee(
+            super::CET_EXTRA_WEIGHT + crate::CET_BASE_WEIGHT + 2 * crate::P2WPKH_WITNESS_SIZE + 18,
+            fee_rate_per_vb,
+        )?;
 
     let dlc_output_value = dlc_collateral + dlc_fee;
 
@@ -127,4 +137,94 @@ pub fn create_ln_glue_tx(
             script_pubkey: ln_fund_script.to_v0_p2wsh(),
         }],
     }
+}
+
+///
+pub fn create_and_sign_punish_split_transaction<C: Signing>(
+    secp: &Secp256k1<C>,
+    offer_params: &RevokeParams,
+    accept_params: &RevokeParams,
+    own_sk: &SecretKey,
+    counter_publish_sk: &SecretKey,
+    counter_revoke_sk: &SecretKey,
+    prev_tx: &Transaction,
+    dest_address: &Address,
+    lock_time: u32,
+    fee_rate_per_vb: u64,
+) -> Result<Transaction, Error> {
+    let descriptor = buffer_descriptor(offer_params, accept_params);
+
+    let tx_in = vec![
+        TxIn {
+            previous_output: OutPoint {
+                txid: prev_tx.txid(),
+                vout: 0,
+            },
+            sequence: Sequence::ZERO,
+            script_sig: Script::default(),
+            witness: Witness::default(),
+        },
+        TxIn {
+            previous_output: OutPoint {
+                txid: prev_tx.txid(),
+                vout: 1,
+            },
+            sequence: Sequence::ZERO,
+            script_sig: Script::default(),
+            witness: Witness::default(),
+        },
+    ];
+
+    let dest_script_pk_len = dest_address.script_pubkey().len();
+    let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
+    let output_weight = super::N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
+    let tx_fee = crate::util::weight_to_fee(
+        super::PUNISH_BUFFER_INPUT_WEIGHT * 2 + output_weight,
+        fee_rate_per_vb,
+    )?;
+
+    let output_value = prev_tx.output[0].value + prev_tx.output[1].value - tx_fee;
+
+    let mut tx = Transaction {
+        version: crate::TX_VERSION,
+        lock_time: PackedLockTime(lock_time),
+        input: tx_in,
+        output: vec![TxOut {
+            value: output_value,
+            script_pubkey: dest_address.script_pubkey(),
+        }],
+    };
+
+    for i in 0..2 {
+        let mut sigs = HashMap::new();
+
+        for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
+            let pk = PublicKey {
+                inner: SecpPublicKey::from_secret_key(secp, sk),
+                compressed: true,
+            };
+
+            let pkh = pk.pubkey_hash().as_hash();
+            sigs.insert(
+                pkh,
+                (
+                    pk,
+                    EcdsaSig::sighash_all(crate::util::get_raw_sig_for_tx_input(
+                        secp,
+                        &tx,
+                        i,
+                        &descriptor.script_code()?,
+                        prev_tx.output[i].value,
+                        sk,
+                    )?),
+                ),
+            );
+        }
+
+        descriptor
+            .satisfy(&mut tx.input[i], sigs.clone())
+            .map_err(|_| Error::InvalidArgument)?;
+    }
+
+    Ok(tx)
 }

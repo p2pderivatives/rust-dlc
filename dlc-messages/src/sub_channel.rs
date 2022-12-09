@@ -20,6 +20,16 @@ pub enum SubChannelMessage {
     Confirm(SubChannelConfirm),
     ///
     Finalize(SubChannelFinalize),
+    ///
+    CloseOffer(SubChannelCloseOffer),
+    ///
+    CloseAccept(SubChannelCloseAccept),
+    ///
+    CloseConfirm(SubChannelCloseConfirm),
+    ///
+    CloseFinalize(SubChannelCloseFinalize),
+    ///
+    CloseReject(SubChannelCloseReject),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -184,7 +194,7 @@ pub struct SubChannelConfirm {
     ///
     pub channel_id: [u8; 32],
     ///
-    pub per_split_secret: SecretKey,
+    pub per_commitment_secret: SecretKey,
     ///
     pub next_per_commitment_point: PublicKey,
     ///
@@ -206,7 +216,7 @@ pub struct SubChannelConfirm {
 
 impl_dlc_writeable!(SubChannelConfirm, {
     (channel_id, writeable),
-    (per_split_secret, writeable),
+    (per_commitment_secret, writeable),
     (next_per_commitment_point, writeable),
     (split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (commit_signature, writeable),
@@ -223,14 +233,100 @@ pub struct SubChannelFinalize {
     ///
     pub channel_id: [u8; 32],
     ///
-    pub per_split_secret: SecretKey,
+    pub per_commitment_secret: SecretKey,
     ///
     pub next_per_commitment_point: PublicKey,
 }
 
 impl_dlc_writeable!(SubChannelFinalize, {
     (channel_id, writeable),
-    (per_split_secret, writeable),
+    (per_commitment_secret, writeable),
     (next_per_commitment_point, writeable)
 
 });
+
+///
+#[derive(Clone, Debug)]
+pub struct SubChannelCloseOffer {
+    ///
+    pub channel_id: [u8; 32],
+    ///
+    pub accept_balance: u64,
+}
+
+impl_dlc_writeable!(SubChannelCloseOffer, {
+    (channel_id, writeable),
+    (accept_balance, writeable)
+});
+
+///
+#[derive(Clone, Debug)]
+pub struct SubChannelCloseAccept {
+    ///
+    pub channel_id: [u8; 32],
+    ///
+    pub commit_signature: Signature,
+    ///
+    pub htlc_signatures: Vec<Signature>,
+}
+
+impl_dlc_writeable!(SubChannelCloseAccept, {
+    (channel_id, writeable),
+    (commit_signature, writeable),
+    (htlc_signatures, writeable)
+});
+
+///
+#[derive(Clone, Debug)]
+pub struct SubChannelCloseConfirm {
+    ///
+    pub channel_id: [u8; 32],
+    ///
+    pub commit_signature: Signature,
+    ///
+    pub htlc_signatures: Vec<Signature>,
+    ///
+    pub split_revocation_secret: SecretKey,
+    ///
+    pub commit_revocation_secret: SecretKey,
+    ///
+    pub next_per_commitment_point: PublicKey,
+}
+
+impl_dlc_writeable!(SubChannelCloseConfirm, {
+    (channel_id, writeable),
+    (commit_signature, writeable),
+    (htlc_signatures, writeable),
+    (split_revocation_secret, writeable),
+    (commit_revocation_secret, writeable),
+    (next_per_commitment_point, writeable)
+});
+
+///
+#[derive(Clone, Debug)]
+pub struct SubChannelCloseFinalize {
+    ///
+    pub channel_id: [u8; 32],
+    ///
+    pub split_revocation_secret: SecretKey,
+    ///
+    pub commit_revocation_secret: SecretKey,
+    ///
+    pub next_per_commitment_point: PublicKey,
+}
+
+impl_dlc_writeable!(SubChannelCloseFinalize, {
+    (channel_id, writeable),
+    (split_revocation_secret, writeable),
+    (commit_revocation_secret, writeable),
+    (next_per_commitment_point, writeable)
+});
+
+///
+#[derive(Clone, Debug)]
+pub struct SubChannelCloseReject {
+    ///
+    pub channel_id: [u8; 32],
+}
+
+impl_dlc_writeable!(SubChannelCloseReject, { (channel_id, writeable) });

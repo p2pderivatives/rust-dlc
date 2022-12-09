@@ -289,7 +289,7 @@ pub fn get_enum_test_params(
     let contract_input = ContractInput {
         offer_collateral: OFFER_COLLATERAL,
         accept_collateral: ACCEPT_COLLATERAL,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos: vec![contract_info],
     };
 
@@ -487,7 +487,7 @@ pub fn get_numerical_test_params(
     let contract_input = ContractInput {
         offer_collateral: OFFER_COLLATERAL,
         accept_collateral: ACCEPT_COLLATERAL,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos: vec![contract_info],
     };
 
@@ -542,7 +542,7 @@ pub fn get_enum_and_numerical_test_params(
     let contract_input = ContractInput {
         offer_collateral: OFFER_COLLATERAL,
         accept_collateral: ACCEPT_COLLATERAL,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos,
     };
 

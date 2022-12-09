@@ -26,14 +26,14 @@ pub mod sub_channel;
  * scriptSig -> 0
  * nSequence -> 4 * 4
  * Witness item count -> 1
- * Witness -> 220
+ * Witness -> 366
  * OUTPUT:
  * nValue -> 8 * 4
  * scriptPubkeyLen -> 1 * 4
  * scriptPubkey -> 34 * 4
  * TOTAL: 599
 */
-pub const BUFFER_TX_WEIGHT: usize = 599;
+pub const BUFFER_TX_WEIGHT: usize = 748;
 
 /**
  * Due to the buffer output script being more complex than the funding output

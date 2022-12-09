@@ -1,46 +1,48 @@
-use bitcoin::{Block, Transaction, Txid};
-use dlc_manager::{error::Error, Blockchain, Utxo};
-use lightning::chain::chaininterface::FeeEstimator;
-use simple_wallet::WalletBlockchainProvider;
+use std::{ops::Deref, sync::Mutex};
 
-pub struct MockBlockchain {}
+use lightning::chain::chaininterface::BroadcasterInterface;
 
-impl Blockchain for MockBlockchain {
-    fn send_transaction(&self, _transaction: &Transaction) -> Result<(), Error> {
-        Ok(())
+pub struct MockBlockchain<T: Deref>
+where
+    T::Target: BroadcasterInterface,
+{
+    inner: T,
+    discard: Mutex<bool>,
+}
+
+impl<T: Deref> MockBlockchain<T>
+where
+    T::Target: BroadcasterInterface,
+{
+    pub fn new(inner: T) -> Self {
+        Self {
+            inner,
+            discard: Mutex::new(false),
+        }
     }
-    fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error> {
-        Ok(bitcoin::Network::Regtest)
-    }
-    fn get_blockchain_height(&self) -> Result<u64, Error> {
-        Ok(10)
-    }
-    fn get_block_at_height(&self, _height: u64) -> Result<Block, Error> {
-        unimplemented!();
-    }
-    fn get_transaction(&self, _tx_id: &Txid) -> Result<Transaction, Error> {
-        unimplemented!();
-    }
-    fn get_transaction_confirmations(&self, _tx_id: &Txid) -> Result<u32, Error> {
-        Ok(6)
+
+    pub fn start_discard(&self) {
+        *self.discard.lock().unwrap() = true;
     }
 }
 
-impl WalletBlockchainProvider for MockBlockchain {
-    fn get_utxos_for_address(&self, _address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
-        unimplemented!()
-    }
-
-    fn is_output_spent(&self, _txid: &Txid, _vout: u32) -> Result<bool, Error> {
-        unimplemented!()
+impl<T: Deref> BroadcasterInterface for MockBlockchain<T>
+where
+    T::Target: BroadcasterInterface,
+{
+    fn broadcast_transaction(&self, tx: &bitcoin::Transaction) {
+        if !*self.discard.lock().unwrap() {
+            self.inner.broadcast_transaction(tx);
+        }
     }
 }
 
-impl FeeEstimator for MockBlockchain {
-    fn get_est_sat_per_1000_weight(
-        &self,
-        _confirmation_target: lightning::chain::chaininterface::ConfirmationTarget,
-    ) -> u32 {
-        unimplemented!()
+pub type TestBlockchain = MockBlockchain<MockBroadcaster>;
+
+pub struct MockBroadcaster {}
+
+impl BroadcasterInterface for MockBroadcaster {
+    fn broadcast_transaction(&self, _tx: &bitcoin::Transaction) {
+        unimplemented!();
     }
 }

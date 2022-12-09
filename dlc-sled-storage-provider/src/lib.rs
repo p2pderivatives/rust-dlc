@@ -28,9 +28,7 @@ use dlc_manager::contract::signed_contract::SignedContract;
 use dlc_manager::contract::{
     ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
-use dlc_manager::sub_channel_manager::{
-    ClosingSubChannel, OfferedSubChannel, SignedSubChannel, SubChannel,
-};
+use dlc_manager::sub_channel_manager::{SubChannel, SubChannelState};
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
 use dlc_manager::{error::Error, ContractId, Storage};
@@ -157,8 +155,15 @@ convertible_enum!(
         Accepted,
         Signed,
         Closing,
+        OnChainClosed,
+        CounterOnChainClosed,
+        CloseOffered,
+        CloseAccepted,
+        CloseConfirmed,
+        OffChainClosed,
+        ClosedPunished,
     },
-    SubChannel
+    SubChannelState
 );
 
 fn to_storage_error<T>(e: T) -> Error
@@ -425,7 +430,7 @@ impl Storage for SledStorageProvider {
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
         let serialized = serialize_sub_channel(&subchannel)?;
         self.sub_channel_tree()?
-            .insert(subchannel.get_id(), serialized)
+            .insert(subchannel.channel_id, serialized)
             .map_err(to_storage_error)?;
         Ok(())
     }
@@ -452,7 +457,7 @@ impl Storage for SledStorageProvider {
             .collect::<Result<Vec<SubChannel>, Error>>()
     }
 
-    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, Error> {
+    fn get_offered_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
         self.get_data_with_prefix(
             &self.sub_channel_tree()?,
             &[SubChannelPrefix::Offered.into()],
@@ -699,43 +704,6 @@ fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
     Ok(channel)
 }
 
-fn serialize_sub_channel(channel: &SubChannel) -> Result<Vec<u8>, ::std::io::Error> {
-    let serialized = match channel {
-        SubChannel::Offered(o) => o.serialize(),
-        SubChannel::Signed(o) => o.serialize(),
-        SubChannel::Closing(o) => o.serialize(),
-        SubChannel::Accepted(o) => o.serialize(),
-    };
-    let mut serialized = serialized?;
-    let mut res: Vec<u8> = Vec::with_capacity(serialized.len() + 1);
-    res.push(SubChannelPrefix::get_prefix(channel));
-    res.append(&mut serialized);
-    Ok(res)
-}
-
-fn deserialize_sub_channel(buff: &sled::IVec) -> Result<SubChannel, Error> {
-    let mut cursor = ::std::io::Cursor::new(buff);
-    let mut prefix = [0u8; 1];
-    cursor.read_exact(&mut prefix)?;
-    let channel_prefix: SubChannelPrefix = prefix[0].try_into()?;
-    let channel = match channel_prefix {
-        SubChannelPrefix::Offered => SubChannel::Offered(
-            OfferedSubChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        ),
-        SubChannelPrefix::Accepted => SubChannel::Accepted(
-            dlc_manager::sub_channel_manager::AcceptedSubChannel::deserialize(&mut cursor)
-                .map_err(to_storage_error)?,
-        ),
-        SubChannelPrefix::Signed => SubChannel::Signed(
-            SignedSubChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        ),
-        SubChannelPrefix::Closing => SubChannel::Closing(
-            ClosingSubChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        ),
-    };
-    Ok(channel)
-}
-
 #[cfg(feature = "wallet")]
 fn get_address_key(address: &Address) -> Vec<u8> {
     address.to_string().into_bytes()
@@ -747,6 +715,23 @@ fn get_utxo_key(txid: &Txid, vout: u32) -> Vec<u8> {
     let mut key = res.expect("a valid txid");
     key.extend_from_slice(&vout.to_be_bytes());
     key
+}
+
+fn serialize_sub_channel(sub_channel: &SubChannel) -> Result<Vec<u8>, ::std::io::Error> {
+    let prefix = SubChannelPrefix::get_prefix(&sub_channel.state);
+    let mut buf = Vec::new();
+
+    buf.push(prefix);
+    buf.append(&mut sub_channel.serialize()?);
+
+    Ok(buf)
+}
+
+fn deserialize_sub_channel(buff: &sled::IVec) -> Result<SubChannel, Error> {
+    let cursor = ::std::io::Cursor::new(buff);
+    // Skip prefix
+    let mut cursor = cursor.take(1);
+    SubChannel::deserialize(&mut cursor).map_err(to_storage_error)
 }
 
 #[cfg(test)]
