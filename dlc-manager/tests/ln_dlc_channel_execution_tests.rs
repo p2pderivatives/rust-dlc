@@ -4,7 +4,7 @@ mod console_logger;
 
 use std::{collections::HashMap, convert::TryInto, sync::Arc, time::SystemTime};
 
-use crate::test_utils::refresh_wallet;
+use crate::test_utils::{get_enum_test_params, refresh_wallet, TestParams};
 use bitcoin::{
     hashes::Hash, Address, Amount, Network, PackedLockTime, Script, Sequence, Transaction, TxIn,
     TxOut, Witness,
@@ -14,16 +14,16 @@ use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use console_logger::ConsoleLogger;
 use dlc_manager::{
-    contract::contract_input::ContractInput,
     custom_signer::{CustomKeysManager, CustomSigner},
     manager::Manager,
-    sub_channel_manager::SubChannelManager,
-    Blockchain, ChannelId, Oracle, Signer, Utxo, Wallet,
+    sub_channel_manager::{SubChannelManager, SubChannelState},
+    Blockchain, ChannelId, Oracle, Signer, Storage, Utxo, Wallet,
 };
 use dlc_messages::{sub_channel::SubChannelMessage, Message};
-use electrs_blockchain_provider::ElectrsBlockchainProvider;
+use electrs_blockchain_provider::{ElectrsBlockchainProvider, OutSpendResp};
 use lightning::{
     chain::{
+        chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
         keysinterface::{KeysInterface, KeysManager, Recipient},
         BestBlock, Filter, Listen,
     },
@@ -44,6 +44,8 @@ use lightning::{
 use lightning_persister::FilesystemPersister;
 use mocks::{
     memory_storage_provider::MemoryStorage,
+    mock_blockchain::MockBlockchain,
+    mock_oracle_provider::MockOracle,
     mock_time::{self, MockTime},
 };
 use secp256k1_zkp::{
@@ -51,11 +53,12 @@ use secp256k1_zkp::{
     Secp256k1,
 };
 use simple_wallet::SimpleWallet;
+use simple_wallet::WalletStorage;
 
 type ChainMonitor = lightning::chain::chainmonitor::ChainMonitor<
     CustomSigner,
     Arc<dyn Filter>,
-    Arc<ElectrsBlockchainProvider>,
+    Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<ElectrsBlockchainProvider>,
     Arc<ConsoleLogger>,
     Arc<FilesystemPersister>,
@@ -63,7 +66,7 @@ type ChainMonitor = lightning::chain::chainmonitor::ChainMonitor<
 
 pub(crate) type ChannelManager = lightning::ln::channelmanager::ChannelManager<
     Arc<ChainMonitor>,
-    Arc<ElectrsBlockchainProvider>,
+    Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<CustomKeysManager>,
     Arc<ElectrsBlockchainProvider>,
     Arc<ConsoleLogger>,
@@ -82,7 +85,7 @@ type DlcChannelManager = Manager<
     Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
     Arc<ElectrsBlockchainProvider>,
     Arc<MemoryStorage>,
-    Arc<p2pd_oracle_client::P2PDOracleClient>,
+    Arc<MockOracle>,
     Arc<MockTime>,
     Arc<ElectrsBlockchainProvider>,
 >;
@@ -99,14 +102,23 @@ struct LnDlcParty {
         Arc<ChannelManager>,
         Arc<MemoryStorage>,
         Arc<ElectrsBlockchainProvider>,
-        Arc<p2pd_oracle_client::P2PDOracleClient>,
+        Arc<MockOracle>,
         Arc<MockTime>,
         Arc<ElectrsBlockchainProvider>,
         Arc<DlcChannelManager>,
     >,
     dlc_manager: Arc<DlcChannelManager>,
     blockchain: Arc<ElectrsBlockchainProvider>,
+    mock_blockchain: Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     wallet: Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
+    persister: Arc<FilesystemPersister>,
+}
+
+impl Drop for LnDlcParty {
+    fn drop(&mut self) {
+        let data_dir = self.persister.get_data_dir();
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
 }
 
 enum TestPath {
@@ -114,6 +126,10 @@ enum TestPath {
     RenewedClose,
     SettledClose,
     SettledRenewedClose,
+    CheatPreSplitCommit,
+    CheatPostSplitCommit,
+    OffChainClosed,
+    SplitCheat,
 }
 
 impl LnDlcParty {
@@ -137,6 +153,7 @@ impl LnDlcParty {
             }
         }
         self.chain_height = chain_tip_height;
+        self.sub_channel_manager.check_for_watched_tx().unwrap();
     }
 
     fn process_events(&self) {
@@ -246,7 +263,14 @@ impl EventHandler for LnDlcParty {
                 };
 
                 let expected_size = (tx.weight() / 4) as u64;
-                let required_amount = channel_value_satoshis + expected_size * 500;
+                let required_amount = channel_value_satoshis
+                    + expected_size
+                        * (self
+                            .blockchain
+                            .get_est_sat_per_1000_weight(ConfirmationTarget::Normal)
+                            / 25) as u64;
+
+                println!("{}", required_amount);
 
                 let utxos: Vec<Utxo> = self
                     .wallet
@@ -291,6 +315,24 @@ impl EventHandler for LnDlcParty {
                 };
                 self.channel_manager.claim_funds(payment_preimage.unwrap());
             }
+            Event::SpendableOutputs { outputs } => {
+                let destination_address = self.wallet.get_new_address().unwrap();
+                let output_descriptors = &outputs.iter().map(|a| a).collect::<Vec<_>>();
+                let tx_feerate = self
+                    .blockchain
+                    .get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
+                let spending_tx = self
+                    .keys_manager
+                    .spend_spendable_outputs(
+                        output_descriptors,
+                        Vec::new(),
+                        destination_address.script_pubkey(),
+                        tx_feerate,
+                        &Secp256k1::new(),
+                    )
+                    .unwrap();
+                self.blockchain.broadcast_transaction(&spending_tx);
+            }
             _ => {
                 //Ignore
             }
@@ -316,10 +358,12 @@ fn create_ln_node(
     std::fs::create_dir_all(data_dir.clone()).unwrap();
     let persister = Arc::new(FilesystemPersister::new(data_dir.to_string()));
 
+    let mock_blockchain = Arc::new(MockBlockchain::new(blockchain_provider.clone()));
+
     let chain_monitor: Arc<ChainMonitor> =
         Arc::new(lightning::chain::chainmonitor::ChainMonitor::new(
             None,
-            blockchain_provider.clone(),
+            mock_blockchain.clone(),
             logger.clone(),
             blockchain_provider.clone(),
             persister.clone(),
@@ -330,6 +374,9 @@ fn create_ln_node(
     user_config
         .channel_handshake_limits
         .force_announced_channel_preference = false;
+    user_config
+        .channel_handshake_config
+        .max_inbound_htlc_value_in_flight_percent_of_channel = 55;
     let (blockhash, chain_height, channel_manager) = {
         let height = blockchain_provider.get_blockchain_height().unwrap();
         let last_block = blockchain_provider.get_block_at_height(height).unwrap();
@@ -342,7 +389,7 @@ fn create_ln_node(
         let fresh_channel_manager = Arc::new(ChannelManager::new(
             blockchain_provider.clone(),
             chain_monitor.clone(),
-            blockchain_provider.clone(),
+            mock_blockchain.clone(),
             logger.clone(),
             consistent_keys_manager.clone(),
             user_config,
@@ -411,6 +458,8 @@ fn create_ln_node(
         storage,
         blockchain_provider.clone(),
         dlc_manager.clone(),
+        blockchain_provider.clone(),
+        blockchain_provider.get_blockchain_height().unwrap(),
     );
 
     LnDlcParty {
@@ -424,7 +473,9 @@ fn create_ln_node(
         sub_channel_manager,
         dlc_manager,
         blockchain: blockchain_provider.clone(),
+        mock_blockchain: mock_blockchain.clone(),
         wallet: wallet.clone(),
+        persister,
     }
 }
 
@@ -452,42 +503,60 @@ fn ln_dlc_settled_renewed_close() {
     ln_dlc_test(TestPath::SettledRenewedClose);
 }
 
-#[derive(Debug)]
-pub struct TestParams {
-    pub oracles: Vec<p2pd_oracle_client::P2PDOracleClient>,
-    pub contract_input: ContractInput,
+#[test]
+#[ignore]
+fn ln_dlc_pre_split_cheat() {
+    ln_dlc_test(TestPath::CheatPreSplitCommit);
 }
 
+#[test]
+#[ignore]
+fn ln_dlc_post_split_cheat() {
+    ln_dlc_test(TestPath::CheatPostSplitCommit);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_off_chain_close() {
+    ln_dlc_test(TestPath::OffChainClosed);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_split_cheat() {
+    ln_dlc_test(TestPath::SplitCheat);
+}
+
+// #[derive(Debug)]
+// pub struct TestParams {
+//     pub oracles: Vec<p2pd_oracle_client::P2PDOracleClient>,
+//     pub contract_input: ContractInput,
+// }
+
 fn ln_dlc_test(test_path: TestPath) {
-    // Initialize the LDK data directory if necessary.
-    let ldk_data_dir = "./.ldk".to_string();
-    std::fs::create_dir_all(ldk_data_dir.clone()).unwrap();
     let (_, _, sink_rpc) = init_clients();
 
-    let contract_input : ContractInput = serde_json::from_str(include_str!("/Users/thibaut-leguilly/Workspace/ldk-sample/examples/contracts/numerical_contract_input.json")).unwrap();
-    let p2pdoracle = p2pd_oracle_client::P2PDOracleClient::new("https://oracle.p2pderivatives.io/")
-        .expect("to be able to create the p2pd oracle");
-
-    let oracles = vec![p2pdoracle];
-    let test_params = TestParams {
-        oracles,
-        contract_input,
-    };
+    let test_params = get_enum_test_params(1, 1, None);
 
     let electrs = Arc::new(ElectrsBlockchainProvider::new(
         "http://localhost:3004/".to_string(),
         Network::Regtest,
     ));
 
-    let mut alice_node = create_ln_node("Alice".to_string(), "./.alicedir", &test_params, &electrs);
-    let mut bob_node = create_ln_node("Bob".to_string(), "./.bobdir", &test_params, &electrs);
+    let mut alice_node = create_ln_node(
+        "Alice".to_string(),
+        "./.ldk/.alicedir",
+        &test_params,
+        &electrs,
+    );
+    let mut bob_node = create_ln_node("Bob".to_string(), "./.ldk/.bobdir", &test_params, &electrs);
 
     let alice_fund_address = alice_node.wallet.get_new_address().unwrap();
 
     sink_rpc
         .send_to_address(
             &alice_fund_address,
-            Amount::from_btc(3.0).unwrap(),
+            Amount::from_btc(0.002).unwrap(),
             None,
             None,
             None,
@@ -515,7 +584,7 @@ fn ln_dlc_test(test_path: TestPath) {
 
     generate_blocks(6);
 
-    refresh_wallet(&alice_node.wallet, 300000000);
+    refresh_wallet(&alice_node.wallet, 200000);
 
     alice_node.update_to_chain_tip();
     bob_node.update_to_chain_tip();
@@ -554,7 +623,7 @@ fn ln_dlc_test(test_path: TestPath) {
         .channel_manager
         .create_channel(
             bob_node.channel_manager.get_our_node_id(),
-            100000000,
+            180000,
             0,
             1,
             None,
@@ -594,6 +663,8 @@ fn ln_dlc_test(test_path: TestPath) {
 
     assert_eq!(1, alice_node.channel_manager.list_usable_channels().len());
 
+    println!("{:?}", alice_node.channel_manager.list_usable_channels());
+
     let payment_params = lightning::routing::router::PaymentParameters::from_node_id(
         bob_node.channel_manager.get_our_node_id(),
     );
@@ -611,7 +682,7 @@ fn ln_dlc_test(test_path: TestPath) {
     let random_seed_bytes = bob_node.keys_manager.get_secure_random_bytes();
     let route_params = RouteParameters {
         payment_params: payment_params.clone(),
-        final_value_msat: 10000000000,
+        final_value_msat: 90000000,
         final_cltv_expiry_delta: 70,
     };
 
@@ -651,69 +722,54 @@ fn ln_dlc_test(test_path: TestPath) {
     alice_node.process_events();
     bob_node.process_events();
 
-    let alice_channel_details = alice_node.channel_manager.list_usable_channels().remove(0);
-    let bob_channel_details = bob_node.channel_manager.list_usable_channels().remove(0);
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
+    println!(
+        "Initial alice balance: {}",
+        alice_node.channel_manager.list_channels()[0].balance_msat
+    );
+    println!(
+        "Initial bob balance: {}",
+        bob_node.channel_manager.list_channels()[0].balance_msat
+    );
+
+    let get_commit_tx_from_node = |node: &LnDlcParty| {
+        let mut res = node
+            .persister
+            .read_channelmonitors(alice_node.keys_manager.clone())
+            .unwrap();
+        assert!(res.len() == 1);
+        let (_, channel_monitor) = res.remove(0);
+        channel_monitor.get_latest_holder_commitment_txn(&alice_node.logger)
+    };
+
+    let pre_split_commit_tx = if let TestPath::CheatPreSplitCommit = test_path {
+        Some(get_commit_tx_from_node(&alice_node))
+    } else {
+        None
+    };
+
+    let bob_channel_details = bob_node.channel_manager.list_usable_channels().remove(0);
     let channel_id = bob_channel_details.channel_id;
 
-    let oracle_announcements = test_params
-        .oracles
-        .iter()
-        .map(|x| {
-            x.get_announcement(
-                &test_params.contract_input.contract_infos[0]
-                    .oracles
-                    .event_id,
-            )
-            .unwrap()
-        })
-        .collect::<Vec<_>>();
+    offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
 
-    let offer = alice_node
-        .sub_channel_manager
-        .offer_sub_channel(
-            &alice_channel_details.channel_id,
-            &test_params.contract_input,
-            &vec![oracle_announcements],
-        )
-        .unwrap();
-    bob_node
-        .sub_channel_manager
-        .on_sub_channel_message(
-            &SubChannelMessage::Request(offer.clone()),
-            &alice_node.channel_manager.get_our_node_id(),
-        )
-        .unwrap();
-    let (_, accept) = bob_node
-        .sub_channel_manager
-        .accept_sub_channel(&channel_id)
-        .unwrap();
-    bob_node.process_events();
-    let confirm = alice_node
-        .sub_channel_manager
-        .on_sub_channel_message(
-            &SubChannelMessage::Accept(accept),
-            &bob_node.channel_manager.get_our_node_id(),
-        )
-        .unwrap()
-        .unwrap();
-    alice_node.process_events();
-    let finalize = bob_node
-        .sub_channel_manager
-        .on_sub_channel_message(&confirm, &alice_node.channel_manager.get_our_node_id())
-        .unwrap()
-        .unwrap();
+    if let TestPath::CheatPreSplitCommit = test_path {
+        let revoked_tx = pre_split_commit_tx.unwrap();
 
-    bob_node.process_events();
-    alice_node
-        .sub_channel_manager
-        .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
-        .unwrap();
-    alice_node.process_events();
+        ln_cheated_check(
+            &revoked_tx[0],
+            &mut bob_node,
+            electrs.clone(),
+            &generate_blocks,
+        );
+
+        return;
+    }
 
     let route_params = RouteParameters {
         payment_params,
-        final_value_msat: 100000000,
+        final_value_msat: 900000,
         final_cltv_expiry_delta: 70,
     };
 
@@ -734,13 +790,49 @@ fn ln_dlc_test(test_path: TestPath) {
     )
     .unwrap();
 
+    let post_split_commit_tx = if let TestPath::CheatPostSplitCommit = test_path {
+        alice_node.mock_blockchain.start_discard();
+        Some(get_commit_tx_from_node(&alice_node))
+    } else {
+        None
+    };
+
     let mut payment_id = PaymentId([0u8; 32]);
     payment_id.0[31] += 1;
+
+    println!(
+        "Initial alice balance: {}",
+        alice_node.channel_manager.list_channels()[0].balance_msat
+    );
+    println!(
+        "Initial bob balance: {}",
+        bob_node.channel_manager.list_channels()[0].balance_msat
+    );
 
     alice_node
         .channel_manager
         .send_spontaneous_payment(&route, Some(payment_preimage), payment_id)
         .unwrap();
+
+    bob_node.process_events();
+    alice_node.process_events();
+
+    bob_node.process_events();
+    alice_node.process_events();
+
+    bob_node.process_events();
+    alice_node.process_events();
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    println!(
+        "2P alice balance: {}",
+        alice_node.channel_manager.list_channels()[0].balance_msat
+    );
+    println!(
+        "2P bob balance: {}",
+        bob_node.channel_manager.list_channels()[0].balance_msat
+    );
 
     if let TestPath::RenewedClose = test_path {
         renew(&alice_node, &bob_node, channel_id, &test_params);
@@ -754,17 +846,142 @@ fn ln_dlc_test(test_path: TestPath) {
 
     mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) + 1);
 
+    if let TestPath::OffChainClosed | TestPath::SplitCheat = test_path {
+        if let TestPath::SplitCheat = test_path {
+            alice_node.dlc_manager.get_store().save();
+        }
+
+        let (close_offer, _) = alice_node
+            .sub_channel_manager
+            .offer_subchannel_close(&channel_id, test_params.contract_input.accept_collateral)
+            .unwrap();
+
+        bob_node
+            .sub_channel_manager
+            .on_sub_channel_message(
+                &SubChannelMessage::CloseOffer(close_offer),
+                &alice_node.channel_manager.get_our_node_id(),
+            )
+            .unwrap();
+
+        let (close_accept, _) = bob_node
+            .sub_channel_manager
+            .accept_subchannel_close_offer(&channel_id)
+            .unwrap();
+
+        let close_confirm = alice_node
+            .sub_channel_manager
+            .on_sub_channel_message(
+                &SubChannelMessage::CloseAccept(close_accept),
+                &bob_node.channel_manager.get_our_node_id(),
+            )
+            .unwrap()
+            .unwrap();
+
+        let close_finalize = bob_node
+            .sub_channel_manager
+            .on_sub_channel_message(
+                &close_confirm,
+                &alice_node.channel_manager.get_our_node_id(),
+            )
+            .unwrap()
+            .unwrap();
+
+        alice_node
+            .sub_channel_manager
+            .on_sub_channel_message(&close_finalize, &bob_node.channel_manager.get_our_node_id())
+            .unwrap();
+
+        offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
+
+        if let TestPath::SplitCheat = test_path {
+            alice_node.dlc_manager.get_store().rollback();
+            let split_tx_id = match alice_node
+                .dlc_manager
+                .get_store()
+                .get_sub_channel(channel_id)
+                .unwrap()
+                .unwrap()
+                .state
+            {
+                SubChannelState::Signed(s) => s.split_tx.transaction.txid(),
+                a => panic!("Unexpected state {:?}", a),
+            };
+            alice_node
+                .sub_channel_manager
+                .initiate_force_close_sub_channel(&channel_id)
+                .unwrap();
+
+            generate_blocks(1);
+
+            bob_node.update_to_chain_tip();
+
+            let outspends = electrs.get_outspends(&split_tx_id).unwrap();
+
+            println!("{}", split_tx_id);
+
+            let spent = outspends
+                .iter()
+                .filter_map(|x| {
+                    if let OutSpendResp::Spent(s) = x {
+                        Some(s)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(spent.len(), 2);
+            assert_eq!(spent[0].txid, spent[1].txid);
+            let spending_tx = electrs.get_transaction(&spent[0].txid).unwrap();
+
+            let receive_addr =
+                Address::from_script(&spending_tx.output[0].script_pubkey, Network::Regtest)
+                    .unwrap();
+
+            assert!(bob_node
+                .dlc_manager
+                .get_store()
+                .get_addresses()
+                .unwrap()
+                .iter()
+                .find(|x| **x == receive_addr)
+                .is_some());
+        } else {
+            alice_node
+                .channel_manager
+                .force_close_broadcasting_latest_txn(
+                    &channel_id,
+                    &bob_node.channel_manager.get_our_node_id(),
+                )
+                .unwrap();
+        }
+
+        return;
+    }
+
+    println!("START FORCE CLOSE");
     alice_node
         .sub_channel_manager
-        .initiate_force_close_sub_channels(&channel_id)
+        .initiate_force_close_sub_channel(&channel_id)
         .unwrap();
 
     generate_blocks(500);
 
+    println!("FINALIZE FORCE CLOSE");
     alice_node
         .sub_channel_manager
         .finalize_force_close_sub_channels(&channel_id)
         .unwrap();
+
+    generate_blocks(1);
+
+    bob_node.update_to_chain_tip();
+
+    if let TestPath::CheatPostSplitCommit = test_path {
+        let cheat_tx = post_split_commit_tx.unwrap()[0].clone();
+        ln_cheated_check(&cheat_tx, &mut bob_node, electrs.clone(), &generate_blocks);
+    }
 }
 
 fn settle(
@@ -856,4 +1073,112 @@ fn renew(
         .dlc_manager
         .on_dlc_message(&msg, alice_node.channel_manager.get_our_node_id())
         .unwrap();
+}
+
+fn ln_cheated_check<F>(
+    cheat_tx: &Transaction,
+    bob_node: &mut LnDlcParty,
+    electrs: Arc<ElectrsBlockchainProvider>,
+    generate_block: &F,
+) where
+    F: Fn(u64) -> (),
+{
+    electrs.broadcast_transaction(&cheat_tx);
+
+    generate_block(6);
+
+    bob_node.update_to_chain_tip();
+
+    bob_node.process_events();
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    let outspends = electrs.get_outspends(&cheat_tx.txid()).unwrap();
+
+    let outspend_info = outspends
+        .iter()
+        .find_map(|x| {
+            if let OutSpendResp::Spent(s) = x {
+                return Some(s);
+            } else {
+                return None;
+            }
+        })
+        .unwrap();
+
+    let spend_tx = electrs.get_transaction(&outspend_info.txid).unwrap();
+
+    let receive_addr =
+        Address::from_script(&spend_tx.output[0].script_pubkey, Network::Regtest).unwrap();
+
+    assert!(bob_node
+        .dlc_manager
+        .get_store()
+        .get_addresses()
+        .unwrap()
+        .iter()
+        .find(|x| **x == receive_addr)
+        .is_some());
+}
+
+fn offer_sub_channel(
+    test_params: &TestParams,
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    channel_id: &ChannelId,
+) {
+    let oracle_announcements = test_params
+        .oracles
+        .iter()
+        .map(|x| {
+            x.get_announcement(
+                &test_params.contract_input.contract_infos[0]
+                    .oracles
+                    .event_id,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    let offer = alice_node
+        .sub_channel_manager
+        .offer_sub_channel(
+            &channel_id,
+            &test_params.contract_input,
+            &vec![oracle_announcements],
+        )
+        .unwrap();
+    bob_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &SubChannelMessage::Request(offer.clone()),
+            &alice_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap();
+    let (_, accept) = bob_node
+        .sub_channel_manager
+        .accept_sub_channel(&channel_id)
+        .unwrap();
+    bob_node.process_events();
+    let confirm = alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &SubChannelMessage::Accept(accept),
+            &bob_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap()
+        .unwrap();
+    alice_node.process_events();
+    let finalize = bob_node
+        .sub_channel_manager
+        .on_sub_channel_message(&confirm, &alice_node.channel_manager.get_our_node_id())
+        .unwrap()
+        .unwrap();
+
+    bob_node.process_events();
+    alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
+        .unwrap();
+    alice_node.process_events();
 }

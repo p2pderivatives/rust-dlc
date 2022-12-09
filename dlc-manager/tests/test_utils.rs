@@ -37,7 +37,7 @@ pub const MAX_ERROR_EXP: usize = 2;
 pub const BASE: u32 = 2;
 pub const EVENT_MATURITY: u32 = 1623133104;
 pub const EVENT_ID: &str = "Test";
-pub const COLLATERAL: u64 = 1000000;
+pub const COLLATERAL: u64 = 45000;
 pub const MID_POINT: u64 = 5;
 pub const ROUNDING_MOD: u64 = 1;
 
@@ -288,7 +288,7 @@ pub fn get_enum_test_params(
         offer_collateral: COLLATERAL,
         accept_collateral: COLLATERAL,
         maturity_time: EVENT_MATURITY,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos: vec![contract_info],
     };
 
@@ -489,10 +489,10 @@ pub fn get_numerical_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: 100000000,
-        accept_collateral: 100000000,
+        offer_collateral: 45000,
+        accept_collateral: 45000,
         maturity_time: EVENT_MATURITY,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos: vec![contract_info],
     };
 
@@ -545,10 +545,10 @@ pub fn get_enum_and_numerical_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: 100000000,
-        accept_collateral: 100000000,
+        offer_collateral: 45000,
+        accept_collateral: 45000,
         maturity_time: EVENT_MATURITY,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos,
     };
 
@@ -586,7 +586,7 @@ pub fn refresh_wallet<B: Deref, W: Deref>(
 {
     let mut retry = 0;
     while wallet.get_balance() != expected_funds {
-        if retry > 10 {
+        if retry > 30 {
             panic!("Wallet refresh taking too long.")
         }
         std::thread::sleep(std::time::Duration::from_millis(200));

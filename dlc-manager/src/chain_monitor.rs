@@ -59,9 +59,10 @@ impl_dlc_writeable_enum!(TxType,;
 pub(crate) enum RevokedTxType {
     Buffer,
     Settle,
+    Split,
 }
 
-impl_dlc_writeable_enum!(RevokedTxType,;;;(0, Buffer), (1, Settle));
+impl_dlc_writeable_enum!(RevokedTxType,;;;(0, Buffer), (1, Settle), (2, Split));
 
 impl ChainMonitor {
     /// Returns a new [`ChainMonitor`] with fields properly initialized.

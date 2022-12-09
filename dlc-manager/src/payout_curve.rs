@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct PayoutFunction {
     /// The pieces making up the function.
-    pub(crate) payout_function_pieces: Vec<PayoutFunctionPiece>,
+    pub payout_function_pieces: Vec<PayoutFunctionPiece>,
 }
 
 fn is_continuous(function_pieces: &[PayoutFunctionPiece]) -> bool {
@@ -156,9 +156,12 @@ impl PayoutFunctionPiece {
     }
 }
 
-trait Evaluable {
+///
+pub trait Evaluable {
+    ///
     fn evaluate(&self, outcome: u64) -> f64;
 
+    ///
     fn get_rounded_payout(
         &self,
         outcome: u64,
@@ -175,10 +178,13 @@ trait Evaluable {
         Ok(rounding_intervals.round(outcome, payout_double))
     }
 
+    ///
     fn get_first_outcome(&self) -> u64;
 
+    ///
     fn get_last_outcome(&self) -> u64;
 
+    ///
     fn get_cur_range(
         &self,
         range_payouts: &mut Vec<RangePayout>,
@@ -203,6 +209,7 @@ trait Evaluable {
         Ok(res)
     }
 
+    ///
     fn to_range_payouts(
         &self,
         rounding_intervals: &RoundingIntervals,
@@ -420,9 +427,9 @@ impl HyperbolaPayoutCurvePiece {
         c: f64,
         d: f64,
     ) -> Result<Self, Error> {
-        if a * b == d * c {
+        if a * d == b * c {
             Err(Error::InvalidParameters(
-                "a * c cannot equal d * c".to_string(),
+                "a * d cannot equal b * c".to_string(),
             ))
         } else if left_end_point.event_outcome >= right_end_point.event_outcome {
             Err(Error::InvalidParameters(
@@ -1028,6 +1035,34 @@ mod test {
 
         for pieces in invalid {
             PayoutFunction::new(pieces).expect_err("Invalid pieces should error");
+        }
+    }
+
+    #[test]
+    fn ttt() {
+        let total_collateral = 10;
+        let hyperbola = HyperbolaPayoutCurvePiece::new(
+            PayoutPoint {
+                event_outcome: 1,
+                outcome_payout: total_collateral,
+                extra_precision: 0,
+            },
+            PayoutPoint {
+                event_outcome: 15,
+                outcome_payout: 1,
+                extra_precision: 0,
+            },
+            true,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            10.0,
+        )
+        .unwrap();
+        for i in 0..20 {
+            assert_eq!(10.0 / i as f64, hyperbola.evaluate(i));
         }
     }
 }

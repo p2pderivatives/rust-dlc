@@ -24,9 +24,7 @@ use dlc_manager::contract::signed_contract::SignedContract;
 use dlc_manager::contract::{
     ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
-use dlc_manager::sub_channel_manager::{
-    AcceptedSubChannel, ClosingSubChannel, OfferedSubChannel, SignedSubChannel, SubChannel,
-};
+use dlc_manager::sub_channel_manager::{SubChannel, SubChannelState};
 use dlc_manager::{error::Error, ContractId, Storage, Utxo};
 use lightning::util::ser::{Readable, Writeable};
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -151,8 +149,15 @@ convertible_enum!(
         Accepted,
         Signed,
         Closing,
+        OnChainClosed,
+        CounterOnChainClosed,
+        CloseOffered,
+        CloseAccepted,
+        CloseConfirmed,
+        OffChainClosed,
+        ClosedPunished,
     },
-    SubChannel
+    SubChannelState
 );
 
 fn to_storage_error<T>(e: T) -> Error
@@ -415,9 +420,9 @@ impl Storage for SledStorageProvider {
     }
 
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
-        let serialized = sub_channel::serialize(&subchannel)?;
+        let serialized = serialize_sub_channel(&subchannel)?;
         self.sub_channel_tree()?
-            .insert(subchannel.get_id(), serialized)
+            .insert(subchannel.channel_id, serialized)
             .map_err(to_storage_error)?;
         Ok(())
     }
@@ -431,7 +436,7 @@ impl Storage for SledStorageProvider {
             .get(channel_id)
             .map_err(to_storage_error)?
         {
-            Some(res) => Ok(Some(sub_channel::deserialize(&res)?)),
+            Some(res) => Ok(Some(deserialize_sub_channel(&res)?)),
             None => Ok(None),
         }
     }
@@ -440,11 +445,11 @@ impl Storage for SledStorageProvider {
         self.sub_channel_tree()?
             .iter()
             .values()
-            .map(|x| sub_channel::deserialize(&x.unwrap()))
+            .map(|x| deserialize_sub_channel(&x.unwrap()))
             .collect::<Result<Vec<SubChannel>, Error>>()
     }
 
-    fn get_offered_sub_channels(&self) -> Result<Vec<OfferedSubChannel>, Error> {
+    fn get_offered_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
         self.get_data_with_prefix(
             &self.sub_channel_tree()?,
             &[SubChannelPrefix::Offered.into()],
@@ -662,15 +667,22 @@ serialize_object!(
     (FailedSign, FailedSign)
 );
 
-serialize_object!(
-    SubChannel,
-    SubChannelPrefix,
-    sub_channel,
-    (Offered, OfferedSubChannel),
-    (Accepted, AcceptedSubChannel),
-    (Signed, SignedSubChannel),
-    (Closing, ClosingSubChannel)
-);
+fn serialize_sub_channel(sub_channel: &SubChannel) -> Result<Vec<u8>, ::std::io::Error> {
+    let prefix = SubChannelPrefix::get_prefix(&sub_channel.state);
+    let mut buf = Vec::new();
+
+    prefix.write(&mut buf)?;
+    sub_channel.write(&mut buf)?;
+
+    Ok(buf)
+}
+
+fn deserialize_sub_channel(buff: &sled::IVec) -> Result<SubChannel, Error> {
+    let mut cursor = ::std::io::Cursor::new(buff);
+    // Skip prefix
+    let _: Vec<u8> = Readable::read(&mut cursor).map_err(to_storage_error)?;
+    Readable::read(&mut cursor).map_err(to_storage_error)
+}
 
 #[cfg(test)]
 mod tests {

@@ -19,7 +19,7 @@ use crate::{
         verify_signed_contract_internal,
     },
     error::Error,
-    sub_channel_manager::ClosingSubChannel,
+    sub_channel_manager::{ClosingSubChannel, SubChannel},
     utils::get_new_temporary_id,
     Blockchain, Signer, Time, Wallet,
 };
@@ -564,6 +564,7 @@ where
             counter_buffer_adaptor_signature: accept_channel.buffer_adaptor_signature,
             buffer_transaction,
             is_offer: true,
+            total_collateral,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
         channel_id,
@@ -708,6 +709,7 @@ where
             counter_buffer_adaptor_signature: sign_channel.buffer_adaptor_signature,
             buffer_transaction: accepted_channel.buffer_transaction.clone(),
             is_offer: false,
+            total_collateral: accepted_contract.offered_contract.total_collateral,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
         fund_tx,
@@ -804,6 +806,7 @@ pub fn on_settle_offer(
     let mut new_state = SignedChannelState::SettledReceived {
         own_payout: settle_offer.counter_payout,
         counter_next_per_update_point: settle_offer.next_per_update_point,
+        counter_payout: settle_offer.counter_payout,
     };
 
     std::mem::swap(&mut signed_channel.state, &mut new_state);
@@ -854,17 +857,19 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
-    let (own_payout, counter_next_per_update_point) = if let SignedChannelState::SettledReceived {
-        own_payout,
-        counter_next_per_update_point,
-    } = channel.state
-    {
-        (own_payout, counter_next_per_update_point)
-    } else {
-        return Err(Error::InvalidState(
-            "Signed channel was not in SettledReceived state as expected.".to_string(),
-        ));
-    };
+    let (own_payout, counter_next_per_update_point, counter_payout) =
+        if let SignedChannelState::SettledReceived {
+            own_payout,
+            counter_next_per_update_point,
+            counter_payout,
+        } = channel.state
+        {
+            (own_payout, counter_next_per_update_point, counter_payout)
+        } else {
+            return Err(Error::InvalidState(
+                "Signed channel was not in SettledReceived state as expected.".to_string(),
+            ));
+        };
 
     let per_update_seed_pk = channel.own_per_update_seed;
     let per_update_seed = signer.get_secret_key_for_pubkey(&per_update_seed_pk)?;
@@ -920,6 +925,8 @@ where
         settle_tx,
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        own_payout,
+        counter_payout,
     };
 
     let msg = SettleAccept {
@@ -1049,6 +1056,8 @@ where
         counter_next_per_update_point: settle_channel_accept.next_per_update_point,
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        own_payout: final_offer_payout,
+        counter_payout: final_accept_payout,
     };
 
     channel.state = state;
@@ -1093,18 +1102,24 @@ where
         counter_next_per_update_point,
         settle_tx,
         own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
     ) = match &channel.state {
         SignedChannelState::SettledAccepted {
             counter_next_per_update_point,
             own_next_per_update_point,
             settle_tx,
             own_settle_adaptor_signature,
+            own_payout,
+            counter_payout,
             ..
         } => (
             own_next_per_update_point,
             counter_next_per_update_point,
             settle_tx,
             own_settle_adaptor_signature,
+            *own_payout,
+            *counter_payout,
         ),
         _ => {
             return Err(Error::InvalidState(
@@ -1162,6 +1177,8 @@ where
         settle_tx: settle_tx.clone(),
         counter_settle_adaptor_signature: settle_channel_confirm.settle_adaptor_signature,
         own_settle_adaptor_signature: *own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
     };
 
     channel.own_per_update_point = *own_next_per_update_point;
@@ -1193,6 +1210,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
         counter_next_per_update_point,
         own_next_per_update_point,
         own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
     ) = match &channel.state {
         SignedChannelState::SettledConfirmed {
             settle_tx,
@@ -1200,6 +1219,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
             counter_next_per_update_point,
             own_next_per_update_point,
             own_settle_adaptor_signature,
+            own_payout,
+            counter_payout,
             ..
         } => (
             settle_tx.clone(),
@@ -1207,6 +1228,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
             *counter_next_per_update_point,
             *own_next_per_update_point,
             *own_settle_adaptor_signature,
+            *own_payout,
+            *counter_payout,
         ),
         _ => {
             return Err(Error::InvalidState(
@@ -1237,6 +1260,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
         settle_tx,
         counter_settle_adaptor_signature,
         own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
     };
 
     channel.own_per_update_point = own_next_per_update_point;
@@ -1279,6 +1304,42 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
+    // Validity checks.
+    match &signed_channel.state {
+        SignedChannelState::Established {
+            total_collateral, ..
+        } => {
+            if *total_collateral
+                != contract_input.accept_collateral + contract_input.offer_collateral
+            {
+                return Err(Error::InvalidParameters(
+                    "Sum of collaterals in contract must equal total collateral in channel."
+                        .to_string(),
+                ));
+            }
+        }
+        SignedChannelState::Settled {
+            own_payout,
+            counter_payout,
+            ..
+        } => {
+            if contract_input.offer_collateral != *own_payout
+                || contract_input.accept_collateral != *counter_payout
+            {
+                return Err(Error::InvalidParameters(
+                    "Contract collateral not equal to each party's balance in the channel"
+                        .to_string(),
+                ));
+            }
+        }
+        s => {
+            return Err(Error::InvalidState(format!(
+                "Can only renewed established or closed channels, not {}.",
+                s
+            )));
+        }
+    };
+
     let mut offered_contract = OfferedContract::new(
         contract_input,
         oracle_announcements,
@@ -1693,6 +1754,7 @@ where
         offer_buffer_adaptor_signature: own_buffer_adaptor_signature,
         accept_buffer_adaptor_signature: renew_accept.buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        total_collateral: offered_contract.total_collateral,
     };
 
     signed_channel.state = state;
@@ -1801,6 +1863,10 @@ where
         counter_buffer_adaptor_signature: renew_confirm.buffer_adaptor_signature,
         buffer_transaction: buffer_transaction.clone(),
         is_offer: false,
+        total_collateral: signed_contract
+            .accepted_contract
+            .offered_contract
+            .total_collateral,
     };
 
     signed_channel.update_idx -= 1;
@@ -1838,6 +1904,7 @@ pub fn renew_channel_on_finalize(
 ) -> Result<(), Error> {
     let (
         contract_id,
+        total_collateral,
         offer_per_update_point,
         accept_per_update_point,
         offer_buffer_adaptor_signature,
@@ -1847,6 +1914,7 @@ pub fn renew_channel_on_finalize(
         signed_channel,
         RenewConfirmed,
         contract_id,
+        total_collateral,
         offer_per_update_point,
         accept_per_update_point,
         offer_buffer_adaptor_signature,
@@ -1859,6 +1927,7 @@ pub fn renew_channel_on_finalize(
         own_buffer_adaptor_signature: offer_buffer_adaptor_signature,
         buffer_transaction: buffer_transaction.clone(),
         is_offer: true,
+        total_collateral,
     };
 
     signed_channel
@@ -2176,7 +2245,7 @@ pub fn initiate_unilateral_close_established_channel<S: Deref>(
     attestations: &[(usize, OracleAttestation)],
     adaptor_info: &AdaptorInfo,
     signer: &S,
-    sub_channel: Option<ClosingSubChannel>,
+    sub_channel: Option<(SubChannel, ClosingSubChannel)>,
 ) -> Result<(), Error>
 where
     S::Target: Signer,
@@ -2201,10 +2270,10 @@ where
 
     let counter_buffer_signature = buffer_adaptor_signature.decrypt(&publish_sk)?;
 
-    if let Some(sub_channel) = sub_channel {
-        let signed_sub_channel = &sub_channel.signed_sub_channel;
+    if let Some((sub_channel, closing)) = sub_channel {
+        let signed_sub_channel = &closing.signed_sub_channel;
         let own_base_secret_key =
-            signer.get_secret_key_for_pubkey(&signed_sub_channel.own_points.own_basepoint)?;
+            signer.get_secret_key_for_pubkey(&sub_channel.own_base_points.own_basepoint)?;
         let own_secret_key = derive_private_key(
             secp,
             &signed_sub_channel.own_per_split_point,
@@ -2221,17 +2290,25 @@ where
         )?;
 
         let (own_pk, counter_pk, offer_params, accept_params) = {
-            let own_revoke_params = signed_sub_channel.own_points.get_revokable_params(
+            let own_revoke_params = sub_channel.own_base_points.get_revokable_params(
                 secp,
-                &signed_sub_channel.counter_points.revocation_basepoint,
+                &sub_channel
+                    .counter_base_points
+                    .as_ref()
+                    .expect("to have counter base points")
+                    .revocation_basepoint,
                 &signed_sub_channel.own_per_split_point,
             )?;
-            let counter_revoke_params = signed_sub_channel.counter_points.get_revokable_params(
-                secp,
-                &signed_sub_channel.own_points.revocation_basepoint,
-                &signed_sub_channel.counter_per_split_point,
-            )?;
-            if signed_sub_channel.is_offer {
+            let counter_revoke_params = sub_channel
+                .counter_base_points
+                .as_ref()
+                .expect("to have counter base points")
+                .get_revokable_params(
+                    secp,
+                    &sub_channel.own_base_points.revocation_basepoint,
+                    &signed_sub_channel.counter_per_split_point,
+                )?;
+            if sub_channel.is_offer {
                 (
                     own_revoke_params.own_pk.clone(),
                     counter_revoke_params.own_pk.clone(),
@@ -2376,7 +2453,7 @@ pub(crate) fn close_settled_channel_internal<S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     signer: &S,
-    sub_channel: Option<ClosingSubChannel>,
+    sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
 ) -> Result<Transaction, Error>
 where
     S::Target: Signer,
@@ -2401,10 +2478,10 @@ where
 
     let counter_settle_signature = counter_settle_adaptor_signature.decrypt(&publish_sk)?;
 
-    if let Some(sub_channel) = sub_channel {
-        let signed_sub_channel = &sub_channel.signed_sub_channel;
+    if let Some((sub_channel, closing)) = sub_channel {
+        let signed_sub_channel = &closing.signed_sub_channel;
         let own_base_secret_key =
-            signer.get_secret_key_for_pubkey(&signed_sub_channel.own_points.own_basepoint)?;
+            signer.get_secret_key_for_pubkey(&sub_channel.own_base_points.own_basepoint)?;
         let own_secret_key = derive_private_key(
             secp,
             &signed_sub_channel.own_per_split_point,
@@ -2421,17 +2498,25 @@ where
         )?;
 
         let (own_pk, counter_pk, offer_params, accept_params) = {
-            let own_revoke_params = signed_sub_channel.own_points.get_revokable_params(
+            let own_revoke_params = sub_channel.own_base_points.get_revokable_params(
                 secp,
-                &signed_sub_channel.counter_points.revocation_basepoint,
+                &sub_channel
+                    .counter_base_points
+                    .as_ref()
+                    .expect("to have counter base points")
+                    .revocation_basepoint,
                 &signed_sub_channel.own_per_split_point,
             )?;
-            let counter_revoke_params = signed_sub_channel.counter_points.get_revokable_params(
-                secp,
-                &signed_sub_channel.own_points.revocation_basepoint,
-                &signed_sub_channel.counter_per_split_point,
-            )?;
-            if signed_sub_channel.is_offer {
+            let counter_revoke_params = sub_channel
+                .counter_base_points
+                .as_ref()
+                .expect("to have counter base points")
+                .get_revokable_params(
+                    secp,
+                    &sub_channel.own_base_points.revocation_basepoint,
+                    &signed_sub_channel.counter_per_split_point,
+                )?;
+            if sub_channel.is_offer {
                 (
                     own_revoke_params.own_pk.clone(),
                     counter_revoke_params.own_pk.clone(),

@@ -96,6 +96,10 @@ impl ElectrsBlockchainProvider {
             .json::<T>()
             .map_err(|_| Error::BlockchainError)
     }
+
+    pub fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
+        self.get_from_json(&format!("tx/{}/outspends", txid))
+    }
 }
 
 impl Blockchain for ElectrsBlockchainProvider {
@@ -302,9 +306,7 @@ impl BroadcasterInterface for ElectrsBlockchainProvider {
         let body = bitcoin_test_utils::tx_to_string(tx);
         std::thread::spawn(move || {
             match client.post(&format!("{}tx", host)).body(body).send() {
-                Err(_) => {
-                    // TODO(tibo): log
-                }
+                Err(_) => {}
                 Ok(res) => {
                     if let Err(_) = res.error_for_status_ref() {
                         // let body = res.text().unwrap_or_default();
@@ -333,7 +335,7 @@ struct UtxoResp {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
-enum UtxoStatus {
+pub enum UtxoStatus {
     Confirmed {
         confirmed: bool,
         block_height: u64,
@@ -392,4 +394,19 @@ struct BlockInfo {
 
 fn sats_per_vbyte_to_sats_per_1000_weight(input: f32) -> u32 {
     (input * 1000.0 / 4.0).round() as u32
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum OutSpendResp {
+    Spent(OutSpendInfo),
+    Unspent { spent: bool },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OutSpendInfo {
+    pub spent: bool,
+    pub txid: Txid,
+    pub vin: usize,
+    pub status: UtxoStatus,
 }
