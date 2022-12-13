@@ -182,7 +182,7 @@ pub fn enum_outcomes() -> Vec<String> {
 }
 
 pub fn max_value() -> u32 {
-    BASE.pow(NB_DIGITS as u32) - 1
+    BASE.pow(NB_DIGITS) - 1
 }
 
 pub fn max_value_from_digits(nb_digits: usize) -> u32 {
@@ -420,35 +420,33 @@ pub fn get_digit_decomposition_oracles(
     for (i, index) in oracle_indexes.iter().enumerate() {
         let cur_outcome: usize = if !use_max_value && (i == 0 || !with_diff) {
             outcome_value
-        } else {
-            if !use_max_value {
-                let mut delta = (thread_rng().next_u32() % BASE.pow(MIN_SUPPORT_EXP as u32)) as i32;
-                delta = if thread_rng().next_u32() % 2 == 1 {
-                    -delta
-                } else {
-                    delta
-                };
-
-                let tmp_outcome = (outcome_value as i32) + delta;
-                if tmp_outcome < 0 {
-                    0
-                } else if tmp_outcome
-                    > (max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as i32)
-                {
-                    max_value() as usize
-                } else {
-                    tmp_outcome as usize
-                }
+        } else if !use_max_value {
+            let mut delta = (thread_rng().next_u32() % BASE.pow(MIN_SUPPORT_EXP as u32)) as i32;
+            delta = if thread_rng().next_u32() % 2 == 1 {
+                -delta
             } else {
-                let max_value =
-                    max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as usize;
-                if max_value == outcome_value {
-                    outcome_value
-                } else {
-                    outcome_value
-                        + 1
-                        + (thread_rng().next_u32() as usize % (max_value - outcome_value))
-                }
+                delta
+            };
+
+            let tmp_outcome = (outcome_value as i32) + delta;
+            if tmp_outcome < 0 {
+                0
+            } else if tmp_outcome
+                > (max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as i32)
+            {
+                max_value() as usize
+            } else {
+                tmp_outcome as usize
+            }
+        } else {
+            let max_value =
+                max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as usize;
+            if max_value == outcome_value {
+                outcome_value
+            } else {
+                outcome_value
+                    + 1
+                    + (thread_rng().next_u32() as usize % (max_value - outcome_value))
             }
         };
 

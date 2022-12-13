@@ -198,7 +198,7 @@ impl lightning::ln::peer_handler::SocketDescriptor for MockSocketDescriptor {
     fn send_data(&mut self, data: &[u8], _resume_read: bool) -> usize {
         self.counter_peer_mng
             .clone()
-            .read_event(&mut self.counter_descriptor.as_mut().unwrap(), data)
+            .read_event(self.counter_descriptor.as_mut().unwrap(), data)
             .unwrap();
         data.len()
     }
@@ -288,7 +288,7 @@ impl EventHandler for LnDlcParty {
 
                 for (i, utxo) in utxos.iter().enumerate() {
                     tx.input.push(TxIn {
-                        previous_output: utxo.outpoint.clone(),
+                        previous_output: utxo.outpoint,
                         script_sig: Script::default(),
                         sequence: Sequence::MAX,
                         witness: Witness::default(),
@@ -317,7 +317,7 @@ impl EventHandler for LnDlcParty {
             }
             Event::SpendableOutputs { outputs } => {
                 let destination_address = self.wallet.get_new_address().unwrap();
-                let output_descriptors = &outputs.iter().map(|a| a).collect::<Vec<_>>();
+                let output_descriptors = &outputs.iter().collect::<Vec<_>>();
                 let tx_feerate = self
                     .blockchain
                     .get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
@@ -473,8 +473,8 @@ fn create_ln_node(
         sub_channel_manager,
         dlc_manager,
         blockchain: blockchain_provider.clone(),
-        mock_blockchain: mock_blockchain.clone(),
-        wallet: wallet.clone(),
+        mock_blockchain: mock_blockchain,
+        wallet: wallet,
         persister,
     }
 }
@@ -599,7 +599,7 @@ fn ln_dlc_test(test_path: TestPath) {
         .peer_manager
         .new_outbound_connection(
             bob_node.channel_manager.get_our_node_id(),
-            alice_descriptor.clone(),
+            alice_descriptor,
             None,
         )
         .unwrap();
@@ -945,8 +945,7 @@ fn ln_dlc_test(test_path: TestPath) {
                 .get_addresses()
                 .unwrap()
                 .iter()
-                .find(|x| **x == receive_addr)
-                .is_some());
+                .any(|x| *x == receive_addr));
         } else {
             alice_node
                 .channel_manager
@@ -1081,9 +1080,9 @@ fn ln_cheated_check<F>(
     electrs: Arc<ElectrsBlockchainProvider>,
     generate_block: &F,
 ) where
-    F: Fn(u64) -> (),
+    F: Fn(u64),
 {
-    electrs.broadcast_transaction(&cheat_tx);
+    electrs.broadcast_transaction(cheat_tx);
 
     generate_block(6);
 
@@ -1099,9 +1098,9 @@ fn ln_cheated_check<F>(
         .iter()
         .find_map(|x| {
             if let OutSpendResp::Spent(s) = x {
-                return Some(s);
+                Some(s)
             } else {
-                return None;
+                None
             }
         })
         .unwrap();
@@ -1117,8 +1116,7 @@ fn ln_cheated_check<F>(
         .get_addresses()
         .unwrap()
         .iter()
-        .find(|x| **x == receive_addr)
-        .is_some());
+        .any(|x| *x == receive_addr));
 }
 
 fn offer_sub_channel(
@@ -1143,21 +1141,21 @@ fn offer_sub_channel(
     let offer = alice_node
         .sub_channel_manager
         .offer_sub_channel(
-            &channel_id,
+            channel_id,
             &test_params.contract_input,
-            &vec![oracle_announcements],
+            &[oracle_announcements],
         )
         .unwrap();
     bob_node
         .sub_channel_manager
         .on_sub_channel_message(
-            &SubChannelMessage::Request(offer.clone()),
+            &SubChannelMessage::Request(offer),
             &alice_node.channel_manager.get_our_node_id(),
         )
         .unwrap();
     let (_, accept) = bob_node
         .sub_channel_manager
-        .accept_sub_channel(&channel_id)
+        .accept_sub_channel(channel_id)
         .unwrap();
     bob_node.process_events();
     let confirm = alice_node

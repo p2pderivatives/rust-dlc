@@ -114,7 +114,7 @@ where
             .map(|x| {
                 total_value += x.tx_out.value;
                 TxIn {
-                    previous_output: x.outpoint.clone(),
+                    previous_output: x.outpoint,
                     script_sig: Script::default(),
                     sequence: Sequence::MAX,
                     witness: Witness::default(),
@@ -139,8 +139,8 @@ where
         let fee = (weight * fee_rate) / 1000;
         tx.output[0].value -= fee;
 
-        for i in 0..tx.input.len() {
-            self.sign_tx_input(&mut tx, i, &utxos[i].tx_out, None)?;
+        for (i, utxo) in utxos.iter().enumerate().take(tx.input.len()) {
+            self.sign_tx_input(&mut tx, i, &utxo.tx_out, None)?;
         }
 
         self.blockchain.send_transaction(&tx)
@@ -225,7 +225,7 @@ where
             .map(|x| UtxoWrap { utxo: x })
             .collect::<Vec<_>>();
         let selection = select_coins(amount, 20, &mut utxos)
-            .ok_or(Error::InvalidState("Not enough fund in utxos".to_string()))?;
+            .ok_or_else(|| Error::InvalidState("Not enough fund in utxos".to_string()))?;
         if lock_utxos {
             for utxo in selection.clone() {
                 let updated = Utxo {

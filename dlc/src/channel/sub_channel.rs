@@ -102,7 +102,7 @@ pub fn create_split_tx(
             version: 2,
             lock_time: PackedLockTime::ZERO,
             input: vec![TxIn {
-                previous_output: fund_tx_outpoint.clone(),
+                previous_output: *fund_tx_outpoint,
                 script_sig: Script::default(),
                 sequence: Sequence::ZERO,
                 witness: Witness::default(),
@@ -126,7 +126,7 @@ pub fn create_ln_glue_tx(
         lock_time,
         input: {
             vec![TxIn {
-                previous_output: split_tx_outpoint.clone(),
+                previous_output: *split_tx_outpoint,
                 script_sig: Script::default(),
                 sequence: nsequence,
                 witness: Witness::default(),

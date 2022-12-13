@@ -186,7 +186,7 @@ pub(crate) async fn poll_for_user_input(
                     {
                         println!("SUCCESS: connected to peer {}", pubkey);
                     }
-                    let contract_input_str = fs::read_to_string(&contract_path)
+                    let contract_input_str = fs::read_to_string(contract_path)
                         .expect("Error reading contract input file.");
                     let contract_input: ContractInput = serde_json::from_str(&contract_input_str)
                         .expect("Error deserializing contract input.");
@@ -402,7 +402,7 @@ pub(crate) async fn poll_for_user_input(
                             (Some(Ok(payout)), Some(s)) => (payout, s),
                             _ => continue,
                         };
-                    let contract_input_str = fs::read_to_string(&contract_path)
+                    let contract_input_str = fs::read_to_string(contract_path)
                         .expect("Error reading contract input file.");
                     let contract_input: ContractInput = serde_json::from_str(&contract_input_str)
                         .expect("Error deserializing contract input.");

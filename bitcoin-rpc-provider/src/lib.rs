@@ -301,7 +301,7 @@ impl Blockchain for BitcoinCoreProvider {
         transaction.consensus_encode(&mut writer).unwrap();
         let mut serialized = String::new();
         for x in writer {
-            let _ = write!(&mut serialized, "{:02x}", x).unwrap();
+            write!(&mut serialized, "{:02x}", x).unwrap();
         }
         self.client
             .lock()
@@ -481,8 +481,8 @@ impl BlockSource for BitcoinCoreProvider {
         Box::pin(core::future::ready(Ok(BlockData::FullBlock(block))))
     }
 
-    fn get_best_block<'a>(
-        &'a self,
+    fn get_best_block(
+        &self,
     ) -> lightning_block_sync::AsyncBlockSourceResult<(bitcoin::BlockHash, Option<u32>)> {
         let best_block = self.client.lock().unwrap().get_best_block_hash().unwrap();
         Box::pin(core::future::ready(Ok((best_block, None))))

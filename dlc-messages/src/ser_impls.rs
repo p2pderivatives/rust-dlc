@@ -36,7 +36,7 @@ impl Writeable for BigSize {
             }
             _ => {
                 0xFFu8.write(writer)?;
-                (self.0 as u64).write(writer)
+                self.0.write(writer)
             }
         }
     }

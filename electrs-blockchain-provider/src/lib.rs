@@ -132,7 +132,7 @@ impl Blockchain for ElectrsBlockchainProvider {
     }
 
     fn get_blockchain_height(&self) -> Result<u64, dlc_manager::error::Error> {
-        Ok(self.get_u64("blocks/tip/height")?)
+        self.get_u64("blocks/tip/height")
     }
 
     fn get_block_at_height(&self, height: u64) -> Result<Block, dlc_manager::error::Error> {
@@ -160,16 +160,15 @@ impl Blockchain for ElectrsBlockchainProvider {
             }
         }
 
-        return Ok(0);
+        Ok(0)
     }
 }
 
 impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
     fn get_utxos_for_address(&self, address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
-        let utxos: Vec<UtxoResp> =
-            self.get_from_json(&format!("address/{}/utxo", address.to_string()))?;
+        let utxos: Vec<UtxoResp> = self.get_from_json(&format!("address/{}/utxo", address))?;
 
-        Ok(utxos
+        utxos
             .into_iter()
             .map(|x| {
                 Ok(Utxo {
@@ -186,7 +185,7 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
                     },
                 })
             })
-            .collect::<Result<Vec<_>, Error>>()?)
+            .collect::<Result<Vec<_>, Error>>()
     }
 
     fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool, Error> {
@@ -229,17 +228,17 @@ impl BlockSource for ElectrsBlockchainProvider {
             let block_info: BlockInfo = self
                 .get_async(&format!("block/{:x}", header_hash))
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?
+                .map_err(BlockSourceError::transient)?
                 .json()
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?;
+                .map_err(BlockSourceError::transient)?;
             let header_hex_str = self
                 .get_async(&format!("block/{:x}/header", header_hash))
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?
+                .map_err(BlockSourceError::transient)?
                 .text()
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?;
+                .map_err(BlockSourceError::transient)?;
             let header_hex = bitcoin_test_utils::str_to_hex(&header_hex_str);
             let header = BlockHeader::consensus_decode(&mut std::io::Cursor::new(&*header_hex))
                 .expect("to have a valid header");
@@ -261,38 +260,38 @@ impl BlockSource for ElectrsBlockchainProvider {
             let block_raw = self
                 .get_async(&format!("block/{:x}/raw", header_hash))
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?
+                .map_err(BlockSourceError::transient)?
                 .bytes()
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?;
+                .map_err(BlockSourceError::transient)?;
             let block = Block::consensus_decode(&mut std::io::Cursor::new(&*block_raw))
                 .expect("to have a valid header");
             Ok(BlockData::FullBlock(block))
         })
     }
 
-    fn get_best_block<'a>(
-        &'a self,
+    fn get_best_block(
+        &self,
     ) -> lightning_block_sync::AsyncBlockSourceResult<(bitcoin::BlockHash, Option<u32>)> {
         Box::pin(async move {
             let block_tip_hash: String = self
                 .get_async("blocks/tip/hash")
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?
+                .map_err(BlockSourceError::transient)?
                 .text()
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?;
+                .map_err(BlockSourceError::transient)?;
             let block_tip_height: u32 = self
                 .get_async("blocks/tip/height")
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?
+                .map_err(BlockSourceError::transient)?
                 .text()
                 .await
-                .map_err(|e| BlockSourceError::transient(e))?
+                .map_err(BlockSourceError::transient)?
                 .parse()
-                .map_err(|e| BlockSourceError::transient(e))?;
+                .map_err(BlockSourceError::transient)?;
             Ok((
-                BlockHash::from_hex(&block_tip_hash).map_err(|e| BlockSourceError::transient(e))?,
+                BlockHash::from_hex(&block_tip_hash).map_err(BlockSourceError::transient)?,
                 Some(block_tip_height),
             ))
         })
@@ -305,10 +304,10 @@ impl BroadcasterInterface for ElectrsBlockchainProvider {
         let host = self.host.clone();
         let body = bitcoin_test_utils::tx_to_string(tx);
         std::thread::spawn(move || {
-            match client.post(&format!("{}tx", host)).body(body).send() {
+            match client.post(format!("{}tx", host)).body(body).send() {
                 Err(_) => {}
                 Ok(res) => {
-                    if let Err(_) = res.error_for_status_ref() {
+                    if res.error_for_status_ref().is_err() {
                         // let body = res.text().unwrap_or_default();
                         // TODO(tibo): log
                     }
@@ -359,7 +358,8 @@ fn store_estimate_for_target(
     fee_estimates: &FeeEstimates,
     target: Target,
 ) {
-    let val = get_estimate_for_target(fee_estimates, target.clone() as u16);
+    #[allow(clippy::redundant_clone)]
+    let val = get_estimate_for_target(fee_estimates, &(target.clone() as u16));
     fees.get(&target)
         .unwrap()
         .store(val, std::sync::atomic::Ordering::Relaxed);
@@ -380,8 +380,8 @@ fn poll_for_fee_estimates(fees: Arc<HashMap<Target, AtomicU32>>, host: &str) {
     });
 }
 
-fn get_estimate_for_target(fee_estimates: &FeeEstimates, target: u16) -> u32 {
-    match fee_estimates.get(&target) {
+fn get_estimate_for_target(fee_estimates: &FeeEstimates, target: &u16) -> u32 {
+    match fee_estimates.get(target) {
         Some(sats_per_vbytes) => sats_per_vbyte_to_sats_per_1000_weight(*sats_per_vbytes),
         None => MIN_FEERATE,
     }

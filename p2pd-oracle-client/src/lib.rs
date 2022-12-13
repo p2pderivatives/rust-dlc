@@ -131,7 +131,8 @@ fn parse_event_id(event_id: &str) -> Result<(String, DateTime<Utc>), DlcManagerE
     let timestamp: i64 = timestamp_str
         .parse()
         .map_err(|_| DlcManagerError::OracleError("Invalid timestamp format".to_string()))?;
-    let naive_date_time = NaiveDateTime::from_timestamp(timestamp, 0);
+    let naive_date_time = NaiveDateTime::from_timestamp_opt(timestamp, 0)
+        .ok_or_else(|| DlcManagerError::OracleError("Could not compute timestamp.".to_string()))?;
     let date_time = DateTime::from_utc(naive_date_time, Utc);
     Ok((asset_id.to_string(), date_time))
 }

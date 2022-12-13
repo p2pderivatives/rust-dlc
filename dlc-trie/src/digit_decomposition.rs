@@ -103,8 +103,8 @@ pub fn group_by_ignoring_digits(
     base: usize,
     nb_digits: usize,
 ) -> Vec<Vec<usize>> {
-    let mut ds = decompose_value(start as usize, base as usize, nb_digits as usize);
-    let mut de = decompose_value(end as usize, base as usize, nb_digits as usize);
+    let mut ds = decompose_value(start, base, nb_digits);
+    let mut de = decompose_value(end, base, nb_digits);
 
     // We take the common prefix of start and end and save it, so we are guaranteed that ds[0] != de[0].
     let prefix = take_prefix(&mut ds, &mut de);

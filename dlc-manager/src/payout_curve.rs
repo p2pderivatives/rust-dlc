@@ -297,7 +297,7 @@ impl PolynomialPayoutCurvePiece {
 
 impl Evaluable for PolynomialPayoutCurvePiece {
     fn evaluate(&self, outcome: u64) -> f64 {
-        let nb_points = self.payout_points.len() as usize;
+        let nb_points = self.payout_points.len();
 
         // Optimizations for constant and linear cases.
         if nb_points == 2 {
@@ -316,7 +316,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
         let outcome = outcome as f64;
 
         for i in 0..nb_points {
-            let mut l = self.payout_points[i].get_outcome_payout() as f64;
+            let mut l = self.payout_points[i].get_outcome_payout();
             for j in 0..nb_points {
                 if i != j {
                     debug_assert!(
@@ -455,7 +455,7 @@ impl HyperbolaPayoutCurvePiece {
 impl Evaluable for HyperbolaPayoutCurvePiece {
     fn evaluate(&self, outcome: u64) -> f64 {
         let outcome = outcome as f64;
-        let translated_outcome = outcome as f64 - self.translate_outcome;
+        let translated_outcome = outcome - self.translate_outcome;
         let sqrt_term_abs_val = (translated_outcome.powi(2) - 4.0 * self.a * self.b).sqrt();
         let sqrt_term = if self.use_positive_piece {
             sqrt_term_abs_val

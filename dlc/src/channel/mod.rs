@@ -216,7 +216,7 @@ pub fn create_settle_transaction(
     }
 
     let input = TxIn {
-        previous_output: prev_outpoint.clone(),
+        previous_output: *prev_outpoint,
         script_sig: Script::default(),
         sequence: crate::util::get_sequence(lock_time),
         witness: Witness::default(),
@@ -312,7 +312,7 @@ pub fn create_renewal_channel_transactions(
 
     let tx_in = TxIn {
         previous_output: outpoint,
-        sequence: buffer_nsequence.unwrap_or(crate::util::get_sequence(cet_lock_time)),
+        sequence: buffer_nsequence.unwrap_or_else(|| crate::util::get_sequence(cet_lock_time)),
         script_sig: Script::default(),
         witness: Witness::default(),
     };
@@ -525,7 +525,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     let descriptor = settle_descriptor(counter_params, &own_params.own_pk, csv_timelock);
 
-    let vout = if is_offer { 1 } else { 0 };
+    let vout = u32::from(is_offer);
 
     let tx_in = TxIn {
         previous_output: OutPoint {
@@ -821,8 +821,8 @@ mod tests {
         );
 
         let satisfier = HashMap::from_iter(vec![
-            (offer_params.own_pk, sig.clone()),
-            (accept_params.own_pk, sig.clone()),
+            (offer_params.own_pk, sig),
+            (accept_params.own_pk, sig),
         ]);
 
         descriptor
@@ -948,7 +948,7 @@ mod tests {
             .unwrap(),
         );
 
-        let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig.clone())]);
+        let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig)]);
 
         descriptor
             .satisfy(

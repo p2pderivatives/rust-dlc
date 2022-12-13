@@ -491,7 +491,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         Manager::new(
             Box::new(alice_simple_wallet),
             Arc::clone(&electrs),
-            alice_store.clone(),
+            alice_store,
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
@@ -506,7 +506,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         Manager::new(
             Box::new(bob_simple_wallet),
             Arc::clone(&electrs),
-            bob_store.clone(),
+            bob_store,
             bob_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
@@ -555,7 +555,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         alice_send_loop,
         alice_expect_error_loop,
         alice_sync_send,
-        |msg| Some(msg),
+        Some,
         msg_callback
     );
 

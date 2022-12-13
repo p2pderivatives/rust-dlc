@@ -524,7 +524,7 @@ where
         match msg {
             SubChannelMessage::Request(req) => {
                 self.on_subchannel_offer(req, sender)?;
-                return Ok(None);
+                Ok(None)
             }
             SubChannelMessage::Accept(a) => {
                 let res = self.on_subchannel_accept(a, sender)?;
@@ -539,19 +539,19 @@ where
                 Ok(None)
             }
             SubChannelMessage::CloseOffer(o) => {
-                self.on_sub_channel_close_offer(&o, sender)?;
+                self.on_sub_channel_close_offer(o, sender)?;
                 Ok(None)
             }
             SubChannelMessage::CloseAccept(a) => {
-                let res = self.on_sub_channel_close_accept(&a, sender)?;
+                let res = self.on_sub_channel_close_accept(a, sender)?;
                 Ok(Some(SubChannelMessage::CloseConfirm(res)))
             }
             SubChannelMessage::CloseConfirm(c) => {
-                let res = self.on_sub_channel_close_confirm(&c, sender)?;
+                let res = self.on_sub_channel_close_confirm(c, sender)?;
                 Ok(Some(SubChannelMessage::CloseFinalize(res)))
             }
             SubChannelMessage::CloseFinalize(f) => {
-                self.on_sub_channel_close_finalize(&f, sender)?;
+                self.on_sub_channel_close_finalize(f, sender)?;
                 Ok(None)
             }
             SubChannelMessage::CloseReject(_) => todo!(),
@@ -569,10 +569,9 @@ where
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(channel_id)
-            .ok_or(Error::InvalidParameters(format!(
-                "Unknown LN channel {:02x?}",
-                channel_id
-            )))?;
+            .ok_or_else(|| {
+                Error::InvalidParameters(format!("Unknown LN channel {channel_id:02x?}"))
+            })?;
 
         let sub_channel =
             match self.store.get_sub_channel(channel_details.channel_id)? {
@@ -620,7 +619,7 @@ where
             &self.secp,
             contract_input,
             &channel_details.counterparty.node_id,
-            &oracle_announcements,
+            oracle_announcements,
             crate::manager::CET_NSEQUENCE,
             crate::manager::REFUND_DELAY,
             &self.wallet,
@@ -632,7 +631,7 @@ where
         offered_contract.offer_params.inputs = Vec::new();
         offered_contract.funding_inputs_info = Vec::new();
 
-        offered_channel.temporary_channel_id = channel_id.clone();
+        offered_channel.temporary_channel_id = *channel_id;
 
         let msg = SubChannelOffer {
             channel_id: channel_details.channel_id,
@@ -713,10 +712,9 @@ where
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(channel_id)
-            .ok_or(Error::InvalidParameters(format!(
-                "Unknown LN channel {:02x?}",
-                channel_id
-            )))?;
+            .ok_or_else(|| {
+                Error::InvalidParameters(format!("Unknown LN channel {channel_id:02x?}"))
+            })?;
 
         let offered_channel =
             get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
@@ -729,7 +727,7 @@ where
         )?;
 
         // Revalidate in case channel capacity has changed since receiving the offer.
-        let (own_to_self_msat, counter_to_self_msat) = validate_and_get_ln_values_per_party(
+        let (own_to_self_msat, _counter_to_self_msat) = validate_and_get_ln_values_per_party(
             &channel_details,
             offered_contract.total_collateral - offered_contract.offer_params.collateral,
             offered_contract.offer_params.collateral,
@@ -873,7 +871,7 @@ where
             publish_basepoint: offered_sub_channel.own_base_points.publish_basepoint,
             own_basepoint: offered_sub_channel.own_base_points.own_basepoint,
             commit_signature: commitment_signed.signature,
-            htlc_signatures: commitment_signed.htlc_signatures.clone(),
+            htlc_signatures: commitment_signed.htlc_signatures,
             channel_revocation_basepoint: accept_channel.revocation_basepoint,
             channel_publish_basepoint: accept_channel.publish_basepoint,
             channel_own_basepoint: accept_channel.own_basepoint,
@@ -938,7 +936,7 @@ where
                         0,
                         &signed.original_funding_redeemscript,
                         signed.fund_value_satoshis,
-                        &fund_sk,
+                        fund_sk,
                     )
                     .unwrap(),
                 );
@@ -947,7 +945,7 @@ where
                     &mut split_tx,
                     &counter_split_signature,
                     &channel_details.counter_funding_pubkey,
-                    &fund_sk,
+                    fund_sk,
                     &signed.original_funding_redeemscript,
                     signed.fund_value_satoshis,
                     0,
@@ -969,7 +967,7 @@ where
         self.blockchain.send_transaction(&split_tx)?;
 
         let closing_sub_channel = ClosingSubChannel {
-            signed_sub_channel: state.clone(),
+            signed_sub_channel: state,
         };
 
         signed.state = SubChannelState::Closing(closing_sub_channel);
@@ -1115,7 +1113,7 @@ where
 
         let counter_party = signed_subchannel.counter_party;
         let close_offered_subchannel = CloseOfferedSubChannel {
-            signed_subchannel: state.clone(),
+            signed_subchannel: state,
             offer_balance,
             accept_balance,
         };
@@ -1154,7 +1152,7 @@ where
             + accept_fees * 1000
             + state.accept_balance * 1000;
 
-        let ln_counter_balance = channel_details.inbound_capacity_msat
+        let _ln_counter_balance = channel_details.inbound_capacity_msat
             + channel_details.counterparty.unspendable_punishment_reserve * 1000
             + offer_fees * 1000
             + state.offer_balance * 1000;
@@ -1172,13 +1170,13 @@ where
             )?;
 
         let close_accept = SubChannelCloseAccept {
-            channel_id: channel_id.clone(),
+            channel_id: *channel_id,
             commit_signature: commitment_signed.signature,
-            htlc_signatures: commitment_signed.htlc_signatures.clone(),
+            htlc_signatures: commitment_signed.htlc_signatures,
         };
 
         let close_accepted_subchannel = CloseAcceptedSubChannel {
-            signed_subchannel: state.signed_subchannel.clone(),
+            signed_subchannel: state.signed_subchannel,
         };
 
         sub_channel.state = SubChannelState::CloseAccepted(close_accepted_subchannel);
@@ -1196,10 +1194,12 @@ where
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(&sub_channel_offer.channel_id)
-            .ok_or(Error::InvalidParameters(format!(
-                "Unknown channel {:02x?}",
-                sub_channel_offer.channel_id
-            )))?;
+            .ok_or_else(|| {
+                Error::InvalidParameters(format!(
+                    "Unknown channel {:02x?}",
+                    sub_channel_offer.channel_id
+                ))
+            })?;
 
         let sub_channel =
             match self.store.get_sub_channel(channel_details.channel_id)? {
@@ -1315,10 +1315,12 @@ where
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(&sub_channel_accept.channel_id)
-            .ok_or(Error::InvalidParameters(format!(
-                "Unknown LN channel {:02x?}",
-                sub_channel_accept.channel_id
-            )))?;
+            .ok_or_else(|| {
+                Error::InvalidParameters(format!(
+                    "Unknown LN channel {:02x?}",
+                    sub_channel_accept.channel_id
+                ))
+            })?;
 
         let offer_revoke_params = offered_sub_channel.own_base_points.get_revokable_params(
             &self.secp,
@@ -1523,7 +1525,7 @@ where
             next_per_commitment_point: revoke_and_ack.next_per_commitment_point,
             split_adaptor_signature: split_tx_adaptor_signature,
             commit_signature: commitment_signed.signature,
-            htlc_signatures: commitment_signed.htlc_signatures.clone(),
+            htlc_signatures: commitment_signed.htlc_signatures,
             cet_adaptor_signatures: sign_channel.cet_adaptor_signatures,
             buffer_adaptor_signature: sign_channel.buffer_adaptor_signature,
             refund_signature: sign_channel.refund_signature,
@@ -1567,17 +1569,19 @@ where
 
         let raa = RevokeAndACK {
             channel_id: sub_channel_confirm.channel_id,
-            per_commitment_secret: sub_channel_confirm.per_commitment_secret.as_ref().clone(),
+            per_commitment_secret: *sub_channel_confirm.per_commitment_secret.as_ref(),
             next_per_commitment_point: sub_channel_confirm.next_per_commitment_point,
         };
 
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(&sub_channel_confirm.channel_id)
-            .ok_or(Error::InvalidParameters(format!(
-                "Unknown LN channel {:02x?}",
-                sub_channel_confirm.channel_id
-            )))?;
+            .ok_or_else(|| {
+                Error::InvalidParameters(format!(
+                    "Unknown LN channel {:02x?}",
+                    sub_channel_confirm.channel_id
+                ))
+            })?;
 
         let accept_revoke_params = accepted_sub_channel.own_base_points.get_revokable_params(
             &self.secp,
@@ -1595,7 +1599,7 @@ where
             &self.secp,
             &state.split_tx.transaction,
             accepted_sub_channel.fund_value_satoshis,
-            &funding_redeemscript,
+            funding_redeemscript,
             &channel_details.counter_funding_pubkey,
             &accept_revoke_params.publish_pk.inner,
             &sub_channel_confirm.split_adaptor_signature,
@@ -1673,7 +1677,7 @@ where
             counter_split_adaptor_signature: sub_channel_confirm.split_adaptor_signature,
             split_tx: state.split_tx.clone(),
             counter_glue_signature: sub_channel_confirm.ln_glue_signature,
-            ln_glue_transaction: state.ln_glue_transaction.clone(),
+            ln_glue_transaction: state.ln_glue_transaction,
         };
 
         let msg = SubChannelFinalize {
@@ -1703,15 +1707,17 @@ where
             self,
             &sub_channel_finalize.channel_id,
             Signed,
-            Some(counter_party.clone())
+            Some(*counter_party)
         )?;
         let contract = get_contract_in_state!(
             self,
-            &channel.get_contract_id().ok_or(Error::InvalidState(
-                "No contract id in on_sub_channel_finalize".to_string()
-            ))?,
+            &channel
+                .get_contract_id()
+                .ok_or_else(|| Error::InvalidState(
+                    "No contract id in on_sub_channel_finalize".to_string()
+                ))?,
             Signed,
-            Some(counter_party.clone())
+            Some(*counter_party)
         )?;
         let raa = RevokeAndACK {
             channel_id: sub_channel_finalize.channel_id,
@@ -1738,7 +1744,7 @@ where
         counter_party: &PublicKey,
     ) -> Result<(), Error> {
         let (mut sub_channel, state) =
-            get_sub_channel_in_state!(self, offer.channel_id, Signed, Some(counter_party.clone()))?;
+            get_sub_channel_in_state!(self, offer.channel_id, Signed, Some(*counter_party))?;
 
         let dlc_channel =
             get_channel_in_state!(self, &offer.channel_id, Signed, None::<PublicKey>)?;
@@ -1779,7 +1785,7 @@ where
         };
 
         let updated = CloseOfferedSubChannel {
-            signed_subchannel: state.clone(),
+            signed_subchannel: state,
             offer_balance,
             accept_balance: offer.accept_balance,
         };
@@ -1812,7 +1818,7 @@ where
             + offer_fees * 1000
             + state.offer_balance * 1000;
 
-        let ln_counter_balance = channel_details.inbound_capacity_msat
+        let _ln_counter_balance = channel_details.inbound_capacity_msat
             + channel_details.counterparty.unspendable_punishment_reserve * 1000
             + accept_fees * 1000
             + state.accept_balance * 1000;
@@ -1871,7 +1877,7 @@ where
         );
 
         let updated_channel = CloseConfirmedSubChannel {
-            signed_subchannel: state.signed_subchannel.clone(),
+            signed_subchannel: state.signed_subchannel,
         };
 
         sub_channel.state = SubChannelState::CloseConfirmed(updated_channel);
@@ -1908,7 +1914,7 @@ where
 
         let raa = RevokeAndACK {
             channel_id: confirm.channel_id,
-            per_commitment_secret: confirm.commit_revocation_secret.as_ref().clone(),
+            per_commitment_secret: *confirm.commit_revocation_secret.as_ref(),
             next_per_commitment_point: confirm.next_per_commitment_point,
         };
 
@@ -2200,11 +2206,13 @@ fn validate_and_get_ln_values_per_party(
 
     let own_value_to_self_msat = (channel_details.outbound_capacity_msat + own_reserve_msat)
         .checked_sub((own_collateral + own_fees) * 1000)
-        .ok_or(Error::InvalidParameters(format!(
-            "Not enough outbound capacity to establish given contract. Want {} but have {}",
-            (own_collateral + own_fees) * 1000,
-            channel_details.outbound_capacity_msat + own_reserve_msat
-        )))?;
+        .ok_or_else(|| {
+            Error::InvalidParameters(format!(
+                "Not enough outbound capacity to establish given contract. Want {} but have {}",
+                (own_collateral + own_fees) * 1000,
+                channel_details.outbound_capacity_msat + own_reserve_msat
+            ))
+        })?;
     // TODO(tibo): find better ways to validate amounts + take into account increased fees.
     if own_value_to_self_msat < dlc::DUST_LIMIT * 1000 {
         return Err(Error::InvalidParameters(format!(
@@ -2216,11 +2224,13 @@ fn validate_and_get_ln_values_per_party(
 
     let counter_value_to_self_msat = (channel_details.inbound_capacity_msat + counter_reserve_msat)
         .checked_sub((counter_collateral + counter_fees) * 1000)
-        .ok_or(Error::InvalidParameters(format!(
-            "Not enough inbound capacity to establish given contract. Want {} but have {}",
-            (counter_collateral + counter_fees) * 1000,
-            channel_details.inbound_capacity_msat + counter_reserve_msat
-        )))?;
+        .ok_or_else(|| {
+            Error::InvalidParameters(format!(
+                "Not enough inbound capacity to establish given contract. Want {} but have {}",
+                (counter_collateral + counter_fees) * 1000,
+                channel_details.inbound_capacity_msat + counter_reserve_msat
+            ))
+        })?;
     // TODO(tibo): find better ways to validate amounts + take into account increased fees.
     if counter_value_to_self_msat < dlc::DUST_LIMIT * 1000 {
         return Err(Error::InvalidParameters(format!(

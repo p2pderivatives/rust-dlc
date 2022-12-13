@@ -598,7 +598,7 @@ mod tests {
         }
 
         if let Some(expected) = expected_iter {
-            let iter = MultiTrieIterator::new(&m_trie);
+            let iter = MultiTrieIterator::new(m_trie);
 
             for (i, res) in iter.enumerate() {
                 assert_eq!(expected[i], res.path);

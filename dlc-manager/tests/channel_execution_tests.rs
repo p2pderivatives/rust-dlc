@@ -833,7 +833,7 @@ fn settle_race(
         .unwrap();
 
     second_send
-        .send(Some(Message::SettleOffer(settle_offer_2.clone())))
+        .send(Some(Message::SettleOffer(settle_offer_2)))
         .unwrap();
 
     // Process 2 offers + 2 rejects
