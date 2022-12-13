@@ -567,7 +567,7 @@ where
         temporary_channel_id: offered_channel.temporary_channel_id,
         roll_back_state: None,
         fund_tx: dlc_transactions.fund.clone(),
-        fund_script_pubkey: dlc_transactions.funding_script_pubkey.clone(),
+        fund_script_pubkey: dlc_transactions.funding_script_pubkey,
         fund_output_index,
         own_params: offered_contract.offer_params.clone(),
         own_per_update_point: offered_channel.per_update_point,
@@ -1555,7 +1555,7 @@ where
         &buffer_transaction,
         buffer_input_value,
         &dlc_transactions.funding_script_pubkey,
-        &own_buffer_adaptor_sk,
+        own_buffer_adaptor_sk,
         &offer_revoke_params.publish_pk.inner,
     )?;
 
@@ -1734,7 +1734,7 @@ where
         &buffer_transaction,
         buffer_input_value,
         &signed_channel.fund_script_pubkey,
-        &counter_buffer_own_pk,
+        counter_buffer_own_pk,
         &offer_revoke_params.publish_pk.inner,
         &renew_accept.buffer_adaptor_signature,
     )?;
@@ -1744,7 +1744,7 @@ where
         &buffer_transaction,
         buffer_input_value,
         &dlc_transactions.funding_script_pubkey,
-        &own_buffer_adaptor_sk,
+        own_buffer_adaptor_sk,
         &accept_revoke_params.publish_pk.inner,
     )?;
 
@@ -1840,7 +1840,7 @@ where
         buffer_transaction,
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
         &signed_channel.fund_script_pubkey,
-        &counter_buffer_own_pk,
+        counter_buffer_own_pk,
         &own_publish_pk,
         &renew_confirm.buffer_adaptor_signature,
     )?;
@@ -2169,7 +2169,7 @@ fn get_settle_tx_and_adaptor_sig(
     );
 
     let settle_tx = dlc::channel::create_settle_transaction(
-        &settle_input_outpoint,
+        settle_input_outpoint,
         &offer_revoke_params,
         &accept_revoke_params,
         offer_payout,
@@ -2285,7 +2285,7 @@ where
         );
         let sig = dlc::util::get_raw_sig_for_tx_input(
             secp,
-            &mut buffer_transaction,
+            &buffer_transaction,
             0,
             &signed_sub_channel.split_tx.output_script,
             signed_sub_channel.split_tx.transaction.output[1].value,
@@ -2313,15 +2313,15 @@ where
                 );
             if sub_channel.is_offer {
                 (
-                    own_revoke_params.own_pk.clone(),
-                    counter_revoke_params.own_pk.clone(),
+                    own_revoke_params.own_pk,
+                    counter_revoke_params.own_pk,
                     own_revoke_params,
                     counter_revoke_params,
                 )
             } else {
                 (
-                    own_revoke_params.own_pk.clone(),
-                    counter_revoke_params.own_pk.clone(),
+                    own_revoke_params.own_pk,
+                    counter_revoke_params.own_pk,
                     counter_revoke_params,
                     own_revoke_params,
                 )
@@ -2519,15 +2519,15 @@ where
                 );
             if sub_channel.is_offer {
                 (
-                    own_revoke_params.own_pk.clone(),
-                    counter_revoke_params.own_pk.clone(),
+                    own_revoke_params.own_pk,
+                    counter_revoke_params.own_pk,
                     own_revoke_params,
                     counter_revoke_params,
                 )
             } else {
                 (
-                    own_revoke_params.own_pk.clone(),
-                    counter_revoke_params.own_pk.clone(),
+                    own_revoke_params.own_pk,
+                    counter_revoke_params.own_pk,
                     counter_revoke_params,
                     own_revoke_params,
                 )

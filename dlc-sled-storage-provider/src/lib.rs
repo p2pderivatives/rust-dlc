@@ -428,7 +428,7 @@ impl Storage for SledStorageProvider {
     }
 
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
-        let serialized = serialize_sub_channel(&subchannel)?;
+        let serialized = serialize_sub_channel(subchannel)?;
         self.sub_channel_tree()?
             .insert(subchannel.channel_id, serialized)
             .map_err(to_storage_error)?;

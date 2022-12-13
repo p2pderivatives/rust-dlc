@@ -272,6 +272,7 @@ impl CustomKeysManager {
 }
 
 impl CustomKeysManager {
+    #[allow(clippy::result_unit_err)]
     ///
     pub fn spend_spendable_outputs<C: Signing>(
         &self,

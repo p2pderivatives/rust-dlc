@@ -216,7 +216,7 @@ pub fn create_settle_transaction(
     }
 
     let input = TxIn {
-        previous_output: prev_outpoint.clone(),
+        previous_output: *prev_outpoint,
         script_sig: Script::default(),
         sequence: crate::util::get_sequence(lock_time),
         witness: Witness::default(),
@@ -312,7 +312,7 @@ pub fn create_renewal_channel_transactions(
 
     let tx_in = TxIn {
         previous_output: outpoint,
-        sequence: buffer_nsequence.unwrap_or(crate::util::get_sequence(cet_lock_time)),
+        sequence: buffer_nsequence.unwrap_or_else(|| crate::util::get_sequence(cet_lock_time)),
         script_sig: Script::default(),
         witness: Witness::default(),
     };

@@ -184,7 +184,7 @@ pub fn enum_outcomes() -> Vec<String> {
 }
 
 pub fn max_value() -> u32 {
-    BASE.pow(NB_DIGITS as u32) - 1
+    BASE.pow(NB_DIGITS) - 1
 }
 
 pub fn max_value_from_digits(nb_digits: usize) -> u32 {

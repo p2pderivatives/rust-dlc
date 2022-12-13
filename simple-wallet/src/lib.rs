@@ -268,11 +268,18 @@ mod tests {
 
     use dlc_manager::{Signer, Wallet};
     use mocks::simple_wallet::SimpleWallet;
-    use mocks::{memory_storage_provider::MemoryStorage, mock_blockchain::TestBlockchain};
+    use mocks::{
+        memory_storage_provider::MemoryStorage,
+        mock_blockchain::{MockBlockchain, MockBroadcaster},
+    };
     use secp256k1_zkp::{PublicKey, SECP256K1};
 
-    fn get_wallet() -> SimpleWallet<Rc<TestBlockchain>, Rc<MemoryStorage>> {
-        let blockchain = Rc::new(MockBlockchain {});
+    fn get_wallet() -> mocks::simple_wallet::SimpleWallet<
+        Rc<MockBlockchain<Rc<MockBroadcaster>>>,
+        Rc<MemoryStorage>,
+    > {
+        let broadcaster = Rc::new(MockBroadcaster {});
+        let blockchain = Rc::new(MockBlockchain::new(broadcaster));
         let storage = Rc::new(MemoryStorage::new());
         let wallet = SimpleWallet::new(blockchain, storage, bitcoin::Network::Regtest);
         wallet

@@ -364,7 +364,7 @@ impl WalletStorage for MemoryStorage {
         self.key_pairs
             .write()
             .expect("Could not get write lock")
-            .insert(public_key.clone(), privkey.clone());
+            .insert(*public_key, *privkey);
 
         Ok(())
     }
@@ -385,7 +385,7 @@ impl WalletStorage for MemoryStorage {
         self.utxos
             .write()
             .expect("Could not get write lock")
-            .insert(utxo.outpoint.clone(), utxo.clone());
+            .insert(utxo.outpoint, utxo.clone());
         Ok(())
     }
 
@@ -417,7 +417,7 @@ impl WalletStorage for MemoryStorage {
 
     fn unreserve_utxo(&self, txid: &Txid, vout: u32) -> Result<(), DaemonError> {
         let outpoint = OutPoint {
-            txid: txid.clone(),
+            txid: *txid,
             vout,
         };
         self.utxos
