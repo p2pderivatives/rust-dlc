@@ -209,7 +209,7 @@ impl SledStorageProvider {
     fn open_tree(&self, tree_id: &[u8; 1]) -> Result<Tree, Error> {
         self.db
             .open_tree(tree_id)
-            .map_err(|e| Error::StorageError(format!("Error opening contract tree: {}", e)))
+            .map_err(|e| Error::StorageError(format!("Error opening contract tree: {e}")))
     }
 
     fn contract_tree(&self) -> Result<Tree, Error> {
@@ -409,14 +409,14 @@ impl Storage for SledStorageProvider {
     fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error> {
         self.open_tree(&[CHAIN_MONITOR_TREE])?
             .insert([CHAIN_MONITOR_KEY], monitor.serialize()?)
-            .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {}", e)))?;
+            .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {e}")))?;
         Ok(())
     }
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, dlc_manager::error::Error> {
         let serialized = self
             .open_tree(&[CHAIN_MONITOR_TREE])?
             .get([CHAIN_MONITOR_KEY])
-            .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {}", e)))?;
+            .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {e}")))?;
         let deserialized = match serialized {
             Some(s) => Some(
                 ChainMonitor::deserialize(&mut ::std::io::Cursor::new(s))
@@ -489,7 +489,7 @@ impl WalletStorage for SledStorageProvider {
             .keys()
             .map(|x| {
                 Ok(String::from_utf8(x.map_err(to_storage_error)?.to_vec())
-                    .map_err(|e| Error::InvalidState(format!("Could not read address key {}", e)))?
+                    .map_err(|e| Error::InvalidState(format!("Could not read address key {e}")))?
                     .parse()
                     .expect("to have a valid address as key"))
             })
@@ -559,7 +559,7 @@ impl WalletStorage for SledStorageProvider {
                 let ivec = x.map_err(to_storage_error)?;
                 let mut cursor = Cursor::new(&ivec);
                 let res =
-                    Utxo::read(&mut cursor).map_err(|x| Error::InvalidState(format!("{}", x)))?;
+                    Utxo::read(&mut cursor).map_err(|x| Error::InvalidState(format!("{x}")))?;
                 Ok(res)
             })
             .collect::<Result<Vec<Utxo>, Error>>()
@@ -573,8 +573,7 @@ impl WalletStorage for SledStorageProvider {
                 .map_err(|_| Error::InvalidState("Could not read UTXO".to_string()))?,
             None => {
                 return Err(Error::InvalidState(format!(
-                    "No utxo for {} {}",
-                    txid, vout
+                    "No utxo for {txid} {vout}"
                 )))
             }
         };

@@ -54,7 +54,7 @@ pub fn tx_to_string(tx: &Transaction) -> String {
     tx.consensus_encode(&mut writer).unwrap();
     let mut serialized = String::new();
     for x in writer {
-        write!(&mut serialized, "{:02x}", x).unwrap();
+        write!(&mut serialized, "{x:02x}").unwrap();
     }
     serialized
 }

@@ -299,7 +299,7 @@ impl CustomMessageHandler for MessageHandler {
 #[inline]
 fn to_ln_error<T: Display>(e: T, msg: &str) -> LightningError {
     LightningError {
-        err: format!("{} :{}", msg, e),
+        err: format!("{msg} :{e}"),
         action: lightning::ln::msgs::ErrorAction::DisconnectPeer { msg: None },
     }
 }

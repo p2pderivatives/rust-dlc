@@ -153,7 +153,7 @@ pub(crate) async fn poll_for_user_input(
                         .await
                         .is_ok()
                     {
-                        println!("SUCCESS: connected to peer {}", pubkey);
+                        println!("SUCCESS: connected to peer {pubkey}");
                     }
                 }
                 "listpeers" => list_peers(peer_manager.clone()),
@@ -184,7 +184,7 @@ pub(crate) async fn poll_for_user_input(
                         .await
                         .is_ok()
                     {
-                        println!("SUCCESS: connected to peer {}", pubkey);
+                        println!("SUCCESS: connected to peer {pubkey}");
                     }
                     let contract_input_str = fs::read_to_string(contract_path)
                         .expect("Error reading contract input file.");
@@ -226,7 +226,7 @@ pub(crate) async fn poll_for_user_input(
                         .filter(|x| !x.is_offer_party)
                     {
                         let offer_id = hex_str(&offer.id);
-                        let offer_json_path = format!("{}/{}.json", offers_path, offer_id);
+                        let offer_json_path = format!("{offers_path}/{offer_id}.json");
                         if fs::metadata(&offer_json_path).is_err() {
                             let offer_str = serde_json::to_string_pretty(&offer)
                                 .expect("Error serializing offered contract");
@@ -266,38 +266,38 @@ pub(crate) async fn poll_for_user_input(
                             let id = hex_str(&contract.get_id());
                             match contract {
                                 Contract::Offered(_) => {
-                                    println!("Offered contract: {}", id);
+                                    println!("Offered contract: {id}");
                                 }
                                 Contract::Accepted(_) => {
-                                    println!("Accepted contract: {}", id);
+                                    println!("Accepted contract: {id}");
                                 }
                                 Contract::Confirmed(_) => {
-                                    println!("Confirmed contract: {}", id);
+                                    println!("Confirmed contract: {id}");
                                 }
                                 Contract::Signed(_) => {
-                                    println!("Signed contract: {}", id);
+                                    println!("Signed contract: {id}");
                                 }
                                 Contract::Closed(closed) => {
-                                    println!("Closed contract: {}", id);
-                                    if let Some(attestations) = closed.attestations {
-                                        println!(
-                                            "Outcomes: {:?}",
-                                            attestations
-                                                .iter()
-                                                .map(|x| x.outcomes.clone())
-                                                .collect::<Vec<_>>()
-                                        );
-                                    }
-                                    println!("PnL: {} sats", closed.pnl)
+                                    println!("Closed contract: {id}");
+                                    println!(
+                                        "Outcomes: {:?}",
+                                        closed
+                                            .attestations
+                                            .unwrap_or(vec![])
+                                            .iter()
+                                            .map(|x| x.outcomes.clone())
+                                            .collect::<Vec<_>>()
+                                    );
+                                    println!("PnL: {} sats", closed.pnl);
                                 }
                                 Contract::Refunded(_) => {
-                                    println!("Refunded contract: {}", id);
+                                    println!("Refunded contract: {id}");
                                 }
                                 Contract::FailedAccept(_) | Contract::FailedSign(_) => {
-                                    println!("Failed contract: {}", id);
+                                    println!("Failed contract: {id}");
                                 }
-                                Contract::Rejected(_) => println!("Rejected contract: {}", id),
-                                Contract::PreClosed(_) => println!("Pre-closed contract: {}", id),
+                                Contract::Rejected(_) => println!("Rejected contract: {id}"),
+                                Contract::PreClosed(_) => println!("Pre-closed contract: {id}"),
                             }
                         }
                     })
@@ -314,8 +314,7 @@ pub(crate) async fn poll_for_user_input(
                         .filter(|x| !x.is_offer_party)
                     {
                         let channel_id = hex_str(&offer.temporary_channel_id);
-                        let channel_offer_json_path =
-                            format!("{}/{}.json", offers_path, channel_id);
+                        let channel_offer_json_path = format!("{offers_path}/{channel_id}.json");
                         if fs::metadata(&channel_offer_json_path).is_err() {
                             let offer_str = serde_json::to_string_pretty(&offer)
                                 .expect("Error serializing offered channel");
@@ -496,14 +495,14 @@ pub(crate) async fn poll_for_user_input(
 fn read_id(words: &mut SplitWhitespace, err_cmd: &str, err_arg: &str) -> Result<[u8; 32], ()> {
     match words.next() {
         None => {
-            println!("ERROR: {} expects the {} as parameter.", err_cmd, err_arg);
+            println!("ERROR: {err_cmd} expects the {err_arg} as parameter.");
             Err(())
         }
         Some(s) => {
             let mut res = [0u8; 32];
             match to_slice(s, &mut res) {
                 Err(_) => {
-                    println!("ERROR: invalid {}.", err_arg);
+                    println!("ERROR: invalid {err_arg}.");
                     Err(())
                 }
                 Ok(_) => Ok(res),
@@ -536,7 +535,7 @@ fn help() {
 fn list_peers(peer_manager: Arc<PeerManager>) {
     println!("\t{{");
     for pubkey in peer_manager.get_peer_node_ids() {
-        println!("\t\t pubkey: {}", pubkey);
+        println!("\t\t pubkey: {pubkey}");
     }
     println!("\t}},");
 }
@@ -626,14 +625,14 @@ fn process_incoming_messages(
     let messages = dlc_message_handler.get_and_clear_received_messages();
 
     for (node_id, message) in messages {
-        println!("Processing message from {}", node_id);
+        println!("Processing message from {node_id}");
         let resp = dlc_manager
             .lock()
             .unwrap()
             .on_dlc_message(&message, node_id)
             .expect("Error processing message");
         if let Some(msg) = resp {
-            println!("Sending message to {}", node_id);
+            println!("Sending message to {node_id}");
             dlc_message_handler.send_message(node_id, msg);
         }
     }

@@ -71,7 +71,7 @@ impl From<EncodeError> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::RpcError(e) => write!(f, "Bitcoin Rpc Error {}", e),
+            Error::RpcError(e) => write!(f, "Bitcoin Rpc Error {e}"),
             Error::NotEnoughCoins => {
                 write!(f, "Utxo pool did not contain enough coins to reach target.")
             }
@@ -102,9 +102,9 @@ impl BitcoinCoreProvider {
         rpc_user: String,
         rpc_password: String,
     ) -> Result<Self, Error> {
-        let rpc_base = format!("http://{}:{}", host, port);
+        let rpc_base = format!("http://{host}:{port}");
         let rpc_url = if let Some(wallet_name) = wallet {
-            format!("{}/wallet/{}", rpc_base, wallet_name)
+            format!("{rpc_base}/wallet/{wallet_name}")
         } else {
             rpc_base
         };
@@ -301,7 +301,7 @@ impl Blockchain for BitcoinCoreProvider {
         transaction.consensus_encode(&mut writer).unwrap();
         let mut serialized = String::new();
         for x in writer {
-            write!(&mut serialized, "{:02x}", x).unwrap();
+            write!(&mut serialized, "{x:02x}").unwrap();
         }
         self.client
             .lock()

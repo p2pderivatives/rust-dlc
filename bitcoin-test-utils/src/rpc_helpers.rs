@@ -8,7 +8,7 @@ pub const SINK: &str = "sink";
 
 fn rpc_base() -> String {
     let host = env::var("BITCOIND_HOST").unwrap_or_else(|_| "localhost".to_owned());
-    format!("http://{}:18443", host)
+    format!("http://{host}:18443")
 }
 
 pub fn get_new_wallet_rpc(

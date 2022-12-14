@@ -195,11 +195,9 @@ where
 {
     assert_eq!(offered_channel.offered_contract_id, offered_contract.id);
 
-    let total_collateral = offered_contract.total_collateral;
-
     let (accept_params, _, funding_inputs) = crate::utils::get_party_params(
         secp,
-        total_collateral - offered_contract.offer_params.collateral,
+        offered_contract.total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
         blockchain,
@@ -791,9 +789,10 @@ pub fn on_settle_offer(
         ));
     }
 
-    if settle_offer.counter_payout
-        > signed_channel.own_params.collateral + signed_channel.counter_params.collateral
-    {
+    let total_collateral =
+        signed_channel.own_params.collateral + signed_channel.counter_params.collateral;
+
+    if settle_offer.counter_payout > total_collateral {
         return Err(Error::InvalidState(
             "Proposed settle offer payout greater than total collateral".to_string(),
         ));
@@ -802,7 +801,7 @@ pub fn on_settle_offer(
     let mut new_state = SignedChannelState::SettledReceived {
         own_payout: settle_offer.counter_payout,
         counter_next_per_update_point: settle_offer.next_per_update_point,
-        counter_payout: settle_offer.counter_payout,
+        counter_payout: total_collateral - settle_offer.counter_payout,
     };
 
     std::mem::swap(&mut signed_channel.state, &mut new_state);
@@ -1331,8 +1330,7 @@ where
         }
         s => {
             return Err(Error::InvalidState(format!(
-                "Can only renewed established or closed channels, not {}.",
-                s
+                "Can only renewed established or closed channels, not {s}."
             )));
         }
     };

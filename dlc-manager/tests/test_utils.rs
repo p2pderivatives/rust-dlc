@@ -47,37 +47,44 @@ pub const ROUNDING_MOD: u64 = 1;
 macro_rules! receive_loop {
     ($receive:expr, $manager:expr, $send:expr, $expect_err:expr, $sync_send:expr, $rcv_callback: expr, $msg_callback: expr) => {
         thread::spawn(move || loop {
+            let m;
             match $receive.recv() {
-                Ok(Some(msg)) => match $manager.lock().unwrap().on_dlc_message(
-                    &msg,
-                    "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
-                        .parse()
-                        .unwrap(),
-                ) {
-                    Ok(opt) => {
-                        if $expect_err.load(Ordering::Relaxed) != false {
-                            panic!("Expected error not raised");
-                        }
-                        match opt {
-                            Some(msg) => {
-                                let msg_opt = $rcv_callback(msg);
-                                if let Some(msg) = msg_opt {
-                                    $msg_callback(&msg);
-                                    (&$send).send(Some(msg)).expect("Error sending");
-                                }
+                Ok(Some(msg)) => {
+                    m = format!("{:?}", msg).split_at(6).0.to_string();
+                    let res = $manager.lock().unwrap().on_dlc_message(
+                        &msg,
+                        "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+                            .parse()
+                            .unwrap(),
+                    );
+                    println!("SYNCING {} {}!", m, stringify!($manager));
+                    $sync_send.send(()).expect("Error syncing");
+                    println!("SYNCED {} {}!", m, stringify!($manager));
+                    match res {
+                        Ok(opt) => {
+                            if $expect_err.load(Ordering::Relaxed) != false {
+                                panic!("Expected error not raised");
                             }
-                            None => {}
+                            match opt {
+                                Some(msg) => {
+                                    let msg_opt = $rcv_callback(msg);
+                                    if let Some(msg) = msg_opt {
+                                        $msg_callback(&msg);
+                                        (&$send).send(Some(msg)).expect("Error sending");
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        Err(e) => {
+                            if $expect_err.load(Ordering::Relaxed) != true {
+                                panic!("Unexpected error {}", e);
+                            }
                         }
                     }
-                    Err(e) => {
-                        if $expect_err.load(Ordering::Relaxed) != true {
-                            panic!("Unexpected error {}", e);
-                        }
-                    }
-                },
+                }
                 Ok(None) | Err(_) => return,
             };
-            $sync_send.send(()).expect("Error syncing");
         })
     };
 }
@@ -218,20 +225,20 @@ pub fn get_difference_params() -> DifferenceParams {
     }
 }
 
-pub fn get_enum_contract_descriptor() -> ContractDescriptor {
+pub fn get_enum_contract_descriptor(total_collateral: u64) -> ContractDescriptor {
     let outcome_payouts: Vec<_> = enum_outcomes()
         .iter()
         .enumerate()
         .map(|(i, x)| {
             let payout = if i % 2 == 0 {
                 Payout {
-                    offer: TOTAL_COLLATERAL,
+                    offer: total_collateral,
                     accept: 0,
                 }
             } else {
                 Payout {
                     offer: 0,
-                    accept: TOTAL_COLLATERAL,
+                    accept: total_collateral,
                 }
             };
             EnumerationPayout {
@@ -275,8 +282,24 @@ pub fn get_enum_test_params(
     threshold: usize,
     oracles: Option<Vec<MockOracle>>,
 ) -> TestParams {
+    get_enum_test_params_custom_collateral(
+        nb_oracles,
+        threshold,
+        oracles,
+        OFFER_COLLATERAL,
+        ACCEPT_COLLATERAL,
+    )
+}
+
+pub fn get_enum_test_params_custom_collateral(
+    nb_oracles: usize,
+    threshold: usize,
+    oracles: Option<Vec<MockOracle>>,
+    offer_collateral: u64,
+    accept_collateral: u64,
+) -> TestParams {
     let oracles = oracles.unwrap_or_else(|| get_enum_oracles(nb_oracles, threshold));
-    let contract_descriptor = get_enum_contract_descriptor();
+    let contract_descriptor = get_enum_contract_descriptor(offer_collateral + accept_collateral);
     let contract_info = ContractInputInfo {
         contract_descriptor,
         oracles: OracleInput {
@@ -287,8 +310,8 @@ pub fn get_enum_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: OFFER_COLLATERAL,
-        accept_collateral: ACCEPT_COLLATERAL,
+        offer_collateral,
+        accept_collateral,
         fee_rate: 1,
         contract_infos: vec![contract_info],
     };
@@ -473,6 +496,26 @@ pub fn get_numerical_test_params(
     contract_descriptor: ContractDescriptor,
     use_max_value: bool,
 ) -> TestParams {
+    get_numerical_test_params_custom_collateral(
+        oracle_numeric_infos,
+        threshold,
+        with_diff,
+        contract_descriptor,
+        use_max_value,
+        OFFER_COLLATERAL,
+        ACCEPT_COLLATERAL,
+    )
+}
+
+pub fn get_numerical_test_params_custom_collateral(
+    oracle_numeric_infos: &OracleNumericInfo,
+    threshold: usize,
+    with_diff: bool,
+    contract_descriptor: ContractDescriptor,
+    use_max_value: bool,
+    offer_collateral: u64,
+    accept_collateral: u64,
+) -> TestParams {
     let oracles =
         get_digit_decomposition_oracles(oracle_numeric_infos, threshold, with_diff, use_max_value);
     let contract_info = ContractInputInfo {
@@ -485,8 +528,8 @@ pub fn get_numerical_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: OFFER_COLLATERAL,
-        accept_collateral: ACCEPT_COLLATERAL,
+        offer_collateral,
+        accept_collateral,
         fee_rate: 1,
         contract_infos: vec![contract_info],
     };
@@ -505,7 +548,8 @@ pub fn get_enum_and_numerical_test_params(
 ) -> TestParams {
     let oracle_numeric_infos = get_same_num_digits_oracle_numeric_infos(nb_oracles);
     let enum_oracles = get_enum_oracles(nb_oracles, threshold);
-    let enum_contract_descriptor = get_enum_contract_descriptor();
+    let enum_contract_descriptor =
+        get_enum_contract_descriptor(OFFER_COLLATERAL + ACCEPT_COLLATERAL);
     let enum_contract_info = ContractInputInfo {
         oracles: OracleInput {
             public_keys: enum_oracles.iter().map(|x| x.get_public_key()).collect(),

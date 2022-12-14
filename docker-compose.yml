@@ -1,4 +1,4 @@
-version: "3.4"
+version: '3.4'
 services:
   ### BITCOIND
   bitcoind:
@@ -14,7 +14,11 @@ services:
       - 18444:18444
     volumes:
       - bitcoind-data:/home/bitcoin/.bitcoin
+<<<<<<< HEAD
       - ./testconfig/config:/config
+=======
+      - ./services/bitcoind/config:/config
+>>>>>>> 5cfe4cc (TMP)
   electrs:
     image: cryptogarageinc/electrs:v0.4.8-bitcoin
     command: |

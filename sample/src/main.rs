@@ -97,7 +97,7 @@ async fn main() {
 
     let mut ephemeral_bytes = [0; 32];
     thread_rng().fill_bytes(&mut ephemeral_bytes);
-    let sk_path = format!("{}/secret_key", dlc_data_dir);
+    let sk_path = format!("{dlc_data_dir}/secret_key");
 
     // We store the private key in plaintext as this is an example, should be
     // avoided in a real application.
@@ -139,7 +139,7 @@ async fn main() {
     let peer_manager_connection_handler = peer_manager.clone();
     let listening_port = config.network_configuration.peer_listening_port;
     tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", listening_port))
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{listening_port}"))
             .await
             .expect("Failed to bind to listen port - is something else already listening on it?");
         loop {

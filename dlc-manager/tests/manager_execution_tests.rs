@@ -64,7 +64,7 @@ fn write_message<T: Writeable + serde::Serialize + Type>(msg_name: &str, s: T) {
             serialized: buf,
         };
         to_writer_pretty(
-            &std::fs::File::create(format!("{}.json", msg_name)).unwrap(),
+            &std::fs::File::create(format!("{msg_name}.json")).unwrap(),
             &t,
         )
         .unwrap();

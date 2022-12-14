@@ -36,7 +36,7 @@ pub fn to_slice(hex: &str, arr: &mut [u8]) -> Result<(), ()> {
 pub fn hex_str(value: &[u8]) -> String {
     let mut res = String::with_capacity(64);
     for v in value {
-        write!(res, "{:02x}", v).unwrap();
+        write!(res, "{v:02x}").unwrap();
     }
     res
 }
