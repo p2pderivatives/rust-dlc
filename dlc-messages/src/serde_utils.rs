@@ -9,7 +9,7 @@ where
 {
     if s.is_human_readable() {
         let string = hex.iter().fold(String::new(), |mut s, e| {
-            write!(s, "{:02x}", e).unwrap();
+            write!(s, "{e:02x}").unwrap();
             s
         });
         assert!(string.len() % 2 == 0);

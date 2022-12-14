@@ -98,7 +98,7 @@ impl ElectrsBlockchainProvider {
     }
 
     pub fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
-        self.get_from_json(&format!("tx/{}/outspends", txid))
+        self.get_from_json(&format!("tx/{txid}/outspends"))
     }
 }
 
@@ -118,8 +118,7 @@ impl Blockchain for ElectrsBlockchainProvider {
         if let Err(error) = res.error_for_status_ref() {
             let body = res.text().unwrap_or_default();
             return Err(dlc_manager::error::Error::InvalidParameters(format!(
-                "Server returned error: {} {}",
-                error, body
+                "Server returned error: {error} {body}"
             )));
         }
         Ok(())
@@ -136,14 +135,14 @@ impl Blockchain for ElectrsBlockchainProvider {
     }
 
     fn get_block_at_height(&self, height: u64) -> Result<Block, dlc_manager::error::Error> {
-        let hash_at_height = self.get_text(&format!("block-height/{}", height))?;
-        let raw_block = self.get_bytes(&format!("block/{}/raw", hash_at_height))?;
+        let hash_at_height = self.get_text(&format!("block-height/{height}"))?;
+        let raw_block = self.get_bytes(&format!("block/{hash_at_height}/raw"))?;
         Block::consensus_decode(&mut std::io::Cursor::new(&*raw_block))
             .map_err(|_| Error::BlockchainError)
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, dlc_manager::error::Error> {
-        let raw_tx = self.get_bytes(&format!("tx/{}/raw", tx_id))?;
+        let raw_tx = self.get_bytes(&format!("tx/{tx_id}/raw"))?;
         Transaction::consensus_decode(&mut std::io::Cursor::new(&*raw_tx))
             .map_err(|_| Error::BlockchainError)
     }
@@ -152,7 +151,7 @@ impl Blockchain for ElectrsBlockchainProvider {
         &self,
         tx_id: &Txid,
     ) -> Result<u32, dlc_manager::error::Error> {
-        let tx_status = self.get_from_json::<TxStatus>(&format!("tx/{}/status", tx_id))?;
+        let tx_status = self.get_from_json::<TxStatus>(&format!("tx/{tx_id}/status"))?;
         if tx_status.confirmed {
             let block_chain_height = self.get_blockchain_height()?;
             if let Some(block_height) = tx_status.block_height {
@@ -166,7 +165,7 @@ impl Blockchain for ElectrsBlockchainProvider {
 
 impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
     fn get_utxos_for_address(&self, address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
-        let utxos: Vec<UtxoResp> = self.get_from_json(&format!("address/{}/utxo", address))?;
+        let utxos: Vec<UtxoResp> = self.get_from_json(&format!("address/{address}/utxo"))?;
 
         utxos
             .into_iter()
@@ -189,7 +188,7 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
     }
 
     fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool, Error> {
-        let is_spent: SpentResp = self.get_from_json(&format!("tx/{}/outspend/{}", txid, vout))?;
+        let is_spent: SpentResp = self.get_from_json(&format!("tx/{txid}/outspend/{vout}"))?;
         Ok(is_spent.spent)
     }
 }
@@ -226,14 +225,14 @@ impl BlockSource for ElectrsBlockchainProvider {
     {
         Box::pin(async move {
             let block_info: BlockInfo = self
-                .get_async(&format!("block/{:x}", header_hash))
+                .get_async(&format!("block/{header_hash:x}"))
                 .await
                 .map_err(BlockSourceError::transient)?
                 .json()
                 .await
                 .map_err(BlockSourceError::transient)?;
             let header_hex_str = self
-                .get_async(&format!("block/{:x}/header", header_hash))
+                .get_async(&format!("block/{header_hash:x}/header"))
                 .await
                 .map_err(BlockSourceError::transient)?
                 .text()
@@ -258,7 +257,7 @@ impl BlockSource for ElectrsBlockchainProvider {
     ) -> lightning_block_sync::AsyncBlockSourceResult<'a, BlockData> {
         Box::pin(async move {
             let block_raw = self
-                .get_async(&format!("block/{:x}/raw", header_hash))
+                .get_async(&format!("block/{header_hash:x}/raw"))
                 .await
                 .map_err(BlockSourceError::transient)?
                 .bytes()
@@ -304,7 +303,7 @@ impl BroadcasterInterface for ElectrsBlockchainProvider {
         let host = self.host.clone();
         let body = bitcoin_test_utils::tx_to_string(tx);
         std::thread::spawn(move || {
-            match client.post(format!("{}tx", host)).body(body).send() {
+            match client.post(format!("{host}tx")).body(body).send() {
                 Err(_) => {}
                 Ok(res) => {
                     if res.error_for_status_ref().is_err() {
@@ -332,7 +331,7 @@ struct UtxoResp {
     status: UtxoStatus,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum UtxoStatus {
     Confirmed {
@@ -368,7 +367,7 @@ fn store_estimate_for_target(
 fn poll_for_fee_estimates(fees: Arc<HashMap<Target, AtomicU32>>, host: &str) {
     let host = host.to_owned();
     std::thread::spawn(move || loop {
-        if let Ok(res) = reqwest::blocking::get(format!("{}fee-estimates", host)) {
+        if let Ok(res) = reqwest::blocking::get(format!("{host}fee-estimates")) {
             if let Ok(fee_estimates) = res.json::<FeeEstimates>() {
                 store_estimate_for_target(&fees, &fee_estimates, Target::Background);
                 store_estimate_for_target(&fees, &fee_estimates, Target::HighPriority);
@@ -403,7 +402,7 @@ pub enum OutSpendResp {
     Unspent { spent: bool },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OutSpendInfo {
     pub spent: bool,
     pub txid: Txid,

@@ -4,7 +4,7 @@ mod console_logger;
 
 use std::{collections::HashMap, convert::TryInto, sync::Arc, time::SystemTime};
 
-use crate::test_utils::{get_enum_test_params, refresh_wallet, TestParams};
+use crate::test_utils::{get_enum_test_params_custom_collateral, refresh_wallet, TestParams};
 use bitcoin::{
     hashes::Hash, Address, Amount, Network, PackedLockTime, Script, Sequence, Transaction, TxIn,
     TxOut, Witness,
@@ -270,8 +270,6 @@ impl EventHandler for LnDlcParty {
                             .get_est_sat_per_1000_weight(ConfirmationTarget::Normal)
                             / 25) as u64;
 
-                println!("{}", required_amount);
-
                 let utxos: Vec<Utxo> = self
                     .wallet
                     .get_utxos_for_amount(required_amount, None, false)
@@ -473,8 +471,8 @@ fn create_ln_node(
         sub_channel_manager,
         dlc_manager,
         blockchain: blockchain_provider.clone(),
-        mock_blockchain: mock_blockchain,
-        wallet: wallet,
+        mock_blockchain,
+        wallet,
         persister,
     }
 }
@@ -536,7 +534,7 @@ fn ln_dlc_split_cheat() {
 fn ln_dlc_test(test_path: TestPath) {
     let (_, _, sink_rpc) = init_clients();
 
-    let test_params = get_enum_test_params(1, 1, None);
+    let test_params = get_enum_test_params_custom_collateral(1, 1, None, 60000, 40000);
 
     let electrs = Arc::new(ElectrsBlockchainProvider::new(
         "http://localhost:3004/".to_string(),
@@ -663,8 +661,6 @@ fn ln_dlc_test(test_path: TestPath) {
 
     assert_eq!(1, alice_node.channel_manager.list_usable_channels().len());
 
-    println!("{:?}", alice_node.channel_manager.list_usable_channels());
-
     let payment_params = lightning::routing::router::PaymentParameters::from_node_id(
         bob_node.channel_manager.get_our_node_id(),
     );
@@ -722,16 +718,7 @@ fn ln_dlc_test(test_path: TestPath) {
     alice_node.process_events();
     bob_node.process_events();
 
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    println!(
-        "Initial alice balance: {}",
-        alice_node.channel_manager.list_channels()[0].balance_msat
-    );
-    println!(
-        "Initial bob balance: {}",
-        bob_node.channel_manager.list_channels()[0].balance_msat
-    );
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     let get_commit_tx_from_node = |node: &LnDlcParty| {
         let mut res = node
@@ -800,15 +787,6 @@ fn ln_dlc_test(test_path: TestPath) {
     let mut payment_id = PaymentId([0u8; 32]);
     payment_id.0[31] += 1;
 
-    println!(
-        "Initial alice balance: {}",
-        alice_node.channel_manager.list_channels()[0].balance_msat
-    );
-    println!(
-        "Initial bob balance: {}",
-        bob_node.channel_manager.list_channels()[0].balance_msat
-    );
-
     alice_node
         .channel_manager
         .send_spontaneous_payment(&route, Some(payment_preimage), payment_id)
@@ -824,15 +802,6 @@ fn ln_dlc_test(test_path: TestPath) {
     alice_node.process_events();
 
     std::thread::sleep(std::time::Duration::from_secs(1));
-
-    println!(
-        "2P alice balance: {}",
-        alice_node.channel_manager.list_channels()[0].balance_msat
-    );
-    println!(
-        "2P bob balance: {}",
-        bob_node.channel_manager.list_channels()[0].balance_msat
-    );
 
     if let TestPath::RenewedClose = test_path {
         renew(&alice_node, &bob_node, channel_id, &test_params);
@@ -918,8 +887,6 @@ fn ln_dlc_test(test_path: TestPath) {
 
             let outspends = electrs.get_outspends(&split_tx_id).unwrap();
 
-            println!("{}", split_tx_id);
-
             let spent = outspends
                 .iter()
                 .filter_map(|x| {
@@ -959,7 +926,6 @@ fn ln_dlc_test(test_path: TestPath) {
         return;
     }
 
-    println!("START FORCE CLOSE");
     alice_node
         .sub_channel_manager
         .initiate_force_close_sub_channel(&channel_id)
@@ -967,7 +933,6 @@ fn ln_dlc_test(test_path: TestPath) {
 
     generate_blocks(500);
 
-    println!("FINALIZE FORCE CLOSE");
     alice_node
         .sub_channel_manager
         .finalize_force_close_sub_channels(&channel_id)
@@ -1031,7 +996,7 @@ fn renew(
     channel_id: ChannelId,
     test_params: &TestParams,
 ) {
-    let (renew_offer, _) = bob_node
+    let (renew_offer, _) = alice_node
         .dlc_manager
         .renew_offer(
             &channel_id,
@@ -1040,37 +1005,37 @@ fn renew(
         )
         .unwrap();
 
-    alice_node
+    bob_node
         .dlc_manager
         .on_dlc_message(
             &Message::RenewOffer(renew_offer),
-            bob_node.channel_manager.get_our_node_id(),
+            alice_node.channel_manager.get_our_node_id(),
         )
         .unwrap();
 
-    let (accept, bob_key) = alice_node
+    let (accept, bob_key) = bob_node
         .dlc_manager
         .accept_renew_offer(&channel_id)
         .unwrap();
 
-    let msg = bob_node
+    let msg = alice_node
         .dlc_manager
         .on_dlc_message(
             &Message::RenewAccept(accept),
-            alice_node.channel_manager.get_our_node_id(),
+            bob_node.channel_manager.get_our_node_id(),
         )
         .unwrap()
         .unwrap();
 
-    let msg = alice_node
+    let msg = bob_node
         .dlc_manager
         .on_dlc_message(&msg, bob_key)
         .unwrap()
         .unwrap();
 
-    bob_node
+    alice_node
         .dlc_manager
-        .on_dlc_message(&msg, alice_node.channel_manager.get_our_node_id())
+        .on_dlc_message(&msg, bob_node.channel_manager.get_our_node_id())
         .unwrap();
 }
 
@@ -1084,7 +1049,15 @@ fn ln_cheated_check<F>(
 {
     electrs.broadcast_transaction(cheat_tx);
 
+    // wait for cheat tx to be confirmed
     generate_block(6);
+
+    bob_node.update_to_chain_tip();
+
+    bob_node.process_events();
+
+    // LDK should have reacted, this should include a punish tx
+    generate_block(1);
 
     bob_node.update_to_chain_tip();
 
@@ -1092,23 +1065,54 @@ fn ln_cheated_check<F>(
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
+    let vout = cheat_tx
+        .output
+        .iter()
+        .position(|x| x.script_pubkey.is_v0_p2wsh())
+        .expect("to have a p2wsh output");
+
     let outspends = electrs.get_outspends(&cheat_tx.txid()).unwrap();
 
     let outspend_info = outspends
         .iter()
-        .find_map(|x| {
+        .filter_map(|x| {
             if let OutSpendResp::Spent(s) = x {
                 Some(s)
             } else {
                 None
             }
         })
-        .unwrap();
+        .collect::<Vec<_>>();
 
-    let spend_tx = electrs.get_transaction(&outspend_info.txid).unwrap();
+    let spend_tx = electrs.get_transaction(&outspend_info[vout].txid).unwrap();
+
+    generate_block(6);
+
+    bob_node.update_to_chain_tip();
+
+    bob_node.process_events();
+
+    let mut outspend_info = vec![];
+    while outspend_info.is_empty() {
+        let outspends = electrs.get_outspends(&spend_tx.txid()).unwrap();
+        outspend_info = outspends
+            .iter()
+            .filter_map(|x| {
+                if let OutSpendResp::Spent(s) = x {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+
+    let claim_tx = electrs.get_transaction(&outspend_info[0].txid).unwrap();
 
     let receive_addr =
-        Address::from_script(&spend_tx.output[0].script_pubkey, Network::Regtest).unwrap();
+        Address::from_script(&claim_tx.output[0].script_pubkey, Network::Regtest).unwrap();
 
     assert!(bob_node
         .dlc_manager

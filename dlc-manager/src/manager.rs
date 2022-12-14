@@ -1121,7 +1121,7 @@ where
                 Err(e) => {
                     let channel = crate::channel::FailedAccept {
                         temporary_channel_id: accept_channel.temporary_channel_id,
-                        error_message: format!("Error validating accept channel: {}", e),
+                        error_message: format!("Error validating accept channel: {e}"),
                         accept_message: accept_channel.clone(),
                         counter_party: *peer_id,
                     };
@@ -1194,7 +1194,7 @@ where
                 Err(e) => {
                     let channel = crate::channel::FailedSign {
                         channel_id: sign_channel.channel_id,
-                        error_message: format!("Error validating accept channel: {}", e),
+                        error_message: format!("Error validating accept channel: {e}"),
                         sign_message: sign_channel.clone(),
                         counter_party: *peer_id,
                     };
@@ -1565,8 +1565,7 @@ where
             ),
             s => {
                 return Err(Error::InvalidState(format!(
-                    "Expected rollback state Established or Revoked but found {:?}",
-                    s
+                    "Expected rollback state Established or Revoked but found {s:?}"
                 )))
             }
         };
@@ -1677,8 +1676,7 @@ where
             ),
             s => {
                 return Err(Error::InvalidState(format!(
-                    "Expected rollback state of Established or Settled but was {:?}",
-                    s
+                    "Expected rollback state of Established or Settled but was {s:?}"
                 )))
             }
         };

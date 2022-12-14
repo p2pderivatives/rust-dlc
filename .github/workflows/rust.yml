@@ -35,7 +35,7 @@ jobs:
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - uses: actions/checkout@v2
       - id: set-matrix
-        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager channel_execution)"
+        run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager channel_execution ln_dlc_channel)"
   integration_tests:
     name: integration-tests
     needs: integration_tests_prepare
@@ -52,10 +52,12 @@ jobs:
           path: target/debug/deps
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - name: Start bitcoin node
-        run: ./scripts/start_node.sh
+        run: docker-compose up -d
       - name: Wait for container to run
         run: ./scripts/wait_for_container.sh bitcoin-node
+      - name: Wait for electrs to be ready
+        run: ./scripts/wait_for_electrs.sh
       - name: Run test
-        run: RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored
+        run: RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored --nocapture
       - name: Stop bitcoin node
         run: ./scripts/stop_node.sh

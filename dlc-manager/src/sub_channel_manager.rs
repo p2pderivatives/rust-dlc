@@ -269,7 +269,7 @@ where
             channel_value_satoshis,
             value_to_self_msat,
         )
-        .map_err(|e| Error::InvalidParameters(format!("{:?}", e)))
+        .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 
     fn on_commitment_signed_get_raa(
@@ -285,7 +285,7 @@ where
             commitment_signature,
             htlc_signatures,
         )
-        .map_err(|e| Error::InvalidParameters(format!("{:?}", e)))
+        .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 
     fn revoke_and_ack(
@@ -295,7 +295,7 @@ where
         revoke_and_ack: &RevokeAndACK,
     ) -> Result<(), Error> {
         self.revoke_and_ack_commitment(channel_id, counter_party_node_id, revoke_and_ack)
-            .map_err(|e| Error::InvalidParameters(format!("{:?}", e)))
+            .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 
     fn sign_with_fund_key_cb<SF>(&self, channel_id: &[u8; 32], cb: &mut SF)
@@ -303,7 +303,7 @@ where
         SF: FnMut(&SecretKey),
     {
         self.sign_with_fund_key_callback(channel_id, cb)
-            .map_err(|e| Error::InvalidParameters(format!("{:?}", e)))
+            .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
             .unwrap();
     }
 
@@ -313,7 +313,7 @@ where
         counter_party_node_id: &PublicKey,
     ) -> Result<(), Error> {
         self.force_close_broadcasting_latest_txn(channel_id, counter_party_node_id)
-            .map_err(|e| Error::InvalidParameters(format!("{:?}", e)))
+            .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 }
 
@@ -697,7 +697,11 @@ where
         let (mut offered_sub_channel, state) =
             get_sub_channel_in_state!(self, *channel_id, Offered, None as Option<PublicKey>)?;
 
-        let per_split_seed = self.wallet.get_new_secret_key()?;
+        let per_split_seed = if let Some(per_split_seed_pk) = offered_sub_channel.per_split_seed {
+            self.wallet.get_secret_key_for_pubkey(&per_split_seed_pk)?
+        } else {
+            self.wallet.get_new_secret_key()?
+        };
         let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
             per_split_seed.as_ref(),
             offered_sub_channel.update_idx,
@@ -1143,7 +1147,7 @@ where
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(channel_id)
-            .ok_or_else(|| Error::InvalidParameters(format!("Unknown channel {:?}", channel_id)))?;
+            .ok_or_else(|| Error::InvalidParameters(format!("Unknown channel {channel_id:?}")))?;
 
         let (offer_fees, accept_fees) = per_party_fee(sub_channel.fee_rate_per_vb);
 
@@ -1261,13 +1265,6 @@ where
         let (offered_channel, offered_contract) =
             OfferedChannel::from_offer_channel(&offer_channel, *counter_party)?;
 
-        let party_base_points = crate::utils::get_party_base_points(&self.secp, &self.wallet)?;
-        let counter_base_points = Some(PartyBasePoints {
-            own_basepoint: sub_channel_offer.own_basepoint,
-            revocation_basepoint: sub_channel_offer.revocation_basepoint,
-            publish_basepoint: sub_channel_offer.publish_basepoint,
-        });
-
         let sub_channel = match sub_channel {
             Some(mut s) => {
                 s.state = SubChannelState::Offered(offered_sub_channel);
@@ -1282,8 +1279,12 @@ where
                 update_idx: INITIAL_SPLIT_NUMBER,
                 state: SubChannelState::Offered(offered_sub_channel),
                 counter_party_secrets: CounterpartyCommitmentSecrets::new(),
-                own_base_points: party_base_points,
-                counter_base_points,
+                own_base_points: crate::utils::get_party_base_points(&self.secp, &self.wallet)?,
+                counter_base_points: Some(PartyBasePoints {
+                    own_basepoint: sub_channel_offer.own_basepoint,
+                    revocation_basepoint: sub_channel_offer.revocation_basepoint,
+                    publish_basepoint: sub_channel_offer.publish_basepoint,
+                }),
                 fund_value_satoshis: channel_details.channel_value_satoshis,
                 original_funding_redeemscript: channel_details.funding_redeemscript.unwrap(),
                 own_fund_pk: channel_details.holder_funding_pubkey,
@@ -1367,8 +1368,8 @@ where
 
         let (own_to_self_value_msat, _) = validate_and_get_ln_values_per_party(
             &channel_details,
-            offered_contract.total_collateral - offered_contract.offer_params.collateral,
             offered_contract.offer_params.collateral,
+            offered_contract.total_collateral - offered_contract.offer_params.collateral,
             offered_contract.fee_rate_per_vb,
             true,
         )?;

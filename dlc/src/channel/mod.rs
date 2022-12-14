@@ -206,7 +206,7 @@ pub fn create_settle_transaction(
         - offer_payout
         - accept_payout
         - crate::util::weight_to_fee(
-            SETTLE_INPUT_WEIGHT + output.len() * SETTLE_OUTPUT_WEIGHT,
+            SETTLE_INPUT_WEIGHT + output.len() * SETTLE_OUTPUT_WEIGHT + 148,
             fee_rate_per_vb,
         ))
         / (output.len() as u64);
@@ -644,15 +644,7 @@ pub fn buffer_descriptor(
     };
     // heavily inspired by: https://github.com/comit-network/maia/blob/main/src/protocol.rs#L283
     // policy: or(and(pk(offer_pk),pk(accept_pk)),or(and(pk(offer_pk),and(pk(accept_publish_pk), pk(accept_rev_pk))),and(pk(accept_pk),and(pk(offer_publish_pk),pk(offer_rev_pk)))))
-    let script = format!("wsh(c:andor(pk({first_pk}),pk_k({second_pk}),or_i(and_v(v:pkh({offer_pk_hash}),and_v(v:pkh({accept_publish_pk_hash}),pk_h({accept_revoke_pk_hash}))),and_v(v:pkh({accept_pk_hash}),and_v(v:pkh({offer_publish_pk_hash}),pk_h({offer_revoke_pk_hash}))))))",
-        first_pk = first_pk,
-        second_pk = second_pk,
-        offer_pk_hash = offer_pk,
-        accept_pk_hash = accept_pk,
-        accept_publish_pk_hash = accept_publish_pk,
-        accept_revoke_pk_hash = accept_revoke_pk,
-        offer_publish_pk_hash = offer_publish_pk,
-        offer_revoke_pk_hash = offer_revoke_pk);
+    let script = format!("wsh(c:andor(pk({first_pk}),pk_k({second_pk}),or_i(and_v(v:pkh({offer_pk}),and_v(v:pkh({accept_publish_pk}),pk_h({accept_revoke_pk}))),and_v(v:pkh({accept_pk}),and_v(v:pkh({offer_publish_pk}),pk_h({offer_revoke_pk}))))))");
     script.parse().expect("a valid miniscript")
 }
 

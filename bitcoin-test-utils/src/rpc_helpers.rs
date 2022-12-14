@@ -8,7 +8,7 @@ pub const SINK: &str = "sink";
 
 fn rpc_base() -> String {
     let host = env::var("BITCOIND_HOST").unwrap_or_else(|_| "localhost".to_owned());
-    format!("http://{}:18443", host)
+    format!("http://{host}:18443")
 }
 
 pub fn get_new_wallet_rpc(
@@ -17,12 +17,12 @@ pub fn get_new_wallet_rpc(
     auth: Auth,
 ) -> Result<Client, bitcoincore_rpc::Error> {
     let wallet_list = {
-        let mut retry_count = 10;
+        let mut retry_count = 20;
         loop {
             if let Ok(wallets) = default_rpc.list_wallets() {
                 break wallets;
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(200));
             if retry_count == 0 {
                 panic!("Could not get wallet list.");
             }

@@ -30,16 +30,16 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Conversion(ref e) => write!(f, "Conversion error {}", e),
-            Error::IOError(ref e) => write!(f, "IO error {}", e),
-            Error::InvalidState(ref s) => write!(f, "Invalid state: {}", s),
-            Error::InvalidParameters(ref s) => write!(f, "Invalid parameters were provided: {}", s),
-            Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
+            Error::Conversion(ref e) => write!(f, "Conversion error {e}"),
+            Error::IOError(ref e) => write!(f, "IO error {e}"),
+            Error::InvalidState(ref s) => write!(f, "Invalid state: {s}"),
+            Error::InvalidParameters(ref s) => write!(f, "Invalid parameters were provided: {s}"),
+            Error::WalletError(ref e) => write!(f, "Wallet error {e}"),
             Error::BlockchainError => write!(f, "Blockchain error"),
-            Error::StorageError(ref s) => write!(f, "Storage error {}", s),
-            Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
-            Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
-            Error::SecpError(ref s) => write!(f, "Secp error {}", s),
+            Error::StorageError(ref s) => write!(f, "Storage error {s}"),
+            Error::DlcError(ref e) => write!(f, "Dlc error {e}"),
+            Error::OracleError(ref s) => write!(f, "Oracle error {s}"),
+            Error::SecpError(ref s) => write!(f, "Secp error {s}"),
         }
     }
 }

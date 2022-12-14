@@ -20,8 +20,8 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
-            Error::InvalidState(ref s) => write!(f, "Invalid state {}", s),
-            Error::InvalidParameter(ref s) => write!(f, "Invalid parameters were provided: {}", s),
+            Error::InvalidState(ref s) => write!(f, "Invalid state {s}"),
+            Error::InvalidParameter(ref s) => write!(f, "Invalid parameters were provided: {s}"),
         }
     }
 }

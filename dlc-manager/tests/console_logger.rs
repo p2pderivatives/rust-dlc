@@ -20,6 +20,6 @@ impl Logger for ConsoleLogger {
             record.line,
             raw_log
         );
-        println!("{}", log);
+        println!("{log}");
     }
 }

@@ -202,10 +202,10 @@ impl From<miniscript::Error> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Secp256k1(ref e) => write!(f, "Secp256k1 error {}", e),
+            Error::Secp256k1(ref e) => write!(f, "Secp256k1 error {e}"),
             Error::InvalidArgument => write!(f, "Invalid argument"),
-            Error::Sighash(ref e) => write!(f, "Error while computing sighash {}", e),
-            Error::Miniscript(ref e) => write!(f, "Error within miniscript {}", e),
+            Error::Sighash(ref e) => write!(f, "Error while computing sighash {e}"),
+            Error::Miniscript(ref e) => write!(f, "Error within miniscript {e}"),
         }
     }
 }
@@ -1119,7 +1119,7 @@ mod tests {
         fund_tx.consensus_encode(&mut writer).unwrap();
         let mut serialized = String::new();
         for x in writer {
-            write!(&mut serialized, "{:02X}", x).unwrap();
+            write!(&mut serialized, "{x:02X}").unwrap();
         }
 
         assert_eq!(expected_serialized, serialized);

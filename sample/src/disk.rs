@@ -8,7 +8,7 @@ pub(crate) struct FilesystemLogger {
 }
 impl FilesystemLogger {
     pub(crate) fn new(data_dir: String) -> Self {
-        let logs_path = format!("{}/logs", data_dir);
+        let logs_path = format!("{data_dir}/logs");
         fs::create_dir_all(logs_path.clone()).unwrap();
         Self {
             data_dir: logs_path,
