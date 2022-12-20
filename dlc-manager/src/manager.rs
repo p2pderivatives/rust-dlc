@@ -34,7 +34,7 @@ use log::{error, warn};
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::string::ToString;
 
 /// The number of confirmations required before moving the the confirmed state.
@@ -54,7 +54,7 @@ type ClosableContractInfo<'a> = Option<(
 )>;
 
 /// Used to create and update DLCs.
-pub struct Manager<W: Deref, B: Deref, S: DerefMut, O: Deref, T: Deref, F: Deref>
+pub struct Manager<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
@@ -158,7 +158,7 @@ macro_rules! check_for_timed_out_channels {
     };
 }
 
-impl<W: Deref, B: Deref, S: DerefMut, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
+impl<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
@@ -672,7 +672,7 @@ where
     }
 }
 
-impl<W: Deref, B: Deref, S: DerefMut, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
+impl<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
