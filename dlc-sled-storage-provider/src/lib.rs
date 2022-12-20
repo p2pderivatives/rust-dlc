@@ -206,7 +206,7 @@ impl Storage for SledStorageProvider {
             .collect::<Result<Vec<Contract>, Error>>()
     }
 
-    fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), Error> {
+    fn create_contract(&self, contract: &OfferedContract) -> Result<(), Error> {
         let serialized = serialize_contract(&Contract::Offered(contract.clone()))?;
         self.contract_tree()?
             .insert(contract.id, serialized)
@@ -214,14 +214,14 @@ impl Storage for SledStorageProvider {
         Ok(())
     }
 
-    fn delete_contract(&mut self, contract_id: &ContractId) -> Result<(), Error> {
+    fn delete_contract(&self, contract_id: &ContractId) -> Result<(), Error> {
         self.contract_tree()?
             .remove(contract_id)
             .map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn update_contract(&mut self, contract: &Contract) -> Result<(), Error> {
+    fn update_contract(&self, contract: &Contract) -> Result<(), Error> {
         let serialized = serialize_contract(contract)?;
         self.contract_tree()?
             .transaction::<_, _, UnabortableTransactionError>(|db| {
@@ -271,11 +271,7 @@ impl Storage for SledStorageProvider {
         )
     }
 
-    fn upsert_channel(
-        &mut self,
-        channel: Channel,
-        contract: Option<Contract>,
-    ) -> Result<(), Error> {
+    fn upsert_channel(&self, channel: Channel, contract: Option<Contract>) -> Result<(), Error> {
         let serialized = serialize_channel(&channel)?;
         let serialized_contract = match contract.as_ref() {
             Some(c) => Some(serialize_contract(c)?),
@@ -311,7 +307,7 @@ impl Storage for SledStorageProvider {
         Ok(())
     }
 
-    fn delete_channel(&mut self, channel_id: &dlc_manager::ChannelId) -> Result<(), Error> {
+    fn delete_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<(), Error> {
         self.channel_tree()?
             .remove(channel_id)
             .map_err(to_storage_error)?;
@@ -356,7 +352,7 @@ impl Storage for SledStorageProvider {
         )
     }
 
-    fn persist_chain_monitor(&mut self, monitor: &ChainMonitor) -> Result<(), Error> {
+    fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error> {
         self.open_tree(&[CHAIN_MONITOR_TREE])?
             .insert([CHAIN_MONITOR_KEY], monitor.serialize()?)
             .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {}", e)))?;
@@ -523,7 +519,7 @@ mod tests {
 
     sled_test!(
         create_contract_can_be_retrieved,
-        |mut storage: SledStorageProvider| {
+        |storage: SledStorageProvider| {
             let serialized = include_bytes!("../test_files/Offered");
             let contract = deserialize_object(serialized);
 
@@ -545,7 +541,7 @@ mod tests {
 
     sled_test!(
         update_contract_is_updated,
-        |mut storage: SledStorageProvider| {
+        |storage: SledStorageProvider| {
             let serialized = include_bytes!("../test_files/Offered");
             let offered_contract = deserialize_object(serialized);
             let serialized = include_bytes!("../test_files/Accepted");
@@ -572,7 +568,7 @@ mod tests {
 
     sled_test!(
         delete_contract_is_deleted,
-        |mut storage: SledStorageProvider| {
+        |storage: SledStorageProvider| {
             let serialized = include_bytes!("../test_files/Offered");
             let contract = deserialize_object(serialized);
             storage
@@ -797,7 +793,7 @@ mod tests {
 
     sled_test!(
         persist_chain_monitor_test,
-        |mut storage: SledStorageProvider| {
+        |storage: SledStorageProvider| {
             let chain_monitor = ChainMonitor::new(123);
 
             storage
