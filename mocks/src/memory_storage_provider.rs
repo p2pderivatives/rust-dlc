@@ -10,13 +10,13 @@ use dlc_manager::contract::{
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId};
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
     channels: RwLock<HashMap<ChannelId, Channel>>,
-    contracts_saved: Option<HashMap<ContractId, Contract>>,
-    channels_saved: Option<HashMap<ChannelId, Channel>>,
+    contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
+    channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
 }
 
 impl MemoryStorage {
@@ -24,19 +24,22 @@ impl MemoryStorage {
         MemoryStorage {
             contracts: RwLock::new(HashMap::new()),
             channels: RwLock::new(HashMap::new()),
-            contracts_saved: None,
-            channels_saved: None,
+            contracts_saved: Mutex::new(None),
+            channels_saved: Mutex::new(None),
         }
     }
 
-    pub fn save(&mut self) {
-        self.contracts_saved = Some(
+    pub fn save(&self) {
+        let mut contracts_saved = self.contracts_saved.lock().unwrap();
+
+        *contracts_saved = Some(
             self.contracts
                 .read()
                 .expect("Could not get read lock")
                 .clone(),
         );
-        self.channels_saved = Some(
+        let mut channels_saved = self.channels_saved.lock().unwrap();
+        *channels_saved = Some(
             self.channels
                 .read()
                 .expect("Could not get read lock")
@@ -44,9 +47,18 @@ impl MemoryStorage {
         );
     }
 
-    pub fn rollback(&mut self) {
-        self.contracts = RwLock::new(std::mem::replace(&mut self.contracts_saved, None).unwrap());
-        self.channels = RwLock::new(std::mem::replace(&mut self.channels_saved, None).unwrap());
+    pub fn rollback(&self) {
+        let mut contracts = self.contracts.write().unwrap();
+        let mut contracts_saved = self.contracts_saved.lock().unwrap();
+        let mut tmp = None;
+        std::mem::swap(&mut tmp, &mut *contracts_saved);
+        std::mem::swap(&mut *contracts, &mut tmp.unwrap());
+
+        let mut channels = self.channels.write().unwrap();
+        let mut channels_saved = self.channels_saved.lock().unwrap();
+        let mut tmp = None;
+        std::mem::swap(&mut tmp, &mut *channels_saved);
+        std::mem::swap(&mut *channels, &mut tmp.unwrap());
     }
 }
 
@@ -72,7 +84,7 @@ impl Storage for MemoryStorage {
             .collect())
     }
 
-    fn create_contract(&mut self, contract: &OfferedContract) -> Result<(), DaemonError> {
+    fn create_contract(&self, contract: &OfferedContract) -> Result<(), DaemonError> {
         let mut map = self.contracts.write().expect("Could not get write lock");
         let res = map.insert(contract.id, Contract::Offered(contract.clone()));
         match res {
@@ -83,13 +95,13 @@ impl Storage for MemoryStorage {
         }
     }
 
-    fn delete_contract(&mut self, id: &ContractId) -> Result<(), DaemonError> {
+    fn delete_contract(&self, id: &ContractId) -> Result<(), DaemonError> {
         let mut map = self.contracts.write().expect("Could not get write lock");
         map.remove(id);
         Ok(())
     }
 
-    fn update_contract(&mut self, contract: &Contract) -> Result<(), DaemonError> {
+    fn update_contract(&self, contract: &Contract) -> Result<(), DaemonError> {
         let mut map = self.contracts.write().expect("Could not get write lock");
         match contract {
             a @ Contract::Accepted(_) | a @ Contract::Signed(_) => {
@@ -156,7 +168,7 @@ impl Storage for MemoryStorage {
         Ok(res)
     }
     fn upsert_channel(
-        &mut self,
+        &self,
         channel: Channel,
         contract: Option<Contract>,
     ) -> Result<(), DaemonError> {
@@ -176,14 +188,14 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn delete_channel(&mut self, channel_id: &ChannelId) -> Result<(), DaemonError> {
+    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), DaemonError> {
         let mut map = self.channels.write().expect("Could not get write lock");
         map.remove(channel_id);
         Ok(())
     }
 
     fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, DaemonError> {
-        let map = self.channels.read().expect("Could not get read lock");
+        let map = self.channels.read().expect("could not get read lock");
         Ok(map.get(channel_id).cloned())
     }
 
@@ -225,7 +237,7 @@ impl Storage for MemoryStorage {
         Ok(res)
     }
 
-    fn persist_chain_monitor(&mut self, _: &ChainMonitor) -> Result<(), DaemonError> {
+    fn persist_chain_monitor(&self, _: &ChainMonitor) -> Result<(), DaemonError> {
         // No need to persist for mocks
         Ok(())
     }
