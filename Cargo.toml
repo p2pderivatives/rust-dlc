@@ -12,4 +12,5 @@ members = [
   "sample",
   "simple-wallet",
   "dlc-sled-storage-provider",
+  "electrs-blockchain-provider",
 ]

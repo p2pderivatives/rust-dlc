@@ -6,12 +6,13 @@ extern crate bitcoincore_rpc;
 extern crate bitcoincore_rpc_json;
 extern crate dlc_manager;
 
+use std::ops::Deref;
+
 use dlc::{EnumerationPayout, Payout};
 use dlc_manager::payout_curve::{
     PayoutFunction, PayoutFunctionPiece, PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval,
     RoundingIntervals,
 };
-use dlc_manager::Oracle;
 use dlc_manager::{
     contract::{
         contract_input::{ContractInput, ContractInputInfo, OracleInput},
@@ -21,12 +22,14 @@ use dlc_manager::{
     },
     payout_curve::HyperbolaPayoutCurvePiece,
 };
+use dlc_manager::{Blockchain, Oracle};
 use dlc_messages::oracle_msgs::{
     DigitDecompositionEventDescriptor, EnumEventDescriptor, EventDescriptor,
 };
 use dlc_trie::{digit_decomposition::decompose_value, OracleNumericInfo};
 use mocks::mock_oracle_provider::MockOracle;
 use secp256k1_zkp::rand::{seq::SliceRandom, thread_rng, RngCore};
+use simple_wallet::{WalletBlockchainProvider, WalletStorage};
 
 pub const NB_DIGITS: u32 = 10;
 pub const MIN_SUPPORT_EXP: usize = 1;
@@ -436,14 +439,11 @@ pub fn get_digit_decomposition_oracles(
                 tmp_outcome as usize
             }
         } else {
-            let max_value =
-                max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as usize;
+            let max_value = max_value_from_digits(oracle_numeric_infos.nb_digits[*index]) as usize;
             if max_value == outcome_value {
                 outcome_value
             } else {
-                outcome_value
-                    + 1
-                    + (thread_rng().next_u32() as usize % (max_value - outcome_value))
+                outcome_value + 1 + (thread_rng().next_u32() as usize % (max_value - outcome_value))
             }
         };
 
@@ -569,5 +569,23 @@ pub fn get_variable_oracle_numeric_infos(nb_digits: &[usize]) -> OracleNumericIn
     OracleNumericInfo {
         base: BASE as usize,
         nb_digits: nb_digits.to_vec(),
+    }
+}
+
+pub fn refresh_wallet<B: Deref, W: Deref>(
+    wallet: &simple_wallet::SimpleWallet<B, W>,
+    expected_funds: u64,
+) where
+    B::Target: Blockchain + WalletBlockchainProvider,
+    W::Target: WalletStorage,
+{
+    let mut retry = 0;
+    while wallet.get_balance() != expected_funds {
+        if retry > 30 {
+            panic!("Wallet refresh taking too long.")
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        wallet.refresh().unwrap();
+        retry += 1;
     }
 }

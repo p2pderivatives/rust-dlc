@@ -8,15 +8,17 @@ extern crate dlc_manager;
 #[allow(dead_code)]
 mod test_utils;
 
+use bitcoin::Amount;
 use dlc_manager::payout_curve::PayoutFunctionPiece;
+use electrs_blockchain_provider::ElectrsBlockchainProvider;
+use simple_wallet::SimpleWallet;
 use test_utils::*;
 
-use bitcoin_rpc_provider::BitcoinCoreProvider;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
 use dlc_manager::manager::Manager;
-use dlc_manager::{Oracle, Storage};
+use dlc_manager::{Blockchain, Oracle, Storage, Wallet};
 use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
 use lightning::ln::wire::Type;
@@ -409,11 +411,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let (sync_send, sync_receive) = channel::<()>();
     let alice_sync_send = sync_send.clone();
     let bob_sync_send = sync_send;
-    let (alice_rpc, bob_rpc, sink_rpc) = init_clients();
-
-    let alice_bitcoin_core = Arc::new(BitcoinCoreProvider::new_from_rpc_client(alice_rpc));
-
-    let bob_bitcoin_core = Arc::new(BitcoinCoreProvider::new_from_rpc_client(bob_rpc));
+    let (_, _, sink_rpc) = init_clients();
 
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
@@ -424,19 +422,86 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
         bob_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
     }
 
-    let alice_store = mocks::memory_storage_provider::MemoryStorage::new();
-    let bob_store = mocks::memory_storage_provider::MemoryStorage::new();
+    let alice_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
+    let bob_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
     let mock_time = Arc::new(mocks::mock_time::MockTime {});
     mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) - 1);
 
+    let electrs = Arc::new(ElectrsBlockchainProvider::new(
+        "http://localhost:3004/".to_string(),
+        bitcoin::Network::Regtest,
+    ));
+
+    let alice_wallet = Arc::new(SimpleWallet::new(
+        electrs.clone(),
+        alice_store.clone(),
+        bitcoin::Network::Regtest,
+    ));
+
+    let bob_wallet = Arc::new(SimpleWallet::new(
+        electrs.clone(),
+        bob_store.clone(),
+        bitcoin::Network::Regtest,
+    ));
+
+    let alice_fund_address = alice_wallet.get_new_address().unwrap();
+    let bob_fund_address = bob_wallet.get_new_address().unwrap();
+
+    sink_rpc
+        .send_to_address(
+            &alice_fund_address,
+            Amount::from_btc(2.0).unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    sink_rpc
+        .send_to_address(
+            &bob_fund_address,
+            Amount::from_btc(2.0).unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let generate_blocks = |nb_blocks: u64| {
+        let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
+
+        let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
+        sink_rpc
+            .generate_to_address(nb_blocks, &sink_address)
+            .expect("RPC Error");
+
+        // Wait for electrs to have processed the new blocks
+        let mut cur_blockchain_height = prev_blockchain_height;
+        while cur_blockchain_height < prev_blockchain_height + nb_blocks {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            cur_blockchain_height = electrs.get_blockchain_height().unwrap();
+        }
+    };
+
+    generate_blocks(6);
+
+    refresh_wallet(&alice_wallet, 200000000);
+    refresh_wallet(&bob_wallet, 200000000);
+
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
-            Arc::clone(&alice_bitcoin_core),
-            Arc::clone(&alice_bitcoin_core),
-            Box::new(alice_store),
+            Arc::clone(&alice_wallet),
+            Arc::clone(&electrs),
+            alice_store,
             alice_oracles,
             Arc::clone(&mock_time),
-            Arc::clone(&alice_bitcoin_core),
+            Arc::clone(&electrs),
         )
         .unwrap(),
     ));
@@ -446,12 +511,12 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     let bob_manager = Arc::new(Mutex::new(
         Manager::new(
-            Arc::clone(&bob_bitcoin_core),
-            Arc::clone(&bob_bitcoin_core),
-            Box::new(bob_store),
+            Arc::clone(&bob_wallet),
+            Arc::clone(&electrs),
+            bob_store,
             bob_oracles,
             Arc::clone(&mock_time),
-            Arc::clone(&bob_bitcoin_core),
+            Arc::clone(&electrs),
         )
         .unwrap(),
     ));
@@ -579,10 +644,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             assert_contract_state!(alice_manager_send, contract_id, Signed);
 
-            let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
-            sink_rpc
-                .generate_to_address(6, &sink_address)
-                .expect("RPC Error");
+            generate_blocks(6);
 
             periodic_check!(alice_manager_send, contract_id, Confirmed);
             periodic_check!(bob_manager_send, contract_id, Confirmed);
@@ -604,16 +666,12 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                     let case = thread_rng().next_u64() % 3;
                     if case == 2 {
                         // cet becomes fully confirmed to blockchain
-                        sink_rpc
-                            .generate_to_address(6, &sink_address)
-                            .expect("RPC Error");
+                        generate_blocks(6);
                         periodic_check!(first, contract_id, Closed);
                         periodic_check!(second, contract_id, Closed);
                     } else if case == 1 {
                         // cet is not yet fully confirmed to blockchain
-                        sink_rpc
-                            .generate_to_address(1, &sink_address)
-                            .expect("RPC Error");
+                        generate_blocks(1);
                         periodic_check!(first, contract_id, PreClosed);
                         periodic_check!(second, contract_id, PreClosed);
                     } else {
@@ -631,17 +689,14 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                             + dlc_manager::manager::REFUND_DELAY) as u64)
                             + 1,
                     );
-                    sink_rpc
-                        .generate_to_address(10, &sink_address)
-                        .expect("RPC Error");
+
+                    generate_blocks(10);
 
                     periodic_check!(first, contract_id, Refunded);
 
                     // Randomly check with or without having the Refund mined.
                     if thread_rng().next_u32() % 2 == 0 {
-                        sink_rpc
-                            .generate_to_address(1, &sink_address)
-                            .expect("RPC Error");
+                        generate_blocks(1);
                     }
 
                     periodic_check!(second, contract_id, Refunded);

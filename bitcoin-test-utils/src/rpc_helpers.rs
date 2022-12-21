@@ -16,7 +16,22 @@ pub fn get_new_wallet_rpc(
     wallet_name: &str,
     auth: Auth,
 ) -> Result<Client, bitcoincore_rpc::Error> {
-    default_rpc.create_wallet(wallet_name, Some(false), None, None, None)?;
+    let wallet_list = {
+        let mut retry_count = 20;
+        loop {
+            if let Ok(wallets) = default_rpc.list_wallets() {
+                break wallets;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            if retry_count == 0 {
+                panic!("Could not get wallet list.");
+            }
+            retry_count -= 1;
+        }
+    };
+    if !wallet_list.contains(&wallet_name.to_owned()) {
+        default_rpc.create_wallet(wallet_name, Some(false), None, None, None)?;
+    }
     let rpc_url = format!("{}/wallet/{}", rpc_base(), wallet_name);
     Client::new(&rpc_url, auth)
 }
@@ -59,7 +74,7 @@ pub fn init_clients() -> (Client, Client, Client) {
 
     sink_rpc.generate_to_address(1, &offer_address).unwrap();
     sink_rpc.generate_to_address(1, &accept_address).unwrap();
-    sink_rpc.generate_to_address(100, &sink_address).unwrap();
+    sink_rpc.generate_to_address(101, &sink_address).unwrap();
 
     (offer_rpc, accept_rpc, sink_rpc)
 }

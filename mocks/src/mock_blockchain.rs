@@ -27,11 +27,11 @@ impl Blockchain for MockBlockchain {
 }
 
 impl WalletBlockchainProvider for MockBlockchain {
-    fn get_utxos_for_address(&self, address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
+    fn get_utxos_for_address(&self, _address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
         unimplemented!()
     }
 
-    fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool, Error> {
+    fn is_output_spent(&self, _txid: &Txid, _vout: u32) -> Result<bool, Error> {
         unimplemented!()
     }
 }
@@ -39,7 +39,7 @@ impl WalletBlockchainProvider for MockBlockchain {
 impl FeeEstimator for MockBlockchain {
     fn get_est_sat_per_1000_weight(
         &self,
-        confirmation_target: lightning::chain::chaininterface::ConfirmationTarget,
+        _confirmation_target: lightning::chain::chaininterface::ConfirmationTarget,
     ) -> u32 {
         unimplemented!()
     }

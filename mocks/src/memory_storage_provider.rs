@@ -11,6 +11,7 @@ use dlc_manager::contract::{
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
 use secp256k1_zkp::{PublicKey, SecretKey};
+use simple_wallet::WalletStorage;
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 
@@ -255,7 +256,7 @@ impl Storage for MemoryStorage {
     }
 }
 
-impl simple_wallet::WalletStorage for MemoryStorage {
+impl WalletStorage for MemoryStorage {
     fn upsert_address(
         &self,
         address: &Address,
