@@ -20,7 +20,7 @@ use crate::{
     },
     error::Error,
     utils::get_new_temporary_id,
-    Signer, Time, Wallet,
+    Blockchain, Signer, Time, Wallet,
 };
 use bitcoin::{OutPoint, Script, Sequence, Transaction, TxIn, Witness};
 use dlc::{
@@ -66,7 +66,7 @@ pub(crate) use get_signed_channel_state;
 
 /// Creates an [`OfferedChannel`] and an associated [`OfferedContract`] using
 /// the given parameter.
-pub fn offer_channel<C: Signing, W: Deref>(
+pub fn offer_channel<C: Signing, W: Deref, B: Deref>(
     secp: &Secp256k1<C>,
     contract: &ContractInput,
     counter_party: &PublicKey,
@@ -74,12 +74,19 @@ pub fn offer_channel<C: Signing, W: Deref>(
     cet_nsequence: u32,
     refund_delay: u32,
     wallet: &W,
+    blockchain: &B,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where
     W::Target: Wallet,
+    B::Target: Blockchain,
 {
-    let (offer_params, _, funding_inputs_info) =
-        crate::utils::get_party_params(secp, contract.offer_collateral, contract.fee_rate, wallet)?;
+    let (offer_params, _, funding_inputs_info) = crate::utils::get_party_params(
+        secp,
+        contract.offer_collateral,
+        contract.fee_rate,
+        wallet,
+        blockchain,
+    )?;
     let party_points = crate::utils::get_party_base_points(secp, wallet)?;
     let closest_maturity_date = oracle_announcements
         .iter()
@@ -128,14 +135,16 @@ where
 /// Move the given [`OfferedChannel`] and [`OfferedContract`] to an [`AcceptedChannel`]
 /// and [`AcceptedContract`], returning them as well as the [`AcceptChannel`]
 /// message to be sent to the counter party.
-pub fn accept_channel_offer<W: Deref>(
+pub fn accept_channel_offer<W: Deref, B: Deref>(
     secp: &Secp256k1<All>,
     offered_channel: &OfferedChannel,
     offered_contract: &OfferedContract,
     wallet: &W,
+    blockchain: &B,
 ) -> Result<(AcceptedChannel, AcceptedContract, AcceptChannel), Error>
 where
     W::Target: Wallet,
+    B::Target: Blockchain,
 {
     assert_eq!(offered_channel.offered_contract_id, offered_contract.id);
 
@@ -144,6 +153,7 @@ where
         offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
+        blockchain,
     )?;
 
     let per_update_seed = wallet.get_new_secret_key()?;

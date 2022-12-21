@@ -1,25 +1,26 @@
 #[macro_use]
 mod test_utils;
 
-use bitcoin::Address;
-use bitcoin_rpc_provider::BitcoinCoreProvider;
+use bitcoin::Amount;
 use bitcoin_test_utils::rpc_helpers::init_clients;
-use bitcoincore_rpc::{Client, RpcApi};
+use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::manager::Manager;
 use dlc_manager::ChannelId;
 use dlc_manager::{
     channel::{signed_channel::SignedChannelState, Channel},
     contract::Contract,
-    Oracle, Storage,
+    Blockchain, Oracle, Storage, Wallet,
 };
 use dlc_messages::Message;
+use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use lightning::util::ser::Writeable;
 use mocks::memory_storage_provider::MemoryStorage;
 use mocks::mock_oracle_provider::MockOracle;
 use mocks::mock_time::MockTime;
 use secp256k1_zkp::rand::{thread_rng, RngCore};
 use secp256k1_zkp::EcdsaAdaptorSignature;
+use simple_wallet::SimpleWallet;
 use test_utils::{get_enum_test_params, TestParams};
 
 use std::sync::mpsc::{Receiver, Sender};
@@ -34,15 +35,17 @@ use std::{
     },
 };
 
+use crate::test_utils::refresh_wallet;
+
 type DlcParty = Arc<
     Mutex<
         Manager<
-            Arc<BitcoinCoreProvider>,
-            Arc<BitcoinCoreProvider>,
-            Box<MemoryStorage>,
+            Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
+            Arc<ElectrsBlockchainProvider>,
+            Arc<MemoryStorage>,
             Arc<MockOracle>,
             Arc<MockTime>,
-            Arc<BitcoinCoreProvider>,
+            Arc<ElectrsBlockchainProvider>,
         >,
     >,
 >;
@@ -228,11 +231,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let (sync_send, sync_receive) = channel::<()>();
     let alice_sync_send = sync_send.clone();
     let bob_sync_send = sync_send;
-    let (alice_rpc, bob_rpc, sink_rpc) = init_clients();
-
-    let alice_bitcoin_core = Arc::new(BitcoinCoreProvider::new_from_rpc_client(alice_rpc));
-
-    let bob_bitcoin_core = Arc::new(BitcoinCoreProvider::new_from_rpc_client(bob_rpc));
+    let (_, _, sink_rpc) = init_clients();
 
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
@@ -243,19 +242,86 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         bob_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
     }
 
-    let alice_store = mocks::memory_storage_provider::MemoryStorage::new();
-    let bob_store = mocks::memory_storage_provider::MemoryStorage::new();
+    let alice_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
+    let bob_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
     let mock_time = Arc::new(mocks::mock_time::MockTime {});
     mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) - 1);
 
+    let electrs = Arc::new(ElectrsBlockchainProvider::new(
+        "http://localhost:3004/".to_string(),
+        bitcoin::Network::Regtest,
+    ));
+
+    let alice_wallet = Arc::new(SimpleWallet::new(
+        electrs.clone(),
+        alice_store.clone(),
+        bitcoin::Network::Regtest,
+    ));
+
+    let bob_wallet = Arc::new(SimpleWallet::new(
+        electrs.clone(),
+        bob_store.clone(),
+        bitcoin::Network::Regtest,
+    ));
+
+    let alice_fund_address = alice_wallet.get_new_address().unwrap();
+    let bob_fund_address = bob_wallet.get_new_address().unwrap();
+
+    sink_rpc
+        .send_to_address(
+            &alice_fund_address,
+            Amount::from_btc(2.0).unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    sink_rpc
+        .send_to_address(
+            &bob_fund_address,
+            Amount::from_btc(2.0).unwrap(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let generate_blocks = |nb_blocks: u64| {
+        let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
+
+        let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
+        sink_rpc
+            .generate_to_address(nb_blocks, &sink_address)
+            .expect("RPC Error");
+
+        // Wait for electrs to have processed the new blocks
+        let mut cur_blockchain_height = prev_blockchain_height;
+        while cur_blockchain_height < prev_blockchain_height + nb_blocks {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            cur_blockchain_height = electrs.get_blockchain_height().unwrap();
+        }
+    };
+
+    generate_blocks(6);
+
+    refresh_wallet(&alice_wallet, 200000000);
+    refresh_wallet(&bob_wallet, 200000000);
+
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
-            Arc::clone(&alice_bitcoin_core),
-            Arc::clone(&alice_bitcoin_core),
-            Box::new(alice_store),
+            Arc::clone(&alice_wallet),
+            Arc::clone(&electrs),
+            alice_store.clone(),
             alice_oracles,
             Arc::clone(&mock_time),
-            Arc::clone(&alice_bitcoin_core),
+            Arc::clone(&electrs),
         )
         .unwrap(),
     ));
@@ -265,12 +331,12 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
     let bob_manager = Arc::new(Mutex::new(
         Manager::new(
-            Arc::clone(&bob_bitcoin_core),
-            Arc::clone(&bob_bitcoin_core),
-            Box::new(bob_store),
+            Arc::clone(&bob_wallet),
+            Arc::clone(&electrs),
+            Arc::clone(&bob_store),
             bob_oracles,
             Arc::clone(&mock_time),
-            Arc::clone(&bob_bitcoin_core),
+            Arc::clone(&electrs),
         )
         .unwrap(),
     ));
@@ -407,10 +473,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
             assert_channel_state!(alice_manager_send, channel_id, Signed, Established);
 
-            let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
-            sink_rpc
-                .generate_to_address(6, &sink_address)
-                .expect("RPC Error");
+            generate_blocks(6);
 
             mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) + 1);
 
@@ -438,7 +501,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
             match path {
                 TestPath::Close => {
-                    close_established_channel(first, second, channel_id, sink_rpc, sink_address);
+                    close_established_channel(first, second, channel_id, &generate_blocks);
                 }
                 TestPath::CollaborativeClose => {
                     collaborative_close(
@@ -447,8 +510,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         second,
                         channel_id,
                         &sync_receive,
-                        sink_rpc,
-                        sink_address,
+                        &generate_blocks,
                     );
                 }
                 TestPath::SettleOfferTimeout
@@ -520,7 +582,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 .expect("to be able to unilaterally close the channel.");
                         }
                         TestPath::BufferCheat => {
-                            cheat_punish(first, second, channel_id, sink_rpc, sink_address, true);
+                            cheat_punish(first, second, channel_id, &generate_blocks, true);
                         }
                         TestPath::RenewOfferTimeout
                         | TestPath::RenewAcceptTimeout
@@ -576,18 +638,10 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                     first,
                                     second,
                                     channel_id,
-                                    sink_rpc,
-                                    sink_address,
+                                    &generate_blocks,
                                 );
                             } else if let TestPath::SettleCheat = path {
-                                cheat_punish(
-                                    first,
-                                    second,
-                                    channel_id,
-                                    sink_rpc,
-                                    sink_address,
-                                    false,
-                                );
+                                cheat_punish(first, second, channel_id, &generate_blocks, false);
                             }
                         }
                         TestPath::SettleRenewSettle => {
@@ -624,13 +678,14 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     bob_handle.join().unwrap();
 }
 
-fn close_established_channel(
+fn close_established_channel<F>(
     first: DlcParty,
     second: DlcParty,
     channel_id: ChannelId,
-    sink_rpc: Client,
-    sink_address: Address,
-) {
+    generate_blocks: &F,
+) where
+    F: Fn(u64) -> (),
+{
     first
         .lock()
         .unwrap()
@@ -646,9 +701,7 @@ fn close_established_channel(
 
     let wait = dlc_manager::manager::CET_NSEQUENCE;
 
-    sink_rpc
-        .generate_to_address(10, &sink_address)
-        .expect("RPC Error");
+    generate_blocks(10);
 
     first
         .lock()
@@ -659,9 +712,7 @@ fn close_established_channel(
     // Should not have changed state before the CET is spendable.
     assert_channel_state!(first, channel_id, Signed, Closing);
 
-    sink_rpc
-        .generate_to_address(wait as u64 - 9, &sink_address)
-        .expect("RPC Error");
+    generate_blocks(wait as u64 - 9);
 
     first
         .lock()
@@ -681,12 +732,11 @@ fn close_established_channel(
     assert_channel_state!(second, channel_id, Signed, CounterClosed);
 }
 
-fn cheat_punish(
+fn cheat_punish<F: Fn(u64) -> ()>(
     first: DlcParty,
     second: DlcParty,
     channel_id: ChannelId,
-    sink_rpc: Client,
-    sink_address: Address,
+    generate_blocks: &F,
     established: bool,
 ) {
     first.lock().unwrap().get_mut_store().rollback();
@@ -705,9 +755,7 @@ fn cheat_punish(
             .expect("the cheater to be able to close on settled");
     }
 
-    sink_rpc
-        .generate_to_address(2, &sink_address)
-        .expect("RPC Error");
+    generate_blocks(2);
 
     second
         .lock()
@@ -971,14 +1019,13 @@ fn renew_race(
     assert_channel_state!(second, channel_id, Signed, Settled);
 }
 
-fn collaborative_close(
+fn collaborative_close<F: Fn(u64) -> ()>(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
     second: DlcParty,
     channel_id: ChannelId,
     sync_receive: &Receiver<()>,
-    sink_rpc: Client,
-    sink_address: Address,
+    generate_blocks: &F,
 ) {
     let close_offer = first
         .lock()
@@ -1001,9 +1048,7 @@ fn collaborative_close(
 
     assert_channel_state!(second, channel_id, Signed, CollaborativelyClosed);
 
-    sink_rpc
-        .generate_to_address(2, &sink_address)
-        .expect("RPC Error");
+    generate_blocks(2);
 
     first
         .lock()

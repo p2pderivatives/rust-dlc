@@ -260,6 +260,7 @@ impl Wallet for BitcoinCoreProvider {
                     },
                     address: x.address.as_ref().ok_or(Error::InvalidState)?.clone(),
                     redeem_script: x.redeem_script.as_ref().unwrap_or(&Script::new()).clone(),
+                    reserved: false,
                 }))
             })
             .collect::<Result<Vec<UtxoWrap>, Error>>()?;
@@ -282,44 +283,6 @@ impl Wallet for BitcoinCoreProvider {
             .unwrap()
             .import_address(address, None, Some(false))
             .map_err(rpc_err_to_manager_err)
-    }
-
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
-        let tx_info = self
-            .client
-            .lock()
-            .unwrap()
-            .get_transaction(tx_id, None)
-            .map_err(rpc_err_to_manager_err)?;
-        let tx = Transaction::consensus_decode(&mut tx_info.hex.as_slice())
-            .or(Err(Error::BitcoinError))?;
-        Ok(tx)
-    }
-
-    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
-        let tx_info_res = self.client.lock().unwrap().get_transaction(tx_id, None);
-        match tx_info_res {
-            Ok(tx_info) => Ok(tx_info.info.confirmations as u32),
-            Err(e) => match e {
-                bitcoincore_rpc::Error::JsonRpc(json_rpc_err) => match json_rpc_err {
-                    bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error) => {
-                        if rpc_error.code == -5
-                            && rpc_error.message == *"Invalid or non-wallet transaction id"
-                        {
-                            return Ok(0);
-                        }
-
-                        Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
-                            bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error),
-                        )))
-                    }
-                    other => Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
-                        other,
-                    ))),
-                },
-                _ => Err(rpc_err_to_manager_err(e)),
-            },
-        }
     }
 }
 
@@ -367,6 +330,44 @@ impl Blockchain for BitcoinCoreProvider {
             .get_block_hash(height)
             .map_err(rpc_err_to_manager_err)?;
         client.get_block(&hash).map_err(rpc_err_to_manager_err)
+    }
+
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
+        let tx_info = self
+            .client
+            .lock()
+            .unwrap()
+            .get_transaction(tx_id, None)
+            .map_err(rpc_err_to_manager_err)?;
+        let tx = Transaction::consensus_decode(&mut tx_info.hex.as_slice())
+            .or(Err(Error::BitcoinError))?;
+        Ok(tx)
+    }
+
+    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
+        let tx_info_res = self.client.lock().unwrap().get_transaction(tx_id, None);
+        match tx_info_res {
+            Ok(tx_info) => Ok(tx_info.info.confirmations as u32),
+            Err(e) => match e {
+                bitcoincore_rpc::Error::JsonRpc(json_rpc_err) => match json_rpc_err {
+                    bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error) => {
+                        if rpc_error.code == -5
+                            && rpc_error.message == *"Invalid or non-wallet transaction id"
+                        {
+                            return Ok(0);
+                        }
+
+                        Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
+                            bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error),
+                        )))
+                    }
+                    other => Err(rpc_err_to_manager_err(bitcoincore_rpc::Error::JsonRpc(
+                        other,
+                    ))),
+                },
+                _ => Err(rpc_err_to_manager_err(e)),
+            },
+        }
     }
 }
 

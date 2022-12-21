@@ -1,3 +1,4 @@
 # Fixing these would break API, allow for now
 enum-variant-size-threshold = 2000
+msrv = "1.41.1"
 too-many-arguments-threshold = 15

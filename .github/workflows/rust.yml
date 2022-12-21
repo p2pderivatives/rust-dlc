@@ -52,9 +52,11 @@ jobs:
           path: target/debug/deps
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - name: Start bitcoin node
-        run: ./scripts/start_node.sh
+        run: docker-compose up -d
       - name: Wait for container to run
         run: ./scripts/wait_for_container.sh bitcoin-node
+      - name: Wait for electrs to be ready
+        run: ./scripts/wait_for_electrs.sh
       - name: Run test
         run: RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored
       - name: Stop bitcoin node

@@ -44,7 +44,10 @@ use channel::Channel;
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
+use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
+use lightning::ln::msgs::DecodeError;
+use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
 
@@ -103,10 +106,6 @@ pub trait Wallet: Signer {
     ) -> Result<Vec<Utxo>, Error>;
     /// Import the provided address.
     fn import_address(&self, address: &Address) -> Result<(), Error>;
-    /// Get the transaction with given id.
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
-    /// Get the number of confirmation for the transaction with given id.
-    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
 }
 
 /// Blockchain trait provides access to the bitcoin blockchain.
@@ -119,6 +118,10 @@ pub trait Blockchain {
     fn get_blockchain_height(&self) -> Result<u64, Error>;
     /// Returns the block at given height
     fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
+    /// Get the transaction with given id.
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+    /// Get the number of confirmation for the transaction with given id.
+    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.
@@ -184,4 +187,15 @@ pub struct Utxo {
     pub address: Address,
     /// The redeem script for the referenced output.
     pub redeem_script: Script,
+    /// Whether this Utxo has been reserved (and so should not be used to fund
+    /// a DLC).
+    pub reserved: bool,
 }
+
+impl_dlc_writeable!(Utxo, {
+    (tx_out, writeable),
+    (outpoint, writeable),
+    (address, {cb_writeable, write_address, read_address}),
+    (redeem_script, writeable),
+    (reserved, writeable)
+});
