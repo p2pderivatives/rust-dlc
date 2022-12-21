@@ -98,3 +98,24 @@ impl AcceptedContract {
         final_payout - collateral
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use lightning::util::ser::Readable;
+
+    use super::*;
+
+    #[test]
+    fn pnl_compute_test() {
+        let buf = include_bytes!("../../test_inputs/Accepted");
+        let accepted_contract: AcceptedContract = Readable::read(&mut Cursor::new(&buf)).unwrap();
+        let cets = &accepted_contract.dlc_transactions.cets;
+        assert_eq!(accepted_contract.compute_pnl(&cets[0]), 100000000);
+        assert_eq!(
+            accepted_contract.compute_pnl(&cets[cets.len() - 1]),
+            -100000000
+        );
+    }
+}
