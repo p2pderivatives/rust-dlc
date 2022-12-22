@@ -596,9 +596,23 @@ where
             .get_transaction_confirmations(&broadcasted_txid)?;
         if confirmations >= NB_CONFIRMATIONS {
             let closed_contract = ClosedContract {
-                signed_contract: contract.signed_contract.clone(),
                 attestations: contract.attestations.clone(),
                 signed_cet: contract.signed_cet.clone(),
+                contract_id: contract.signed_contract.accepted_contract.get_contract_id(),
+                temporary_contract_id: contract
+                    .signed_contract
+                    .accepted_contract
+                    .offered_contract
+                    .id,
+                counter_party_id: contract
+                    .signed_contract
+                    .accepted_contract
+                    .offered_contract
+                    .counter_party,
+                pnl: contract
+                    .signed_contract
+                    .accepted_contract
+                    .compute_pnl(&contract.signed_cet),
             };
             self.store
                 .update_contract(&Contract::Closed(closed_contract))?;
@@ -642,9 +656,12 @@ where
         }
 
         let closed_contract = ClosedContract {
-            signed_contract: contract.clone(),
             attestations: attestations.to_vec(),
+            pnl: contract.accepted_contract.compute_pnl(&signed_cet),
             signed_cet,
+            contract_id: contract.accepted_contract.get_contract_id(),
+            temporary_contract_id: contract.accepted_contract.offered_contract.id,
+            counter_party_id: contract.accepted_contract.offered_contract.counter_party,
         };
 
         Ok(Contract::Closed(closed_contract))

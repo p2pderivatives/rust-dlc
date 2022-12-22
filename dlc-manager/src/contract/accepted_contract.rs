@@ -2,6 +2,7 @@
 
 use super::offered_contract::OfferedContract;
 use super::{AdaptorInfo, FundingInputInfo};
+use bitcoin::Transaction;
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::AcceptDlc;
 use secp256k1_zkp::ecdsa::Signature;
@@ -71,5 +72,50 @@ impl AcceptedContract {
             refund_signature: self.accept_refund_signature,
             negotiation_fields: None,
         }
+    }
+
+    /// Compute the profit and loss for this contract and an assciated cet index
+    pub fn compute_pnl(&self, cet: &Transaction) -> i64 {
+        let offer = &self.offered_contract;
+        let party_params = if offer.is_offer_party {
+            &offer.offer_params
+        } else {
+            &self.accept_params
+        };
+        let collateral = party_params.collateral as i64;
+        let v0_witness_payout_script = &party_params.payout_script_pubkey;
+        let final_payout = cet
+            .output
+            .iter()
+            .find_map(|x| {
+                if &x.script_pubkey == v0_witness_payout_script {
+                    Some(x.value)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0) as i64;
+        final_payout - collateral
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use lightning::util::ser::Readable;
+
+    use super::*;
+
+    #[test]
+    fn pnl_compute_test() {
+        let buf = include_bytes!("../../test_inputs/Accepted");
+        let accepted_contract: AcceptedContract = Readable::read(&mut Cursor::new(&buf)).unwrap();
+        let cets = &accepted_contract.dlc_transactions.cets;
+        assert_eq!(accepted_contract.compute_pnl(&cets[0]), 100000000);
+        assert_eq!(
+            accepted_contract.compute_pnl(&cets[cets.len() - 1]),
+            -100000000
+        );
     }
 }

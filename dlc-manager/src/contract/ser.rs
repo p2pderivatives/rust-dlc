@@ -132,9 +132,12 @@ impl_dlc_writeable!(PreClosedContract, {
     (signed_cet, writeable)
 });
 impl_dlc_writeable!(ClosedContract, {
-    (signed_contract, writeable),
     (attestations, vec),
-    (signed_cet, writeable)
+    (signed_cet, writeable),
+    (contract_id, writeable),
+    (temporary_contract_id, writeable),
+    (counter_party_id, writeable),
+    (pnl, i64)
 });
 impl_dlc_writeable!(FailedAcceptContract, {(offered_contract, writeable), (accept_message, writeable), (error_message, string)});
 impl_dlc_writeable!(FailedSignContract, {(accepted_contract, writeable), (sign_message, writeable), (error_message, string)});

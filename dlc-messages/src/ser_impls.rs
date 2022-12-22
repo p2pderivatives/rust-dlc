@@ -538,6 +538,23 @@ pub fn read_i32<R: ::std::io::Read>(reader: &mut R) -> Result<i32, DecodeError> 
     let v: [u8; 4] = Readable::read(reader)?;
     Ok(i32::from_be_bytes(v))
 }
+/// Writes an `i64` value to the given writer.
+pub fn write_i64<W: Writer>(i: &i64, writer: &mut W) -> Result<(), ::std::io::Error> {
+    let i = i.to_be_bytes();
+    for b in i {
+        b.write(writer)?;
+    }
+    Ok(())
+}
+
+/// Reads an `i64` value from the given reader.
+pub fn read_i64<R: ::std::io::Read>(reader: &mut R) -> Result<i64, DecodeError> {
+    let mut v = [0u8; 8];
+    for x in &mut v {
+        *x = Readable::read(reader)?;
+    }
+    Ok(i64::from_be_bytes(v))
+}
 
 /// Writes a [`lightning::util::ser::Writeable`] value to the given writer as a TLV.
 pub fn write_as_tlv<T: Type + Writeable, W: Writer>(
