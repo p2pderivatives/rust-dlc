@@ -44,13 +44,14 @@ pub fn init_clients() -> (Client, Client, Client) {
     let rpc = Client::new(&rpc_base(), auth.clone()).unwrap();
 
     // Deals with wallet loading error.
-    let retry_count = 0;
+    let mut retry_count = 0;
     std::thread::sleep(std::time::Duration::from_millis(100));
     let offer_rpc = loop {
         match get_new_wallet_rpc(&rpc, OFFER_PARTY, auth.clone()) {
             Ok(rpc) => break rpc,
             Err(e) => {
                 if retry_count < 20 {
+                    retry_count += 1;
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 } else {
                     panic!("{}", e);
