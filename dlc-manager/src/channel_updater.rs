@@ -148,9 +148,11 @@ where
 {
     assert_eq!(offered_channel.offered_contract_id, offered_contract.id);
 
+    let total_collateral = offered_contract.total_collateral;
+
     let (accept_params, _, funding_inputs) = crate::utils::get_party_params(
         secp,
-        offered_contract.offer_params.collateral,
+        total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
         blockchain,
@@ -1570,9 +1572,9 @@ where
     let fund_output_value = signed_channel.fund_tx.output[signed_channel.fund_output_index].value;
 
     let close_tx = dlc::channel::create_collaborative_close_transaction(
-        &signed_channel.own_params,
-        offer_payout,
         &signed_channel.counter_params,
+        offer_payout,
+        &signed_channel.own_params,
         close_offer.counter_payout,
         OutPoint {
             txid: signed_channel.fund_tx.txid(),

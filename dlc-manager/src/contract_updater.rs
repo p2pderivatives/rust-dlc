@@ -82,7 +82,7 @@ where
 
     let (accept_params, fund_secret_key, funding_inputs) = crate::utils::get_party_params(
         secp,
-        offered_contract.offer_params.collateral,
+        total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
         blockchain,
