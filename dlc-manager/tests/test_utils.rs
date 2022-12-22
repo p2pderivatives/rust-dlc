@@ -37,7 +37,9 @@ pub const MAX_ERROR_EXP: usize = 2;
 pub const BASE: u32 = 2;
 pub const EVENT_MATURITY: u32 = 1623133104;
 pub const EVENT_ID: &str = "Test";
-pub const COLLATERAL: u64 = 100000000;
+pub const OFFER_COLLATERAL: u64 = 90000000;
+pub const ACCEPT_COLLATERAL: u64 = 11000000;
+pub const TOTAL_COLLATERAL: u64 = OFFER_COLLATERAL + ACCEPT_COLLATERAL;
 pub const MID_POINT: u64 = 5;
 pub const ROUNDING_MOD: u64 = 1;
 
@@ -223,13 +225,13 @@ pub fn get_enum_contract_descriptor() -> ContractDescriptor {
         .map(|(i, x)| {
             let payout = if i % 2 == 0 {
                 Payout {
-                    offer: 2 * COLLATERAL,
+                    offer: TOTAL_COLLATERAL,
                     accept: 0,
                 }
             } else {
                 Payout {
                     offer: 0,
-                    accept: 2 * COLLATERAL,
+                    accept: TOTAL_COLLATERAL,
                 }
             };
             EnumerationPayout {
@@ -285,8 +287,8 @@ pub fn get_enum_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: COLLATERAL,
-        accept_collateral: COLLATERAL,
+        offer_collateral: OFFER_COLLATERAL,
+        accept_collateral: ACCEPT_COLLATERAL,
         maturity_time: EVENT_MATURITY,
         fee_rate: 2,
         contract_infos: vec![contract_info],
@@ -309,12 +311,12 @@ pub fn get_polynomial_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFun
                 },
                 PayoutPoint {
                     event_outcome: 3,
-                    outcome_payout: 100000000,
+                    outcome_payout: OFFER_COLLATERAL,
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: MID_POINT,
-                    outcome_payout: 200000000,
+                    outcome_payout: TOTAL_COLLATERAL,
                     extra_precision: 0,
                 },
             ])
@@ -324,12 +326,12 @@ pub fn get_polynomial_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFun
             PolynomialPayoutCurvePiece::new(vec![
                 PayoutPoint {
                     event_outcome: MID_POINT,
-                    outcome_payout: 200000000,
+                    outcome_payout: TOTAL_COLLATERAL,
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: max_value_from_digits(min_nb_digits) as u64,
-                    outcome_payout: 200000000,
+                    outcome_payout: TOTAL_COLLATERAL,
                     extra_precision: 0,
                 },
             ])
@@ -484,8 +486,8 @@ pub fn get_numerical_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: 100000000,
-        accept_collateral: 100000000,
+        offer_collateral: OFFER_COLLATERAL,
+        accept_collateral: ACCEPT_COLLATERAL,
         maturity_time: EVENT_MATURITY,
         fee_rate: 2,
         contract_infos: vec![contract_info],
@@ -540,8 +542,8 @@ pub fn get_enum_and_numerical_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: 100000000,
-        accept_collateral: 100000000,
+        offer_collateral: OFFER_COLLATERAL,
+        accept_collateral: ACCEPT_COLLATERAL,
         maturity_time: EVENT_MATURITY,
         fee_rate: 2,
         contract_infos,
