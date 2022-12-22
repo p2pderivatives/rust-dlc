@@ -225,4 +225,18 @@ mod tests {
             "../../test_inputs/offer_numerical_collateral_less_than_payout.json"
         ));
     }
+
+    #[test]
+    fn offer_numerical_invalid_rounding_interval() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_numerical_invalid_rounding_interval.json"
+        ));
+    }
+
+    #[test]
+    fn offer_numerical_empty_rounding_interval() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_numerical_empty_rounding_interval.json"
+        ));
+    }
 }
