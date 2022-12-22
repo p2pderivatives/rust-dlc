@@ -522,6 +522,24 @@ impl RoundingIntervals {
             (payout - m).round() as u64
         }
     }
+
+    /// Validate that the instance is well formed, meaning non empty and with the
+    /// first interval starting at zero.
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.intervals.is_empty() {
+            return Err(Error::InvalidParameters(
+                "Empty rounding intervals.".to_string(),
+            ));
+        }
+
+        if self.intervals[0].begin_interval != 0 {
+            return Err(Error::InvalidParameters(
+                "Rounding interval doesn't start at 0.".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

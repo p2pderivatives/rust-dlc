@@ -63,6 +63,7 @@ impl NumericalDescriptor {
     /// Validate that the descriptor covers all possible outcomes of the given
     /// digit decomposition event descriptor.
     pub fn validate(&self, max_value: u64) -> Result<(), Error> {
+        self.rounding_intervals.validate()?;
         self.payout_function.validate(max_value)
     }
 
