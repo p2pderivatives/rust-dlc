@@ -6,13 +6,13 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitcoin = "0.29"
+bitcoin = {workspace = true}
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.112"}
+lightning = {workspace = true}
 rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
-secp256k1-zkp = {version = "0.7.0"}
+secp256k1-zkp = {workspace = true}
 
 [dev-dependencies]
 mocks = {path = "../mocks"}
-secp256k1-zkp = {version = "0.7.0", features = ["global-context"]}
+secp256k1-zkp = {workspace = true, features = ["global-context"]}

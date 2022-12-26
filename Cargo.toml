@@ -14,3 +14,9 @@ members = [
   "dlc-sled-storage-provider",
   "electrs-blockchain-provider",
 ]
+
+[workspace.dependencies]
+bitcoin = {version = "0.29"}
+lightning = {version = "0.0.112"}
+secp256k1-sys = {version = "0.6.1"}
+secp256k1-zkp = {version = "0.7.0"}
