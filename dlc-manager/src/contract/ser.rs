@@ -18,8 +18,8 @@ use crate::payout_curve::{
 };
 use dlc::DlcTransactions;
 use dlc_messages::ser_impls::{
-    read_ecdsa_adaptor_signatures, read_option_cb, read_usize, read_vec_cb,
-    write_ecdsa_adaptor_signatures, write_option_cb, write_usize, write_vec_cb,
+    read_ecdsa_adaptor_signatures, read_option_cb, read_usize, read_vec, read_vec_cb,
+    write_ecdsa_adaptor_signatures, write_option_cb, write_usize, write_vec, write_vec_cb,
 };
 use dlc_trie::digit_trie::{DigitNodeData, DigitTrieDump};
 use dlc_trie::multi_oracle_trie::{MultiOracleTrie, MultiOracleTrieDump};
@@ -128,11 +128,11 @@ impl_dlc_writeable!(SignedContract, {
 });
 impl_dlc_writeable!(PreClosedContract, {
     (signed_contract, writeable),
-    (attestations, vec),
+    (attestations, {option_cb, write_vec, read_vec}),
     (signed_cet, writeable)
 });
 impl_dlc_writeable!(ClosedContract, {
-    (attestations, vec),
+    (attestations, {option_cb, write_vec, read_vec}),
     (signed_cet, writeable),
     (contract_id, writeable),
     (temporary_contract_id, writeable),

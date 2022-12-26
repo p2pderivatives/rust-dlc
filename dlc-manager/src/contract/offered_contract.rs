@@ -14,7 +14,7 @@ use dlc_messages::OfferDlc;
 use secp256k1_zkp::PublicKey;
 
 /// Contains information about a contract that was offered.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),

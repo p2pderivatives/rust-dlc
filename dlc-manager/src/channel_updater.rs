@@ -666,6 +666,7 @@ where
         settle_tx,
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        own_payout,
     };
 
     let msg = SettleAccept {
@@ -756,6 +757,7 @@ where
         counter_next_per_update_point: settle_channel_accept.next_per_update_point,
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        own_payout: total_collateral - counter_payout,
     };
 
     channel.state = state;
@@ -929,6 +931,7 @@ pub fn settle_channel_on_finalize<C: Signing>(
         counter_settle_adaptor_signature,
         own_settle_adaptor_signature,
     };
+    channel.roll_back_state = None;
 
     channel.own_per_update_point = own_next_per_update_point;
     channel.counter_per_update_point = counter_next_per_update_point;
@@ -979,6 +982,8 @@ where
         &signed_channel.counter_party,
     );
 
+    offered_contract.fund_output_serial_id = 0;
+
     offered_contract.fee_rate_per_vb = signed_channel.fee_rate_per_vb;
 
     let per_update_seed = signer.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
@@ -1004,7 +1009,7 @@ where
 
     let msg = RenewOffer {
         channel_id: signed_channel.channel_id,
-        temporary_contract_id: crate::utils::get_new_temporary_id(),
+        temporary_contract_id: offered_contract.id,
         counter_payout,
         next_per_update_point,
         contract_info: (&offered_contract).into(),
@@ -1081,11 +1086,12 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
-    let offer_next_per_update_point = match signed_channel.state {
+    let (offer_next_per_update_point, own_payout) = match signed_channel.state {
         SignedChannelState::RenewOffered {
             offer_next_per_update_point,
+            counter_payout,
             ..
-        } => offer_next_per_update_point,
+        } => (offer_next_per_update_point, counter_payout),
         _ => {
             return Err(Error::InvalidState(
                 "Signed channel was not in SettledOffered state as expected.".to_string(),
@@ -1168,6 +1174,7 @@ where
         buffer_script_pubkey,
         accept_buffer_adaptor_signature: buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        own_payout,
     };
 
     signed_channel.state = state;
@@ -1228,6 +1235,9 @@ where
     )?;
 
     let total_collateral = offered_contract.total_collateral;
+
+    let own_payout =
+        total_collateral - get_signed_channel_state!(signed_channel, RenewOffered, counter_payout)?;
 
     let DlcChannelTransactions {
         buffer_transaction,
@@ -1294,6 +1304,7 @@ where
         offer_buffer_adaptor_signature: own_buffer_adaptor_signature,
         accept_buffer_adaptor_signature: renew_accept.buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
+        own_payout,
     };
 
     signed_channel.state = state;
@@ -1526,13 +1537,14 @@ where
         &own_fund_sk,
     )?;
 
-    let state = SignedChannelState::CollaborativeCloseOffered {
+    let mut state = SignedChannelState::CollaborativeCloseOffered {
         counter_payout,
         offer_signature: close_signature,
         close_tx: close_tx.clone(),
         timeout: time.unix_time_now() + super::manager::PEER_TIMEOUT,
     };
-    signed_channel.state = state;
+    std::mem::swap(&mut state, &mut signed_channel.state);
+    signed_channel.roll_back_state = Some(state);
 
     Ok((
         CollaborativeCloseOffer {

@@ -147,6 +147,8 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
+            /// The payout to the local party after settling the channel.
+            own_payout: u64,
         },
         /// A [`SignedChannel`] is in `SettledConfirmed` state when the local party
         /// has sent a [`dlc_messages::channel::SettleConfirm`] message.
@@ -168,6 +170,8 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
+            /// The payout to the local party after settling the channel.
+            own_payout: u64,
         },
         /// A [`SignedChannel`] is in `Settled` state when the local party
         /// has all the necessary information to close the channel with the last
@@ -219,6 +223,8 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
+            /// The payout to the local party attributed for closing the previous state.
+            own_payout: u64,
         },
         /// A [`SignedChannel`] is in `RenewConfirmed` state when the local party
         /// has sent a [`dlc_messages::channel::RenewConfirm`] message.
@@ -244,6 +250,8 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
+            /// The payout to the local party attributed for closing the previous state.
+            own_payout: u64,
         },
         /// A [`SignedChannel`] is in `Closing` state when the local party
         /// has broadcast a buffer transaction and is waiting to finalize the
@@ -309,6 +317,7 @@ impl SignedChannel {
             } => Some(*offered_contract_id),
             SignedChannelState::RenewAccepted { contract_id, .. } => Some(*contract_id),
             SignedChannelState::RenewConfirmed { contract_id, .. } => Some(*contract_id),
+            SignedChannelState::Closing { contract_id, .. } => Some(*contract_id),
             _ => None,
         }
     }

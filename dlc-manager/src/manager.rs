@@ -597,7 +597,7 @@ where
         if confirmations >= NB_CONFIRMATIONS {
             let closed_contract = ClosedContract {
                 attestations: contract.attestations.clone(),
-                signed_cet: contract.signed_cet.clone(),
+                signed_cet: Some(contract.signed_cet.clone()),
                 contract_id: contract.signed_contract.accepted_contract.get_contract_id(),
                 temporary_contract_id: contract
                     .signed_contract
@@ -640,7 +640,7 @@ where
 
             let preclosed_contract = PreClosedContract {
                 signed_contract: contract.clone(),
-                attestations,
+                attestations: Some(attestations),
                 signed_cet,
             };
 
@@ -648,7 +648,7 @@ where
         } else if confirmations < NB_CONFIRMATIONS {
             let preclosed_contract = PreClosedContract {
                 signed_contract: contract.clone(),
-                attestations,
+                attestations: Some(attestations),
                 signed_cet,
             };
 
@@ -656,9 +656,9 @@ where
         }
 
         let closed_contract = ClosedContract {
-            attestations: attestations.to_vec(),
+            attestations: Some(attestations.to_vec()),
             pnl: contract.accepted_contract.compute_pnl(&signed_cet),
-            signed_cet,
+            signed_cet: Some(signed_cet),
             contract_id: contract.accepted_contract.get_contract_id(),
             temporary_contract_id: contract.accepted_contract.offered_contract.id,
             counter_party_id: contract.accepted_contract.offered_contract.counter_party,
@@ -1026,6 +1026,41 @@ where
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
+        let closed_contract = if let Some(SignedChannelState::Established {
+            signed_contract_id,
+            is_offer,
+            ..
+        }) = &signed_channel.roll_back_state
+        {
+            let counter_payout = get_signed_channel_state!(
+                signed_channel,
+                CollaborativeCloseOffered,
+                counter_payout
+            )?;
+            let contract =
+                get_contract_in_state!(self, signed_contract_id, Confirmed, None::<PublicKey>)?;
+            let own_collateral = if *is_offer {
+                contract
+                    .accepted_contract
+                    .offered_contract
+                    .offer_params
+                    .collateral
+            } else {
+                contract.accepted_contract.accept_params.collateral
+            };
+            let pnl = own_collateral as i64 - counter_payout as i64;
+            Some(ClosedContract {
+                attestations: None,
+                signed_cet: None,
+                contract_id: *signed_contract_id,
+                temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                counter_party_id: signed_channel.counter_party,
+                pnl,
+            })
+        } else {
+            None
+        };
+
         let close_tx = crate::channel_updater::accept_collaborative_close_offer(
             &self.secp,
             &mut signed_channel,
@@ -1036,6 +1071,11 @@ where
 
         self.store
             .upsert_channel(Channel::Signed(signed_channel), None)?;
+
+        if let Some(closed_contract) = closed_contract {
+            self.store
+                .update_contract(&Contract::Closed(closed_contract))?;
+        }
 
         Ok(())
     }
@@ -1293,17 +1333,20 @@ where
     ) -> Result<SettleFinalize, Error> {
         let mut signed_channel =
             get_channel_in_state!(self, &settle_confirm.channel_id, Signed, Some(*peer_id))?;
-        let (prev_buffer_tx, own_buffer_adaptor_signature, is_offer) = get_signed_channel_rollback_state!(
+        let own_payout = get_signed_channel_state!(signed_channel, SettledAccepted, own_payout)?;
+        let (prev_buffer_tx, own_buffer_adaptor_signature, is_offer, signed_contract_id) = get_signed_channel_rollback_state!(
             signed_channel,
             Established,
             buffer_transaction,
             own_buffer_adaptor_signature,
-            is_offer
+            is_offer,
+            signed_contract_id
         )?;
 
         let prev_buffer_txid = prev_buffer_tx.txid();
         let own_buffer_adaptor_signature = *own_buffer_adaptor_signature;
         let is_offer = *is_offer;
+        let signed_contract_id = *signed_contract_id;
 
         let msg = crate::channel_updater::settle_channel_finalize(
             &self.secp,
@@ -1325,8 +1368,30 @@ where
             },
         );
 
+        let contract =
+            get_contract_in_state!(self, &signed_contract_id, Confirmed, None::<PublicKey>)?;
+
+        let own_collateral = if contract.accepted_contract.offered_contract.is_offer_party {
+            contract
+                .accepted_contract
+                .offered_contract
+                .offer_params
+                .collateral
+        } else {
+            contract.accepted_contract.accept_params.collateral
+        };
+
+        let closed_contract = Contract::Closed(ClosedContract {
+            attestations: None,
+            signed_cet: None,
+            contract_id: signed_contract_id,
+            temporary_contract_id: contract.accepted_contract.offered_contract.id,
+            counter_party_id: signed_channel.counter_party,
+            pnl: (own_collateral as i64) - (own_payout as i64),
+        });
+
         self.store
-            .upsert_channel(Channel::Signed(signed_channel), None)?;
+            .upsert_channel(Channel::Signed(signed_channel), Some(closed_contract))?;
         self.store.persist_chain_monitor(&self.chain_monitor)?;
 
         Ok(msg)
@@ -1339,17 +1404,20 @@ where
     ) -> Result<(), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, &settle_finalize.channel_id, Signed, Some(*peer_id))?;
-        let (buffer_tx, own_buffer_adaptor_signature, is_offer) = get_signed_channel_rollback_state!(
+        let own_payout = get_signed_channel_state!(signed_channel, SettledConfirmed, own_payout)?;
+        let (buffer_tx, own_buffer_adaptor_signature, is_offer, signed_contract_id) = get_signed_channel_rollback_state!(
             signed_channel,
             Established,
             buffer_transaction,
             own_buffer_adaptor_signature,
-            is_offer
+            is_offer,
+            signed_contract_id
         )?;
 
         let own_buffer_adaptor_signature = *own_buffer_adaptor_signature;
         let is_offer = *is_offer;
         let buffer_txid = buffer_tx.txid();
+        let signed_contract_id = *signed_contract_id;
 
         crate::channel_updater::settle_channel_on_finalize(
             &self.secp,
@@ -1370,8 +1438,30 @@ where
             },
         );
 
+        let contract =
+            get_contract_in_state!(self, &signed_contract_id, Confirmed, None::<PublicKey>)?;
+
+        let own_collateral = if contract.accepted_contract.offered_contract.is_offer_party {
+            contract
+                .accepted_contract
+                .offered_contract
+                .offer_params
+                .collateral
+        } else {
+            contract.accepted_contract.accept_params.collateral
+        };
+
+        let closed_contract = Contract::Closed(ClosedContract {
+            attestations: None,
+            signed_cet: None,
+            contract_id: signed_contract_id,
+            temporary_contract_id: contract.accepted_contract.offered_contract.id,
+            counter_party_id: signed_channel.counter_party,
+            pnl: (own_collateral as i64) - (own_payout as i64),
+        });
+
         self.store
-            .upsert_channel(Channel::Signed(signed_channel), None)?;
+            .upsert_channel(Channel::Signed(signed_channel), Some(closed_contract))?;
         self.store.persist_chain_monitor(&self.chain_monitor)?;
 
         Ok(())
@@ -1453,7 +1543,7 @@ where
             )
         })?;
 
-        let (tx_type, prev_tx_id) = match signed_channel
+        let (tx_type, prev_tx_id, closed_contract) = match signed_channel
             .roll_back_state
             .as_ref()
             .expect("to have a rollback state")
@@ -1461,16 +1551,41 @@ where
             SignedChannelState::Established {
                 own_buffer_adaptor_signature,
                 buffer_transaction,
+                signed_contract_id,
                 ..
-            } => (
-                TxType::Revoked {
-                    update_idx: signed_channel.update_idx,
-                    own_adaptor_signature: *own_buffer_adaptor_signature,
-                    is_offer: false,
-                    revoked_tx_type: RevokedTxType::Buffer,
-                },
-                buffer_transaction.txid(),
-            ),
+            } => {
+                let contract =
+                    get_contract_in_state!(self, signed_contract_id, Confirmed, None::<PublicKey>)?;
+                let own_collateral = if contract.accepted_contract.offered_contract.is_offer_party {
+                    contract
+                        .accepted_contract
+                        .offered_contract
+                        .offer_params
+                        .collateral
+                } else {
+                    contract.accepted_contract.accept_params.collateral
+                };
+                let pnl = (contract.accepted_contract.offered_contract.total_collateral as i64)
+                    - (own_collateral as i64);
+                let closed_contract = Contract::Closed(ClosedContract {
+                    attestations: None,
+                    signed_cet: None,
+                    contract_id: *signed_contract_id,
+                    temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                    counter_party_id: signed_channel.counter_party,
+                    pnl,
+                });
+                (
+                    TxType::Revoked {
+                        update_idx: signed_channel.update_idx,
+                        own_adaptor_signature: *own_buffer_adaptor_signature,
+                        is_offer: false,
+                        revoked_tx_type: RevokedTxType::Buffer,
+                    },
+                    buffer_transaction.txid(),
+                    Some(closed_contract),
+                )
+            }
             SignedChannelState::Settled {
                 settle_tx,
                 own_settle_adaptor_signature,
@@ -1483,6 +1598,7 @@ where
                     revoked_tx_type: RevokedTxType::Settle,
                 },
                 settle_tx.txid(),
+                None,
             ),
             s => {
                 return Err(Error::InvalidState(format!(
@@ -1530,6 +1646,10 @@ where
 
         self.store.persist_chain_monitor(&self.chain_monitor)?;
 
+        if let Some(closed_contract) = closed_contract {
+            self.store.update_contract(&closed_contract)?;
+        }
+
         Ok(msg)
     }
 
@@ -1541,7 +1661,7 @@ where
         let mut signed_channel =
             get_channel_in_state!(self, &renew_finalize.channel_id, Signed, Some(*peer_id))?;
 
-        let (tx_type, prev_tx_id) = match signed_channel
+        let (tx_type, prev_tx_id, closed_contract) = match signed_channel
             .roll_back_state
             .as_ref()
             .expect("to have a rollback state")
@@ -1549,16 +1669,41 @@ where
             SignedChannelState::Established {
                 own_buffer_adaptor_signature,
                 buffer_transaction,
+                signed_contract_id,
                 ..
-            } => (
-                TxType::Revoked {
-                    update_idx: signed_channel.update_idx,
-                    own_adaptor_signature: *own_buffer_adaptor_signature,
-                    is_offer: false,
-                    revoked_tx_type: RevokedTxType::Buffer,
-                },
-                buffer_transaction.txid(),
-            ),
+            } => {
+                let contract =
+                    get_contract_in_state!(self, signed_contract_id, Confirmed, None::<PublicKey>)?;
+                let own_collateral = if contract.accepted_contract.offered_contract.is_offer_party {
+                    contract
+                        .accepted_contract
+                        .offered_contract
+                        .offer_params
+                        .collateral
+                } else {
+                    contract.accepted_contract.accept_params.collateral
+                };
+                let pnl = (contract.accepted_contract.offered_contract.total_collateral as i64)
+                    - (own_collateral as i64);
+                let closed_contract = Contract::Closed(ClosedContract {
+                    attestations: None,
+                    signed_cet: None,
+                    contract_id: *signed_contract_id,
+                    temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                    counter_party_id: signed_channel.counter_party,
+                    pnl,
+                });
+                (
+                    TxType::Revoked {
+                        update_idx: signed_channel.update_idx,
+                        own_adaptor_signature: *own_buffer_adaptor_signature,
+                        is_offer: false,
+                        revoked_tx_type: RevokedTxType::Buffer,
+                    },
+                    buffer_transaction.txid(),
+                    Some(closed_contract),
+                )
+            }
             SignedChannelState::Settled {
                 settle_tx,
                 own_settle_adaptor_signature,
@@ -1571,6 +1716,7 @@ where
                     revoked_tx_type: RevokedTxType::Settle,
                 },
                 settle_tx.txid(),
+                None,
             ),
             s => {
                 return Err(Error::InvalidState(format!(
@@ -1604,6 +1750,10 @@ where
         self.store
             .upsert_channel(Channel::Signed(signed_channel), None)?;
         self.store.persist_chain_monitor(&self.chain_monitor)?;
+
+        if let Some(closed_contract) = closed_contract {
+            self.store.update_contract(&closed_contract)?;
+        }
 
         Ok(())
     }
@@ -1708,9 +1858,29 @@ where
                     // case of reorg, though if the counter party has sent the
                     // tx to close the channel it is unlikely that the tx will
                     // not be part of a future block.
+                    let contract = if let Some(contract_id) = signed_channel.get_contract_id() {
+                        let contract_opt = self.store.get_contract(&contract_id)?;
+                        if let Some(contract) = contract_opt {
+                            match contract {
+                                Contract::Confirmed(c) => {
+                                    Some(Contract::PreClosed(PreClosedContract {
+                                        signed_contract: c,
+                                        attestations: None,
+                                        signed_cet: tx.clone(),
+                                    }))
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     signed_channel.state = SignedChannelState::CounterClosed;
                     self.store
-                        .upsert_channel(Channel::Signed(signed_channel), None)?;
+                        .upsert_channel(Channel::Signed(signed_channel), contract)?;
                     continue;
                 } else if let TxType::Revoked {
                     update_idx,
@@ -1846,6 +2016,48 @@ where
                     self.store
                         .upsert_channel(Channel::Signed(signed_channel), None)?;
                 } else if let TxType::CollaborativeClose = channel_info.tx_type {
+                    if let Some(SignedChannelState::Established {
+                        signed_contract_id,
+                        is_offer,
+                        ..
+                    }) = signed_channel.roll_back_state
+                    {
+                        let counter_payout = get_signed_channel_state!(
+                            signed_channel,
+                            CollaborativeCloseOffered,
+                            counter_payout
+                        )?;
+                        let contract = get_contract_in_state!(
+                            self,
+                            &signed_contract_id,
+                            Confirmed,
+                            None::<PublicKey>
+                        )?;
+                        let own_payout =
+                            contract.accepted_contract.offered_contract.total_collateral
+                                - counter_payout;
+                        let own_collateral = if is_offer {
+                            contract
+                                .accepted_contract
+                                .offered_contract
+                                .offer_params
+                                .collateral
+                        } else {
+                            contract.accepted_contract.accept_params.collateral
+                        };
+                        let pnl = (own_collateral as i64) - (own_payout as i64);
+
+                        let closed_contract = ClosedContract {
+                            attestations: None,
+                            signed_cet: None,
+                            contract_id: signed_contract_id,
+                            temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                            counter_party_id: signed_channel.counter_party,
+                            pnl,
+                        };
+                        self.store
+                            .update_contract(&Contract::Closed(closed_contract))?;
+                    }
                     signed_channel.state = SignedChannelState::CollaborativelyClosed;
                     self.store
                         .upsert_channel(Channel::Signed(signed_channel), None)?;

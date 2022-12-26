@@ -293,7 +293,7 @@ pub fn read_schnorr_pubkeys<R: ::std::io::Read>(
 }
 
 /// Writes a vector of writeable to the given writer.
-pub fn write_vec<W: Writer, T>(input: &[T], writer: &mut W) -> Result<(), ::std::io::Error>
+pub fn write_vec<W: Writer, T>(input: &Vec<T>, writer: &mut W) -> Result<(), ::std::io::Error>
 where
     T: Writeable,
 {
@@ -311,7 +311,7 @@ where
 /// Writes a vector of values to the given writer using the provided callback to
 /// serialize each value.
 pub fn write_vec_cb<W: Writer, T, F>(
-    input: &[T],
+    input: &Vec<T>,
     writer: &mut W,
     cb: &F,
 ) -> Result<(), ::std::io::Error>
