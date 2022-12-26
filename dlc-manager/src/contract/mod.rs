@@ -164,7 +164,7 @@ pub struct PreClosedContract {
     /// The signed contract that was closed.
     pub signed_contract: SignedContract,
     /// The attestations that were used to decrypt the broadcast CET.
-    pub attestations: Vec<OracleAttestation>,
+    pub attestations: Option<Vec<OracleAttestation>>,
     /// The signed version of the CET that was broadcast.
     pub signed_cet: Transaction,
 }
@@ -173,9 +173,9 @@ pub struct PreClosedContract {
 #[derive(Clone)]
 pub struct ClosedContract {
     /// The attestations that were used to decrypt the broadcast CET.
-    pub attestations: Vec<OracleAttestation>,
+    pub attestations: Option<Vec<OracleAttestation>>,
     /// The signed version of the CET that was broadcast.
-    pub signed_cet: Transaction,
+    pub signed_cet: Option<Transaction>,
     /// The id of the contract
     pub contract_id: ContractId,
     /// The temporary id of the contract.

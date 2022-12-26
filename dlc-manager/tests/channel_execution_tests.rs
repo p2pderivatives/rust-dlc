@@ -6,12 +6,12 @@ use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::manager::Manager;
-use dlc_manager::ChannelId;
 use dlc_manager::{
     channel::{signed_channel::SignedChannelState, Channel},
     contract::Contract,
     Blockchain, Oracle, Storage, Wallet,
 };
+use dlc_manager::{ChannelId, ContractId};
 use dlc_messages::Message;
 use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use lightning::util::ser::Writeable;
@@ -50,6 +50,21 @@ type DlcParty = Arc<
     >,
 >;
 
+fn get_established_channel_contract_id(dlc_party: &DlcParty, channel_id: &ChannelId) -> ContractId {
+    let channel = dlc_party
+        .lock()
+        .unwrap()
+        .get_store()
+        .get_channel(&channel_id)
+        .unwrap()
+        .unwrap();
+    if let Channel::Signed(s) = channel {
+        return s.get_contract_id().expect("to have a contract id");
+    }
+
+    panic!("Invalid channel state {:?}.", channel);
+}
+
 fn alter_adaptor_sig(input: &EcdsaAdaptorSignature) -> EcdsaAdaptorSignature {
     let mut copy = input.as_ref().to_vec();
     let i = thread_rng().next_u32() as usize % secp256k1_zkp::ffi::ECDSA_ADAPTOR_SIGNATURE_LENGTH;
@@ -78,6 +93,7 @@ enum TestPath {
     RenewConfirmTimeout,
     RenewReject,
     RenewRace,
+    RenewEstablishedClose,
 }
 
 #[test]
@@ -120,6 +136,15 @@ fn channel_punish_buffer_test() {
 #[ignore]
 fn channel_renew_close_test() {
     channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewedClose);
+}
+
+#[test]
+#[ignore]
+fn channel_renew_established_close_test() {
+    channel_execution_test(
+        get_enum_test_params(1, 1, None),
+        TestPath::RenewEstablishedClose,
+    );
 }
 
 #[test]
@@ -558,14 +583,17 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
                     first.lock().unwrap().get_mut_store().save();
 
-                    settle_channel(
-                        first.clone(),
-                        first_send,
-                        second.clone(),
-                        second_send,
-                        channel_id,
-                        &sync_receive,
-                    );
+                    if let TestPath::RenewEstablishedClose = path {
+                    } else {
+                        settle_channel(
+                            first.clone(),
+                            first_send,
+                            second.clone(),
+                            second_send,
+                            channel_id,
+                            &sync_receive,
+                        );
+                    }
 
                     match path {
                         TestPath::SettleClose => {
@@ -620,8 +648,17 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 &test_params.contract_input,
                             );
                         }
-                        TestPath::RenewedClose | TestPath::SettleCheat => {
+                        TestPath::RenewedClose
+                        | TestPath::SettleCheat
+                        | TestPath::RenewEstablishedClose => {
                             first.lock().unwrap().get_mut_store().save();
+
+                            let check_prev_contract_close =
+                                if let TestPath::RenewEstablishedClose = path {
+                                    true
+                                } else {
+                                    false
+                                };
 
                             renew_channel(
                                 first.clone(),
@@ -631,6 +668,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 channel_id,
                                 &sync_receive,
                                 &test_params.contract_input,
+                                check_prev_contract_close,
                             );
 
                             if let TestPath::RenewedClose = path {
@@ -653,6 +691,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 channel_id,
                                 &sync_receive,
                                 &test_params.contract_input,
+                                false,
                             );
 
                             settle_channel(
@@ -693,6 +732,8 @@ fn close_established_channel<F>(
         .expect("to be able to unilaterally close.");
     assert_channel_state!(first, channel_id, Signed, Closing);
 
+    let contract_id = get_established_channel_contract_id(&first, &channel_id);
+
     first
         .lock()
         .unwrap()
@@ -723,6 +764,8 @@ fn close_established_channel<F>(
     //
     assert_channel_state!(first, channel_id, Signed, Closed);
 
+    assert_contract_state!(first, contract_id, PreClosed);
+
     second
         .lock()
         .unwrap()
@@ -730,6 +773,15 @@ fn close_established_channel<F>(
         .expect("to be able to do the periodic check");
 
     assert_channel_state!(second, channel_id, Signed, CounterClosed);
+    assert_contract_state!(second, contract_id, PreClosed);
+
+    generate_blocks(6);
+
+    first.lock().unwrap().periodic_check().unwrap();
+    second.lock().unwrap().periodic_check().unwrap();
+
+    assert_contract_state!(first, contract_id, Closed);
+    assert_contract_state!(second, contract_id, Closed);
 }
 
 fn cheat_punish<F: Fn(u64) -> ()>(
@@ -774,6 +826,8 @@ fn settle_channel(
     channel_id: ChannelId,
     sync_receive: &Receiver<()>,
 ) {
+    let contract_id = get_established_channel_contract_id(&first, &channel_id);
+
     let (settle_offer, _) = first
         .lock()
         .unwrap()
@@ -806,6 +860,9 @@ fn settle_channel(
     sync_receive.recv().expect("Error synchronizing");
     // Process Finalize
     sync_receive.recv().expect("Error synchronizing");
+
+    assert_contract_state!(first, contract_id, Closed);
+    assert_contract_state!(second, contract_id, Closed);
 
     assert_channel_state!(first, channel_id, Signed, Settled);
 
@@ -900,7 +957,14 @@ fn renew_channel(
     channel_id: ChannelId,
     sync_receive: &Receiver<()>,
     contract_input: &ContractInput,
+    check_prev_contract_close: bool,
 ) {
+    let prev_contract_id = if check_prev_contract_close {
+        Some(get_established_channel_contract_id(&first, &channel_id))
+    } else {
+        None
+    };
+
     let (renew_offer, _) = first
         .lock()
         .unwrap()
@@ -935,8 +999,17 @@ fn renew_channel(
     // Process Renew Finalize
     sync_receive.recv().expect("Error synchronizing");
 
+    if let Some(prev_contract_id) = prev_contract_id {
+        assert_contract_state!(first, prev_contract_id, Closed);
+        assert_contract_state!(second, prev_contract_id, Closed);
+    }
+
+    let new_contract_id = get_established_channel_contract_id(&first, &channel_id);
+
     assert_channel_state!(first, channel_id, Signed, Established);
+    assert_contract_state!(first, new_contract_id, Confirmed);
     assert_channel_state!(second, channel_id, Signed, Established);
+    assert_contract_state!(second, new_contract_id, Confirmed);
 }
 
 fn renew_reject(
@@ -1027,6 +1100,7 @@ fn collaborative_close<F: Fn(u64) -> ()>(
     sync_receive: &Receiver<()>,
     generate_blocks: &F,
 ) {
+    let contract_id = get_established_channel_contract_id(&first, &channel_id);
     let close_offer = first
         .lock()
         .unwrap()
@@ -1047,6 +1121,7 @@ fn collaborative_close<F: Fn(u64) -> ()>(
         .expect("to be able to accept a collaborative close");
 
     assert_channel_state!(second, channel_id, Signed, CollaborativelyClosed);
+    assert_contract_state!(second, contract_id, Closed);
 
     generate_blocks(2);
 
@@ -1057,6 +1132,7 @@ fn collaborative_close<F: Fn(u64) -> ()>(
         .expect("the check to succeed");
 
     assert_channel_state!(first, channel_id, Signed, CollaborativelyClosed);
+    assert_contract_state!(first, contract_id, Closed);
 }
 
 fn renew_timeout(

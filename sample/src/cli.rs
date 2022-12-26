@@ -279,14 +279,15 @@ pub(crate) async fn poll_for_user_input(
                                 }
                                 Contract::Closed(closed) => {
                                     println!("Closed contract: {}", id);
-                                    println!(
-                                        "Outcomes: {:?}",
-                                        closed
-                                            .attestations
-                                            .iter()
-                                            .map(|x| x.outcomes.clone())
-                                            .collect::<Vec<_>>()
-                                    );
+                                    if let Some(attestations) = closed.attestations {
+                                        println!(
+                                            "Outcomes: {:?}",
+                                            attestations
+                                                .iter()
+                                                .map(|x| x.outcomes.clone())
+                                                .collect::<Vec<_>>()
+                                        );
+                                    }
                                     println!("PnL: {} sats", closed.pnl)
                                 }
                                 Contract::Refunded(_) => {
