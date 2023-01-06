@@ -272,6 +272,8 @@ where
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferDlc, Error> {
+        contract_input.validate()?;
+
         let oracle_announcements = contract_input
             .contract_infos
             .iter()
