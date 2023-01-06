@@ -50,6 +50,10 @@ impl OfferedContract {
     /// Validate that the contract info covers all the possible outcomes that
     /// can be attested by the oracle(s).
     pub fn validate(&self) -> Result<(), crate::error::Error> {
+        dlc::util::validate_fee_rate(self.fee_rate_per_vb).map_err(|_| {
+            crate::error::Error::InvalidParameters("Fee rate is too high".to_string())
+        })?;
+
         for info in &self.contract_info {
             info.validate()?;
             let payouts = match &info.contract_descriptor {

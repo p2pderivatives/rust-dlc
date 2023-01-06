@@ -38,6 +38,8 @@ where
     W::Target: Wallet,
     B::Target: Blockchain,
 {
+    contract_input.validate()?;
+
     let (party_params, _, funding_inputs_info) = crate::utils::get_party_params(
         secp,
         contract_input.offer_collateral,
