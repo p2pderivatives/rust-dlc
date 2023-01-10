@@ -2,7 +2,10 @@ use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
 use dlc::{PartyParams, TxInputInfo};
-use dlc_messages::{oracle_msgs::OracleAttestation, FundingInput};
+use dlc_messages::{
+    oracle_msgs::{OracleAnnouncement, OracleAttestation},
+    FundingInput,
+};
 use dlc_trie::RangeInfo;
 #[cfg(not(feature = "fuzztarget"))]
 use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
@@ -173,8 +176,30 @@ pub(crate) fn get_range_info_and_oracle_sigs(
     ))
 }
 
+pub(crate) fn get_latest_maturity_date(
+    announcements: &[Vec<OracleAnnouncement>],
+) -> Result<u32, Error> {
+    announcements
+        .iter()
+        .flatten()
+        .map(|x| x.oracle_event.event_maturity_epoch)
+        .max()
+        .ok_or_else(|| {
+            Error::InvalidParameters("Could not find maximum event maturity.".to_string())
+        })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use dlc_messages::oracle_msgs::{EnumEventDescriptor, EventDescriptor, OracleEvent};
+    use secp256k1_zkp::{
+        rand::{thread_rng, RngCore},
+        schnorr::Signature,
+        XOnlyPublicKey,
+    };
+
     use super::*;
 
     #[test]
@@ -189,5 +214,35 @@ mod tests {
         let id = compute_id(transaction.txid(), output_index, &temporary_id);
 
         assert_eq!(expected_id, id);
+    }
+
+    #[test]
+    fn get_latest_maturity_date_test() {
+        let mut rand = thread_rng();
+        let maturity_dates: Vec<Vec<u32>> = (0..20)
+            .map(|_| (0..20).map(|_| rand.next_u32()).collect())
+            .collect();
+        let announcements: Vec<Vec<_>> = maturity_dates
+            .iter()
+            .map(|x| x.iter().map(|y| create_announcement(*y)).collect())
+            .collect();
+
+        assert_eq!(
+            *maturity_dates.iter().flatten().max().unwrap(),
+            get_latest_maturity_date(&announcements).expect("to have a latest maturity date.")
+        );
+    }
+
+    fn create_announcement(maturity: u32) -> OracleAnnouncement {
+        let xonly_pk = XOnlyPublicKey::from_str(
+            "e6642fd69bd211f93f7f1f36ca51a26a5290eb2dd1b0d8279a87bb0d480c8443",
+        )
+        .unwrap();
+
+        OracleAnnouncement {
+            announcement_signature: Signature::from_str("6470FD1303DDA4FDA717B9837153C24A6EAB377183FC438F939E0ED2B620E9EE5077C4A8B8DCA28963D772A94F5F0DDF598E1C47C137F91933274C7C3EDADCE8").unwrap(),
+            oracle_public_key: xonly_pk,
+            oracle_event: OracleEvent { oracle_nonces: vec![xonly_pk], event_maturity_epoch: maturity,event_descriptor: EventDescriptor::EnumEvent(EnumEventDescriptor { outcomes: vec!["1".to_string(), "2".to_string()] }), event_id: "01".to_string() },
+        }
     }
 }

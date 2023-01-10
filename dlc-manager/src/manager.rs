@@ -288,6 +288,7 @@ where
             &counter_party,
             &self.wallet,
             &self.blockchain,
+            &self.time,
         )?;
 
         offered_contract.validate()?;
@@ -729,6 +730,7 @@ where
             REFUND_DELAY,
             &self.wallet,
             &self.blockchain,
+            &self.time,
         )?;
 
         let msg = offered_channel.get_offer_channel_msg(&offered_contract);

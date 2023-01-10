@@ -66,7 +66,7 @@ pub(crate) use get_signed_channel_state;
 
 /// Creates an [`OfferedChannel`] and an associated [`OfferedContract`] using
 /// the given parameter.
-pub fn offer_channel<C: Signing, W: Deref, B: Deref>(
+pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     secp: &Secp256k1<C>,
     contract: &ContractInput,
     counter_party: &PublicKey,
@@ -75,10 +75,12 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref>(
     refund_delay: u32,
     wallet: &W,
     blockchain: &B,
+    time: &T,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
+    T::Target: Time,
 {
     let (offer_params, _, funding_inputs_info) = crate::utils::get_party_params(
         secp,
@@ -88,21 +90,15 @@ where
         blockchain,
     )?;
     let party_points = crate::utils::get_party_base_points(secp, wallet)?;
-    let closest_maturity_date = oracle_announcements
-        .iter()
-        .flat_map(|x| x.iter().map(|y| y.oracle_event.event_maturity_epoch))
-        .min()
-        .expect("to have a minimum.");
-
-    let refund_locktime = closest_maturity_date + refund_delay;
 
     let offered_contract = OfferedContract::new(
         contract,
         oracle_announcements.to_vec(),
         &offer_params,
         &funding_inputs_info,
-        refund_locktime,
         counter_party,
+        refund_delay,
+        time.unix_time_now() as u32,
     );
 
     let temporary_channel_id = get_new_temporary_id();
@@ -195,10 +191,10 @@ where
         &offer_revoke_params,
         &accept_revoke_params,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.contract_timeout,
+        offered_contract.refund_locktime,
         offered_contract.fee_rate_per_vb,
         0,
-        offered_contract.contract_maturity_bound,
+        offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
         Sequence(offered_channel.cet_nsequence),
     )?;
@@ -331,10 +327,10 @@ where
         &offer_revoke_params,
         &accept_revoke_params,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.contract_timeout,
+        offered_contract.refund_locktime,
         offered_contract.fee_rate_per_vb,
         0,
-        offered_contract.contract_maturity_bound,
+        offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
         Sequence(cet_nsequence),
     )?;
@@ -978,8 +974,9 @@ where
         oracle_announcements,
         &signed_channel.own_params,
         &[],
-        contract_input.maturity_time + refund_delay,
         &signed_channel.counter_party,
+        refund_delay,
+        time.unix_time_now() as u32,
     );
 
     offered_contract.fund_output_serial_id = 0;
@@ -1013,8 +1010,8 @@ where
         counter_payout,
         next_per_update_point,
         contract_info: (&offered_contract).into(),
-        cet_locktime: offered_contract.contract_maturity_bound,
-        refund_locktime: offered_contract.contract_timeout,
+        cet_locktime: offered_contract.cet_locktime,
+        refund_locktime: offered_contract.refund_locktime,
         cet_nsequence,
     };
 
@@ -1050,8 +1047,8 @@ pub fn on_renew_offer(
         funding_inputs_info: Vec::new(),
         fund_output_serial_id: 0,
         fee_rate_per_vb: signed_channel.fee_rate_per_vb,
-        contract_maturity_bound: renew_offer.cet_locktime,
-        contract_timeout: renew_offer.refund_locktime,
+        cet_locktime: renew_offer.cet_locktime,
+        refund_locktime: renew_offer.refund_locktime,
     };
 
     let mut state = SignedChannelState::RenewOffered {
@@ -1137,7 +1134,7 @@ where
         &signed_channel.fund_tx,
         &signed_channel.fund_script_pubkey,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.contract_timeout,
+        offered_contract.refund_locktime,
         offered_contract.fee_rate_per_vb,
         0,
         Sequence(cet_nsequence),
@@ -1251,7 +1248,7 @@ where
         &signed_channel.fund_tx,
         &signed_channel.fund_script_pubkey,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.contract_timeout,
+        offered_contract.refund_locktime,
         offered_contract.fee_rate_per_vb,
         0,
         Sequence(cet_nsequence),
