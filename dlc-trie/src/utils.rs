@@ -81,7 +81,7 @@ pub(crate) fn get_max_covering_paths(
         // a prefix with `min_nb_digits + 1`.
         let mut counters = infos
             .iter()
-            .map(|x| if **x == min_nb_digits { 0 } else { 1 })
+            .map(|x| usize::from(**x != min_nb_digits))
             .collect::<Vec<_>>();
         let mut i = 0;
         loop {
