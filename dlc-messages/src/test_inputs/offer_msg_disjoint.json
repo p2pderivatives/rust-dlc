@@ -1,0 +1,352 @@
+{
+  "protocolVersion": 1,
+  "contractFlags": 0,
+  "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+  "temporaryContractId": "70cd7bae325b7ac63cd92f15b9bbe5d342c23fda8ca01de2ea1d2a227a3c93f5",
+  "contractInfo": {
+    "disjointContractInfo": {
+      "totalCollateral": 101000000,
+      "contractInfos": [
+        {
+          "contractDescriptor": {
+            "enumeratedContractDescriptor": {
+              "payouts": [
+                {
+                  "outcome": "a",
+                  "offerPayout": 101000000
+                },
+                {
+                  "outcome": "b",
+                  "offerPayout": 0
+                },
+                {
+                  "outcome": "c",
+                  "offerPayout": 101000000
+                },
+                {
+                  "outcome": "d",
+                  "offerPayout": 0
+                }
+              ]
+            }
+          },
+          "oracleInfo": {
+            "multi": {
+              "threshold": 3,
+              "oracleAnnouncements": [
+                {
+                  "announcementSignature": "909a7dbba1180d50f73f0e595b20a5120a6da0aa461c81e50c54273aba6f46f7a661ffa6d3a164ed503ecbf9256f7c9fb265ca7c0bb8485ba3737e1b99a8fec6",
+                  "oraclePublicKey": "73fca9bb2fb07f932a522cadc5ef3795f6bdc1624341dd342115e54aa016a3fa",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "0689b7bc48b55b02ff9fb29e569c02a67f4c1523eacf515e1504d31f6b6890fd"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "enumEvent": {
+                        "outcomes": ["a", "b", "c", "d"]
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "2059ae07da56544c50cb4ad1b30055450429b8bf696609fb56e4e7b96bdb41bf0de5819d9e2ab8303c110f137ef00a365533ca155a4ea093ecd8837a7116eafd",
+                  "oraclePublicKey": "e3ddf669b499bec6f95b9de9b3dd6f47068c68cee3897a673134ba5457f75540",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "749a8dfb7855b610458651c9f5fc8064058305cf0b8e88ff2ab2a70cff7c155c"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "enumEvent": {
+                        "outcomes": ["a", "b", "c", "d"]
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "a036e6e89cd34ceec53974d0513b567e03558ef63b4bbd4e13dfc15c451fbb79e90c9191b7b28d2122387a7ef12e984d5cbff474ff44d86f5b57092b49e14faa",
+                  "oraclePublicKey": "64ea9b9a6786d2242ea99299fa9d4fce9515d99b4bedd884bb417cd7c1ee3a8e",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "37faf17a1ebdd2b558ac3547b3935b2903425fb1566e42329b8b0011027bbce8"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "enumEvent": {
+                        "outcomes": ["a", "b", "c", "d"]
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "79be467e5f2db1bcc974b9f0a046f797bb2815455b05aa292745a0c5821a19851a4e7d67ccc3e5a48668d4869f57710b9de31e81d3388d5a3a19e5ac967a6cfa",
+                  "oraclePublicKey": "21be122c6ed2b4dcbea17729664b3799f868b54c0bfe37c680ec53e2ac0a1e14",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "c6f2925f4a87c0dbabec87dfdf9c26efc147a80f09434383bd7a5125ac411c07"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "enumEvent": {
+                        "outcomes": ["a", "b", "c", "d"]
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "03117364ded4b7425782d722a63c4d28ab18bff89b08899b083b797f10294a6380881024d35dcdccdfdae23f2119c316797df79632306bdeddbc4ab5fb411dd4",
+                  "oraclePublicKey": "5faa94d2507e143e96b85bcf06ca582fac6950552ea2443bae54634e71872b92",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "0be0dde239f6b90e677f0d2a1f945bdd373667ca34be72d06ca9259fed2d48df"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "enumEvent": {
+                        "outcomes": ["a", "b", "c", "d"]
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                }
+              ],
+              "oracleParams": null
+            }
+          }
+        },
+        {
+          "contractDescriptor": {
+            "numericOutcomeContractDescriptor": {
+              "numDigits": 10,
+              "payoutFunction": {
+                "payoutFunctionPieces": [
+                  {
+                    "endPoint": {
+                      "eventOutcome": 0,
+                      "outcomePayout": 0,
+                      "extraPrecision": 0
+                    },
+                    "payoutCurvePiece": {
+                      "polynomialPayoutCurvePiece": {
+                        "payoutPoints": [
+                          {
+                            "eventOutcome": 3,
+                            "outcomePayout": 90000000,
+                            "extraPrecision": 0
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "endPoint": {
+                      "eventOutcome": 5,
+                      "outcomePayout": 101000000,
+                      "extraPrecision": 0
+                    },
+                    "payoutCurvePiece": {
+                      "polynomialPayoutCurvePiece": {
+                        "payoutPoints": []
+                      }
+                    }
+                  }
+                ],
+                "lastEndpoint": {
+                  "eventOutcome": 1023,
+                  "outcomePayout": 101000000,
+                  "extraPrecision": 0
+                }
+              },
+              "roundingIntervals": {
+                "intervals": [
+                  {
+                    "beginInterval": 0,
+                    "roundingMod": 1
+                  }
+                ]
+              }
+            }
+          },
+          "oracleInfo": {
+            "multi": {
+              "threshold": 3,
+              "oracleAnnouncements": [
+                {
+                  "announcementSignature": "751bc676adfc3aa9855a411e5a7097537b67784c97e0a7128d56cddb6efaf87852fcbcf90a9cc8154a07f51607dd9b3584301ee9b2cf43cdf76df3fd0241c06f",
+                  "oraclePublicKey": "b395df6d3b8cb48e452452ef4479f2198b555acaca6cd22bc183d38bd3e7cfd1",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "18c9cc2a169096863b6b0342bd8871708e45b1aa0d779c1fc7eadbe09ff64d96",
+                      "ab532fba44d2ed03ac6a7d71068d3361f531dfdb2c2d6fb3652421418970979b",
+                      "2997ed2014d127d553cedd50f996a910f15c37830a90ab7e3886054009643385",
+                      "78505cd545e5b183f556a69b2d296794fd88e7ee1efb9fd0f676b25113d0caf9",
+                      "c7f2c221181e701e6088ddbc38828bebbc2482c3b671918f95d070545405895b",
+                      "461e7ed8f29f84c8b99c6aba48bb86a4b8ca50a3c2da2eb78dfe2c5afbb4ba4c",
+                      "84036ba82584dc58a33b100b99644bcd3543310649dd0714781178b787b94325",
+                      "550f10c452c49a0ef3c8c7834fb507fd887914fcdd0cb37351aa1301ed0535cc",
+                      "3e52b88c9618bb52b193f6bc9183e577b2f6f884c81816236f0141d6a8d3808a",
+                      "05004deecc0dccfe42b4344b80c74b641d61b9fc2af690b81170a608f45dd369"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "digitDecompositionEvent": {
+                        "base": 2,
+                        "isSigned": false,
+                        "unit": "sats/sec",
+                        "precision": 0,
+                        "nbDigits": 10
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "97f4bfde486b1c9e9fea1268ae3ea71ed767e778a288c43304b3c0cc368d61e215da5ce32935981fd92dd2b2377fcc79e61d2dc51796a7e8603385b835aa61d8",
+                  "oraclePublicKey": "2bdcaf1b2bbcab9e07d62e5db42cb22b4c6d95ef9878ab2a7d8ce34fa07a669e",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "8e10ba33f9fa3e3bca8208cc2d56105e5098ec88d0eaa5108ab67cf79d687b59",
+                      "1fb62b0416c164628399a664b6a0475b91b9c16397d7f62ef584d548ad0b5976",
+                      "9be4e66be2f60e30725c5b53657fff711246a324dbc2d24e1e483b673bcddd47",
+                      "0baf6885af3088990f25f1796db6e24b909814a940743b2ac2685827942586b2",
+                      "9f5cc9c323689c39f2d0ea93003db474a3b6b1a68e49f56c42ab4fd7d8656e25",
+                      "e497cc3c87c44d746d02906c68cecf9e367ac09335911517735dc7f0c9e4e4c6",
+                      "cb44681c6f391e8ba50d63f720b24cfd01fb3cf19635ac79d2dc88be95d3141d",
+                      "adc82c94b445f7023415d314156e45e41e1e4e74200b15cf20f8d20e961196ab",
+                      "6c05a77acff21c5f2db436366a788a0fc485d451570d6e57ffa1251f083e6afb",
+                      "1d29ba8d77e3adce82ec16dcae4d3c6c4a64d885c038b3559343a6421e2b098f"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "digitDecompositionEvent": {
+                        "base": 2,
+                        "isSigned": false,
+                        "unit": "sats/sec",
+                        "precision": 0,
+                        "nbDigits": 10
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "42894f2a9e0696e1d9d65d43e77b1a097ed71ae2840d3e31c3027d202475b4a099012961d831a208d23ec002b05feba88ce001b9ba4b0b2f5a3bbb8e15bb3b22",
+                  "oraclePublicKey": "1d7abfa96498cd21f7b9e4cd51f98e511c458e668d578c291b29ce8175363c1a",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "fcab0ade72974956cb175fe0639c9d9ee883109b82108d0ee132140d7384081b",
+                      "c1a4cd76c6310bfa34799cfc310b74cd1027959cfe56b3fe625b7fa465399f5d",
+                      "821fcc46e9d99e5ee0fd5ab273e01b4d4456284936e8710440b8b554b42bec7b",
+                      "ca3fb3dc8f2f8012fdab224b0f14a8e5d6db3d5753b0312efee3d7a46954b9b5",
+                      "443fba71df6e8b6fa9953c2a9290d1db9ff346a5cbdf1d5ba21923f3b8bbf734",
+                      "665aae3c8f4055d9f046cbb15d43684977762066e6e83517ac884c55c64aba1c",
+                      "8f574d20840e4eb5ea051a37226dd30e42f86438af67bc24c36aa5a76f526c99",
+                      "2b4a55a85732fbd710e235040b70b23224f78434cbeb929dcae228c677bd79cf",
+                      "74429c0262812a2dc91b28997588dabbe76b658546a1be48cdea7d5720191d74",
+                      "cf620ae820f821bfef413146d07bb47f0bc6d48dbedc88e74d922b088b967951"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "digitDecompositionEvent": {
+                        "base": 2,
+                        "isSigned": false,
+                        "unit": "sats/sec",
+                        "precision": 0,
+                        "nbDigits": 10
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "adf2a3a91c1c4a8226135d14ff076be5b295238e8453a0ea638cc5fb965131fd18b4b13d6826fe97cd870872ad2e67f89a54fa80662bc377195b1fb293c1cca6",
+                  "oraclePublicKey": "e33670b49d4e2814a9cc5642e1f301c901903bee3c578cbfe8df639db811f130",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "16d2fc35e31422b8797089fb31da6f8669af27e11979c087e338bfc2621360eb",
+                      "5bdfbb6deeb2d381d3db004bddb396f3731fc2a417fcff258020ec4a7484b88c",
+                      "206d1d8f31b8b088ca1c728123714a0d36673ccbbbe1da8824472c7841fdd46c",
+                      "f902051374546edc4cfaa87c348facb14ccc3996fe52d72fe16901c388e292d8",
+                      "d5deed626f5c5378e2500f7a69b47fc37567b0ed9e40d7ca125eead5c4b8725d",
+                      "c7efddd2a0d15d751503b30d74276432ccd003e40d0d1a864086d5d8511abc93",
+                      "19027221efbb9d6f6aa6de66e2d47298d265c96060204b1e4db40880bfd67f40",
+                      "0a88a2dc8bc2ed45f9fd26e85a1b087c8dd3e2b2f49c1e413a29e4360e508ab8",
+                      "01bd9da1d6e56e3fab0dd2b6423d8cf5519c03f05360165ccbf01ae1c6385baa",
+                      "af36ca9d53e70f1205afa7cae3895244c7a96076c4d4cdfe27cca9c9828b3ee5"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "digitDecompositionEvent": {
+                        "base": 2,
+                        "isSigned": false,
+                        "unit": "sats/sec",
+                        "precision": 0,
+                        "nbDigits": 10
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                },
+                {
+                  "announcementSignature": "c3d807b20990c019b5b40f9bf2ca67ae83c180b1a9ac23d3e7e619d1761f5b61dae92412b97a04806c020ce89cd82ab8b67451fa2e7883185d250980806a1da1",
+                  "oraclePublicKey": "ca6c44779d14b0fa65e14e0f2be793185fd5bb9bf339d82da3c394cf57ea978c",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "f561a86ddefb5649c1cfd5170526b06ef64904a4beba284227e8d6b7dbfb9c09",
+                      "de8dee18e15ff727933b18060a30be3f67b79ad166525e0d5af37185ddff2979",
+                      "052614bd80c7def1f9b2057885a6f8ddab1145f1e9b7dce1e8d021c7432ad3b9",
+                      "0dc2c0d5613160779668881ca6970c2b51a7657aeb57029037c66ca5033cf2f6",
+                      "fe545e6bc2f1e2b87d53c71c2910f37cacfb0edc48c4fd03500345c09226ff7e",
+                      "7f0a629e8f65459d4e5e29d835977e19dad54fa8d8512b5789ea6f32870bf008",
+                      "12c4f51fe2769a3da88cdd41471adfd2da14237eac5c2e5ed9f90bdf2cbbc239",
+                      "339f9dbc7b1378f146307d56bbb9244472bd2da3aa212c7602889c370d46622c",
+                      "d17a88dbecba813b2e6b2cb50e1529383cc037cca19b9bea073c67f43ff7470b",
+                      "0a79cfd88e81adf74d05979f7c4f2028560012a430daa9b5a866d973ce54341e"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "digitDecompositionEvent": {
+                        "base": 2,
+                        "isSigned": false,
+                        "unit": "sats/sec",
+                        "precision": 0,
+                        "nbDigits": 10
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                }
+              ],
+              "oracleParams": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  "fundingPubkey": "03c28fffdf0cb2dd94cbf15b1aaf34dc10fa219def98c4e03244061e5de2e0b3b2",
+  "payoutSpk": "001477a7747f013439bd0c6f1d348890a3fb794e9319",
+  "payoutSerialId": 1976867744843505251,
+  "offerCollateral": 90000000,
+  "fundingInputs": [
+    {
+      "inputSerialId": 6635442967122272045,
+      "prevTx": "020000000001012e87fa61f0e308efc0e69f2fa5a37877273062197be7619440d4e4316bd739240000000000feffffff0200c2eb0b000000001600147f605c960f6c1d344aa1c2aaea467fb32becc9cffc2b17890000000016001421f94088f0eae145772c97232a46b810d12079b602473044022026a6a80db8da759e78de7caf94d46f304ecc4e0f0a99787ed66ffdee1934cd5a02207956faebd0132076cc94e8b1699eedad414f49ad6dac097f6f569b6208d669650121031afe05dfae23c60b1b1fdf704067923674f60cc762233ed9205954f28ab934fb4e010000",
+      "prevTxVout": 0,
+      "sequence": 4294967295,
+      "maxWitnessLen": 107,
+      "redeemScript": ""
+    }
+  ],
+  "changeSpk": "0014ec9652702cb715dd563234d01ce41ee83789c8b2",
+  "changeSerialId": 11651058207702948365,
+  "fundOutputSerialId": 16318646099148843066,
+  "feeRatePerVb": 2,
+  "cetLocktime": 1623133103,
+  "refundLocktime": 1623737904
+}
