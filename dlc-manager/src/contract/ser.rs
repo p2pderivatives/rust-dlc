@@ -97,8 +97,8 @@ impl_dlc_writeable!(OfferedContract, {
     (funding_inputs_info, vec),
     (fund_output_serial_id, writeable),
     (fee_rate_per_vb, writeable),
-    (contract_maturity_bound, writeable),
-    (contract_timeout, writeable),
+    (cet_locktime, writeable),
+    (refund_locktime, writeable),
     (counter_party, writeable)
 });
 impl_dlc_writeable_external!(RangeInfo, range_info, { (cet_index, usize), (adaptor_index, usize)});

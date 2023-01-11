@@ -157,6 +157,6 @@
   ],
   "fundOutputSerialId": 16475280753107887427,
   "feeRatePerVb": 2,
-  "contractMaturityBound": 1623133104,
-  "contractTimeout": 1623737904
+  "cetLocktime": 1623133104,
+  "refundLocktime": 1623737904
 }

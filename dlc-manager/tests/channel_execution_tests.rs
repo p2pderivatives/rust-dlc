@@ -35,7 +35,7 @@ use std::{
     },
 };
 
-use crate::test_utils::refresh_wallet;
+use crate::test_utils::{refresh_wallet, EVENT_MATURITY};
 
 type DlcParty = Arc<
     Mutex<
@@ -270,7 +270,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let alice_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
     let bob_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
     let mock_time = Arc::new(mocks::mock_time::MockTime {});
-    mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) - 1);
+    mocks::mock_time::set_time((EVENT_MATURITY as u64) - 1);
 
     let electrs = Arc::new(ElectrsBlockchainProvider::new(
         "http://localhost:3004/".to_string(),
@@ -500,7 +500,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
             generate_blocks(6);
 
-            mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) + 1);
+            mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
             alice_manager_send
                 .lock()
@@ -548,7 +548,6 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         second_send,
                         channel_id,
                         &sync_receive,
-                        &test_params.contract_input,
                         path,
                     );
                 }
@@ -1160,7 +1159,7 @@ fn renew_timeout(
 
         if let TestPath::RenewOfferTimeout = path {
             mocks::mock_time::set_time(
-                (contract_input.maturity_time as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+                (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
             );
             first
                 .lock()
@@ -1185,7 +1184,7 @@ fn renew_timeout(
 
             if let TestPath::RenewAcceptTimeout = path {
                 mocks::mock_time::set_time(
-                    (contract_input.maturity_time as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+                    (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
                 );
                 second
                     .lock()
@@ -1198,7 +1197,7 @@ fn renew_timeout(
                 // Process Confirm
                 sync_receive.recv().expect("Error synchronizing");
                 mocks::mock_time::set_time(
-                    (contract_input.maturity_time as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+                    (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
                 );
                 first
                     .lock()
@@ -1219,7 +1218,6 @@ fn settle_timeout(
     second_send: &Sender<Option<Message>>,
     channel_id: ChannelId,
     sync_receive: &Receiver<()>,
-    contract_input: &ContractInput,
     path: TestPath,
 ) {
     let (settle_offer, _) = first
@@ -1236,7 +1234,7 @@ fn settle_timeout(
 
     if let TestPath::SettleOfferTimeout = path {
         mocks::mock_time::set_time(
-            (contract_input.maturity_time as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+            (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
         );
         first
             .lock()
@@ -1261,7 +1259,7 @@ fn settle_timeout(
 
         if let TestPath::SettleAcceptTimeout = path {
             mocks::mock_time::set_time(
-                (contract_input.maturity_time as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+                (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
             );
             second
                 .lock()
@@ -1274,7 +1272,7 @@ fn settle_timeout(
             // Process Confirm
             sync_receive.recv().expect("Error synchronizing");
             mocks::mock_time::set_time(
-                (contract_input.maturity_time as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+                (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
             );
             first
                 .lock()

@@ -425,7 +425,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let alice_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
     let bob_store = Arc::new(mocks::memory_storage_provider::MemoryStorage::new());
     let mock_time = Arc::new(mocks::mock_time::MockTime {});
-    mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) - 1);
+    mocks::mock_time::set_time((EVENT_MATURITY as u64) - 1);
 
     let electrs = Arc::new(ElectrsBlockchainProvider::new(
         "http://localhost:3004/".to_string(),
@@ -649,7 +649,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             periodic_check!(alice_manager_send, contract_id, Confirmed);
             periodic_check!(bob_manager_send, contract_id, Confirmed);
 
-            mocks::mock_time::set_time((test_params.contract_input.maturity_time as u64) + 1);
+            mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
             // Select the first one to close or refund randomly
             let (first, second) = if thread_rng().next_u32() % 2 == 0 {
@@ -685,9 +685,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                     periodic_check!(second, contract_id, Confirmed);
 
                     mocks::mock_time::set_time(
-                        ((test_params.contract_input.maturity_time
-                            + dlc_manager::manager::REFUND_DELAY) as u64)
-                            + 1,
+                        ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1,
                     );
 
                     generate_blocks(10);

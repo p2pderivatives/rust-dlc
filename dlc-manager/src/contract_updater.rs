@@ -20,12 +20,12 @@ use crate::{
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
-    Blockchain, ChannelId, Signer, Wallet,
+    Blockchain, ChannelId, Signer, Time, Wallet,
 };
 
 /// Creates an [`OfferedContract`] and [`OfferDlc`] message from the provided
 /// contract and oracle information.
-pub fn offer_contract<C: Signing, W: Deref, B: Deref>(
+pub fn offer_contract<C: Signing, W: Deref, B: Deref, T: Deref>(
     secp: &Secp256k1<C>,
     contract_input: &ContractInput,
     oracle_announcements: Vec<Vec<OracleAnnouncement>>,
@@ -33,10 +33,12 @@ pub fn offer_contract<C: Signing, W: Deref, B: Deref>(
     counter_party: &PublicKey,
     wallet: &W,
     blockchain: &B,
+    time: &T,
 ) -> Result<(OfferedContract, OfferDlc), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
+    T::Target: Time,
 {
     contract_input.validate()?;
 
@@ -48,19 +50,14 @@ where
         blockchain,
     )?;
 
-    let closest_maturity_date = oracle_announcements
-        .iter()
-        .flat_map(|x| x.iter().map(|y| y.oracle_event.event_maturity_epoch))
-        .min()
-        .expect("to have a minimum.");
-
     let offered_contract = OfferedContract::new(
         contract_input,
         oracle_announcements,
         &party_params,
         &funding_inputs_info,
-        closest_maturity_date + refund_delay,
         counter_party,
+        refund_delay,
+        time.unix_time_now() as u32,
     );
 
     let offer_msg: OfferDlc = (&offered_contract).into();
@@ -94,10 +91,10 @@ where
         &offered_contract.offer_params,
         &accept_params,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.contract_timeout,
+        offered_contract.refund_locktime,
         offered_contract.fee_rate_per_vb,
         0,
-        offered_contract.contract_maturity_bound,
+        offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
     )?;
 
@@ -253,10 +250,10 @@ where
         &offered_contract.offer_params,
         &accept_params,
         &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.contract_timeout,
+        offered_contract.refund_locktime,
         offered_contract.fee_rate_per_vb,
         0,
-        offered_contract.contract_maturity_bound,
+        offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
     )?;
     let fund_output_value = dlc_transactions.get_fund_output().value;

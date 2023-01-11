@@ -41,9 +41,9 @@ pub struct OfferedContract {
     /// The fee rate to be used to construct the DLC transactions.
     pub fee_rate_per_vb: u64,
     /// The time at which the contract is expected to be closeable.
-    pub contract_maturity_bound: u32,
+    pub cet_locktime: u32,
     /// The time at which the contract becomes refundable.
-    pub contract_timeout: u32,
+    pub refund_locktime: u32,
 }
 
 impl OfferedContract {
@@ -79,12 +79,16 @@ impl OfferedContract {
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
         offer_params: &PartyParams,
         funding_inputs_info: &[FundingInputInfo],
-        refund_locktime: u32,
         counter_party: &PublicKey,
+        refund_delay: u32,
+        cet_locktime: u32,
     ) -> Self {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
 
         assert_eq!(contract.contract_infos.len(), oracle_announcements.len());
+
+        let latest_maturity = crate::utils::get_latest_maturity_date(&oracle_announcements)
+            .expect("to be able to retrieve latest maturity date");
 
         let fund_output_serial_id = get_new_serial_id();
         let contract_info = contract
@@ -106,8 +110,8 @@ impl OfferedContract {
             funding_inputs_info: funding_inputs_info.to_vec(),
             fund_output_serial_id,
             fee_rate_per_vb: contract.fee_rate,
-            contract_maturity_bound: contract.maturity_time,
-            contract_timeout: refund_locktime,
+            cet_locktime,
+            refund_locktime: latest_maturity + refund_delay,
             counter_party: *counter_party,
         }
     }
@@ -134,8 +138,8 @@ impl OfferedContract {
                 inputs,
                 input_amount,
             },
-            contract_maturity_bound: offer_dlc.cet_locktime,
-            contract_timeout: offer_dlc.refund_locktime,
+            cet_locktime: offer_dlc.cet_locktime,
+            refund_locktime: offer_dlc.refund_locktime,
             fee_rate_per_vb: offer_dlc.fee_rate_per_vb,
             fund_output_serial_id: offer_dlc.fund_output_serial_id,
             funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
@@ -164,8 +168,8 @@ impl From<&OfferedContract> for OfferDlc {
                 .collect(),
             change_spk: offered_contract.offer_params.change_script_pubkey.clone(),
             change_serial_id: offered_contract.offer_params.change_serial_id,
-            cet_locktime: offered_contract.contract_maturity_bound,
-            refund_locktime: offered_contract.contract_timeout,
+            cet_locktime: offered_contract.cet_locktime,
+            refund_locktime: offered_contract.refund_locktime,
             fee_rate_per_vb: offered_contract.fee_rate_per_vb,
             fund_output_serial_id: offered_contract.fund_output_serial_id,
         }

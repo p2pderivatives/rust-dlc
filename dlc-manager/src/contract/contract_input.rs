@@ -70,8 +70,6 @@ pub struct ContractInput {
     pub offer_collateral: u64,
     /// The collateral for the accepting party.
     pub accept_collateral: u64,
-    /// The time at which the contract is expected to mature.
-    pub maturity_time: u32,
     /// The fee rate used to construct the transactions.
     pub fee_rate: u64,
     /// The set of contract that make up the DLC (a single DLC can be based
@@ -110,7 +108,6 @@ mod tests {
         ContractInput {
             offer_collateral: 1000000,
             accept_collateral: 2000000,
-            maturity_time: 1000000,
             fee_rate: 1234,
             contract_infos: vec![ContractInputInfo {
                 contract_descriptor: ContractDescriptor::Enum(EnumDescriptor {
