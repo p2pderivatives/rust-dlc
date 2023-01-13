@@ -361,21 +361,25 @@ impl OfferDlc {
         min_timeout_interval: u32,
         max_timeout_interval: u32,
     ) -> Result<(), Error> {
+        match &self.contract_info {
+            ContractInfo::SingleContractInfo(s) => s.contract_info.oracle_info.validate(secp)?,
+            ContractInfo::DisjointContractInfo(d) => {
+                if d.contract_infos.len() < 2 {
+                    return Err(Error::InvalidArgument);
+                }
+
+                for c in &d.contract_infos {
+                    c.oracle_info.validate(secp)?;
+                }
+            }
+        }
+
         let closest_maturity_date = self.contract_info.get_closest_maturity_date();
         let valid_dates = self.cet_locktime <= closest_maturity_date
             && closest_maturity_date + min_timeout_interval <= self.refund_locktime
             && self.refund_locktime <= closest_maturity_date + max_timeout_interval;
         if !valid_dates {
             return Err(Error::InvalidArgument);
-        }
-
-        match &self.contract_info {
-            ContractInfo::SingleContractInfo(s) => s.contract_info.oracle_info.validate(secp)?,
-            ContractInfo::DisjointContractInfo(d) => {
-                for c in &d.contract_infos {
-                    c.oracle_info.validate(secp)?;
-                }
-            }
         }
 
         Ok(())
@@ -644,6 +648,35 @@ mod tests {
         too_long_timeout.refund_locktime -= 100;
 
         for invalid in &[invalid_maturity, too_short_timeout, too_long_timeout] {
+            invalid
+                .validate(SECP256K1, 86400 * 7, 86400 * 14)
+                .expect_err("Should not pass validation of invalid offer message.");
+        }
+    }
+
+    #[test]
+    fn disjoint_contract_offer_messages_fail_validation() {
+        let input = include_str!("./test_inputs/offer_msg_disjoint.json");
+        let offer: OfferDlc = serde_json::from_str(input).unwrap();
+
+        let mut no_contract_input = offer.clone();
+        no_contract_input.contract_info =
+            ContractInfo::DisjointContractInfo(contract_msgs::DisjointContractInfo {
+                total_collateral: 100000000,
+                contract_infos: vec![],
+            });
+
+        let mut single_contract_input = offer.clone();
+        single_contract_input.contract_info =
+            if let ContractInfo::DisjointContractInfo(d) = offer.contract_info {
+                let mut single = d.clone();
+                single.contract_infos.remove(1);
+                ContractInfo::DisjointContractInfo(single)
+            } else {
+                panic!("Expected disjoint contract info.");
+            };
+
+        for invalid in &[no_contract_input, single_contract_input] {
             invalid
                 .validate(SECP256K1, 86400 * 7, 86400 * 14)
                 .expect_err("Should not pass validation of invalid offer message.");
