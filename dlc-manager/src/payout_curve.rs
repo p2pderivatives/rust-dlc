@@ -538,6 +538,18 @@ impl RoundingIntervals {
             ));
         }
 
+        let mut cur = self.intervals[0].begin_interval;
+
+        if self.intervals.iter().skip(1).any(|x| {
+            let res = x.begin_interval <= cur;
+            cur = x.begin_interval;
+            res
+        }) {
+            return Err(Error::InvalidParameters(
+                "Rounding intervals being value are not strictly increasing".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
@@ -1047,5 +1059,76 @@ mod test {
         for pieces in invalid {
             PayoutFunction::new(pieces).expect_err("Invalid pieces should error");
         }
+    }
+
+    #[test]
+    fn rounding_intervals_valid_is_valid() {
+        let rounding_intervals = RoundingIntervals {
+            intervals: vec![
+                RoundingInterval {
+                    begin_interval: 0,
+                    rounding_mod: 1,
+                },
+                RoundingInterval {
+                    begin_interval: 10,
+                    rounding_mod: 1,
+                },
+            ],
+        };
+
+        rounding_intervals.validate().expect("it to be valid.");
+    }
+
+    #[test]
+    fn rounding_intervals_empty_is_invalid() {
+        let rounding_intervals = RoundingIntervals { intervals: vec![] };
+
+        rounding_intervals
+            .validate()
+            .expect_err("should not accept empty rounding intervals");
+    }
+
+    #[test]
+    fn rounding_intervals_does_not_start_at_zero_is_invalid() {
+        let rounding_intervals = RoundingIntervals {
+            intervals: vec![
+                RoundingInterval {
+                    begin_interval: 1,
+                    rounding_mod: 1,
+                },
+                RoundingInterval {
+                    begin_interval: 10,
+                    rounding_mod: 1,
+                },
+            ],
+        };
+
+        rounding_intervals
+            .validate()
+            .expect_err("should not accept rounding interval not starting at zero");
+    }
+
+    #[test]
+    fn rounding_intervals_not_strictly_increasing_is_invalid() {
+        let rounding_intervals = RoundingIntervals {
+            intervals: vec![
+                RoundingInterval {
+                    begin_interval: 0,
+                    rounding_mod: 1,
+                },
+                RoundingInterval {
+                    begin_interval: 10,
+                    rounding_mod: 1,
+                },
+                RoundingInterval {
+                    begin_interval: 10,
+                    rounding_mod: 1,
+                },
+            ],
+        };
+
+        rounding_intervals
+            .validate()
+            .expect_err("should not accept rounding intervals not strictly increasing");
     }
 }
