@@ -94,8 +94,10 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
     )
 }
 
-pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> u64 {
-    (f64::ceil((weight as f64) / 4.0) as u64) * fee_rate
+pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
+    (f64::ceil((weight as f64) / 4.0) as u64)
+        .checked_mul(fee_rate)
+        .ok_or(Error::InvalidArgument)
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {

@@ -172,7 +172,7 @@ pub fn create_settle_transaction(
     lock_time: u32,
     fund_output_value: u64,
     fee_rate_per_vb: u64,
-) -> Transaction {
+) -> Result<Transaction, Error> {
     let offer_descriptor = settle_descriptor(
         offer_revoke_params,
         &accept_revoke_params.own_pk,
@@ -206,19 +206,19 @@ pub fn create_settle_transaction(
         - crate::util::weight_to_fee(
             SETTLE_INPUT_WEIGHT + output.len() * SETTLE_OUTPUT_WEIGHT,
             fee_rate_per_vb,
-        ))
+        )?)
         / (output.len() as u64);
 
     for mut o in &mut output {
         o.value += remaining_fee;
     }
 
-    Transaction {
+    Ok(Transaction {
         version: super::TX_VERSION,
         lock_time: PackedLockTime(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
-    }
+    })
 }
 
 /// Returns the transactions necessary to establish a DLC channel.
@@ -236,7 +236,7 @@ pub fn create_channel_transactions(
     cet_nsequence: Sequence,
 ) -> Result<DlcChannelTransactions, Error> {
     let extra_fee =
-        super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb);
+        super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
     let (fund, funding_script_pubkey) = super::create_fund_transaction_with_fees(
         offer_params,
         accept_params,
@@ -277,7 +277,7 @@ pub fn create_renewal_channel_transactions(
     cet_nsequence: Sequence,
 ) -> Result<DlcChannelTransactions, Error> {
     let extra_fee =
-        super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb);
+        super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
 
     let (fund_vout, fund_output) =
         super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_v0_p2wsh())
@@ -405,7 +405,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
     let output_weight = N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
     let tx_fee =
-        crate::util::weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb);
+        crate::util::weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
     let output_value = prev_tx.output[0].value - tx_fee;
 
@@ -492,7 +492,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
     let output_weight = N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
     let tx_fee =
-        crate::util::weight_to_fee(PUNISH_SETTLE_INPUT_WEIGHT + output_weight, fee_rate_per_vb);
+        crate::util::weight_to_fee(PUNISH_SETTLE_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
@@ -804,7 +804,8 @@ mod tests {
             0,
             200020000,
             FEE_RATE_PER_VB,
-        );
+        )
+        .unwrap();
 
         // Offerer can create and sign with accepter revocation and publish secret.
         create_and_sign_punish_settle_transaction(

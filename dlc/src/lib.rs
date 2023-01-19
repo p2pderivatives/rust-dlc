@@ -67,6 +67,18 @@ const TX_INPUT_BASE_WEIGHT: usize = 164;
 /// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>
 pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
+macro_rules! checked_add {
+    ($a: expr, $b: expr) => {
+        $a.checked_add($b).ok_or(Error::InvalidArgument)
+    };
+    ($a: expr, $b: expr, $c: expr) => {
+        checked_add!(checked_add!($a, $b)?, $c)
+    };
+    ($a: expr, $b: expr, $c: expr, $d: expr) => {
+        checked_add!(checked_add!($a, $b, $c)?, $d)
+    };
+}
+
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
 /// accepting the contract.
@@ -249,38 +261,52 @@ impl PartyParams {
         fee_rate_per_vb: u64,
         extra_fee: u64,
     ) -> Result<(TxOut, u64, u64), Error> {
-        let inputs_weight: usize = self
-            .inputs
-            .iter()
-            .map(|i| {
-                let script_size = util::redeem_script_to_script_sig(&i.redeem_script).len();
-                // Base tx input weight + redeem script weight (*4 because non witness)
-                // + max witness weight (*1 because witness)
-                TX_INPUT_BASE_WEIGHT + 4 * script_size + i.max_witness_len
-            })
-            .sum();
+        let mut inputs_weight: usize = 0;
+
+        for w in &self.inputs {
+            let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
+                .len()
+                .checked_mul(4)
+                .ok_or(Error::InvalidArgument)?;
+            inputs_weight = checked_add!(
+                inputs_weight,
+                TX_INPUT_BASE_WEIGHT,
+                script_weight,
+                w.max_witness_len
+            )?;
+        }
 
         // Value size + script length var_int + ouput script pubkey size
         let change_size = self.change_script_pubkey.len();
         // Change size is scaled by 4 from vBytes to weight units
-        let change_weight = change_size * 4;
+        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument)?;
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
         let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT / 2;
 
-        let total_fund_weight = this_party_fund_base_weight + inputs_weight + change_weight + 36;
-        let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb);
+        let total_fund_weight = checked_add!(
+            this_party_fund_base_weight,
+            inputs_weight,
+            change_weight,
+            36
+        )?;
+        let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
         let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
 
         // size of the payout script pubkey scaled by 4 from vBytes to weight units
-        let output_spk_weight = self.payout_script_pubkey.len() * 4;
-        let total_cet_weight = this_party_cet_base_weight + output_spk_weight;
-        let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb);
-        let required_input_funds = self.collateral + fund_fee + cet_or_refund_fee + extra_fee;
+        let output_spk_weight = self
+            .payout_script_pubkey
+            .len()
+            .checked_mul(4)
+            .ok_or(Error::InvalidArgument)?;
+        let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
+        let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
+        let required_input_funds =
+            checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
             return Err(Error::InvalidArgument);
         }
@@ -363,14 +389,14 @@ pub(crate) fn create_fund_transaction_with_fees(
     fund_output_serial_id: u64,
     extra_fee: u64,
 ) -> Result<(Transaction, Script), Error> {
-    let total_collateral = offer_params.collateral + accept_params.collateral;
+    let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
     let (offer_change_output, offer_fund_fee, offer_cet_fee) =
         offer_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
     let (accept_change_output, accept_fund_fee, accept_cet_fee) =
         accept_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
 
-    let fund_output_value = offer_params.input_amount + accept_params.input_amount
+    let fund_output_value = checked_add!(offer_params.input_amount, accept_params.input_amount)?
         - offer_change_output.value
         - accept_change_output.value
         - offer_fund_fee
@@ -428,11 +454,16 @@ pub(crate) fn create_cets_and_refund_tx(
     cet_lock_time: u32,
     cet_nsequence: Option<Sequence>,
 ) -> Result<(Vec<Transaction>, Transaction), Error> {
-    let total_collateral = offer_params.collateral + accept_params.collateral;
+    let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
-    let has_proper_outcomes = payouts
-        .iter()
-        .all(|o| o.offer + o.accept == total_collateral);
+    let has_proper_outcomes = payouts.iter().all(|o| {
+        let total = checked_add!(o.offer, o.accept);
+        if let Ok(total) = total {
+            total == total_collateral
+        } else {
+            false
+        }
+    });
 
     if !has_proper_outcomes {
         return Err(Error::InvalidArgument);

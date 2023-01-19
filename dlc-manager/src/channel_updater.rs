@@ -1699,7 +1699,7 @@ fn get_settle_tx_and_adaptor_sig(
         lock_time,
         fund_tx.output[fund_vout].value,
         fee_rate_per_vb,
-    );
+    )?;
 
     if let Some((adaptor_sig, fund_pk)) = counter_adaptor_signature {
         verify_tx_adaptor_signature(
