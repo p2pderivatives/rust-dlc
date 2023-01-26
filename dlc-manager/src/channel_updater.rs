@@ -171,7 +171,7 @@ where
         secp,
         &offered_channel.party_points.revocation_basepoint,
         &first_per_update_point,
-    )?;
+    );
 
     let total_collateral = offered_contract.total_collateral;
 
@@ -179,7 +179,7 @@ where
         secp,
         &accept_points.revocation_basepoint,
         &offered_channel.per_update_point,
-    )?;
+    );
 
     let DlcChannelTransactions {
         buffer_transaction,
@@ -201,8 +201,7 @@ where
 
     let own_base_secret_key = wallet.get_secret_key_for_pubkey(&accept_points.own_basepoint)?;
 
-    let own_secret_key = derive_private_key(secp, &first_per_update_point, &own_base_secret_key)
-        .expect("to get a valid secret.");
+    let own_secret_key = derive_private_key(secp, &first_per_update_point, &own_base_secret_key);
 
     let channel_id = crate::utils::compute_id(
         dlc_transactions.fund.txid(),
@@ -298,8 +297,7 @@ where
         secp,
         &offered_channel.per_update_point,
         &offer_own_base_secret,
-    )
-    .expect("to be able to derive the offer own secret");
+    );
 
     let offer_fund_sk =
         signer.get_secret_key_for_pubkey(&offered_contract.offer_params.fund_pubkey)?;
@@ -308,12 +306,12 @@ where
         secp,
         &accept_points.revocation_basepoint,
         &offered_channel.per_update_point,
-    )?;
+    );
     let accept_revoke_params = accept_points.get_revokable_params(
         secp,
         &offered_channel.party_points.revocation_basepoint,
         &accept_channel.first_per_update_point,
-    )?;
+    );
 
     let total_collateral = offered_contract.total_collateral;
 
@@ -443,11 +441,11 @@ where
 {
     let own_publish_pk = accepted_channel
         .accept_base_points
-        .get_publish_pk(secp, &accepted_channel.accept_per_update_point)?;
+        .get_publish_pk(secp, &accepted_channel.accept_per_update_point);
 
     let counter_own_pk = accepted_channel
         .offer_base_points
-        .get_own_pk(secp, &accepted_channel.offer_per_update_point)?;
+        .get_own_pk(secp, &accepted_channel.offer_per_update_point);
     verify_tx_adaptor_signature(
         secp,
         &accepted_channel.buffer_transaction,
@@ -812,7 +810,7 @@ where
         secp,
         &channel.counter_points.revocation_basepoint,
         own_next_per_update_point,
-    )?;
+    );
 
     verify_tx_adaptor_signature(
         secp,
@@ -1107,7 +1105,7 @@ where
         secp,
         &signed_channel.own_points.revocation_basepoint,
         &offer_next_per_update_point,
-    )?;
+    );
 
     let accept_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
         per_update_seed.as_ref(),
@@ -1120,7 +1118,7 @@ where
         secp,
         &signed_channel.counter_points.revocation_basepoint,
         &accept_per_update_point,
-    )?;
+    );
 
     let DlcChannelTransactions {
         buffer_transaction,
@@ -1149,8 +1147,7 @@ where
         &offer_revoke_params.publish_pk.inner,
     )?;
 
-    let own_secret_key = derive_private_key(secp, &accept_per_update_point, &own_base_secret_key)
-        .expect("to get a valid secret.");
+    let own_secret_key = derive_private_key(secp, &accept_per_update_point, &own_base_secret_key);
 
     let (accepted_contract, adaptor_sigs) = accept_contract_internal(
         secp,
@@ -1224,12 +1221,12 @@ where
         secp,
         &signed_channel.counter_points.revocation_basepoint,
         &offer_per_update_point,
-    )?;
+    );
     let accept_revoke_params = signed_channel.counter_points.get_revokable_params(
         secp,
         &signed_channel.own_points.revocation_basepoint,
         &renew_accept.next_per_update_point,
-    )?;
+    );
 
     let total_collateral = offered_contract.total_collateral;
 
@@ -1254,7 +1251,7 @@ where
         Sequence(cet_nsequence),
     )?;
 
-    let offer_own_sk = derive_private_key(secp, &offer_per_update_point, &own_base_secret_key)?;
+    let offer_own_sk = derive_private_key(secp, &offer_per_update_point, &own_base_secret_key);
     let cet_adaptor_signatures: Vec<_> = (&renew_accept.cet_adaptor_signatures).into();
 
     let (signed_contract, cet_adaptor_signatures) = verify_accepted_and_sign_contract_internal(
@@ -1348,11 +1345,11 @@ where
 
     let own_publish_pk = signed_channel
         .own_points
-        .get_publish_pk(secp, &accept_per_update_point)?;
+        .get_publish_pk(secp, &accept_per_update_point);
 
     let counter_own_pk = signed_channel
         .counter_points
-        .get_own_pk(secp, &offer_per_update_point)?;
+        .get_own_pk(secp, &offer_per_update_point);
 
     verify_tx_adaptor_signature(
         secp,
@@ -1681,13 +1678,13 @@ fn get_settle_tx_and_adaptor_sig(
         secp,
         &accept_points.revocation_basepoint,
         offer_per_update_point,
-    )?;
+    );
 
     let accept_revoke_params = accept_points.get_revokable_params(
         secp,
         &offer_points.revocation_basepoint,
         accept_per_update_point,
-    )?;
+    );
 
     let settle_tx = dlc::channel::create_settle_transaction(
         &fund_tx_in,
@@ -1790,8 +1787,7 @@ where
         secp,
         &signed_channel.own_per_update_point,
         &publish_base_secret,
-    )
-    .expect("to be able to derive the publish secret");
+    );
 
     let counter_buffer_signature = buffer_adaptor_signature.decrypt(&publish_sk)?;
 
@@ -1840,13 +1836,13 @@ where
         secp,
         &accept_points.revocation_basepoint,
         offer_per_update_point,
-    )?;
+    );
 
     let accept_revoke_params = accept_points.get_revokable_params(
         secp,
         &offer_points.revocation_basepoint,
         accept_per_update_point,
-    )?;
+    );
 
     let (own_per_update_point, own_basepoint, counter_pk, adaptor_sigs) = if is_offer {
         (
@@ -1872,7 +1868,7 @@ where
     };
 
     let base_secret = signer.get_secret_key_for_pubkey(own_basepoint)?;
-    let own_sk = derive_private_key(secp, own_per_update_point, &base_secret)?;
+    let own_sk = derive_private_key(secp, own_per_update_point, &base_secret);
 
     dlc::channel::sign_cet(
         secp,
@@ -1920,8 +1916,7 @@ where
         secp,
         &signed_channel.own_per_update_point,
         &publish_base_secret,
-    )
-    .expect("to be able to derive the publish secret");
+    );
 
     let counter_settle_signature = counter_settle_adaptor_signature.decrypt(&publish_sk)?;
 

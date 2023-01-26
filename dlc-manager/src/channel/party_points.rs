@@ -7,8 +7,6 @@ use dlc::channel::RevokeParams;
 use lightning::ln::chan_utils::{derive_public_key, derive_public_revocation_key};
 use secp256k1_zkp::{All, PublicKey, Secp256k1, Signing, Verification};
 
-use crate::error::Error;
-
 /// Base points used by a party of a DLC channel to derive public and private
 /// values necessary for state update throughout the lifetime of the channel.
 #[derive(Clone, Debug)]
@@ -49,16 +47,16 @@ impl PartyBasePoints {
         secp: &Secp256k1<All>,
         countersignatory_revocation_basepoint: &PublicKey,
         per_update_point: &PublicKey,
-    ) -> Result<RevokeParams, Error> {
-        Ok(RevokeParams {
-            own_pk: derive_bitcoin_public_key(secp, per_update_point, &self.own_basepoint)?,
-            publish_pk: derive_bitcoin_public_key(secp, per_update_point, &self.publish_basepoint)?,
+    ) -> RevokeParams {
+        RevokeParams {
+            own_pk: derive_bitcoin_public_key(secp, per_update_point, &self.own_basepoint),
+            publish_pk: derive_bitcoin_public_key(secp, per_update_point, &self.publish_basepoint),
             revoke_pk: derive_bitcoin_public_revocation_key(
                 secp,
                 per_update_point,
                 countersignatory_revocation_basepoint,
-            )?,
-        })
+            ),
+        }
     }
 
     /// Returns an "own" point using the own base point and given per update point.
@@ -66,9 +64,8 @@ impl PartyBasePoints {
         &self,
         secp: &Secp256k1<C>,
         per_update_point: &PublicKey,
-    ) -> Result<PublicKey, Error> {
-        let key = derive_public_key(secp, per_update_point, &self.own_basepoint)?;
-        Ok(key)
+    ) -> PublicKey {
+        derive_public_key(secp, per_update_point, &self.own_basepoint)
     }
 
     /// Returns a publish point using the publish base point and given per update point.
@@ -76,9 +73,8 @@ impl PartyBasePoints {
         &self,
         secp: &Secp256k1<C>,
         per_update_point: &PublicKey,
-    ) -> Result<PublicKey, Error> {
-        let key = derive_public_key(secp, per_update_point, &self.publish_basepoint)?;
-        Ok(key)
+    ) -> PublicKey {
+        derive_public_key(secp, per_update_point, &self.publish_basepoint)
     }
 
     /// Returns a publish point using the publish base point and given per update point.
@@ -86,9 +82,8 @@ impl PartyBasePoints {
         &self,
         secp: &Secp256k1<C>,
         per_update_point: &PublicKey,
-    ) -> Result<PublicKey, Error> {
-        let key = derive_public_key(secp, per_update_point, &self.revocation_basepoint)?;
-        Ok(key)
+    ) -> PublicKey {
+        derive_public_key(secp, per_update_point, &self.revocation_basepoint)
     }
 }
 
@@ -96,28 +91,26 @@ fn derive_bitcoin_public_key<C: Signing>(
     secp: &Secp256k1<C>,
     per_commitment_point: &PublicKey,
     base_point: &PublicKey,
-) -> Result<BitcoinPublicKey, Error> {
-    let inner = derive_public_key(secp, per_commitment_point, base_point)
-        .map_err(|e| Error::InvalidParameters(format!("Invalid point was given {}", e)))?;
-    Ok(BitcoinPublicKey {
+) -> BitcoinPublicKey {
+    let inner = derive_public_key(secp, per_commitment_point, base_point);
+    BitcoinPublicKey {
         compressed: true,
         inner,
-    })
+    }
 }
 
 fn derive_bitcoin_public_revocation_key<C: Verification>(
     secp: &Secp256k1<C>,
     per_commitment_point: &PublicKey,
     countersignatory_revocation_base_point: &PublicKey,
-) -> Result<BitcoinPublicKey, Error> {
+) -> BitcoinPublicKey {
     let inner = derive_public_revocation_key(
         secp,
         per_commitment_point,
         countersignatory_revocation_base_point,
-    )
-    .map_err(|e| Error::InvalidParameters(format!("Could not derive revocation secret: {}", e)))?;
-    Ok(BitcoinPublicKey {
+    );
+    BitcoinPublicKey {
         compressed: true,
         inner,
-    })
+    }
 }
