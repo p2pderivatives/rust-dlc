@@ -627,15 +627,6 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                             channel_id,
                         );
                     }
-                    settle_channel(
-                        first.clone(),
-                        first_send,
-                        first_receive,
-                        second.clone(),
-                        second_send,
-                        second_receive,
-                        channel_id,
-                    );
 
                     match path {
                         TestPath::SettleClose => {

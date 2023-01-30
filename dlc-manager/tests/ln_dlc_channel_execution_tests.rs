@@ -306,7 +306,7 @@ impl EventHandler for LnDlcParty {
             Event::PendingHTLCsForwardable { .. } => {
                 self.channel_manager.process_pending_htlc_forwards();
             }
-            Event::PaymentClaimed { purpose, .. } => {
+            Event::PaymentClaimable { purpose, .. } => {
                 let payment_preimage = match purpose {
                     PaymentPurpose::InvoicePayment {
                         payment_preimage, ..

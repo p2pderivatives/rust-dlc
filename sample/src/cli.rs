@@ -283,7 +283,7 @@ pub(crate) async fn poll_for_user_input(
                                         "Outcomes: {:?}",
                                         closed
                                             .attestations
-                                            .unwrap_or(vec![])
+                                            .unwrap_or_default()
                                             .iter()
                                             .map(|x| x.outcomes.clone())
                                             .collect::<Vec<_>>()
