@@ -1918,7 +1918,7 @@ where
                         &self.secp,
                         &signed_channel.counter_points.revocation_basepoint,
                         &per_update_point,
-                    )?;
+                    );
 
                     let counter_per_update_point =
                         PublicKey::from_secret_key(&self.secp, &counter_per_update_secret);
@@ -1927,14 +1927,14 @@ where
                         .wallet
                         .get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
 
-                    let own_sk = derive_private_key(&self.secp, &per_update_point, &base_own_sk)?;
+                    let own_sk = derive_private_key(&self.secp, &per_update_point, &base_own_sk);
 
                     let counter_revocation_params =
                         signed_channel.counter_points.get_revokable_params(
                             &self.secp,
                             &signed_channel.own_points.revocation_basepoint,
                             &counter_per_update_point,
-                        )?;
+                        );
 
                     let witness = if signed_channel.own_params.fund_pubkey
                         < signed_channel.counter_params.fund_pubkey
@@ -1965,7 +1965,7 @@ where
                         &self.secp,
                         &counter_per_update_secret,
                         own_revocation_base_secret,
-                    )?;
+                    );
 
                     let (offer_params, accept_params) = if is_offer {
                         (&own_revocation_params, &counter_revocation_params)
