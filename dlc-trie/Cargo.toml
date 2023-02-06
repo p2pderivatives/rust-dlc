@@ -5,7 +5,7 @@ homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "dlc-trie"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-trie"
-version = "0.3.0"
+version = "0.4.0"
 
 [features]
 parallel = ["rayon"]
@@ -13,7 +13,7 @@ use-serde = ["serde", "dlc/use-serde"]
 
 [dependencies]
 bitcoin = {version = "0.29.2" }
-dlc = {version = "0.3.0", path = "../dlc"}
+dlc = {version = "0.4.0", path = "../dlc"}
 rayon = {version = "1.5", optional = true}
 secp256k1-zkp = {version = "0.7.0" }
 serde = {version = "1.0", optional = true, default_features = false, features = ["derive"]}

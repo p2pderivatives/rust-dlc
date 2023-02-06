@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2023-02-06
+
+### Added
+- support for DLC channels
+
+### Changed
+- remove event maturity from `ContractInput`. The maturity is now computed from the oracle event information.
+- closed contract data is now pruned geatly reducing storage usage.
+
+### Fixed
+- better validation of rounding intervals
+- better validation of `ContractInput` and contract offers.
+
 ## [0.3.0] - 2022-10-28
 
 ### Changed
