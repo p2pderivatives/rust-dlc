@@ -12,7 +12,7 @@ use dlc_manager::{
     Blockchain, Oracle, Storage, Wallet,
 };
 use dlc_manager::{ChannelId, ContractId};
-use dlc_messages::Message;
+use dlc_messages::{ChannelMessage, Message};
 use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use lightning::util::ser::Writeable;
 use mocks::memory_storage_provider::MemoryStorage;
@@ -380,22 +380,22 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let path_copy = path.clone();
     let msg_filter = move |msg| {
         if let TestPath::SettleAcceptTimeout = path_copy {
-            if let Message::SettleConfirm(_) = msg {
+            if let Message::Channel(ChannelMessage::SettleConfirm(_)) = msg {
                 return None;
             }
         }
         if let TestPath::SettleConfirmTimeout = path_copy {
-            if let Message::SettleFinalize(_) = msg {
+            if let Message::Channel(ChannelMessage::SettleFinalize(_)) = msg {
                 return None;
             }
         }
         if let TestPath::RenewAcceptTimeout = path_copy {
-            if let Message::RenewConfirm(_) = msg {
+            if let Message::Channel(ChannelMessage::RenewConfirm(_)) = msg {
                 return None;
             }
         }
         if let TestPath::RenewConfirmTimeout = path_copy {
-            if let Message::RenewFinalize(_) = msg {
+            if let Message::Channel(ChannelMessage::RenewFinalize(_)) = msg {
                 return None;
             }
         }
@@ -405,12 +405,12 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let msg_filter_copy = msg_filter.clone();
     let path_copy = path.clone();
     let alter_sign = move |msg| match msg {
-        Message::SignChannel(mut sign_channel) => {
+        Message::Channel(ChannelMessage::Sign(mut sign_channel)) => {
             if path_copy == TestPath::BadSignBufferAdaptorSignature {
                 sign_channel.buffer_adaptor_signature =
                     alter_adaptor_sig(&sign_channel.buffer_adaptor_signature);
             }
-            Some(Message::SignChannel(sign_channel))
+            Some(Message::Channel(ChannelMessage::Sign(sign_channel)))
         }
         _ => msg_filter_copy(msg),
     };
@@ -448,7 +448,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
     let temporary_channel_id = offer_msg.temporary_channel_id;
     bob_send
-        .send(Some(Message::OfferChannel(offer_msg)))
+        .send(Some(Message::Channel(ChannelMessage::Offer(offer_msg))))
         .unwrap();
 
     assert_channel_state!(bob_manager_send, temporary_channel_id, Offered);
@@ -470,7 +470,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                 alter_adaptor_sig(&accept_msg.buffer_adaptor_signature);
             bob_expect_error.store(true, Ordering::Relaxed);
             alice_send
-                .send(Some(Message::AcceptChannel(accept_msg)))
+                .send(Some(Message::Channel(ChannelMessage::Accept(accept_msg))))
                 .unwrap();
             sync_receive.recv().expect("Error synchronizing");
             assert_channel_state!(bob_manager_send, temporary_channel_id, FailedAccept);
@@ -478,7 +478,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         TestPath::BadSignBufferAdaptorSignature => {
             alice_expect_error.store(true, Ordering::Relaxed);
             alice_send
-                .send(Some(Message::AcceptChannel(accept_msg)))
+                .send(Some(Message::Channel(ChannelMessage::Accept(accept_msg))))
                 .unwrap();
             // Bob receives accept message
             sync_receive.recv().expect("Error synchronizing");
@@ -488,7 +488,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         }
         _ => {
             alice_send
-                .send(Some(Message::AcceptChannel(accept_msg)))
+                .send(Some(Message::Channel(ChannelMessage::Accept(accept_msg))))
                 .unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
@@ -834,7 +834,9 @@ fn settle_channel(
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
-        .send(Some(Message::SettleOffer(settle_offer)))
+        .send(Some(Message::Channel(ChannelMessage::SettleOffer(
+            settle_offer,
+        ))))
         .unwrap();
 
     sync_receive.recv().expect("Error synchronizing");
@@ -850,7 +852,9 @@ fn settle_channel(
         .expect("to be able to accept a settlement offer");
 
     second_send
-        .send(Some(Message::SettleAccept(settle_accept)))
+        .send(Some(Message::Channel(ChannelMessage::SettleAccept(
+            settle_accept,
+        ))))
         .unwrap();
 
     // Process Accept
@@ -883,7 +887,9 @@ fn settle_reject(
         .expect("to be able to reject a settlement of the contract.");
 
     first_send
-        .send(Some(Message::SettleOffer(settle_offer)))
+        .send(Some(Message::Channel(ChannelMessage::SettleOffer(
+            settle_offer,
+        ))))
         .unwrap();
 
     sync_receive.recv().expect("Error synchronizing");
@@ -899,7 +905,9 @@ fn settle_reject(
         .expect("to be able to reject a settlement offer");
 
     second_send
-        .send(Some(Message::Reject(settle_reject)))
+        .send(Some(Message::Channel(ChannelMessage::Reject(
+            settle_reject,
+        ))))
         .unwrap();
 
     sync_receive.recv().expect("Error synchronizing");
@@ -930,11 +938,15 @@ fn settle_race(
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
-        .send(Some(Message::SettleOffer(settle_offer)))
+        .send(Some(Message::Channel(ChannelMessage::SettleOffer(
+            settle_offer,
+        ))))
         .unwrap();
 
     second_send
-        .send(Some(Message::SettleOffer(settle_offer_2)))
+        .send(Some(Message::Channel(ChannelMessage::SettleOffer(
+            settle_offer_2,
+        ))))
         .unwrap();
 
     // Process 2 offers + 2 rejects
@@ -971,7 +983,9 @@ fn renew_channel(
         .expect("to be able to renew channel contract");
 
     first_send
-        .send(Some(Message::RenewOffer(renew_offer)))
+        .send(Some(Message::Channel(ChannelMessage::RenewOffer(
+            renew_offer,
+        ))))
         .expect("to be able to send the renew offer");
 
     // Process Renew Offer
@@ -987,7 +1001,9 @@ fn renew_channel(
         .expect("to be able to accept the renewal");
 
     second_send
-        .send(Some(Message::RenewAccept(accept_renew)))
+        .send(Some(Message::Channel(ChannelMessage::RenewAccept(
+            accept_renew,
+        ))))
         .expect("to be able to send the accept renew");
 
     // Process Renew Accept
@@ -1027,7 +1043,9 @@ fn renew_reject(
         .expect("to be able to renew channel contract");
 
     first_send
-        .send(Some(Message::RenewOffer(renew_offer)))
+        .send(Some(Message::Channel(ChannelMessage::RenewOffer(
+            renew_offer,
+        ))))
         .expect("to be able to send the renew offer");
 
     // Process Renew Offer
@@ -1043,7 +1061,7 @@ fn renew_reject(
         .expect("to be able to reject the renewal");
 
     second_send
-        .send(Some(Message::Reject(renew_reject)))
+        .send(Some(Message::Channel(ChannelMessage::Reject(renew_reject))))
         .expect("to be able to send the renew reject");
 
     // Process Renew Reject
@@ -1074,11 +1092,15 @@ fn renew_race(
         .expect("to be able to renew channel contract");
 
     first_send
-        .send(Some(Message::RenewOffer(renew_offer)))
+        .send(Some(Message::Channel(ChannelMessage::RenewOffer(
+            renew_offer,
+        ))))
         .expect("to be able to send the renew offer");
 
     second_send
-        .send(Some(Message::RenewOffer(renew_offer_2)))
+        .send(Some(Message::Channel(ChannelMessage::RenewOffer(
+            renew_offer_2,
+        ))))
         .expect("to be able to send the renew offer");
 
     // Process 2 offers + 2 rejects
@@ -1106,7 +1128,9 @@ fn collaborative_close<F: Fn(u64)>(
         .offer_collaborative_close(&channel_id, 100000000)
         .expect("to be able to propose a collaborative close");
     first_send
-        .send(Some(Message::CollaborativeCloseOffer(close_offer)))
+        .send(Some(Message::Channel(
+            ChannelMessage::CollaborativeCloseOffer(close_offer),
+        )))
         .expect("to be able to send collaborative close");
     sync_receive.recv().expect("Error synchronizing");
 
@@ -1152,7 +1176,9 @@ fn renew_timeout(
             .expect("to be able to offer a settlement of the contract.");
 
         first_send
-            .send(Some(Message::RenewOffer(renew_offer)))
+            .send(Some(Message::Channel(ChannelMessage::RenewOffer(
+                renew_offer,
+            ))))
             .unwrap();
 
         sync_receive.recv().expect("Error synchronizing");
@@ -1176,7 +1202,9 @@ fn renew_timeout(
                 .expect("to be able to accept a settlement offer");
 
             second_send
-                .send(Some(Message::RenewAccept(renew_accept)))
+                .send(Some(Message::Channel(ChannelMessage::RenewAccept(
+                    renew_accept,
+                ))))
                 .unwrap();
 
             // Process Accept
@@ -1227,7 +1255,9 @@ fn settle_timeout(
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
-        .send(Some(Message::SettleOffer(settle_offer)))
+        .send(Some(Message::Channel(ChannelMessage::SettleOffer(
+            settle_offer,
+        ))))
         .unwrap();
 
     sync_receive.recv().expect("Error synchronizing");
@@ -1251,7 +1281,9 @@ fn settle_timeout(
             .expect("to be able to accept a settlement offer");
 
         second_send
-            .send(Some(Message::SettleAccept(settle_accept)))
+            .send(Some(Message::Channel(ChannelMessage::SettleAccept(
+                settle_accept,
+            ))))
             .unwrap();
 
         // Process Accept

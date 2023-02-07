@@ -25,7 +25,9 @@ use dlc_messages::channel::{
     SignChannel,
 };
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
-use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc};
+use dlc_messages::{
+    AcceptDlc, ChannelMessage, Message as DlcMessage, OfferDlc, OnChainMessage, SignDlc,
+};
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
@@ -206,62 +208,69 @@ where
         counter_party: PublicKey,
     ) -> Result<Option<DlcMessage>, Error> {
         match msg {
-            DlcMessage::Offer(o) => {
-                self.on_offer_message(o, counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a, &counter_party)?)),
-            DlcMessage::Sign(s) => {
-                self.on_sign_message(s, &counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::OfferChannel(o) => {
-                self.on_offer_channel(o, counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::AcceptChannel(a) => Ok(Some(DlcMessage::SignChannel(
-                self.on_accept_channel(a, &counter_party)?,
-            ))),
-            DlcMessage::SignChannel(s) => {
-                self.on_sign_channel(s, &counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::SettleOffer(s) => match self.on_settle_offer(s, &counter_party)? {
-                Some(msg) => Ok(Some(DlcMessage::Reject(msg))),
-                None => Ok(None),
+            DlcMessage::OnChain(on_chain) => match on_chain {
+                OnChainMessage::Offer(o) => {
+                    self.on_offer_message(o, counter_party)?;
+                    Ok(None)
+                }
+                OnChainMessage::Accept(a) => Ok(Some(self.on_accept_message(a, &counter_party)?)),
+                OnChainMessage::Sign(s) => {
+                    self.on_sign_message(s, &counter_party)?;
+                    Ok(None)
+                }
             },
-            DlcMessage::SettleAccept(s) => Ok(Some(DlcMessage::SettleConfirm(
-                self.on_settle_accept(s, &counter_party)?,
-            ))),
-            DlcMessage::SettleConfirm(s) => Ok(Some(DlcMessage::SettleFinalize(
-                self.on_settle_confirm(s, &counter_party)?,
-            ))),
-            DlcMessage::SettleFinalize(s) => {
-                self.on_settle_finalize(s, &counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::RenewOffer(r) => match self.on_renew_offer(r, &counter_party)? {
-                Some(msg) => Ok(Some(DlcMessage::Reject(msg))),
-                None => Ok(None),
+            DlcMessage::Channel(channel) => match channel {
+                ChannelMessage::Offer(o) => {
+                    self.on_offer_channel(o, counter_party)?;
+                    Ok(None)
+                }
+                ChannelMessage::Accept(a) => Ok(Some(DlcMessage::Channel(ChannelMessage::Sign(
+                    self.on_accept_channel(a, &counter_party)?,
+                )))),
+                ChannelMessage::Sign(s) => {
+                    self.on_sign_channel(s, &counter_party)?;
+                    Ok(None)
+                }
+                ChannelMessage::SettleOffer(s) => match self.on_settle_offer(s, &counter_party)? {
+                    Some(msg) => Ok(Some(DlcMessage::Channel(ChannelMessage::Reject(msg)))),
+                    None => Ok(None),
+                },
+                ChannelMessage::SettleAccept(s) => Ok(Some(DlcMessage::Channel(
+                    ChannelMessage::SettleConfirm(self.on_settle_accept(s, &counter_party)?),
+                ))),
+                ChannelMessage::SettleConfirm(s) => Ok(Some(DlcMessage::Channel(
+                    ChannelMessage::SettleFinalize(self.on_settle_confirm(s, &counter_party)?),
+                ))),
+                ChannelMessage::SettleFinalize(s) => {
+                    self.on_settle_finalize(s, &counter_party)?;
+                    Ok(None)
+                }
+                ChannelMessage::RenewOffer(r) => match self.on_renew_offer(r, &counter_party)? {
+                    Some(msg) => Ok(Some(DlcMessage::Channel(ChannelMessage::Reject(msg)))),
+                    None => Ok(None),
+                },
+                ChannelMessage::RenewAccept(r) => Ok(Some(DlcMessage::Channel(
+                    ChannelMessage::RenewConfirm(self.on_renew_accept(r, &counter_party)?),
+                ))),
+                ChannelMessage::RenewConfirm(r) => Ok(Some(DlcMessage::Channel(
+                    ChannelMessage::RenewFinalize(self.on_renew_confirm(r, &counter_party)?),
+                ))),
+                ChannelMessage::RenewFinalize(r) => {
+                    self.on_renew_finalize(r, &counter_party)?;
+                    Ok(None)
+                }
+                ChannelMessage::CollaborativeCloseOffer(c) => {
+                    self.on_collaborative_close_offer(c, &counter_party)?;
+                    Ok(None)
+                }
+                ChannelMessage::Reject(r) => {
+                    self.on_reject(r, &counter_party)?;
+                    Ok(None)
+                }
             },
-            DlcMessage::RenewAccept(r) => Ok(Some(DlcMessage::RenewConfirm(
-                self.on_renew_accept(r, &counter_party)?,
-            ))),
-            DlcMessage::RenewConfirm(r) => Ok(Some(DlcMessage::RenewFinalize(
-                self.on_renew_confirm(r, &counter_party)?,
-            ))),
-            DlcMessage::RenewFinalize(r) => {
-                self.on_renew_finalize(r, &counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::CollaborativeCloseOffer(c) => {
-                self.on_collaborative_close_offer(c, &counter_party)?;
-                Ok(None)
-            }
-            DlcMessage::Reject(r) => {
-                self.on_reject(r, &counter_party)?;
-                Ok(None)
-            }
+            DlcMessage::SubChannel(_) => Err(Error::InvalidParameters(
+                "SubChannel messages not supported".to_string(),
+            )),
         }
     }
 
@@ -393,7 +402,7 @@ where
         self.store
             .update_contract(&Contract::Signed(signed_contract))?;
 
-        Ok(DlcMessage::Sign(signed_msg))
+        Ok(DlcMessage::OnChain(OnChainMessage::Sign(signed_msg)))
     }
 
     fn on_sign_message(
