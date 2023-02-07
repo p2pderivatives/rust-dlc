@@ -19,7 +19,7 @@ use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
 use dlc_manager::manager::Manager;
 use dlc_manager::{Blockchain, Oracle, Storage, Wallet};
-use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
+use dlc_messages::{AcceptDlc, OfferDlc, OnChainMessage, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
 use lightning::ln::wire::Type;
 use lightning::util::ser::Writeable;
@@ -534,7 +534,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     let path_copy = path.clone();
     let alter_sign = move |msg| match msg {
-        Message::Sign(mut sign_dlc) => {
+        Message::OnChain(OnChainMessage::Sign(mut sign_dlc)) => {
             match path_copy {
                 TestPath::BadSignCetSignature => {
                     alter_adaptor_sig(&mut sign_dlc.cet_adaptor_signatures)
@@ -544,13 +544,13 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                 }
                 _ => {}
             }
-            Some(Message::Sign(sign_dlc))
+            Some(Message::OnChain(OnChainMessage::Sign(sign_dlc)))
         }
         _ => Some(msg),
     };
 
     let msg_callback = |msg: &Message| {
-        if let Message::Sign(s) = msg {
+        if let Message::OnChain(OnChainMessage::Sign(s)) = msg {
             write_message("sign_message", s.clone());
         }
     };
@@ -588,7 +588,9 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
     write_message("offer_message", offer_msg.clone());
     let temporary_contract_id = offer_msg.temporary_contract_id;
-    bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
+    bob_send
+        .send(Some(Message::OnChain(OnChainMessage::Offer(offer_msg))))
+        .unwrap();
 
     assert_contract_state!(bob_manager_send, temporary_contract_id, Offered);
 
@@ -618,13 +620,17 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                 _ => {}
             };
             bob_expect_error.store(true, Ordering::Relaxed);
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
+            alice_send
+                .send(Some(Message::OnChain(OnChainMessage::Accept(accept_msg))))
+                .unwrap();
             sync_receive.recv().expect("Error synchronizing");
             assert_contract_state!(bob_manager_send, temporary_contract_id, FailedAccept);
         }
         TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
             alice_expect_error.store(true, Ordering::Relaxed);
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
+            alice_send
+                .send(Some(Message::OnChain(OnChainMessage::Accept(accept_msg))))
+                .unwrap();
             // Bob receives accept message
             sync_receive.recv().expect("Error synchronizing");
             // Alice receives sign message
@@ -632,7 +638,9 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             assert_contract_state!(alice_manager_send, contract_id, FailedSign);
         }
         _ => {
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
+            alice_send
+                .send(Some(Message::OnChain(OnChainMessage::Accept(accept_msg))))
+                .unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
             assert_contract_state!(bob_manager_send, contract_id, Signed);
