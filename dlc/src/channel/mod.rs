@@ -15,6 +15,8 @@ use secp256k1_zkp::{
     Secp256k1, SecretKey, Signing, Verification,
 };
 
+pub mod sub_channel;
+
 /**
  * Weight of the buffer transaction:
  * INPUT
