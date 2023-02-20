@@ -41,7 +41,7 @@ use simple_wallet::WalletStorage;
 use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
 use sled::{Db, Transactional, Tree};
 use std::convert::TryInto;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 const CONTRACT_TREE: u8 = 1;
 const CHANNEL_TREE: u8 = 2;
@@ -571,11 +571,7 @@ impl WalletStorage for SledStorageProvider {
         let mut utxo = match utxo_tree.get(&key).map_err(to_storage_error)? {
             Some(res) => Utxo::read(&mut Cursor::new(&res))
                 .map_err(|_| Error::InvalidState("Could not read UTXO".to_string()))?,
-            None => {
-                return Err(Error::InvalidState(format!(
-                    "No utxo for {txid} {vout}"
-                )))
-            }
+            None => return Err(Error::InvalidState(format!("No utxo for {txid} {vout}"))),
         };
 
         utxo.reserved = false;
@@ -727,9 +723,9 @@ fn serialize_sub_channel(sub_channel: &SubChannel) -> Result<Vec<u8>, ::std::io:
 }
 
 fn deserialize_sub_channel(buff: &sled::IVec) -> Result<SubChannel, Error> {
-    let cursor = ::std::io::Cursor::new(buff);
+    let mut cursor = ::std::io::Cursor::new(buff);
     // Skip prefix
-    let mut cursor = cursor.take(1);
+    cursor.seek(SeekFrom::Start(1))?;
     SubChannel::deserialize(&mut cursor).map_err(to_storage_error)
 }
 
@@ -887,6 +883,31 @@ mod tests {
         storage
             .upsert_channel(signed_channel, None)
             .expect("Error creating contract");
+    }
+
+    fn insert_sub_channels(storage: &mut SledStorageProvider) {
+        let serialized = include_bytes!("../test_files/OfferedSubChannel");
+        let offered_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&offered_sub_channel)
+            .expect("Error inserting sub channel");
+        let serialized = include_bytes!("../test_files/OfferedSubChannel1");
+        let offered_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&offered_sub_channel)
+            .expect("Error inserting sub channel");
+
+        let serialized = include_bytes!("../test_files/SignedSubChannel");
+        let signed_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&signed_sub_channel)
+            .expect("Error inserting sub channel");
+
+        let serialized = include_bytes!("../test_files/AcceptedSubChannel");
+        let accepted_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&accepted_sub_channel)
+            .expect("Error inserting sub channel");
     }
 
     sled_test!(
@@ -1050,6 +1071,30 @@ mod tests {
                 .expect("to have a persisted chain monitor.");
 
             assert_eq!(chain_monitor, retrieved);
+        }
+    );
+
+    sled_test!(
+        get_offered_sub_channels_only_offered,
+        |mut storage: SledStorageProvider| {
+            insert_sub_channels(&mut storage);
+
+            let offered_sub_channels = storage
+                .get_offered_sub_channels()
+                .expect("Error retrieving offered sub channels");
+            assert_eq!(2, offered_sub_channels.len());
+        }
+    );
+
+    sled_test!(
+        get_sub_channels_all_returned,
+        |mut storage: SledStorageProvider| {
+            insert_sub_channels(&mut storage);
+
+            let offered_sub_channels = storage
+                .get_sub_channels()
+                .expect("Error retrieving offered sub channels");
+            assert_eq!(4, offered_sub_channels.len());
         }
     );
 }

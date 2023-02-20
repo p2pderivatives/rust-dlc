@@ -150,6 +150,19 @@ macro_rules! write_channel {
 }
 
 #[macro_export]
+macro_rules! write_sub_channel {
+    ($channel: ident, $state: ident) => {
+        use lightning::util::ser::Writeable;
+        let mut buf = Vec::new();
+        $channel
+            .write(&mut buf)
+            .expect("to be able to serialize the sub channel");
+        std::fs::write(format!("{}SubChannel", stringify!($state)), buf)
+            .expect("to be able to save the sub channel to file");
+    };
+}
+
+#[macro_export]
 macro_rules! assert_channel_state {
     ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
         let res = $d
@@ -177,6 +190,34 @@ macro_rules! assert_channel_state {
                 None => "none",
             };
             panic!("Unexpected channel state {}", state);
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! assert_sub_channel_state {
+    ($d:expr, $id:expr $(, $s_tuple: ident)? $(;$s_simple: ident)?) => {{
+        let res = $d
+            .get_store()
+            .get_sub_channel(*$id)
+            .expect("Could not retrieve contract");
+        if let Some(sub_channel) = res {
+            $(if let SubChannelState::$s_tuple(_)  = sub_channel.state {
+            } else {
+                panic!("Unexpected sub channel state {:?}", sub_channel.state);
+            }
+            if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
+                write_sub_channel!(sub_channel, $s_tuple);
+            })?
+            $(if let SubChannelState::$s_simple  = c.state {
+            } else {
+                panic!("Unexpected sub channel state {:?}", c.state);
+            }
+            if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
+                write_sub_channel!(sub_channel, $s_simple);
+            })?
+        } else {
+            panic!("Sub channel not found");
         }
     }};
 }

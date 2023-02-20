@@ -149,6 +149,25 @@ impl std::fmt::Debug for SubChannel {
     }
 }
 
+macro_rules! enum_display {
+    ($name: ident, $($state: ident),*; $($simple_state: ident),*) => {
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+                match self {
+                    $(
+                        $name::$state(_) => f.write_str(stringify!($state)),
+                    )*
+                    $(
+                        $name::$simple_state => f.write_str(stringify!($simple_state)),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+enum_display!(SubChannelState, Offered, Accepted, Signed, Closing, CloseOffered, CloseAccepted, CloseConfirmed, ClosedPunished; OnChainClosed, CounterOnChainClosed, OffChainClosed);
+
 #[derive(Debug, Clone)]
 ///
 pub enum SubChannelState {
@@ -496,6 +515,11 @@ where
             fee_estimator,
             chain_monitor: Mutex::new(ChainMonitor::new(init_height)),
         }
+    }
+
+    ///
+    pub fn get_store(&self) -> &S {
+        self.dlc_channel_manager.get_store()
     }
 }
 

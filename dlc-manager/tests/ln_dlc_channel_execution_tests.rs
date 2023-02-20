@@ -1153,6 +1153,9 @@ fn offer_sub_channel(
             &[oracle_announcements],
         )
         .unwrap();
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Offered);
+
     bob_node
         .sub_channel_manager
         .on_sub_channel_message(
@@ -1160,10 +1163,16 @@ fn offer_sub_channel(
             &alice_node.channel_manager.get_our_node_id(),
         )
         .unwrap();
+
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
+
     let (_, accept) = bob_node
         .sub_channel_manager
         .accept_sub_channel(channel_id)
         .unwrap();
+
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Accepted);
+
     bob_node.process_events();
     let confirm = alice_node
         .sub_channel_manager
@@ -1173,12 +1182,17 @@ fn offer_sub_channel(
         )
         .unwrap()
         .unwrap();
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
+
     alice_node.process_events();
     let finalize = bob_node
         .sub_channel_manager
         .on_sub_channel_message(&confirm, &alice_node.channel_manager.get_our_node_id())
         .unwrap()
         .unwrap();
+
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
 
     bob_node.process_events();
     alice_node
