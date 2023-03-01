@@ -59,9 +59,9 @@ pub fn dlc_channel_and_split_fee(fee_rate_per_vb: u64) -> Result<u64, Error> {
 #[derive(Clone, Debug)]
 /// Structure containing a split transaction and its associated output script.
 pub struct SplitTx {
-    ///
+    /// The actual Bitcoin transaction representation.
     pub transaction: Transaction,
-    ///
+    /// The script used to lock the outputs.
     pub output_script: Script,
 }
 

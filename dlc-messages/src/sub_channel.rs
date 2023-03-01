@@ -1,5 +1,4 @@
 //! Module containing messages related to DLC on Lightning channels.
-//!
 
 use bitcoin::Script;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};

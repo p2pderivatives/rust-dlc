@@ -28,6 +28,7 @@ use dlc_manager::contract::signed_contract::SignedContract;
 use dlc_manager::contract::{
     ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
+use dlc_manager::subchannel::{SubChannel, SubChannelState};
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
 use dlc_manager::{error::Error, ContractId, Storage};
@@ -40,7 +41,7 @@ use simple_wallet::WalletStorage;
 use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
 use sled::{Db, Transactional, Tree};
 use std::convert::TryInto;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 const CONTRACT_TREE: u8 = 1;
 const CHANNEL_TREE: u8 = 2;
@@ -50,6 +51,7 @@ const CHAIN_MONITOR_KEY: u8 = 4;
 const UTXO_TREE: u8 = 6;
 #[cfg(feature = "wallet")]
 const KEY_PAIR_TREE: u8 = 7;
+const SUB_CHANNEL_TREE: u8 = 3;
 #[cfg(feature = "wallet")]
 const ADDRESS_TREE: u8 = 8;
 
@@ -60,7 +62,7 @@ pub struct SledStorageProvider {
 
 macro_rules! convertible_enum {
     (enum $name:ident {
-        $($vname:ident $(= $val:expr)?,)*;
+        $($vname:ident $(= $val:expr)? $(; $subprefix:ident, $subfield:ident)?,)*;
         $($tname:ident $(= $tval:expr)?,)*
     }, $input:ident) => {
         #[derive(Debug)]
@@ -82,7 +84,7 @@ macro_rules! convertible_enum {
                 match v {
                     $(x if x == u8::from($name::$vname) => Ok($name::$vname),)*
                     $(x if x == u8::from($name::$tname) => Ok($name::$tname),)*
-                    _ => Err(Error::StorageError("Unknown prefix".to_string())),
+                    x => Err(Error::StorageError(format!("Unknown prefix {}", x))),
                 }
             }
         }
@@ -119,7 +121,7 @@ convertible_enum!(
     enum ChannelPrefix {
         Offered = 100,
         Accepted,
-        Signed,
+        Signed; SignedChannelPrefix, state,
         FailedAccept,
         FailedSign,;
     },
@@ -145,6 +147,23 @@ convertible_enum!(
         RenewConfirmed,
     },
     SignedChannelStateType
+);
+
+convertible_enum!(
+    enum SubChannelPrefix {;
+        Offered = 500,
+        Accepted,
+        Signed,
+        Closing,
+        OnChainClosed,
+        CounterOnChainClosed,
+        CloseOffered,
+        CloseAccepted,
+        CloseConfirmed,
+        OffChainClosed,
+        ClosedPunished,
+    },
+    SubChannelState
 );
 
 fn to_storage_error<T>(e: T) -> Error
@@ -190,7 +209,7 @@ impl SledStorageProvider {
     fn open_tree(&self, tree_id: &[u8; 1]) -> Result<Tree, Error> {
         self.db
             .open_tree(tree_id)
-            .map_err(|e| Error::StorageError(format!("Error opening contract tree: {}", e)))
+            .map_err(|e| Error::StorageError(format!("Error opening contract tree: {e}")))
     }
 
     fn contract_tree(&self) -> Result<Tree, Error> {
@@ -199,6 +218,10 @@ impl SledStorageProvider {
 
     fn channel_tree(&self) -> Result<Tree, Error> {
         self.open_tree(&[CHANNEL_TREE])
+    }
+
+    fn sub_channel_tree(&self) -> Result<Tree, Error> {
+        self.open_tree(&[SUB_CHANNEL_TREE])
     }
 }
 
@@ -386,14 +409,14 @@ impl Storage for SledStorageProvider {
     fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error> {
         self.open_tree(&[CHAIN_MONITOR_TREE])?
             .insert([CHAIN_MONITOR_KEY], monitor.serialize()?)
-            .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {}", e)))?;
+            .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {e}")))?;
         Ok(())
     }
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, dlc_manager::error::Error> {
         let serialized = self
             .open_tree(&[CHAIN_MONITOR_TREE])?
             .get([CHAIN_MONITOR_KEY])
-            .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {}", e)))?;
+            .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {e}")))?;
         let deserialized = match serialized {
             Some(s) => Some(
                 ChainMonitor::deserialize(&mut ::std::io::Cursor::new(s))
@@ -402,6 +425,44 @@ impl Storage for SledStorageProvider {
             None => None,
         };
         Ok(deserialized)
+    }
+
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
+        let serialized = serialize_sub_channel(subchannel)?;
+        self.sub_channel_tree()?
+            .insert(subchannel.channel_id, serialized)
+            .map_err(to_storage_error)?;
+        Ok(())
+    }
+
+    fn get_sub_channel(
+        &self,
+        channel_id: dlc_manager::ChannelId,
+    ) -> Result<Option<SubChannel>, Error> {
+        match self
+            .sub_channel_tree()?
+            .get(channel_id)
+            .map_err(to_storage_error)?
+        {
+            Some(res) => Ok(Some(deserialize_sub_channel(&res)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
+        self.sub_channel_tree()?
+            .iter()
+            .values()
+            .map(|x| deserialize_sub_channel(&x.unwrap()))
+            .collect::<Result<Vec<SubChannel>, Error>>()
+    }
+
+    fn get_offered_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
+        self.get_data_with_prefix(
+            &self.sub_channel_tree()?,
+            &[SubChannelPrefix::Offered.into()],
+            None,
+        )
     }
 }
 
@@ -428,7 +489,7 @@ impl WalletStorage for SledStorageProvider {
             .keys()
             .map(|x| {
                 Ok(String::from_utf8(x.map_err(to_storage_error)?.to_vec())
-                    .map_err(|e| Error::InvalidState(format!("Could not read address key {}", e)))?
+                    .map_err(|e| Error::InvalidState(format!("Could not read address key {e}")))?
                     .parse()
                     .expect("to have a valid address as key"))
             })
@@ -498,7 +559,7 @@ impl WalletStorage for SledStorageProvider {
                 let ivec = x.map_err(to_storage_error)?;
                 let mut cursor = Cursor::new(&ivec);
                 let res =
-                    Utxo::read(&mut cursor).map_err(|x| Error::InvalidState(format!("{}", x)))?;
+                    Utxo::read(&mut cursor).map_err(|x| Error::InvalidState(format!("{x}")))?;
                 Ok(res)
             })
             .collect::<Result<Vec<Utxo>, Error>>()
@@ -510,12 +571,7 @@ impl WalletStorage for SledStorageProvider {
         let mut utxo = match utxo_tree.get(&key).map_err(to_storage_error)? {
             Some(res) => Utxo::read(&mut Cursor::new(&res))
                 .map_err(|_| Error::InvalidState("Could not read UTXO".to_string()))?,
-            None => {
-                return Err(Error::InvalidState(format!(
-                    "No utxo for {} {}",
-                    txid, vout
-                )))
-            }
+            None => return Err(Error::InvalidState(format!("No utxo for {txid} {vout}"))),
         };
 
         utxo.reserved = false;
@@ -654,6 +710,23 @@ fn get_utxo_key(txid: &Txid, vout: u32) -> Vec<u8> {
     let mut key = res.expect("a valid txid");
     key.extend_from_slice(&vout.to_be_bytes());
     key
+}
+
+fn serialize_sub_channel(sub_channel: &SubChannel) -> Result<Vec<u8>, ::std::io::Error> {
+    let prefix = SubChannelPrefix::get_prefix(&sub_channel.state);
+    let mut buf = Vec::new();
+
+    buf.push(prefix);
+    buf.append(&mut sub_channel.serialize()?);
+
+    Ok(buf)
+}
+
+fn deserialize_sub_channel(buff: &sled::IVec) -> Result<SubChannel, Error> {
+    let mut cursor = ::std::io::Cursor::new(buff);
+    // Skip prefix
+    cursor.seek(SeekFrom::Start(1))?;
+    SubChannel::deserialize(&mut cursor).map_err(to_storage_error)
 }
 
 #[cfg(test)]
@@ -812,6 +885,31 @@ mod tests {
             .expect("Error creating contract");
     }
 
+    fn insert_sub_channels(storage: &mut SledStorageProvider) {
+        let serialized = include_bytes!("../test_files/OfferedSubChannel");
+        let offered_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&offered_sub_channel)
+            .expect("Error inserting sub channel");
+        let serialized = include_bytes!("../test_files/OfferedSubChannel1");
+        let offered_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&offered_sub_channel)
+            .expect("Error inserting sub channel");
+
+        let serialized = include_bytes!("../test_files/SignedSubChannel");
+        let signed_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&signed_sub_channel)
+            .expect("Error inserting sub channel");
+
+        let serialized = include_bytes!("../test_files/AcceptedSubChannel");
+        let accepted_sub_channel = deserialize_object(serialized);
+        storage
+            .upsert_sub_channel(&accepted_sub_channel)
+            .expect("Error inserting sub channel");
+    }
+
     sled_test!(
         get_signed_contracts_only_signed,
         |mut storage: SledStorageProvider| {
@@ -901,6 +999,8 @@ mod tests {
                 ..
             } = &signed_channels[0].state
             {
+                let channel_id = signed_channels[0].channel_id;
+                storage.get_channel(&channel_id).unwrap();
             } else {
                 panic!(
                     "Expected established state got {:?}",
@@ -971,6 +1071,30 @@ mod tests {
                 .expect("to have a persisted chain monitor.");
 
             assert_eq!(chain_monitor, retrieved);
+        }
+    );
+
+    sled_test!(
+        get_offered_sub_channels_only_offered,
+        |mut storage: SledStorageProvider| {
+            insert_sub_channels(&mut storage);
+
+            let offered_sub_channels = storage
+                .get_offered_sub_channels()
+                .expect("Error retrieving offered sub channels");
+            assert_eq!(2, offered_sub_channels.len());
+        }
+    );
+
+    sled_test!(
+        get_sub_channels_all_returned,
+        |mut storage: SledStorageProvider| {
+            insert_sub_channels(&mut storage);
+
+            let offered_sub_channels = storage
+                .get_sub_channels()
+                .expect("Error retrieving offered sub channels");
+            assert_eq!(4, offered_sub_channels.len());
         }
     );
 }
