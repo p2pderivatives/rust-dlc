@@ -17,6 +17,8 @@ pub(crate) const DISABLE_LOCKTIME: Sequence = Sequence(0xffffffff);
 // RBF but enables nLockTime usage.
 pub(crate) const ENABLE_LOCKTIME: Sequence = Sequence(0xfffffffe);
 
+const MIN_FEE: u64 = 153;
+
 /// Get a BIP143 (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
 /// signature hash with sighash all flag for a segwit transaction input as
 /// a Message instance
@@ -94,10 +96,15 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
     )
 }
 
-pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
-    (f64::ceil((weight as f64) / 4.0) as u64)
-        .checked_mul(fee_rate)
-        .ok_or(Error::InvalidArgument)
+/// Computes the required fee for a transaction based on the given weight and fee
+/// rate per vbyte.
+pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
+    Ok(u64::max(
+        (f64::ceil((weight as f64) / 4.0) as u64)
+            .checked_mul(fee_rate)
+            .ok_or(Error::InvalidArgument)?,
+        MIN_FEE,
+    ))
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {

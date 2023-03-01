@@ -48,6 +48,7 @@ where
         contract_input.fee_rate,
         wallet,
         blockchain,
+        true,
     )?;
 
     let offered_contract = OfferedContract::new(
@@ -85,6 +86,7 @@ where
         offered_contract.fee_rate_per_vb,
         wallet,
         blockchain,
+        true,
     )?;
 
     let dlc_transactions = dlc::create_dlc_transactions(
@@ -422,7 +424,7 @@ where
                 })?;
             let vout = x.funding_input.prev_tx_vout;
             let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
-                Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
+                Error::InvalidParameters(format!("Previous tx output not found at index {vout}"))
             })?;
 
             // pass wallet instead of privkeys
@@ -618,7 +620,7 @@ where
                 })?;
         let vout = funding_input_info.funding_input.prev_tx_vout;
         let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
-            Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
+            Error::InvalidParameters(format!("Previous tx output not found at index {vout}"))
         })?;
 
         signer.sign_tx_input(&mut fund_tx, input_index, tx_out, None)?;

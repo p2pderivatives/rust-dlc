@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 dlc-messages = {path = "../dlc-messages"}
 honggfuzz = "0.5"
-lightning = {version = "0.0.113" }
+lightning = {version = "0.0.113", git = "https://github.com/p2pderivatives/rust-lightning/", branch = "split-tx-experiment"}
 
 [workspace]
 members = ["."]
