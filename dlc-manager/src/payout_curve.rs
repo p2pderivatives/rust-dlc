@@ -420,7 +420,7 @@ impl HyperbolaPayoutCurvePiece {
         c: f64,
         d: f64,
     ) -> Result<Self, Error> {
-        if a * b == d * c {
+        if a * d == b * c {
             Err(Error::InvalidParameters(
                 "a * c cannot equal d * c".to_string(),
             ))
@@ -793,6 +793,30 @@ mod test {
                 &mut Vec::new(),
             )
             .expect("to be able to compute the range payouts");
+    }
+
+    #[test]
+    fn hyperbola_invalid_parameters_tests() {
+        let hyperbola = HyperbolaPayoutCurvePiece::new(
+            PayoutPoint {
+                event_outcome: 1,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            PayoutPoint {
+                event_outcome: 1000,
+                outcome_payout: 0,
+                extra_precision: 0,
+            },
+            true,
+            2.5,
+            0.0,
+            1.0,
+            1.0,
+            4.0,
+            4.0,
+        )
+        .expect_err("Should return error when a*d == b*c");
     }
 
     #[test]
