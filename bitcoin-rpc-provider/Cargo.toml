@@ -9,7 +9,7 @@ bitcoin = {version = "0.29.2"}
 bitcoincore-rpc = {version = "0.16.0"}
 bitcoincore-rpc-json = {version = "0.16.0"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.113", git = "https://github.com/p2pderivatives/rust-lightning/", branch = "split-tx-experiment"}
+lightning = {version = "0.0.113"}
 log = "0.4.14"
 rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
 simple-wallet = {path = "../simple-wallet"}
