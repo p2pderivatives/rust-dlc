@@ -310,7 +310,11 @@ impl Blockchain for BitcoinCoreProvider {
             "test" => Network::Testnet,
             "regtest" => Network::Regtest,
             "signet" => Network::Signet,
-            _ => return Err(ManagerError::BlockchainError),
+            _ => {
+                return Err(ManagerError::BlockchainError(
+                    "Unknown Bitcoin network".to_string(),
+                ))
+            }
         };
 
         Ok(network)
