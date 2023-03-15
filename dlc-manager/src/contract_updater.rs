@@ -59,6 +59,7 @@ where
         counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        crate::utils::get_new_temporary_id(),
     );
 
     let offer_msg: OfferDlc = (&offered_contract).into();

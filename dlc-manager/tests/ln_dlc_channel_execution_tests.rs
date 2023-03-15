@@ -18,8 +18,8 @@ use bitcoincore_rpc::RpcApi;
 use console_logger::ConsoleLogger;
 use custom_signer::{CustomKeysManager, CustomSigner};
 use dlc_manager::{
-    manager::Manager, sub_channel_manager::SubChannelManager, subchannel::SubChannelState,
-    Blockchain, ChannelId, Oracle, Signer, Storage, Utxo, Wallet,
+    channel::Channel, manager::Manager, sub_channel_manager::SubChannelManager,
+    subchannel::SubChannelState, Blockchain, ChannelId, Oracle, Signer, Storage, Utxo, Wallet,
 };
 use dlc_messages::{ChannelMessage, Message, SubChannelMessage};
 use electrs_blockchain_provider::{ElectrsBlockchainProvider, OutSpendResp};
@@ -41,6 +41,7 @@ use lightning::{
     util::{
         config::UserConfig,
         events::{Event, EventHandler, EventsProvider, PaymentPurpose},
+        ser::Writeable,
     },
 };
 use lightning_persister::FilesystemPersister;
@@ -803,13 +804,22 @@ fn ln_dlc_test(test_path: TestPath) {
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
+    let sub_channel = alice_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(channel_id)
+        .unwrap()
+        .unwrap();
+
+    let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
+
     if let TestPath::RenewedClose = test_path {
-        renew(&alice_node, &bob_node, channel_id, &test_params);
+        renew(&alice_node, &bob_node, dlc_channel_id, &test_params);
     } else if let TestPath::SettledClose | TestPath::SettledRenewedClose = test_path {
-        settle(&alice_node, &bob_node, channel_id, &test_params);
+        settle(&alice_node, &bob_node, dlc_channel_id, &test_params);
 
         if let TestPath::SettledRenewedClose = test_path {
-            renew(&alice_node, &bob_node, channel_id, &test_params);
+            renew(&alice_node, &bob_node, dlc_channel_id, &test_params);
         }
     }
 

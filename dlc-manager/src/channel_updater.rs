@@ -20,8 +20,7 @@ use crate::{
     },
     error::Error,
     subchannel::{ClosingSubChannel, SubChannel},
-    utils::get_new_temporary_id,
-    Blockchain, Signer, Time, Wallet,
+    Blockchain, ChannelId, ContractId, Signer, Time, Wallet,
 };
 use bitcoin::{OutPoint, Script, Sequence, Transaction};
 use dlc::{
@@ -79,6 +78,7 @@ pub(crate) struct SubChannelSignVerifyInfo {
     pub funding_info: FundingInfo,
     pub own_adaptor_sk: SecretKey,
     pub counter_adaptor_pk: PublicKey,
+    pub sub_channel_id: ChannelId,
 }
 
 pub(crate) struct SubChannelSignInfo {
@@ -89,6 +89,7 @@ pub(crate) struct SubChannelSignInfo {
 pub(crate) struct SubChannelVerifyInfo {
     pub funding_info: FundingInfo,
     pub counter_adaptor_pk: PublicKey,
+    pub sub_channel_id: ChannelId,
 }
 
 /// Creates an [`OfferedChannel`] and an associated [`OfferedContract`] using
@@ -103,6 +104,7 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     wallet: &W,
     blockchain: &B,
     time: &T,
+    temporary_channel_id: ContractId,
     is_sub_channel: bool,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where
@@ -120,6 +122,9 @@ where
     )?;
     let party_points = crate::utils::get_party_base_points(secp, wallet)?;
 
+    let temporary_contract_id =
+        crate::channel::generate_temporary_contract_id(temporary_channel_id, INITIAL_UPDATE_NUMBER);
+
     let offered_contract = OfferedContract::new(
         contract,
         oracle_announcements.to_vec(),
@@ -128,9 +133,8 @@ where
         counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        temporary_contract_id,
     );
-
-    let temporary_channel_id = get_new_temporary_id();
 
     let per_update_seed = wallet.get_new_secret_key()?;
 
@@ -240,6 +244,7 @@ where
         own_buffer_adaptor_sk,
         buffer_input_value,
         buffer_input_spk,
+        funding_vout,
     ) = if let Some(sub_channel_info) = sub_channel_info {
         let SubChannelSignInfo {
             funding_info,
@@ -265,6 +270,7 @@ where
             own_adaptor_sk,
             funding_info.funding_input_value,
             funding_info.funding_script_pubkey,
+            1,
         )
     } else {
         let txs = dlc::channel::create_channel_transactions(
@@ -282,8 +288,15 @@ where
         )?;
         let accept_fund_sk = wallet.get_secret_key_for_pubkey(&accept_params.fund_pubkey)?;
         let funding_output_value = txs.dlc_transactions.get_fund_output().value;
+        let funding_vout = txs.dlc_transactions.get_fund_output_index();
         let funding_spk = txs.dlc_transactions.funding_script_pubkey.clone();
-        (txs, accept_fund_sk, funding_output_value, funding_spk)
+        (
+            txs,
+            accept_fund_sk,
+            funding_output_value,
+            funding_spk,
+            funding_vout,
+        )
     };
 
     let own_base_secret_key = wallet.get_secret_key_for_pubkey(&accept_points.own_basepoint)?;
@@ -292,7 +305,7 @@ where
 
     let channel_id = crate::utils::compute_id(
         dlc_transactions.fund.txid(),
-        dlc_transactions.get_fund_output_index() as u16,
+        funding_vout as u16,
         &offered_channel.temporary_channel_id,
     );
 
@@ -432,11 +445,13 @@ where
         buffer_input_value,
         buffer_input_spk,
         is_sub_channel,
+        sub_channel_id,
     ) = if let Some(sub_channel_info) = sub_channel_info {
         let SubChannelSignVerifyInfo {
             funding_info,
             own_adaptor_sk,
             counter_adaptor_pk,
+            sub_channel_id,
         } = sub_channel_info;
         let txs = dlc::channel::create_renewal_channel_transactions(
             &offered_contract.offer_params,
@@ -460,6 +475,7 @@ where
             funding_info.funding_input_value,
             funding_info.funding_script_pubkey,
             true,
+            Some(sub_channel_id),
         )
     } else {
         let txs = dlc::channel::create_channel_transactions(
@@ -487,12 +503,19 @@ where
             funding_output_value,
             funding_spk,
             false,
+            None,
         )
+    };
+
+    let fund_output_index = if is_sub_channel {
+        1
+    } else {
+        dlc_transactions.get_fund_output_index()
     };
 
     let channel_id = crate::utils::compute_id(
         dlc_transactions.fund.txid(),
-        dlc_transactions.get_fund_output_index() as u16,
+        fund_output_index as u16,
         &offered_channel.temporary_channel_id,
     );
 
@@ -537,12 +560,6 @@ where
         &accept_revoke_params.publish_pk.inner,
     )?;
 
-    let fund_output_index = if is_sub_channel {
-        1
-    } else {
-        dlc_transactions.get_fund_output_index()
-    };
-
     let signed_channel = SignedChannel {
         counter_party: signed_contract
             .accepted_contract
@@ -577,7 +594,7 @@ where
             .accepted_contract
             .offered_contract
             .fee_rate_per_vb,
-        is_sub_channel,
+        sub_channel_id,
     };
 
     let sign_channel = SignChannel {
@@ -633,24 +650,32 @@ where
         .offer_base_points
         .get_own_pk(secp, &accepted_channel.offer_per_update_point);
 
-    let is_sub_channel = sub_channel_info.is_some();
-    let (buffer_input_spk, buffer_input_value, counter_buffer_adaptor_key) =
-        if let Some(sub_channel_info) = sub_channel_info {
-            (
-                sub_channel_info.funding_info.funding_script_pubkey.clone(),
-                sub_channel_info.funding_info.funding_input_value,
-                sub_channel_info.counter_adaptor_pk,
-            )
-        } else {
-            (
-                accepted_contract
-                    .dlc_transactions
-                    .funding_script_pubkey
-                    .clone(),
-                accepted_contract.dlc_transactions.get_fund_output().value,
-                accepted_contract.offered_contract.offer_params.fund_pubkey,
-            )
-        };
+    let (
+        buffer_input_spk,
+        buffer_input_value,
+        counter_buffer_adaptor_key,
+        is_sub_channel,
+        sub_channel_id,
+    ) = if let Some(sub_channel_info) = sub_channel_info {
+        (
+            sub_channel_info.funding_info.funding_script_pubkey.clone(),
+            sub_channel_info.funding_info.funding_input_value,
+            sub_channel_info.counter_adaptor_pk,
+            true,
+            Some(sub_channel_info.sub_channel_id),
+        )
+    } else {
+        (
+            accepted_contract
+                .dlc_transactions
+                .funding_script_pubkey
+                .clone(),
+            accepted_contract.dlc_transactions.get_fund_output().value,
+            accepted_contract.offered_contract.offer_params.fund_pubkey,
+            false,
+            None,
+        )
+    };
 
     verify_tx_adaptor_signature(
         secp,
@@ -718,7 +743,7 @@ where
             .accepted_contract
             .offered_contract
             .fee_rate_per_vb,
-        is_sub_channel,
+        sub_channel_id,
     };
 
     Ok((signed_channel, signed_contract))
@@ -1335,6 +1360,11 @@ where
         }
     };
 
+    let temporary_contract_id: ContractId = crate::channel::generate_temporary_contract_id(
+        signed_channel.channel_id,
+        signed_channel.update_idx,
+    );
+
     let mut offered_contract = OfferedContract::new(
         contract_input,
         oracle_announcements,
@@ -1343,6 +1373,7 @@ where
         &signed_channel.counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        temporary_contract_id,
     );
 
     offered_contract.fund_output_serial_id = 0;
@@ -1372,7 +1403,6 @@ where
 
     let msg = RenewOffer {
         channel_id: signed_channel.channel_id,
-        temporary_contract_id: offered_contract.id,
         counter_payout,
         next_per_update_point,
         contract_info: (&offered_contract).into(),
@@ -1400,8 +1430,13 @@ pub fn on_renew_offer(
         ));
     }
 
+    let temporary_contract_id = crate::channel::generate_temporary_contract_id(
+        signed_channel.channel_id,
+        signed_channel.update_idx,
+    );
+
     let offered_contract = OfferedContract {
-        id: renew_offer.temporary_contract_id,
+        id: temporary_contract_id,
         is_offer_party: false,
         contract_info: crate::conversion_utils::get_contract_info_and_announcements(
             &renew_offer.contract_info,
@@ -1514,7 +1549,7 @@ where
         &accept_per_update_point,
     );
 
-    let (fund_vout, buffer_nsequence) = if signed_channel.is_sub_channel {
+    let (fund_vout, buffer_nsequence) = if signed_channel.is_sub_channel() {
         (Some(1), Some(Sequence(crate::manager::CET_NSEQUENCE)))
     } else {
         (None, None)
@@ -1542,7 +1577,7 @@ where
 
     let own_buffer_adaptor_sk = own_buffer_adaptor_sk.as_ref().unwrap_or(&own_fund_sk);
 
-    let buffer_input_value = if signed_channel.is_sub_channel {
+    let buffer_input_value = if signed_channel.is_sub_channel() {
         signed_channel.fund_tx.output[1].value
     } else {
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value
@@ -1672,7 +1707,7 @@ where
 
     let own_payout =
         total_collateral - get_signed_channel_state!(signed_channel, RenewOffered, counter_payout)?;
-    let (fund_vout, buffer_nsequence) = if signed_channel.is_sub_channel {
+    let (fund_vout, buffer_nsequence) = if signed_channel.is_sub_channel() {
         (Some(1), Some(Sequence(crate::manager::CET_NSEQUENCE)))
     } else {
         (None, None)
@@ -1717,7 +1752,7 @@ where
         Some(signed_channel.channel_id),
     )?;
 
-    let buffer_input_value = if signed_channel.is_sub_channel {
+    let buffer_input_value = if signed_channel.is_sub_channel() {
         signed_channel.fund_tx.output[1].value
     } else {
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value
@@ -2248,7 +2283,7 @@ pub fn initiate_unilateral_close_established_channel<S: Deref>(
     attestations: &[(usize, OracleAttestation)],
     adaptor_info: &AdaptorInfo,
     signer: &S,
-    sub_channel: Option<(SubChannel, ClosingSubChannel)>,
+    sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
 ) -> Result<(), Error>
 where
     S::Target: Signer,

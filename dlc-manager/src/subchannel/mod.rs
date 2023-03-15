@@ -3,7 +3,7 @@
 
 use std::ops::Deref;
 
-use bitcoin::{OutPoint, Script, Transaction, Txid};
+use bitcoin::{hashes::Hash, OutPoint, Script, Transaction, Txid};
 use dlc::channel::sub_channel::SplitTx;
 use lightning::{
     chain::{
@@ -19,7 +19,7 @@ use lightning::{
 };
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};
 
-use crate::{channel::party_points::PartyBasePoints, error::Error, ChannelId};
+use crate::{channel::party_points::PartyBasePoints, error::Error, ChannelId, ContractId};
 
 pub mod ser;
 
@@ -63,6 +63,37 @@ impl std::fmt::Debug for SubChannel {
             .field("channel_id", &self.channel_id)
             .field("state", &self.state)
             .finish()
+    }
+}
+
+impl SubChannel {
+    /// Return the channel ID of the DLC channel at given index if in a state where such a channel
+    /// is supposed to exist.
+    pub fn get_dlc_channel_id(&self, index: u8) -> Option<ChannelId> {
+        let temporary_channel_id =
+            generate_temporary_channel_id(self.channel_id, self.update_idx, index);
+        match &self.state {
+            SubChannelState::Offered(_) => Some(temporary_channel_id),
+            SubChannelState::Accepted(a) => Some(a.get_dlc_channel_id(temporary_channel_id, index)),
+            SubChannelState::Signed(s) => Some(s.get_dlc_channel_id(temporary_channel_id, index)),
+            SubChannelState::Closing(c) => Some(
+                c.signed_sub_channel
+                    .get_dlc_channel_id(temporary_channel_id, index),
+            ),
+            SubChannelState::CloseOffered(c) => Some(
+                c.signed_subchannel
+                    .get_dlc_channel_id(temporary_channel_id, index),
+            ),
+            SubChannelState::CloseAccepted(c) => Some(
+                c.signed_subchannel
+                    .get_dlc_channel_id(temporary_channel_id, index),
+            ),
+            SubChannelState::CloseConfirmed(c) => Some(
+                c.signed_subchannel
+                    .get_dlc_channel_id(temporary_channel_id, index),
+            ),
+            _ => None,
+        }
     }
 }
 
@@ -115,6 +146,16 @@ pub struct AcceptedSubChannel {
     pub ln_glue_transaction: Transaction,
 }
 
+impl AcceptedSubChannel {
+    fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
+        crate::utils::compute_id(
+            self.split_tx.transaction.txid(),
+            channel_idx as u16 + 1,
+            &temporary_channel_id,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 /// Information about a sub channel whose transactions have been signed.
 pub struct SignedSubChannel {
@@ -132,6 +173,16 @@ pub struct SignedSubChannel {
     pub ln_glue_transaction: Transaction,
     /// Signature of the remote party for the glue transaction.
     pub counter_glue_signature: Signature,
+}
+
+impl SignedSubChannel {
+    fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
+        crate::utils::compute_id(
+            self.split_tx.transaction.txid(),
+            channel_idx as u16 + 1,
+            &temporary_channel_id,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -292,4 +343,18 @@ where
         self.force_close_broadcasting_latest_txn(channel_id, counter_party_node_id)
             .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
+}
+
+/// Generate a temporary channel id for a DLC channel based on the LN channel id, the update index of the
+/// split transaction and the index of the DLC channel within the sub channel.
+pub fn generate_temporary_channel_id(
+    channel_id: ChannelId,
+    split_update_idx: u64,
+    channel_index: u8,
+) -> ContractId {
+    let mut data = Vec::with_capacity(65);
+    data.extend_from_slice(&channel_id);
+    data.extend_from_slice(&split_update_idx.to_be_bytes());
+    data.extend_from_slice(&channel_index.to_be_bytes());
+    bitcoin::hashes::sha256::Hash::hash(&data).into_inner()
 }

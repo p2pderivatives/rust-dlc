@@ -1,9 +1,10 @@
 //! # Module containing structures and methods for working with DLC channels.
 
+use bitcoin::hashes::Hash;
 use dlc_messages::channel::{AcceptChannel, SignChannel};
 use secp256k1_zkp::PublicKey;
 
-use crate::ChannelId;
+use crate::{ChannelId, ContractId};
 
 use self::{
     accepted_channel::AcceptedChannel, offered_channel::OfferedChannel,
@@ -112,4 +113,26 @@ impl Channel {
             Channel::FailedSign(f) => f.channel_id,
         }
     }
+
+    /// Returns the contract id associated with the channel if in a state where a contract is set.
+    pub fn get_contract_id(&self) -> Option<ContractId> {
+        match self {
+            Channel::Offered(o) => Some(o.offered_contract_id),
+            Channel::Accepted(a) => Some(a.accepted_contract_id),
+            Channel::Signed(s) => s.get_contract_id(),
+            Channel::FailedAccept(_) => None,
+            Channel::FailedSign(_) => None,
+        }
+    }
+}
+
+/// Generate a temporary contract id for a DLC based on the channel id and the update index of the DLC channel.
+pub fn generate_temporary_contract_id(
+    channel_id: ChannelId,
+    channel_update_idx: u64,
+) -> ContractId {
+    let mut data = Vec::with_capacity(65);
+    data.extend_from_slice(&channel_id);
+    data.extend_from_slice(&channel_update_idx.to_be_bytes());
+    bitcoin::hashes::sha256::Hash::hash(&data).into_inner()
 }

@@ -384,8 +384,6 @@ pub struct RenewOffer {
     )]
     /// The id of the channel referred to by the message.
     pub channel_id: [u8; 32],
-    /// The temporary id of the offered contract.
-    pub temporary_contract_id: [u8; 32],
     /// The proposed payout for the receiving party for the previous channel
     /// state.
     pub counter_payout: u64,
@@ -404,7 +402,6 @@ pub struct RenewOffer {
 
 impl_dlc_writeable!(RenewOffer, {
     (channel_id, writeable),
-    (temporary_contract_id, writeable),
     (counter_payout, writeable),
     (next_per_update_point, writeable),
     (contract_info, writeable),
