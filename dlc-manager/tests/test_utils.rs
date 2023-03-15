@@ -166,9 +166,14 @@ macro_rules! write_sub_channel {
 #[macro_export]
 macro_rules! assert_channel_state {
     ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
+        assert_channel_state_unlocked!($d.lock().unwrap(), $id, $p $(, $s)?)
+    }};
+}
+
+#[allow(unused_macros)]
+macro_rules! assert_channel_state_unlocked {
+    ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
         let res = $d
-            .lock()
-            .unwrap()
             .get_store()
             .get_channel(&$id)
             .expect("Could not retrieve contract");
@@ -218,6 +223,15 @@ macro_rules! assert_sub_channel_state {
             if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
                 write_sub_channel!(sub_channel, $s_simple);
             })?
+
+            let dlc_channel_id = sub_channel.get_dlc_channel_id(0);
+
+            match sub_channel.state {
+                SubChannelState::Offered(_) => assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id.unwrap(), Offered),
+                SubChannelState::Accepted(_) => assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id.unwrap(), Accepted),
+                _ => {}
+            }
+
         } else {
             panic!("Sub channel not found");
         }

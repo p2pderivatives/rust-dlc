@@ -35,3 +35,14 @@ pub(crate) fn derive_bitcoin_public_revocation_key<C: Verification>(
         key,
     })
 }
+
+/// Generate a temporary contract id for a DLC based on the channel id and the update index of the DLC channel.
+pub fn generate_temporary_contract_id(
+    channel_id: ChannelId,
+    channel_update_idx: u64,
+) -> ContractId {
+    let mut data = Vec::with_capacity(65);
+    data.extend_from_slice(&channel_id);
+    data.extend_from_slice(&channel_update_idx.to_be_bytes());
+    bitcoin::hashes::sha256::Hash::hash(&data).into_inner()
+}

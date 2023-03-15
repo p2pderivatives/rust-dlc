@@ -379,5 +379,12 @@ pub struct SignedChannel {
     /// The current fee rate to be used to create transactions.
     pub fee_rate_per_vb: u64,
     /// Whether this channel is embedded within a Lightning Network channel.
-    pub is_sub_channel: bool,
+    pub sub_channel_id: Option<ChannelId>,
+}
+
+impl SignedChannel {
+    /// Return whether this channel is part of an LN/DLC sub channel.
+    pub fn is_sub_channel(&self) -> bool {
+        self.sub_channel_id.is_some()
+    }
 }

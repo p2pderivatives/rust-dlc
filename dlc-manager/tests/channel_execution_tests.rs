@@ -870,17 +870,14 @@ fn settle_channel(
         .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
         .expect("to be able to offer a settlement of the contract.");
 
-    println!("A");
     first_send
         .send(Some(Message::Channel(ChannelMessage::SettleOffer(
             settle_offer,
         ))))
         .unwrap();
-    println!("B");
 
     second_receive.recv().expect("Error synchronizing");
 
-    println!("C");
     assert_channel_state!(first, channel_id, Signed, SettledOffered);
 
     assert_channel_state!(second, channel_id, Signed, SettledReceived);
@@ -897,7 +894,6 @@ fn settle_channel(
         ))))
         .unwrap();
 
-    println!("D");
     // Process Accept
     first_receive.recv().expect("Error synchronizing");
     // Process Confirm
