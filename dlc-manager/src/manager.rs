@@ -348,6 +348,13 @@ where
         let contract: OfferedContract =
             OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
         contract.validate()?;
+
+        if self.store.get_contract(&contract.id)?.is_some() {
+            return Err(Error::InvalidParameters(
+                "Contract with identical id already exists".to_string(),
+            ));
+        }
+
         self.store.create_contract(&contract)?;
 
         Ok(())
@@ -1133,6 +1140,16 @@ where
         let (channel, contract) = OfferedChannel::from_offer_channel(offer_channel, counter_party)?;
 
         contract.validate()?;
+
+        if self
+            .store
+            .get_channel(&channel.temporary_channel_id)?
+            .is_some()
+        {
+            return Err(Error::InvalidParameters(
+                "Channel with identical idea already in store".to_string(),
+            ));
+        }
 
         self.store
             .upsert_channel(Channel::Offered(channel), Some(Contract::Offered(contract)))?;
@@ -2165,5 +2182,94 @@ where
             .upsert_channel(Channel::Signed(signed_channel), None)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use dlc_messages::Message;
+    use mocks::{
+        dlc_manager::{manager::Manager, Oracle},
+        memory_storage_provider::MemoryStorage,
+        mock_blockchain::MockBlockchain,
+        mock_oracle_provider::MockOracle,
+        mock_time::MockTime,
+        mock_wallet::MockWallet,
+    };
+    use secp256k1_zkp::PublicKey;
+    use std::{collections::HashMap, rc::Rc};
+
+    type TestManager = Manager<
+        Rc<MockWallet>,
+        Rc<MockBlockchain>,
+        Rc<MemoryStorage>,
+        Rc<MockOracle>,
+        Rc<MockTime>,
+        Rc<MockBlockchain>,
+    >;
+
+    fn get_manager() -> TestManager {
+        let blockchain = Rc::new(MockBlockchain {});
+        let store = Rc::new(MemoryStorage::new());
+        let wallet = Rc::new(MockWallet::new(&blockchain, 100));
+
+        let oracle_list = (0..5).map(|_| MockOracle::new()).collect::<Vec<_>>();
+        let oracles: HashMap<bitcoin::XOnlyPublicKey, _> = oracle_list
+            .into_iter()
+            .map(|x| (x.get_public_key(), Rc::new(x)))
+            .collect();
+        let time = Rc::new(MockTime {});
+
+        mocks::mock_time::set_time(0);
+
+        Manager::new(
+            wallet,
+            blockchain.clone(),
+            store.clone(),
+            oracles,
+            time,
+            blockchain.clone(),
+        )
+        .unwrap()
+    }
+
+    fn pubkey() -> PublicKey {
+        "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+            .parse()
+            .unwrap()
+    }
+
+    #[test]
+    fn reject_offer_with_existing_contract_id() {
+        let offer_message = Message::Offer(
+            serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap(),
+        );
+
+        let mut manager = get_manager();
+
+        manager
+            .on_dlc_message(&offer_message, pubkey())
+            .expect("To accept the first offer message");
+
+        manager
+            .on_dlc_message(&offer_message, pubkey())
+            .expect_err("To reject the second offer message");
+    }
+
+    #[test]
+    fn reject_channel_offer_with_existing_channel_id() {
+        let offer_message = Message::OfferChannel(
+            serde_json::from_str(include_str!("../test_inputs/offer_channel.json")).unwrap(),
+        );
+
+        let mut manager = get_manager();
+
+        manager
+            .on_dlc_message(&offer_message, pubkey())
+            .expect("To accept the first offer message");
+
+        manager
+            .on_dlc_message(&offer_message, pubkey())
+            .expect_err("To reject the second offer message");
     }
 }

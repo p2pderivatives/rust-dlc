@@ -797,7 +797,7 @@ mod test {
 
     #[test]
     fn hyperbola_invalid_parameters_tests() {
-        let hyperbola = HyperbolaPayoutCurvePiece::new(
+        HyperbolaPayoutCurvePiece::new(
             PayoutPoint {
                 event_outcome: 1,
                 outcome_payout: 0,
