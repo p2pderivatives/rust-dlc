@@ -201,6 +201,8 @@ pub struct CloseOfferedSubChannel {
 pub struct CloseAcceptedSubChannel {
     /// The signed sub channel for which the offer was made.
     pub signed_subchannel: SignedSubChannel,
+    /// The balance of the local party for the DLC sub channel.
+    pub own_balance: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -208,6 +210,8 @@ pub struct CloseAcceptedSubChannel {
 pub struct CloseConfirmedSubChannel {
     /// The signed sub channel for which the offer was made.
     pub signed_subchannel: SignedSubChannel,
+    /// The balance of the local party for the DLC sub channel.
+    pub own_balance: u64,
 }
 
 /// Information about a sub channel that is in the process of being unilateraly closed.

@@ -1,8 +1,9 @@
 //! # This module contains static functions to update the state of a DLC channel.
 
-use std::ops::Deref;
+use std::{ops::Deref, sync::Mutex};
 
 use crate::{
+    chain_monitor::{ChainMonitor, ChannelInfo, TxType},
     channel::{
         accepted_channel::AcceptedChannel,
         offered_channel::OfferedChannel,
@@ -364,6 +365,7 @@ pub fn verify_and_sign_accepted_channel<S: Deref>(
     accept_channel: &AcceptChannel,
     cet_nsequence: u32,
     signer: &S,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedChannel, SignedContract, SignChannel), Error>
 where
     S::Target: Signer,
@@ -376,6 +378,7 @@ where
         cet_nsequence,
         signer,
         None,
+        chain_monitor,
     )
 }
 
@@ -387,6 +390,7 @@ pub(crate) fn verify_and_sign_accepted_channel_internal<S: Deref>(
     cet_nsequence: u32,
     signer: &S,
     sub_channel_info: Option<SubChannelSignVerifyInfo>,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedChannel, SignedContract, SignChannel), Error>
 where
     S::Target: Signer,
@@ -560,6 +564,14 @@ where
         &accept_revoke_params.publish_pk.inner,
     )?;
 
+    chain_monitor.lock().unwrap().add_tx(
+        buffer_transaction.txid(),
+        ChannelInfo {
+            channel_id,
+            tx_type: TxType::BufferTx,
+        },
+    );
+
     let signed_channel = SignedChannel {
         counter_party: signed_contract
             .accepted_contract
@@ -617,6 +629,7 @@ pub fn verify_signed_channel<S: Deref>(
     accepted_contract: &AcceptedContract,
     sign_channel: &SignChannel,
     signer: &S,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedChannel, SignedContract), Error>
 where
     S::Target: Signer,
@@ -628,6 +641,7 @@ where
         sign_channel,
         signer,
         None,
+        chain_monitor,
     )
 }
 
@@ -638,6 +652,7 @@ pub(crate) fn verify_signed_channel_internal<S: Deref>(
     sign_channel: &SignChannel,
     signer: &S,
     sub_channel_info: Option<SubChannelVerifyInfo>,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedChannel, SignedContract), Error>
 where
     S::Target: Signer,
@@ -707,6 +722,14 @@ where
     } else {
         accepted_contract.dlc_transactions.get_fund_output_index()
     };
+
+    chain_monitor.lock().unwrap().add_tx(
+        accepted_channel.buffer_transaction.txid(),
+        ChannelInfo {
+            channel_id: accepted_channel.channel_id,
+            tx_type: TxType::BufferTx,
+        },
+    );
 
     let signed_channel = SignedChannel {
         counter_party: signed_contract
@@ -846,6 +869,7 @@ pub fn settle_channel_accept<S: Deref, T: Deref>(
     peer_timeout: u64,
     signer: &S,
     time: &T,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<SettleAccept, Error>
 where
     S::Target: Signer,
@@ -860,6 +884,7 @@ where
         signer,
         time,
         None,
+        chain_monitor,
     )
 }
 
@@ -872,6 +897,7 @@ pub(crate) fn settle_channel_accept_internal<S: Deref, T: Deref>(
     signer: &S,
     time: &T,
     own_settle_adaptor_sk: Option<SecretKey>,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<SettleAccept, Error>
 where
     S::Target: Signer,
@@ -939,6 +965,14 @@ where
         channel.fee_rate_per_vb,
     )?;
 
+    chain_monitor.lock().unwrap().add_tx(
+        settle_tx.txid(),
+        ChannelInfo {
+            channel_id: channel.channel_id,
+            tx_type: TxType::SettleTx,
+        },
+    );
+
     channel.state = SignedChannelState::SettledAccepted {
         counter_next_per_update_point,
         own_next_per_update_point,
@@ -971,6 +1005,7 @@ pub fn settle_channel_confirm<T: Deref, S: Deref>(
     peer_timeout: u64,
     signer: &S,
     time: &T,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<SettleConfirm, Error>
 where
     T::Target: Time,
@@ -987,6 +1022,7 @@ where
         time,
         None,
         None,
+        chain_monitor,
     )
 }
 
@@ -1001,6 +1037,7 @@ pub(crate) fn settle_channel_confirm_internal<T: Deref, S: Deref>(
     time: &T,
     own_settle_adaptor_sk: Option<SecretKey>,
     counter_settle_adaptor_pk: Option<PublicKey>,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<SettleConfirm, Error>
 where
     T::Target: Time,
@@ -1060,6 +1097,14 @@ where
         )),
         channel.fee_rate_per_vb,
     )?;
+
+    chain_monitor.lock().unwrap().add_tx(
+        settle_tx.txid(),
+        ChannelInfo {
+            channel_id: channel.channel_id,
+            tx_type: TxType::SettleTx,
+        },
+    );
 
     let per_update_seed_pk = channel.own_per_update_seed;
     let per_update_seed = signer.get_secret_key_for_pubkey(&per_update_seed_pk)?;

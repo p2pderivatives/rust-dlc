@@ -6,11 +6,7 @@ use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::manager::Manager;
-use dlc_manager::{
-    channel::{signed_channel::SignedChannelState, Channel},
-    contract::Contract,
-    Blockchain, Oracle, Storage, Wallet,
-};
+use dlc_manager::{channel::Channel, contract::Contract, Blockchain, Oracle, Storage, Wallet};
 use dlc_manager::{ChannelId, ContractId};
 use dlc_messages::{ChannelMessage, Message};
 use electrs_blockchain_provider::ElectrsBlockchainProvider;
@@ -782,6 +778,14 @@ fn close_established_channel<F>(
 
     generate_blocks(10);
 
+    second
+        .lock()
+        .unwrap()
+        .periodic_check()
+        .expect("to be able to do the periodic check");
+
+    assert_channel_state!(second, channel_id, Signed, CounterClosing);
+
     first
         .lock()
         .unwrap()
@@ -803,6 +807,8 @@ fn close_established_channel<F>(
 
     assert_contract_state!(first, contract_id, PreClosed);
 
+    generate_blocks(1);
+
     second
         .lock()
         .unwrap()
@@ -812,7 +818,7 @@ fn close_established_channel<F>(
     assert_channel_state!(second, channel_id, Signed, CounterClosed);
     assert_contract_state!(second, contract_id, PreClosed);
 
-    generate_blocks(6);
+    generate_blocks(5);
 
     first.lock().unwrap().periodic_check().unwrap();
     second.lock().unwrap().periodic_check().unwrap();

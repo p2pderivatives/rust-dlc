@@ -18,7 +18,7 @@ use bitcoincore_rpc::RpcApi;
 use console_logger::ConsoleLogger;
 use custom_signer::{CustomKeysManager, CustomSigner};
 use dlc_manager::{
-    channel::Channel, manager::Manager, sub_channel_manager::SubChannelManager,
+    channel::Channel, contract::Contract, manager::Manager, sub_channel_manager::SubChannelManager,
     subchannel::SubChannelState, Blockchain, ChannelId, Oracle, Signer, Storage, Utxo, Wallet,
 };
 use dlc_messages::{ChannelMessage, Message, SubChannelMessage};
@@ -160,6 +160,7 @@ impl LnDlcParty {
         }
         self.chain_height = chain_tip_height;
         self.sub_channel_manager.check_for_watched_tx().unwrap();
+        self.dlc_manager.periodic_check().unwrap();
     }
 
     fn process_events(&self) {
@@ -455,11 +456,7 @@ fn create_ln_node(
         .unwrap(),
     );
 
-    let sub_channel_manager = SubChannelManager::new(
-        channel_manager.clone(),
-        dlc_manager.clone(),
-        blockchain_provider.get_blockchain_height().unwrap(),
-    );
+    let sub_channel_manager = SubChannelManager::new(channel_manager.clone(), dlc_manager.clone());
 
     LnDlcParty {
         peer_manager: Arc::new(peer_manager),
@@ -813,15 +810,41 @@ fn ln_dlc_test(test_path: TestPath) {
 
     let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
 
-    if let TestPath::RenewedClose = test_path {
+    let contract_id = if let TestPath::RenewedClose = test_path {
+        let contract_id =
+            assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
         renew(&alice_node, &bob_node, dlc_channel_id, &test_params);
+        assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, Closed);
+        assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, Closed);
+        Some(assert_channel_contract_state!(
+            alice_node.dlc_manager,
+            dlc_channel_id,
+            Confirmed
+        ))
     } else if let TestPath::SettledClose | TestPath::SettledRenewedClose = test_path {
+        let contract_id =
+            assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
         settle(&alice_node, &bob_node, dlc_channel_id, &test_params);
+        assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, Closed);
+        assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, Closed);
 
         if let TestPath::SettledRenewedClose = test_path {
             renew(&alice_node, &bob_node, dlc_channel_id, &test_params);
+            Some(assert_channel_contract_state!(
+                alice_node.dlc_manager,
+                dlc_channel_id,
+                Confirmed
+            ))
+        } else {
+            None
         }
-    }
+    } else {
+        Some(assert_channel_contract_state!(
+            alice_node.dlc_manager,
+            dlc_channel_id,
+            Confirmed
+        ))
+    };
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
@@ -829,6 +852,9 @@ fn ln_dlc_test(test_path: TestPath) {
         if let TestPath::SplitCheat = test_path {
             alice_node.dlc_manager.get_store().save();
         }
+
+        let contract_id =
+            assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
 
         let (close_offer, _) = alice_node
             .sub_channel_manager
@@ -870,6 +896,22 @@ fn ln_dlc_test(test_path: TestPath) {
             .sub_channel_manager
             .on_sub_channel_message(&close_finalize, &bob_node.channel_manager.get_our_node_id())
             .unwrap();
+
+        assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, Closed);
+        assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, Closed);
+
+        assert_channel_state_unlocked!(
+            alice_node.dlc_manager,
+            dlc_channel_id,
+            Signed,
+            CollaborativelyClosed
+        );
+        assert_channel_state_unlocked!(
+            bob_node.dlc_manager,
+            dlc_channel_id,
+            Signed,
+            CollaborativelyClosed
+        );
 
         offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
 
@@ -941,6 +983,12 @@ fn ln_dlc_test(test_path: TestPath) {
         .initiate_force_close_sub_channel(&channel_id)
         .unwrap();
 
+    assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, Closing);
+
+    generate_blocks(1);
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, Closing);
+
     generate_blocks(500);
 
     alice_node
@@ -956,6 +1004,62 @@ fn ln_dlc_test(test_path: TestPath) {
         let cheat_tx = post_split_commit_tx.unwrap()[0].clone();
         ln_cheated_check(&cheat_tx, &mut bob_node, electrs.clone(), &generate_blocks);
     }
+
+    generate_blocks(1);
+
+    bob_node.update_to_chain_tip();
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OnChainClosed);
+    assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id; CounterOnChainClosed);
+
+    if let Some(contract_id) = contract_id {
+        assert_channel_state_unlocked!(alice_node.dlc_manager, dlc_channel_id, Signed, Closing);
+        assert_channel_state_unlocked!(
+            bob_node.dlc_manager,
+            dlc_channel_id,
+            Signed,
+            CounterClosing
+        );
+
+        generate_blocks(dlc_manager::manager::CET_NSEQUENCE as u64);
+
+        alice_node.update_to_chain_tip();
+        generate_blocks(1);
+        bob_node.update_to_chain_tip();
+
+        assert_channel_state_unlocked!(alice_node.dlc_manager, dlc_channel_id, Signed, Closed);
+        assert_channel_state_unlocked!(bob_node.dlc_manager, dlc_channel_id, Signed, CounterClosed);
+
+        assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, PreClosed);
+        assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, PreClosed);
+
+        alice_node.update_to_chain_tip();
+        bob_node.update_to_chain_tip();
+
+        generate_blocks(6);
+
+        alice_node.update_to_chain_tip();
+        bob_node.update_to_chain_tip();
+
+        assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, Closed);
+        assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, Closed);
+    } else {
+        assert_channel_state_unlocked!(alice_node.dlc_manager, dlc_channel_id, Signed, Closed);
+        assert_channel_state_unlocked!(bob_node.dlc_manager, dlc_channel_id, Signed, CounterClosed);
+    }
+
+    assert!(alice_node
+        .dlc_manager
+        .get_chain_monitor()
+        .lock()
+        .unwrap()
+        .is_empty());
+    assert!(bob_node
+        .dlc_manager
+        .get_chain_monitor()
+        .lock()
+        .unwrap()
+        .is_empty());
 }
 
 fn settle(
