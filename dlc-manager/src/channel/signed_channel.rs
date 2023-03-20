@@ -284,6 +284,12 @@ typed_enum!(
         /// A [`SignedChannel`] is in `Closed` state when it was force closed by
         /// the local party.
         Closed,
+        /// A [`SignedChannel`] is in `CounterClosing` state when the counter party broadcasted a
+        /// buffer transaction.
+        CounterClosing {
+            /// The transaction id of the buffer transaction that was found on chain.
+            buffer_txid: Txid,
+        },
         /// A [`SignedChannel`] is in `CounterClosed` state when it was force
         /// closed by the counter party.
         CounterClosed,
@@ -322,6 +328,19 @@ impl SignedChannel {
     /// a contract is established or under establishment.
     pub fn get_contract_id(&self) -> Option<ContractId> {
         match &self.state {
+            SignedChannelState::CounterClosing { .. } => self
+                .roll_back_state
+                .as_ref()
+                .expect("To have a rollback state")
+                .get_contract_id(),
+            _ => self.state.get_contract_id(),
+        }
+    }
+}
+
+impl SignedChannelState {
+    fn get_contract_id(&self) -> Option<ContractId> {
+        match &self {
             SignedChannelState::Established {
                 signed_contract_id, ..
             } => Some(*signed_contract_id),

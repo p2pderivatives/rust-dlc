@@ -62,10 +62,10 @@ impl_dlc_writeable_enum!(
     (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
     (9, Closing, {(buffer_transaction, writeable), (signed_cet, writeable), (contract_id, writeable), (attestations, vec)}),
     (10, ClosedPunished, { (punishment_txid, writeable) }),
-    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) })
+    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) }),
+    (15, CounterClosing, { (buffer_txid, writeable) })
     ;;(12, Closed), (13, CounterClosed), (14, CollaborativelyClosed)
 );
 
 impl_dlc_writeable!(FailedAccept, {(temporary_channel_id, writeable), (error_message, {cb_writeable, write_string, read_string}), (accept_message, writeable), (counter_party, writeable)});
 impl_dlc_writeable!(FailedSign, {(channel_id, writeable), (error_message, {cb_writeable, write_string, read_string}), (sign_message, writeable), (counter_party, writeable)});
-

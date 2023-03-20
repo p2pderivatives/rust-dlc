@@ -57,9 +57,7 @@ macro_rules! receive_loop {
                             .parse()
                             .unwrap(),
                     );
-                    println!("SYNCING {} {}!", m, stringify!($manager));
                     $sync_send.send(()).expect("Error syncing");
-                    println!("SYNCED {} {}!", m, stringify!($manager));
                     match res {
                         Ok(opt) => {
                             if $expect_err.load(Ordering::Relaxed) != false {
@@ -108,9 +106,14 @@ macro_rules! write_contract {
 #[macro_export]
 macro_rules! assert_contract_state {
     ($d:expr, $id:expr, $p:ident) => {
+        assert_contract_state_unlocked!($d.lock().unwrap(), $id, $p);
+    };
+}
+
+#[macro_export]
+macro_rules! assert_contract_state_unlocked {
+    ($d:expr, $id:expr, $p:ident) => {
         let res = $d
-            .lock()
-            .unwrap()
             .get_store()
             .get_contract(&$id)
             .expect("Could not retrieve contract");
@@ -126,6 +129,21 @@ macro_rules! assert_contract_state {
             panic!("Contract {:02x?} does not exist in store", $id);
         }
     };
+}
+
+#[macro_export]
+macro_rules! assert_channel_contract_state {
+    ($d: expr, $id: expr, $p: ident) => {{
+        let channel = $d
+            .get_store()
+            .get_channel(&$id)
+            .expect("Could not retrieve contract")
+            .expect(&format!("No such channel: {:?}", $id));
+        let contract_id = channel.get_contract_id().expect("No contract id");
+
+        assert_contract_state_unlocked!($d, contract_id, $p);
+        contract_id
+    }};
 }
 
 #[macro_export]
@@ -178,7 +196,7 @@ macro_rules! assert_channel_state_unlocked {
             .get_channel(&$id)
             .expect("Could not retrieve contract");
         if let Some(Channel::$p(c)) = res {
-            $(if let SignedChannelState::$s { .. } = c.state {
+            $(if let dlc_manager::channel::signed_channel::SignedChannelState::$s { .. } = c.state {
             } else {
                 panic!("Unexpected signed channel state {:?}", c.state);
             })?
@@ -216,9 +234,9 @@ macro_rules! assert_sub_channel_state {
             if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
                 write_sub_channel!(sub_channel, $s_tuple);
             })?
-            $(if let SubChannelState::$s_simple  = c.state {
+            $(if let SubChannelState::$s_simple  = sub_channel.state {
             } else {
-                panic!("Unexpected sub channel state {:?}", c.state);
+                panic!("Unexpected sub channel state {:?}", sub_channel.state);
             }
             if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
                 write_sub_channel!(sub_channel, $s_simple);
@@ -226,10 +244,18 @@ macro_rules! assert_sub_channel_state {
 
             let dlc_channel_id = sub_channel.get_dlc_channel_id(0);
 
-            match sub_channel.state {
-                SubChannelState::Offered(_) => assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id.unwrap(), Offered),
-                SubChannelState::Accepted(_) => assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id.unwrap(), Accepted),
-                _ => {}
+            if let Some(dlc_channel_id) = dlc_channel_id {
+                match sub_channel.state {
+                    SubChannelState::Offered(_) => {
+                        assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id, Offered);
+                        assert_channel_contract_state!($d.get_dlc_manager(), dlc_channel_id, Offered);
+                    }
+                    SubChannelState::Accepted(_) => {
+                        assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id, Accepted);
+                        assert_channel_contract_state!($d.get_dlc_manager(), dlc_channel_id, Accepted);
+                    }
+                    _ => {}
+                }
             }
 
         } else {
