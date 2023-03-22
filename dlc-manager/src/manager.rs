@@ -2363,11 +2363,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use dlc_messages::Message;
+    use dlc_messages::{ChannelMessage, Message, OnChainMessage};
     use mocks::{
         dlc_manager::{manager::Manager, Oracle},
         memory_storage_provider::MemoryStorage,
-        mock_blockchain::MockBlockchain,
+        mock_blockchain::{MockBlockchain, MockBroadcaster},
         mock_oracle_provider::MockOracle,
         mock_time::MockTime,
         mock_wallet::MockWallet,
@@ -2377,15 +2377,15 @@ mod test {
 
     type TestManager = Manager<
         Rc<MockWallet>,
-        Rc<MockBlockchain>,
+        Rc<MockBlockchain<Rc<MockBroadcaster>>>,
         Rc<MemoryStorage>,
         Rc<MockOracle>,
         Rc<MockTime>,
-        Rc<MockBlockchain>,
+        Rc<MockBlockchain<Rc<MockBroadcaster>>>,
     >;
 
     fn get_manager() -> TestManager {
-        let blockchain = Rc::new(MockBlockchain {});
+        let blockchain = Rc::new(MockBlockchain::new(Rc::new(MockBroadcaster {})));
         let store = Rc::new(MemoryStorage::new());
         let wallet = Rc::new(MockWallet::new(&blockchain, 100));
 
@@ -2409,11 +2409,11 @@ mod test {
 
     #[test]
     fn reject_offer_with_existing_contract_id() {
-        let offer_message = Message::Offer(
+        let offer_message = Message::OnChain(OnChainMessage::Offer(
             serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap(),
-        );
+        ));
 
-        let mut manager = get_manager();
+        let manager = get_manager();
 
         manager
             .on_dlc_message(&offer_message, pubkey())
@@ -2426,11 +2426,11 @@ mod test {
 
     #[test]
     fn reject_channel_offer_with_existing_channel_id() {
-        let offer_message = Message::OfferChannel(
+        let offer_message = Message::Channel(ChannelMessage::Offer(
             serde_json::from_str(include_str!("../test_inputs/offer_channel.json")).unwrap(),
-        );
+        ));
 
-        let mut manager = get_manager();
+        let manager = get_manager();
 
         manager
             .on_dlc_message(&offer_message, pubkey())
