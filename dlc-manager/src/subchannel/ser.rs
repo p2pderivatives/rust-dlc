@@ -38,7 +38,8 @@ impl_dlc_writeable_enum!(SubChannelState,
     ;;;
     (8, OnChainClosed),
     (9, CounterOnChainClosed),
-    (10, OffChainClosed)
+    (10, OffChainClosed),
+    (11, Rejected)
 );
 
 impl_dlc_writeable!(OfferedSubChannel, { (per_split_point, writeable) });

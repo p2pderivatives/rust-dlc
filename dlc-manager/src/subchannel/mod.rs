@@ -122,6 +122,8 @@ pub enum SubChannelState {
     OffChainClosed,
     /// The sub channel was closed by broadcasting a punishment transaction.
     ClosedPunished(Txid),
+    /// An offer to establish a sub channel was rejected.
+    Rejected,
 }
 
 #[derive(Debug, Clone)]
