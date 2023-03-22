@@ -163,6 +163,7 @@ trait Evaluable {
         &self,
         outcome: u64,
         rounding_intervals: &RoundingIntervals,
+        total_collateral: u64,
     ) -> Result<u64, Error> {
         let payout_double = self.evaluate(outcome);
         if payout_double.is_sign_negative() || (payout_double != 0.0 && !payout_double.is_normal())
@@ -172,7 +173,18 @@ trait Evaluable {
                 outcome, payout_double
             )));
         }
-        Ok(rounding_intervals.round(outcome, payout_double))
+
+        if payout_double > total_collateral as f64 {
+            return Err(Error::InvalidParameters(
+                "Computed payout is greater than total collateral".to_string(),
+            ));
+        }
+
+        // Ensure that we never round over the total collateral.
+        Ok(u64::min(
+            rounding_intervals.round(outcome, payout_double),
+            total_collateral,
+        ))
     }
 
     fn get_first_outcome(&self) -> u64;
@@ -189,7 +201,8 @@ trait Evaluable {
             Some(cur) => cur,
             None => {
                 let first_outcome = self.get_first_outcome();
-                let first_payout = self.get_rounded_payout(first_outcome, rounding_intervals)?;
+                let first_payout =
+                    self.get_rounded_payout(first_outcome, rounding_intervals, total_collateral)?;
                 RangePayout {
                     start: first_outcome as usize,
                     count: 1,
@@ -232,7 +245,7 @@ where
         .unwrap_or(u64::MAX);
 
     for outcome in (first_outcome + 1)..range_end {
-        let payout = function.get_rounded_payout(outcome, rounding_intervals)?;
+        let payout = function.get_rounded_payout(outcome, rounding_intervals, total_collateral)?;
         if payout > total_collateral {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral.".to_string(),
@@ -1154,5 +1167,52 @@ mod test {
         rounding_intervals
             .validate()
             .expect_err("should not accept rounding intervals not strictly increasing");
+    }
+
+    #[test]
+    fn should_not_round_above_total_collateral() {
+        let rounding_intervals = RoundingIntervals {
+            intervals: vec![RoundingInterval {
+                begin_interval: 0,
+                rounding_mod: 25,
+            }],
+        };
+
+        let payout_function = PayoutFunction {
+            payout_function_pieces: vec![
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 0,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 500,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+                PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
+                    payout_points: vec![
+                        PayoutPoint {
+                            event_outcome: 500,
+                            outcome_payout: 0,
+                            extra_precision: 0,
+                        },
+                        PayoutPoint {
+                            event_outcome: 1048575,
+                            outcome_payout: 7513,
+                            extra_precision: 0,
+                        },
+                    ],
+                }),
+            ],
+        };
+
+        payout_function
+            .to_range_payouts(7513, &rounding_intervals)
+            .expect("To be able to compute the range payouts");
     }
 }
