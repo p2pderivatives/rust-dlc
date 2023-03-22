@@ -295,9 +295,9 @@ impl_dlc_writeable!(SubChannelCloseFinalize, {
 /// A message to reject an offer to collaboratively close a DLC channel embedded within a Lightning
 /// channel.
 #[derive(Clone, Debug)]
-pub struct SubChannelCloseReject {
+pub struct Reject {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
 }
 
-impl_dlc_writeable!(SubChannelCloseReject, { (channel_id, writeable) });
+impl_dlc_writeable!(Reject, { (channel_id, writeable) });

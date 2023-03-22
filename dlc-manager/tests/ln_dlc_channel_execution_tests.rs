@@ -136,6 +136,8 @@ enum TestPath {
     CheatPostSplitCommit,
     OffChainClosed,
     SplitCheat,
+    OfferRejected,
+    CloseRejected,
 }
 
 impl LnDlcParty {
@@ -523,6 +525,18 @@ fn ln_dlc_split_cheat() {
     ln_dlc_test(TestPath::SplitCheat);
 }
 
+#[test]
+#[ignore]
+fn ln_dlc_rejected_offer() {
+    ln_dlc_test(TestPath::OfferRejected);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_rejected_close() {
+    ln_dlc_test(TestPath::CloseRejected);
+}
+
 // #[derive(Debug)]
 // pub struct TestParams {
 //     pub oracles: Vec<p2pd_oracle_client::P2PDOracleClient>,
@@ -737,6 +751,11 @@ fn ln_dlc_test(test_path: TestPath) {
     let bob_channel_details = bob_node.channel_manager.list_usable_channels().remove(0);
     let channel_id = bob_channel_details.channel_id;
 
+    if let TestPath::OfferRejected = test_path {
+        reject_offer(&test_params, &alice_node, &bob_node, &channel_id);
+        return;
+    }
+
     offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
 
     if let TestPath::CheatPreSplitCommit = test_path {
@@ -848,7 +867,7 @@ fn ln_dlc_test(test_path: TestPath) {
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
-    if let TestPath::OffChainClosed | TestPath::SplitCheat = test_path {
+    if let TestPath::OffChainClosed | TestPath::SplitCheat | TestPath::CloseRejected = test_path {
         if let TestPath::SplitCheat = test_path {
             alice_node.dlc_manager.get_store().save();
         }
@@ -868,6 +887,26 @@ fn ln_dlc_test(test_path: TestPath) {
                 &alice_node.channel_manager.get_our_node_id(),
             )
             .unwrap();
+
+        if let TestPath::CloseRejected = test_path {
+            let reject = bob_node
+                .sub_channel_manager
+                .reject_sub_channel_close_offer(channel_id)
+                .unwrap();
+
+            alice_node
+                .sub_channel_manager
+                .on_sub_channel_message(
+                    &SubChannelMessage::Reject(reject),
+                    &bob_node.channel_manager.get_our_node_id(),
+                )
+                .unwrap();
+
+            assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, Signed);
+            assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, Signed);
+
+            return;
+        }
 
         let (close_accept, _) = bob_node
             .sub_channel_manager
@@ -1240,7 +1279,7 @@ fn ln_cheated_check<F>(
         .any(|x| *x == receive_addr));
 }
 
-fn offer_sub_channel(
+fn offer_common(
     test_params: &TestParams,
     alice_node: &LnDlcParty,
     bob_node: &LnDlcParty,
@@ -1279,6 +1318,15 @@ fn offer_sub_channel(
         .unwrap();
 
     assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
+}
+
+fn offer_sub_channel(
+    test_params: &TestParams,
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    channel_id: &ChannelId,
+) {
+    offer_common(test_params, alice_node, bob_node, channel_id);
 
     let (_, accept) = bob_node
         .sub_channel_manager
@@ -1314,4 +1362,30 @@ fn offer_sub_channel(
         .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
         .unwrap();
     alice_node.process_events();
+}
+
+fn reject_offer(
+    test_params: &TestParams,
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    channel_id: &ChannelId,
+) {
+    offer_common(test_params, alice_node, bob_node, channel_id);
+
+    let reject = bob_node
+        .sub_channel_manager
+        .reject_sub_channel_offer(*channel_id)
+        .unwrap();
+
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id; Rejected);
+
+    alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &SubChannelMessage::Reject(reject),
+            &bob_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap();
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id; Rejected);
 }

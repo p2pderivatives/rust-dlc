@@ -54,8 +54,8 @@ use secp256k1_zkp::Verification;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
 use segmentation::{SegmentChunk, SegmentStart};
 use sub_channel::{
-    SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm, SubChannelCloseFinalize,
-    SubChannelCloseOffer, SubChannelCloseReject, SubChannelConfirm, SubChannelFinalize,
+    Reject as SubChannelReject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
+    SubChannelCloseFinalize, SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize,
     SubChannelOffer,
 };
 
@@ -100,7 +100,7 @@ impl_type!(SUB_CHANNEL_CLOSE_OFFER, SubChannelCloseOffer, 43042);
 impl_type!(SUB_CHANNEL_CLOSE_ACCEPT, SubChannelCloseAccept, 43044);
 impl_type!(SUB_CHANNEL_CLOSE_CONFIRM, SubChannelCloseConfirm, 43046);
 impl_type!(SUB_CHANNEL_CLOSE_FINALIZE, SubChannelCloseFinalize, 43048);
-impl_type!(SUB_CHANNEL_CLOSE_REJECT, SubChannelCloseReject, 43050);
+impl_type!(SUB_CHANNEL_REJECT, SubChannelReject, 43050);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
@@ -560,7 +560,7 @@ pub enum SubChannelMessage {
     CloseAccept(SubChannelCloseAccept),
     CloseConfirm(SubChannelCloseConfirm),
     CloseFinalize(SubChannelCloseFinalize),
-    CloseReject(SubChannelCloseReject),
+    Reject(SubChannelReject),
 }
 
 macro_rules! impl_type_writeable_for_enum {
@@ -624,7 +624,7 @@ impl_type_writeable_for_enum!(SubChannelMessage,
     CloseAccept,
     CloseConfirm,
     CloseFinalize,
-    CloseReject
+    Reject
 });
 
 #[derive(Debug, Clone)]

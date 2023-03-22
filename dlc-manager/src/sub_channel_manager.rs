@@ -9,8 +9,9 @@ use dlc_messages::{
     channel::{AcceptChannel, OfferChannel},
     oracle_msgs::OracleAnnouncement,
     sub_channel::{
-        SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm, SubChannelCloseFinalize,
-        SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize, SubChannelOffer,
+        Reject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
+        SubChannelCloseFinalize, SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize,
+        SubChannelOffer,
     },
     FundingSignatures, SubChannelMessage,
 };
@@ -179,7 +180,10 @@ where
                 self.on_sub_channel_close_finalize(f, sender)?;
                 Ok(None)
             }
-            SubChannelMessage::CloseReject(_) => todo!(),
+            SubChannelMessage::Reject(r) => {
+                self.on_sub_channel_reject(r, sender)?;
+                Ok(None)
+            }
         }
     }
 
@@ -938,6 +942,42 @@ where
             .upsert_sub_channel(&sub_channel)?;
 
         Ok((close_accept, sub_channel.counter_party))
+    }
+
+    /// Reject an offer to establish a sub channel.
+    pub fn reject_sub_channel_offer(&self, channel_id: ChannelId) -> Result<Reject, Error> {
+        let (mut sub_channel, _) = get_sub_channel_in_state!(
+            self.dlc_channel_manager,
+            channel_id,
+            Offered,
+            None::<PublicKey>
+        )?;
+
+        sub_channel.state = SubChannelState::Rejected;
+
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&sub_channel)?;
+
+        Ok(Reject { channel_id })
+    }
+
+    /// Reject an offer to collaboratively close a sub channel off chain.
+    pub fn reject_sub_channel_close_offer(&self, channel_id: ChannelId) -> Result<Reject, Error> {
+        let (mut sub_channel, state) = get_sub_channel_in_state!(
+            self.dlc_channel_manager,
+            channel_id,
+            CloseOffered,
+            None::<PublicKey>
+        )?;
+
+        sub_channel.state = SubChannelState::Signed(state.signed_subchannel);
+
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&sub_channel)?;
+
+        Ok(Reject { channel_id })
     }
 
     fn on_subchannel_offer(
@@ -2145,6 +2185,48 @@ where
         self.dlc_channel_manager
             .get_store()
             .persist_chain_monitor(&self.dlc_channel_manager.get_chain_monitor().lock().unwrap())?;
+
+        Ok(())
+    }
+
+    fn on_sub_channel_reject(&self, reject: &Reject, peer_id: &PublicKey) -> Result<(), Error> {
+        let sub_channel = self
+            .dlc_channel_manager
+            .get_store()
+            .get_sub_channel(reject.channel_id)?;
+
+        match sub_channel {
+            None => {
+                return Err(Error::InvalidParameters(format!(
+                    "No such subchannel: {:?}",
+                    reject.channel_id
+                )))
+            }
+            Some(mut s) => {
+                if s.counter_party != *peer_id {
+                    return Err(Error::InvalidParameters(
+                        "Message from invalid peer".to_string(),
+                    ));
+                }
+                match s.state {
+                    SubChannelState::Offered(_) => {
+                        s.state = SubChannelState::Rejected;
+                    }
+                    SubChannelState::CloseOffered(o) => {
+                        s.state = SubChannelState::Signed(o.signed_subchannel);
+                    }
+                    _ => {
+                        return Err(Error::InvalidParameters(
+                            "Not in a state to be rejected".to_string(),
+                        ))
+                    }
+                };
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&s)?;
+            }
+        }
 
         Ok(())
     }

@@ -163,6 +163,7 @@ convertible_enum!(
         CloseConfirmed,
         OffChainClosed,
         ClosedPunished,
+        Rejected,
     },
     SubChannelState
 );
