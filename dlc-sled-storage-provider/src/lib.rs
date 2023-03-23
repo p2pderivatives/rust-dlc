@@ -48,10 +48,10 @@ const CHANNEL_TREE: u8 = 2;
 const CHAIN_MONITOR_TREE: u8 = 3;
 const CHAIN_MONITOR_KEY: u8 = 4;
 #[cfg(feature = "wallet")]
-const UTXO_TREE: u8 = 6;
+const UTXO_TREE: u8 = 5;
 #[cfg(feature = "wallet")]
-const KEY_PAIR_TREE: u8 = 7;
-const SUB_CHANNEL_TREE: u8 = 3;
+const KEY_PAIR_TREE: u8 = 6;
+const SUB_CHANNEL_TREE: u8 = 7;
 #[cfg(feature = "wallet")]
 const ADDRESS_TREE: u8 = 8;
 
@@ -119,7 +119,7 @@ convertible_enum!(
 
 convertible_enum!(
     enum ChannelPrefix {
-        Offered = 100,
+        Offered = 1,
         Accepted,
         Signed; SignedChannelPrefix, state,
         FailedAccept,
@@ -152,7 +152,7 @@ convertible_enum!(
 
 convertible_enum!(
     enum SubChannelPrefix {;
-        Offered = 500,
+        Offered = 1,
         Accepted,
         Signed,
         Closing,
