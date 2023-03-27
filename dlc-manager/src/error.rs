@@ -16,7 +16,7 @@ pub enum Error {
     /// An error occurred in the wallet component.
     WalletError(Box<dyn std::error::Error>),
     /// An error occurred in the blockchain component.
-    BlockchainError,
+    BlockchainError(String),
     /// The storage component encountered an error.
     StorageError(String),
     /// The oracle component encountered an error.
@@ -35,7 +35,7 @@ impl fmt::Display for Error {
             Error::InvalidState(ref s) => write!(f, "Invalid state: {}", s),
             Error::InvalidParameters(ref s) => write!(f, "Invalid parameters were provided: {}", s),
             Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
-            Error::BlockchainError => write!(f, "Blockchain error"),
+            Error::BlockchainError(ref s) => write!(f, "Blockchain error {}", s),
             Error::StorageError(ref s) => write!(f, "Storage error {}", s),
             Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),

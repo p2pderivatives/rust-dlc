@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -77,13 +78,13 @@ impl ElectrsBlockchainProvider {
     fn get_u64(&self, sub_url: &str) -> Result<u64, Error> {
         self.get_text(sub_url)?
             .parse()
-            .map_err(|_| Error::BlockchainError)
+            .map_err(|e: std::num::ParseIntError| Error::BlockchainError(e.to_string()))
     }
 
     fn get_bytes(&self, sub_url: &str) -> Result<Vec<u8>, Error> {
         let bytes = self.get(sub_url)?.bytes();
         Ok(bytes
-            .map_err(|_| Error::BlockchainError)?
+            .map_err(|e| Error::BlockchainError(e.to_string()))?
             .into_iter()
             .collect::<Vec<_>>())
     }
@@ -94,7 +95,7 @@ impl ElectrsBlockchainProvider {
     {
         self.get(sub_url)?
             .json::<T>()
-            .map_err(|_| Error::BlockchainError)
+            .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
     pub fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
@@ -138,13 +139,13 @@ impl Blockchain for ElectrsBlockchainProvider {
         let hash_at_height = self.get_text(&format!("block-height/{height}"))?;
         let raw_block = self.get_bytes(&format!("block/{hash_at_height}/raw"))?;
         Block::consensus_decode(&mut std::io::Cursor::new(&*raw_block))
-            .map_err(|_| Error::BlockchainError)
+            .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, dlc_manager::error::Error> {
         let raw_tx = self.get_bytes(&format!("tx/{tx_id}/raw"))?;
         Transaction::consensus_decode(&mut std::io::Cursor::new(&*raw_tx))
-            .map_err(|_| Error::BlockchainError)
+            .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
     fn get_transaction_confirmations(
@@ -173,7 +174,12 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
                 Ok(Utxo {
                     address: address.clone(),
                     outpoint: OutPoint {
-                        txid: x.txid.parse().map_err(|_| Error::BlockchainError)?,
+                        txid: x
+                            .txid
+                            .parse()
+                            .map_err(|e: <bitcoin::Txid as FromStr>::Err| {
+                                Error::BlockchainError(e.to_string())
+                            })?,
                         vout: x.vout,
                     },
                     redeem_script: Script::default(),
