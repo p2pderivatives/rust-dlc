@@ -154,6 +154,7 @@ convertible_enum!(
     enum SubChannelPrefix {;
         Offered = 1,
         Accepted,
+        Confirmed,
         Signed,
         Closing,
         OnChainClosed,
