@@ -75,7 +75,9 @@ impl SubChannel {
         match &self.state {
             SubChannelState::Offered(_) => Some(temporary_channel_id),
             SubChannelState::Accepted(a) => Some(a.get_dlc_channel_id(temporary_channel_id, index)),
-            SubChannelState::Signed(s) => Some(s.get_dlc_channel_id(temporary_channel_id, index)),
+            SubChannelState::Signed(s) | SubChannelState::Confirmed(s) => {
+                Some(s.get_dlc_channel_id(temporary_channel_id, index))
+            }
             SubChannelState::Closing(c) => Some(
                 c.signed_sub_channel
                     .get_dlc_channel_id(temporary_channel_id, index),
@@ -104,6 +106,8 @@ pub enum SubChannelState {
     Offered(OfferedSubChannel),
     /// The sub channel was accepted.
     Accepted(AcceptedSubChannel),
+    /// The sub channel was confirmed.
+    Confirmed(SignedSubChannel),
     /// The sub channel transactions have been signed.
     Signed(SignedSubChannel),
     /// The sub channel is closing.

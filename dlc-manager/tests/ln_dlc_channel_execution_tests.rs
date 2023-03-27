@@ -952,6 +952,9 @@ fn ln_dlc_test(test_path: TestPath) {
             CollaborativelyClosed
         );
 
+        assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OffChainClosed);
+        assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id; OffChainClosed);
+
         offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
 
         if let TestPath::SplitCheat = test_path {
@@ -1345,7 +1348,7 @@ fn offer_sub_channel(
         .unwrap()
         .unwrap();
 
-    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
 
     alice_node.process_events();
     let finalize = bob_node
@@ -1357,10 +1360,14 @@ fn offer_sub_channel(
     assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
 
     bob_node.process_events();
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
     alice_node
         .sub_channel_manager
         .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
         .unwrap();
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
+
     alice_node.process_events();
 }
 

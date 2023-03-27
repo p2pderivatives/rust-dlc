@@ -1371,7 +1371,7 @@ where
 
         offered_sub_channel.counter_base_points = Some(accept_points);
 
-        offered_sub_channel.state = SubChannelState::Signed(signed_sub_channel);
+        offered_sub_channel.state = SubChannelState::Confirmed(signed_sub_channel);
 
         self.dlc_channel_manager.get_store().upsert_channel(
             Channel::Signed(signed_channel),
@@ -1550,10 +1550,10 @@ where
         sub_channel_finalize: &SubChannelFinalize,
         counter_party: &PublicKey,
     ) -> Result<(), Error> {
-        let (signed_sub_channel, _) = get_sub_channel_in_state!(
+        let (mut signed_sub_channel, state) = get_sub_channel_in_state!(
             self.dlc_channel_manager,
             sub_channel_finalize.channel_id,
-            Signed,
+            Confirmed,
             Some(*counter_party)
         )?;
 
@@ -1594,6 +1594,12 @@ where
             Channel::Signed(channel),
             Some(Contract::Confirmed(contract)),
         )?;
+
+        signed_sub_channel.state = SubChannelState::Signed(state);
+
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&signed_sub_channel)?;
 
         Ok(())
     }
