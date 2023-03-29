@@ -1490,6 +1490,7 @@ pub fn offer_collaborative_close<C: Signing, S: Deref, T: Deref>(
     counter_payout: u64,
     signer: &S,
     time: &T,
+    peer_timeout: u64,
 ) -> Result<(CollaborativeCloseOffer, Transaction), Error>
 where
     S::Target: Signer,
@@ -1535,7 +1536,7 @@ where
         counter_payout,
         offer_signature: close_signature,
         close_tx: close_tx.clone(),
-        timeout: time.unix_time_now() + super::manager::PEER_TIMEOUT,
+        timeout: time.unix_time_now() + peer_timeout,
     };
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);
