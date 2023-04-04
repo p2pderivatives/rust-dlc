@@ -2244,8 +2244,6 @@ mod test {
     use secp256k1_zkp::PublicKey;
     use std::{collections::HashMap, rc::Rc};
 
-    // use super::ManagerOptions;
-
     type TestManager = Manager<
         Rc<MockWallet>,
         Rc<MockBlockchain>,
