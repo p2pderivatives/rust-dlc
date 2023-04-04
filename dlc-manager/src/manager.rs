@@ -50,23 +50,13 @@ pub struct ManagerOptions {
 }
 
 /// The min and max value in seconds until a DLC will be refunded.
+#[derive(Clone, Copy)]
 pub struct RefundDelayWindow {
     /// The min delay in seconds to trigger the refund.
     pub min: u32,
     /// The max delay in seconds to trigger the refund.
     pub max: u32,
 }
-
-impl Clone for RefundDelayWindow {
-    fn clone(&self) -> Self {
-        Self {
-            min: self.min.clone(),
-            max: self.max.clone(),
-        }
-    }
-}
-
-impl Copy for RefundDelayWindow {}
 
 impl Default for ManagerOptions {
     fn default() -> Self {
