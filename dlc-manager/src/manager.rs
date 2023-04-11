@@ -2349,7 +2349,7 @@ where
         } else {
             contract.accepted_contract.offered_contract.total_collateral - payout
         };
-        let pnl = own_collateral as i64 - own_payout as i64;
+        let pnl = own_payout as i64 - own_collateral as i64;
         Ok(ClosedContract {
             attestations: None,
             signed_cet: None,
