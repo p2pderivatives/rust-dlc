@@ -68,7 +68,7 @@ impl From<EncodeError> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::RpcError(e) => write!(f, "Bitcoin Rpc Error {}", e),
+            Error::RpcError(_) => write!(f, "Bitcoin Rpc Error"),
             Error::NotEnoughCoins => {
                 write!(f, "Utxo pool did not contain enough coins to reach target.")
             }
