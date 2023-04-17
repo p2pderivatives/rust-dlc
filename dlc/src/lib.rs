@@ -214,10 +214,21 @@ impl From<miniscript::Error> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Secp256k1(ref e) => write!(f, "Secp256k1 error {}", e),
+            Error::Secp256k1(_) => write!(f, "Secp256k1 error"),
             Error::InvalidArgument => write!(f, "Invalid argument"),
-            Error::Sighash(ref e) => write!(f, "Error while computing sighash {}", e),
-            Error::Miniscript(ref e) => write!(f, "Error within miniscript {}", e),
+            Error::Sighash(_) => write!(f, "Error while computing sighash"),
+            Error::Miniscript(_) => write!(f, "Error within miniscript"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Secp256k1(e) => Some(e),
+            Error::Sighash(e) => Some(e),
+            Error::InvalidArgument => None,
+            Error::Miniscript(e) => Some(e),
         }
     }
 }

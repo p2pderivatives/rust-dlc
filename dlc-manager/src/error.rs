@@ -30,16 +30,16 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Conversion(ref e) => write!(f, "Conversion error {}", e),
-            Error::IOError(ref e) => write!(f, "IO error {}", e),
+            Error::Conversion(_) => write!(f, "Conversion error"),
+            Error::IOError(_) => write!(f, "IO error"),
             Error::InvalidState(ref s) => write!(f, "Invalid state: {}", s),
             Error::InvalidParameters(ref s) => write!(f, "Invalid parameters were provided: {}", s),
             Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
             Error::BlockchainError(ref s) => write!(f, "Blockchain error {}", s),
             Error::StorageError(ref s) => write!(f, "Storage error {}", s),
-            Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
+            Error::DlcError(_) => write!(f, "Dlc error"),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
-            Error::SecpError(ref s) => write!(f, "Secp error {}", s),
+            Error::SecpError(_) => write!(f, "Secp error"),
         }
     }
 }
@@ -71,5 +71,22 @@ impl From<secp256k1_zkp::Error> for Error {
 impl From<secp256k1_zkp::UpstreamError> for Error {
     fn from(e: secp256k1_zkp::UpstreamError) -> Error {
         Error::SecpError(secp256k1_zkp::Error::Upstream(e))
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Conversion(e) => Some(e),
+            Error::IOError(e) => Some(e),
+            Error::InvalidParameters(_) => None,
+            Error::InvalidState(_) => None,
+            Error::WalletError(_) => None,
+            Error::BlockchainError(_) => None,
+            Error::StorageError(_) => None,
+            Error::OracleError(_) => None,
+            Error::DlcError(e) => Some(e),
+            Error::SecpError(e) => Some(e),
+        }
     }
 }
