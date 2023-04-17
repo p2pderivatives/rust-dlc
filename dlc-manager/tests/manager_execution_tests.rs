@@ -502,7 +502,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
-            ManagerOptions::default(),
+            Some(ManagerOptions::default()),
         )
         .unwrap(),
     ));
@@ -518,7 +518,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             bob_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
-            ManagerOptions::default(),
+            Some(ManagerOptions::default()),
         )
         .unwrap(),
     ));

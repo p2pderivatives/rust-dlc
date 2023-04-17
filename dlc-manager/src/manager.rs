@@ -19,7 +19,6 @@ use crate::Signer;
 use crate::{ChannelId, ContractId};
 use bitcoin::Address;
 use bitcoin::Transaction;
-use derivative::Derivative;
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
@@ -39,20 +38,14 @@ use std::ops::Deref;
 use std::string::ToString;
 
 /// The options used to configure the DLC manager.
-#[derive(Derivative)]
-#[derivative(Default)]
 pub struct ManagerOptions {
     /// The number of btc confirmations required before moving the DLC to the confirmed state.
-    #[derivative(Default(value = "6"))]
     pub nb_confirmations: u32,
-    /// The delay to set the refund value to.
-    #[derivative(Default(value = "86400 * 7"))]
+    /// The refund delay window to trigger the refund.
     pub refund_delay: u32,
     /// The nSequence value used for CETs in DLC channels
-    #[derivative(Default(value = "288"))]
     pub cet_nsequence: u32,
     /// Timeout in seconds when waiting for a peer's reply, after which a DLC channel
-    #[derivative(Default(value = "3600"))]
     pub peer_timeout: u64,
 }
 
@@ -62,6 +55,16 @@ type ClosableContractInfo<'a> = Option<(
     Vec<(usize, OracleAttestation)>,
 )>;
 
+impl Default for ManagerOptions {
+    fn default() -> Self {
+        Self {
+            nb_confirmations: 6,
+            refund_delay: 86400 * 7,
+            cet_nsequence: 288,
+            peer_timeout: 3600,
+        }
+    }
+}
 /// Used to create and update DLCs.
 pub struct Manager<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref>
 where
@@ -185,9 +188,10 @@ where
         oracles: HashMap<XOnlyPublicKey, O>,
         time: T,
         fee_estimator: F,
-        options: ManagerOptions,
+        options: Option<ManagerOptions>,
     ) -> Result<Self, Error> {
         let init_height = blockchain.get_blockchain_height()?;
+        let options = options.unwrap_or_default();
         Ok(Manager {
             secp: secp256k1_zkp::Secp256k1::new(),
             wallet,
@@ -2217,8 +2221,6 @@ mod test {
     use secp256k1_zkp::PublicKey;
     use std::{collections::HashMap, rc::Rc};
 
-    // use super::ManagerOptions;
-
     type TestManager = Manager<
         Rc<MockWallet>,
         Rc<MockBlockchain>,
@@ -2249,7 +2251,7 @@ mod test {
             oracles,
             time,
             blockchain.clone(),
-            ManagerOptions::default(),
+            Some(ManagerOptions::default()),
         )
         .unwrap()
     }

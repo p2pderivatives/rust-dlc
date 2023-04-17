@@ -89,7 +89,7 @@ async fn main() {
             oracles,
             Arc::new(dlc_manager::SystemTimeProvider {}),
             bitcoind_provider.clone(),
-            ManagerOptions::default(),
+            Some(ManagerOptions::default()),
         )
         .expect("Could not create manager."),
     ));
