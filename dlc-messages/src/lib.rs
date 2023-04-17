@@ -669,7 +669,7 @@ mod tests {
         let mut single_contract_input = offer.clone();
         single_contract_input.contract_info =
             if let ContractInfo::DisjointContractInfo(d) = offer.contract_info {
-                let mut single = d.clone();
+                let mut single = d;
                 single.contract_infos.remove(1);
                 ContractInfo::DisjointContractInfo(single)
             } else {

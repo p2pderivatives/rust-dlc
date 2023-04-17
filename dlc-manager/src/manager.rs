@@ -2222,15 +2222,7 @@ mod test {
 
         mocks::mock_time::set_time(0);
 
-        Manager::new(
-            wallet,
-            blockchain.clone(),
-            store.clone(),
-            oracles,
-            time,
-            blockchain.clone(),
-        )
-        .unwrap()
+        Manager::new(wallet, blockchain.clone(), store, oracles, time, blockchain).unwrap()
     }
 
     fn pubkey() -> PublicKey {
