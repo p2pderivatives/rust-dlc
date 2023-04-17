@@ -79,11 +79,7 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        "bitcoincore-rpc-provider error"
-    }
-
-    fn cause(&self) -> Option<&dyn std::error::Error> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Error::RpcError(ref e) => Some(e),
             _ => None,
