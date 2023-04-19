@@ -47,10 +47,8 @@ pub const ROUNDING_MOD: u64 = 1;
 macro_rules! receive_loop {
     ($receive:expr, $manager:expr, $send:expr, $expect_err:expr, $sync_send:expr, $rcv_callback: expr, $msg_callback: expr) => {
         thread::spawn(move || loop {
-            let m;
             match $receive.recv() {
                 Ok(Some(msg)) => {
-                    m = format!("{:?}", msg).split_at(6).0.to_string();
                     let res = $manager.lock().unwrap().on_dlc_message(
                         &msg,
                         "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
@@ -262,6 +260,15 @@ macro_rules! assert_sub_channel_state {
             panic!("Sub channel not found");
         }
     }};
+}
+
+#[macro_export]
+macro_rules! assert_eq_fields {
+    ($a: expr, $b: expr, $($field: ident),*) => {
+       $(
+            assert_eq!($a.$field, $b.$field);
+        )*
+    };
 }
 
 pub fn enum_outcomes() -> Vec<String> {

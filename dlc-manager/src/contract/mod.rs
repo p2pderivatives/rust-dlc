@@ -123,7 +123,7 @@ impl Contract {
 }
 
 /// Information about a funding input.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),

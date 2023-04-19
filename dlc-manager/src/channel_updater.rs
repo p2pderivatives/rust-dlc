@@ -183,6 +183,7 @@ where
         wallet,
         blockchain,
         None,
+        None,
     )
 }
 
@@ -193,6 +194,12 @@ pub(crate) fn accept_channel_offer_internal<W: Deref, B: Deref>(
     wallet: &W,
     blockchain: &B,
     sub_channel_info: Option<SubChannelSignInfo>,
+    params: Option<(
+        PartyParams,
+        Vec<crate::contract::FundingInputInfo>,
+        PartyBasePoints,
+        PublicKey,
+    )>,
 ) -> Result<(AcceptedChannel, AcceptedContract, AcceptChannel), Error>
 where
     W::Target: Wallet,
@@ -200,16 +207,23 @@ where
 {
     assert_eq!(offered_channel.offered_contract_id, offered_contract.id);
 
-    let (accept_params, _, funding_inputs) = crate::utils::get_party_params(
-        secp,
-        offered_contract.total_collateral - offered_contract.offer_params.collateral,
-        offered_contract.fee_rate_per_vb,
-        wallet,
-        blockchain,
-        sub_channel_info.is_none(),
-    )?;
-
-    let per_update_seed = wallet.get_new_secret_key()?;
+    let (accept_params, funding_inputs, accept_points, per_update_seed) =
+        if let Some((params, funding_inputs_info, accept_points, per_update_seed_pk)) = params {
+            let per_update_seed = wallet.get_secret_key_for_pubkey(&per_update_seed_pk)?;
+            (params, funding_inputs_info, accept_points, per_update_seed)
+        } else {
+            let (params, _, funding_input_infos) = crate::utils::get_party_params(
+                secp,
+                offered_contract.total_collateral - offered_contract.offer_params.collateral,
+                offered_contract.fee_rate_per_vb,
+                wallet,
+                blockchain,
+                sub_channel_info.is_none(),
+            )?;
+            let accept_points = crate::utils::get_party_base_points(secp, wallet)?;
+            let per_update_seed = wallet.get_new_secret_key()?;
+            (params, funding_input_infos, accept_points, per_update_seed)
+        };
 
     let first_per_update_point = PublicKey::from_secret_key(
         secp,
@@ -219,8 +233,6 @@ where
         ))
         .expect("to have generated a valid secret key."),
     );
-
-    let accept_points = crate::utils::get_party_base_points(secp, wallet)?;
 
     let accept_revoke_params = accept_points.get_revokable_params(
         secp,

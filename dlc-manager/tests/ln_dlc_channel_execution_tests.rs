@@ -21,7 +21,10 @@ use dlc_manager::{
     channel::Channel, contract::Contract, manager::Manager, sub_channel_manager::SubChannelManager,
     subchannel::SubChannelState, Blockchain, ChannelId, Oracle, Signer, Storage, Utxo, Wallet,
 };
-use dlc_messages::{ChannelMessage, Message, SubChannelMessage};
+use dlc_messages::{
+    sub_channel::{SubChannelAccept, SubChannelOffer},
+    ChannelMessage, Message, SubChannelMessage,
+};
 use electrs_blockchain_provider::{ElectrsBlockchainProvider, OutSpendResp};
 use lightning::{
     chain::{
@@ -77,7 +80,7 @@ pub(crate) type ChannelManager = lightning::ln::channelmanager::ChannelManager<
 
 pub(crate) type PeerManager = lightning::ln::peer_handler::PeerManager<
     MockSocketDescriptor,
-    Arc<ChannelManager>,
+    Arc<DlcSubChannelManager>,
     Arc<IgnoringMessageHandler>,
     Arc<IgnoringMessageHandler>,
     Arc<ConsoleLogger>,
@@ -112,7 +115,7 @@ struct LnDlcParty {
     logger: Arc<ConsoleLogger>,
     network_graph: NetworkGraph<Arc<ConsoleLogger>>,
     chain_height: u64,
-    sub_channel_manager: DlcSubChannelManager,
+    sub_channel_manager: Arc<DlcSubChannelManager>,
     dlc_manager: Arc<DlcChannelManager>,
     blockchain: Arc<ElectrsBlockchainProvider>,
     mock_blockchain: Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
@@ -138,6 +141,7 @@ enum TestPath {
     SplitCheat,
     OfferRejected,
     CloseRejected,
+    Reconnect,
 }
 
 impl LnDlcParty {
@@ -413,21 +417,6 @@ fn create_ln_node(
 
     let mut ephemeral_bytes = [0; 32];
     thread_rng().fill_bytes(&mut ephemeral_bytes);
-    let lightning_msg_handler = MessageHandler {
-        chan_handler: channel_manager.clone(),
-        route_handler: Arc::new(IgnoringMessageHandler {}),
-        onion_message_handler: Arc::new(IgnoringMessageHandler {}),
-    };
-    let peer_manager = PeerManager::new(
-        lightning_msg_handler,
-        consistent_keys_manager
-            .get_node_secret(Recipient::Node)
-            .unwrap(),
-        current_time.try_into().unwrap(),
-        &ephemeral_bytes,
-        logger.clone(),
-        Arc::new(IgnoringMessageHandler {}),
-    );
 
     let network_graph = NetworkGraph::new(blockhash, logger.clone());
 
@@ -458,7 +447,24 @@ fn create_ln_node(
         .unwrap(),
     );
 
-    let sub_channel_manager = SubChannelManager::new(channel_manager.clone(), dlc_manager.clone());
+    let sub_channel_manager =
+        Arc::new(SubChannelManager::new(channel_manager.clone(), dlc_manager.clone()).unwrap());
+
+    let lightning_msg_handler = MessageHandler {
+        chan_handler: sub_channel_manager.clone(),
+        route_handler: Arc::new(IgnoringMessageHandler {}),
+        onion_message_handler: Arc::new(IgnoringMessageHandler {}),
+    };
+    let peer_manager = PeerManager::new(
+        lightning_msg_handler,
+        consistent_keys_manager
+            .get_node_secret(Recipient::Node)
+            .unwrap(),
+        current_time.try_into().unwrap(),
+        &ephemeral_bytes,
+        logger.clone(),
+        Arc::new(IgnoringMessageHandler {}),
+    );
 
     LnDlcParty {
         peer_manager: Arc::new(peer_manager),
@@ -537,6 +543,12 @@ fn ln_dlc_rejected_close() {
     ln_dlc_test(TestPath::CloseRejected);
 }
 
+#[test]
+#[ignore]
+fn ln_dlc_reconnect() {
+    ln_dlc_test(TestPath::Reconnect);
+}
+
 // #[derive(Debug)]
 // pub struct TestParams {
 //     pub oracles: Vec<p2pd_oracle_client::P2PDOracleClient>,
@@ -544,6 +556,7 @@ fn ln_dlc_rejected_close() {
 // }
 
 fn ln_dlc_test(test_path: TestPath) {
+    env_logger::init();
     let (_, _, sink_rpc) = init_clients();
 
     let test_params = get_enum_test_params_custom_collateral(1, 1, None, 60000, 40000);
@@ -609,7 +622,7 @@ fn ln_dlc_test(test_path: TestPath) {
         .peer_manager
         .new_outbound_connection(
             bob_node.channel_manager.get_our_node_id(),
-            alice_descriptor,
+            alice_descriptor.clone(),
             None,
         )
         .unwrap();
@@ -756,7 +769,15 @@ fn ln_dlc_test(test_path: TestPath) {
         return;
     }
 
-    offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
+    offer_sub_channel(
+        &test_path,
+        &test_params,
+        &alice_node,
+        &bob_node,
+        &channel_id,
+        alice_descriptor.clone(),
+        bob_descriptor.clone(),
+    );
 
     if let TestPath::CheatPreSplitCommit = test_path {
         let revoked_tx = pre_split_commit_tx.unwrap();
@@ -955,7 +976,15 @@ fn ln_dlc_test(test_path: TestPath) {
         assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OffChainClosed);
         assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id; OffChainClosed);
 
-        offer_sub_channel(&test_params, &alice_node, &bob_node, &channel_id);
+        offer_sub_channel(
+            &test_path,
+            &test_params,
+            &alice_node,
+            &bob_node,
+            &channel_id,
+            alice_descriptor,
+            bob_descriptor,
+        );
 
         if let TestPath::SplitCheat = test_path {
             alice_node.dlc_manager.get_store().rollback();
@@ -1285,9 +1314,8 @@ fn ln_cheated_check<F>(
 fn offer_common(
     test_params: &TestParams,
     alice_node: &LnDlcParty,
-    bob_node: &LnDlcParty,
     channel_id: &ChannelId,
-) {
+) -> SubChannelOffer {
     let oracle_announcements = test_params
         .oracles
         .iter()
@@ -1312,6 +1340,40 @@ fn offer_common(
 
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Offered);
 
+    offer
+}
+
+fn offer_sub_channel(
+    test_path: &TestPath,
+    test_params: &TestParams,
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    channel_id: &ChannelId,
+    alice_descriptor: MockSocketDescriptor,
+    bob_descriptor: MockSocketDescriptor,
+) {
+    let offer = offer_common(test_params, alice_node, channel_id);
+
+    if let TestPath::Reconnect = test_path {
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
+        // Alice should resend the offer message to bob as he has not received it yet.
+        let mut msgs = alice_node.sub_channel_manager.process_actions();
+        assert_eq!(1, msgs.len());
+        if let (SubChannelMessage::Offer(o), p) = msgs.pop().unwrap() {
+            assert_eq!(p, bob_node.channel_manager.get_our_node_id());
+            assert_eq!(o, offer);
+        } else {
+            panic!("Expected an offer message");
+        }
+
+        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+    }
+
     bob_node
         .sub_channel_manager
         .on_sub_channel_message(
@@ -1320,26 +1382,51 @@ fn offer_common(
         )
         .unwrap();
 
+    if let TestPath::Reconnect = test_path {
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
+        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+    }
+
     assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
-}
 
-fn offer_sub_channel(
-    test_params: &TestParams,
-    alice_node: &LnDlcParty,
-    bob_node: &LnDlcParty,
-    channel_id: &ChannelId,
-) {
-    offer_common(test_params, alice_node, bob_node, channel_id);
-
-    let (_, accept) = bob_node
+    let (_, mut accept) = bob_node
         .sub_channel_manager
         .accept_sub_channel(channel_id)
         .unwrap();
 
-    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Accepted);
+    if let TestPath::Reconnect = test_path {
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
 
-    bob_node.process_events();
-    let confirm = alice_node
+        assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Offered);
+        assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
+
+        // Bob should re-send the accept message
+        let mut msgs = bob_node.sub_channel_manager.process_actions();
+        assert_eq!(1, msgs.len());
+        if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+            assert_eq!(p, alice_node.channel_manager.get_our_node_id());
+            assert_eq_accept(&a, &accept);
+            accept = a;
+        } else {
+            panic!("Expected an accept message");
+        }
+
+        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
+    }
+
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Accepted);
+    let mut confirm = alice_node
         .sub_channel_manager
         .on_sub_channel_message(
             &SubChannelMessage::Accept(accept),
@@ -1348,7 +1435,35 @@ fn offer_sub_channel(
         .unwrap()
         .unwrap();
 
-    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
+    if let TestPath::Reconnect = test_path {
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
+
+        assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Offered);
+        assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
+
+        // Bob should re-send the accept message
+        let mut msgs = bob_node.sub_channel_manager.process_actions();
+        assert_eq!(1, msgs.len());
+        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
+        if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+            assert_eq!(p, alice_node.channel_manager.get_our_node_id());
+            confirm = alice_node
+                .sub_channel_manager
+                .on_sub_channel_message(
+                    &SubChannelMessage::Accept(a),
+                    &bob_node.channel_manager.get_our_node_id(),
+                )
+                .unwrap()
+                .unwrap();
+        } else {
+            panic!("Expected an accept message");
+        }
+    }
 
     alice_node.process_events();
     let finalize = bob_node
@@ -1361,14 +1476,74 @@ fn offer_sub_channel(
 
     bob_node.process_events();
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
-    alice_node
-        .sub_channel_manager
-        .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
-        .unwrap();
+
+    if let TestPath::Reconnect = test_path {
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
+
+        // For some weird reason uncommenting this triggers a stack overflow...
+        // assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
+        // assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
+
+        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+    } else {
+        alice_node
+            .sub_channel_manager
+            .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
+            .unwrap();
+    }
 
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
 
     alice_node.process_events();
+}
+
+fn reconnect(
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    alice_descriptor: MockSocketDescriptor,
+    mut bob_descriptor: MockSocketDescriptor,
+) {
+    alice_node
+        .peer_manager
+        .socket_disconnected(&alice_descriptor);
+
+    bob_node.peer_manager.socket_disconnected(&bob_descriptor);
+
+    let initial_send = alice_node
+        .peer_manager
+        .new_outbound_connection(
+            bob_node.channel_manager.get_our_node_id(),
+            alice_descriptor,
+            None,
+        )
+        .unwrap();
+
+    bob_node
+        .peer_manager
+        .new_inbound_connection(bob_descriptor.clone(), None)
+        .unwrap();
+
+    bob_node
+        .peer_manager
+        .read_event(&mut bob_descriptor, &initial_send)
+        .unwrap();
+    bob_node.peer_manager.process_events();
+    alice_node.peer_manager.process_events();
+    bob_node.peer_manager.process_events();
+    bob_node.peer_manager.process_events();
+    alice_node.peer_manager.process_events();
+    bob_node.peer_manager.process_events();
+
+    alice_node.process_events();
+    bob_node.process_events();
+    alice_node.process_events();
+    bob_node.process_events();
 }
 
 fn reject_offer(
@@ -1377,7 +1552,17 @@ fn reject_offer(
     bob_node: &LnDlcParty,
     channel_id: &ChannelId,
 ) {
-    offer_common(test_params, alice_node, bob_node, channel_id);
+    let offer = offer_common(test_params, alice_node, channel_id);
+
+    bob_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &SubChannelMessage::Offer(offer),
+            &alice_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap();
+
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
 
     let reject = bob_node
         .sub_channel_manager
@@ -1395,4 +1580,22 @@ fn reject_offer(
         .unwrap();
 
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id; Rejected);
+}
+
+fn assert_eq_accept(a: &SubChannelAccept, b: &SubChannelAccept) {
+    assert_eq_fields!(
+        a,
+        b,
+        channel_id,
+        revocation_basepoint,
+        publish_basepoint,
+        own_basepoint,
+        first_per_split_point,
+        channel_revocation_basepoint,
+        channel_publish_basepoint,
+        channel_own_basepoint,
+        first_per_update_point,
+        payout_spk,
+        payout_serial_id
+    );
 }

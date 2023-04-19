@@ -1,0 +1,202 @@
+[{
+  "resendOffer": [
+    {
+      "channelId": [
+        220,
+        219,
+        19,
+        222,
+        231,
+        7,
+        165,
+        201,
+        58,
+        199,
+        75,
+        27,
+        150,
+        172,
+        19,
+        7,
+        251,
+        149,
+        37,
+        84,
+        49,
+        168,
+        232,
+        161,
+        50,
+        106,
+        80,
+        63,
+        8,
+        159,
+        228,
+        4
+      ],
+      "revocationBasepoint": "033d3572b4c8ec379b050b0a704049537fe0f184fca525b18440f6a854c771ce39",
+      "publishBasepoint": "02a09e88a32df051e2ce553497714f7843e2f96ddb9abf4f22a865c259eb8eed24",
+      "ownBasepoint": "020d6e4d24b63d954979e3135e25a60cff901c8505f7e9b7350619136e2c529892",
+      "nextPerSplitPoint": "02d086a049d035cfe950dc3068eb5d6303e50cbaa7b75fc8b885ea375438f19161",
+      "contractInfo": {
+        "singleContractInfo": {
+          "totalCollateral": 100000,
+          "contractInfo": {
+            "contractDescriptor": {
+              "enumeratedContractDescriptor": {
+                "payouts": [
+                  {
+                    "outcome": "a",
+                    "offerPayout": 100000
+                  },
+                  {
+                    "outcome": "b",
+                    "offerPayout": 0
+                  },
+                  {
+                    "outcome": "c",
+                    "offerPayout": 100000
+                  },
+                  {
+                    "outcome": "d",
+                    "offerPayout": 0
+                  }
+                ]
+              }
+            },
+            "oracleInfo": {
+              "single": {
+                "oracleAnnouncement": {
+                  "announcementSignature": "9a4b096056033507268e388ffc562d75f70dd984f93aab619524cfbb8f9970b7a1b6e6232e4fedbd84ffb53b6b2ee04d123c3d254980dda50fcd7b212b677fec",
+                  "oraclePublicKey": "6e93d8781ef74005de5c93c4019e2b17d225e8bc300d8d72651efe9cf6fad9b3",
+                  "oracleEvent": {
+                    "oracleNonces": [
+                      "92531091608b7eb2c073105ea52f5ba3a2088273714a40fcdb8548fdb29a6bba"
+                    ],
+                    "eventMaturityEpoch": 1623133104,
+                    "eventDescriptor": {
+                      "enumEvent": {
+                        "outcomes": [
+                          "a",
+                          "b",
+                          "c",
+                          "d"
+                        ]
+                      }
+                    },
+                    "eventId": "Test"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "channelRevocationBasepoint": "034a3f5279d5d45ac9d6398c273573f07491301137e9006bf646ef08fe5696e855",
+      "channelPublishBasepoint": "03055e74b628802ead1ced794574e6713e27d58ec22d37f3c2a199e67528b590c6",
+      "channelOwnBasepoint": "03c59a9fec201e68d166b80c6856ac3aeb4fa83f8e6f86c8b47b329d01077dcd76",
+      "channelFirstPerUpdatePoint": "0229736a13e2b973b20c809dcbc859beee3f5615cff254065366fab826f75c406f",
+      "payoutSpk": "001443c30eeb21dda1b1b22e619f65dff23db092c615",
+      "payoutSerialId": 7757339960515235026,
+      "offerCollateral": 60000,
+      "cetLocktime": 0,
+      "refundLocktime": 1623737904,
+      "cetNsequence": 288,
+      "feeRatePerVbyte": 1
+    },
+    "03ca51aacfd5873f44cf128bf4533df97109e9149df7dee10909068a647dceb31e"
+  ]
+},
+{
+  "reAccept": {
+    "channel_id": [
+      220,
+      219,
+      19,
+      222,
+      231,
+      7,
+      165,
+      201,
+      58,
+      199,
+      75,
+      27,
+      150,
+      172,
+      19,
+      7,
+      251,
+      149,
+      37,
+      84,
+      49,
+      168,
+      232,
+      161,
+      50,
+      106,
+      80,
+      63,
+      8,
+      159,
+      228,
+      4
+    ],
+    "party_params": {
+      "fundPubkey": "02f71cf58bb7cde41a13995ea495f09525d7754ff7b5ac0a546612e7836f3a69c5",
+      "changeScriptPubkey": "0014c78cc7cd3a16cd657a3f3078c398a3bc0869f74e",
+      "changeSerialId": 6125834209858196150,
+      "payoutScriptPubkey": "001486d04be0e79f8da95d83a956ec12351370cd32b3",
+      "payoutSerialId": 7002708850577740307,
+      "inputs": [],
+      "inputAmount": 0,
+      "collateral": 40000
+    },
+    "funding_inputs_info": [],
+    "accept_points": {
+      "ownBasepoint": "0271376656257acc24551c36eaa927836ef2fa2f973e73bf2db8a9a332174612f6",
+      "revocationBasepoint": "02167b74d7a709d32bba2d8480ec5da11e301085b52c3abb238ccb49d1f2b7e561",
+      "publishBasepoint": "02b78e11bb04344d4ccb5a186d0106003f8aeef0ab8264d92261765d8bc60b1385"
+    },
+    "per_update_seed_pk": "0292a6b044e642f9b989a2d4551619452dbd88720baf6eff727b12afcfca1be2b2"
+  }
+},
+{
+  "forceSign": [
+    106,
+    124,
+    90,
+    126,
+    179,
+    19,
+    244,
+    159,
+    215,
+    178,
+    144,
+    77,
+    53,
+    20,
+    198,
+    26,
+    111,
+    112,
+    29,
+    244,
+    184,
+    54,
+    8,
+    182,
+    9,
+    61,
+    151,
+    97,
+    157,
+    74,
+    94,
+    168
+  ]
+}
+]

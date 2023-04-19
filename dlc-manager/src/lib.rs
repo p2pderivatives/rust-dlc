@@ -54,6 +54,7 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{PublicKey, SecretKey};
+use sub_channel_manager::Action;
 use subchannel::SubChannel;
 
 /// Type alias for a contract id.
@@ -177,6 +178,10 @@ pub trait Storage {
     fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error>;
     /// Returns all the [`SubChannel`] in the `Offered` state.
     fn get_offered_sub_channels(&self) -> Result<Vec<SubChannel>, Error>;
+    /// Save sub channel actions
+    fn save_sub_channel_actions(&self, actions: &[Action]) -> Result<(), Error>;
+    /// Get saved sub channel actions
+    fn get_sub_channel_actions(&self) -> Result<Vec<Action>, Error>;
 }
 
 /// Oracle trait provides access to oracle information.
