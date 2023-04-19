@@ -8,6 +8,7 @@ use dlc_manager::channel::{
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
+use dlc_manager::sub_channel_manager::Action;
 use dlc_manager::subchannel::{SubChannel, SubChannelState};
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
@@ -26,6 +27,7 @@ pub struct MemoryStorage {
     addresses: RwLock<HashMap<Address, SecretKey>>,
     utxos: RwLock<HashMap<OutPoint, Utxo>>,
     key_pairs: RwLock<HashMap<PublicKey, SecretKey>>,
+    actions: RwLock<Vec<Action>>,
 }
 
 impl MemoryStorage {
@@ -40,6 +42,7 @@ impl MemoryStorage {
             addresses: RwLock::new(HashMap::new()),
             utxos: RwLock::new(HashMap::new()),
             key_pairs: RwLock::new(HashMap::new()),
+            actions: RwLock::new(Vec::new()),
         }
     }
 
@@ -284,8 +287,13 @@ impl Storage for MemoryStorage {
         &self,
         channel_id: dlc_manager::ChannelId,
     ) -> Result<Option<SubChannel>, DaemonError> {
-        let map = self.sub_channels.read().expect("could not get read lock");
-        Ok(map.get(&channel_id).cloned())
+        let res = self
+            .sub_channels
+            .read()
+            .expect("could not get read lock")
+            .get(&channel_id)
+            .cloned();
+        Ok(res)
     }
 
     fn get_sub_channels(&self) -> Result<Vec<SubChannel>, DaemonError> {
@@ -310,6 +318,20 @@ impl Storage for MemoryStorage {
         }
 
         Ok(res)
+    }
+
+    fn save_sub_channel_actions(&self, actions: &[Action]) -> Result<(), DaemonError> {
+        let mut vec = self.actions.write().expect("Could not get write lock");
+        vec.append(&mut actions.to_vec());
+        Ok(())
+    }
+
+    fn get_sub_channel_actions(&self) -> Result<Vec<Action>, DaemonError> {
+        Ok(self
+            .actions
+            .read()
+            .expect("Could not get read lock")
+            .clone())
     }
 }
 

@@ -9,7 +9,7 @@ use secp256k1_zkp::{All, PublicKey, Secp256k1, Signing, Verification};
 
 /// Base points used by a party of a DLC channel to derive public and private
 /// values necessary for state update throughout the lifetime of the channel.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),

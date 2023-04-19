@@ -13,7 +13,7 @@ use lightning::{
     ln::{
         chan_utils::CounterpartyCommitmentSecrets,
         channelmanager::{ChannelDetails, ChannelManager},
-        msgs::{CommitmentSigned, RevokeAndACK},
+        msgs::{ChannelMessageHandler, CommitmentSigned, RevokeAndACK},
     },
     util::logger::Logger,
 };
@@ -23,7 +23,7 @@ use crate::{channel::party_points::PartyBasePoints, error::Error, ChannelId, Con
 
 pub mod ser;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 /// Contains information about a DLC channel embedded within a Lightning Network Channel.
 pub struct SubChannel {
     /// The index for the channel.
@@ -97,9 +97,21 @@ impl SubChannel {
             _ => None,
         }
     }
+
+    /// Return the flag associated with the state of the sub channel, or `None` if the state is not
+    /// relevant for reestablishment.
+    pub(crate) fn get_reestablish_flag(&self) -> Option<u8> {
+        match self.state {
+            SubChannelState::Offered(_) => Some(ReestablishFlag::Offered as u8),
+            SubChannelState::Accepted(_) => Some(ReestablishFlag::Accepted as u8),
+            SubChannelState::Confirmed(_) => Some(ReestablishFlag::Confirmed as u8),
+            SubChannelState::Signed(_) => Some(ReestablishFlag::Signed as u8),
+            _ => None,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Represents the state of a [`SubChannel`].
 pub enum SubChannelState {
     /// The sub channel was offered (sent or received).
@@ -130,14 +142,24 @@ pub enum SubChannelState {
     Rejected,
 }
 
-#[derive(Debug, Clone)]
+/// Flags associated with states that must be communicated to the remote node during
+/// reestablishment.
+#[repr(u8)]
+pub(crate) enum ReestablishFlag {
+    Offered = 1,
+    Accepted = 2,
+    Confirmed = 3,
+    Signed = 4,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Information about an offer to set up a sub channel.
 pub struct OfferedSubChannel {
     /// The current per update point of the local party.
     pub per_split_point: PublicKey,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Information about a sub channel that is in the accepted state.
 pub struct AcceptedSubChannel {
     /// The current per split point of the offer party.
@@ -150,6 +172,17 @@ pub struct AcceptedSubChannel {
     pub split_tx: SplitTx,
     /// Glue transaction that bridges the split transaction to the Lightning sub channel.
     pub ln_glue_transaction: Transaction,
+    /// Information used to facilitate the rollback of a channel split.
+    pub ln_rollback: LnRollBackInfo,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Holds information used to facilitate the rollback of a channel split.
+pub struct LnRollBackInfo {
+    /// The original value of the channel.
+    pub channel_value_satoshis: u64,
+    /// The original `value_to_self_msat` of the LN channel.
+    pub value_to_self_msat: u64,
 }
 
 impl AcceptedSubChannel {
@@ -162,7 +195,7 @@ impl AcceptedSubChannel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Information about a sub channel whose transactions have been signed.
 pub struct SignedSubChannel {
     /// The current per split point of the local party.
@@ -179,6 +212,8 @@ pub struct SignedSubChannel {
     pub ln_glue_transaction: Transaction,
     /// Signature of the remote party for the glue transaction.
     pub counter_glue_signature: Signature,
+    /// Information used to facilitate the rollback of a channel split.
+    pub ln_rollback: LnRollBackInfo,
 }
 
 impl SignedSubChannel {
@@ -191,7 +226,7 @@ impl SignedSubChannel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Information about an offer to collaboratively close a sub channel.
 pub struct CloseOfferedSubChannel {
     /// The signed sub channel for which the offer was made.
@@ -202,7 +237,7 @@ pub struct CloseOfferedSubChannel {
     pub accept_balance: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Information about an offer to collaboratively close a sub channel that was accepted.
 pub struct CloseAcceptedSubChannel {
     /// The signed sub channel for which the offer was made.
@@ -211,7 +246,7 @@ pub struct CloseAcceptedSubChannel {
     pub own_balance: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Information about an offer to collaboratively close a sub channel that was confirmed.
 pub struct CloseConfirmedSubChannel {
     /// The signed sub channel for which the offer was made.
@@ -221,14 +256,14 @@ pub struct CloseConfirmedSubChannel {
 }
 
 /// Information about a sub channel that is in the process of being unilateraly closed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosingSubChannel {
     /// The signed sub channel that is being closed.
     pub signed_sub_channel: SignedSubChannel,
 }
 
 /// Provides the ability to access and update Lightning Network channels.
-pub trait LNChannelManager {
+pub trait LNChannelManager: ChannelMessageHandler {
     /// Returns the details of the channel with given `channel_id` if found.
     fn get_channel_details(&self, channel_id: &ChannelId) -> Option<ChannelDetails>;
     /// Updates the funding output for the channel and returns the [`CommitmentSigned`] message
@@ -269,6 +304,15 @@ pub trait LNChannelManager {
         &self,
         channel_id: &[u8; 32],
         counter_party_node_id: &PublicKey,
+    ) -> Result<(), Error>;
+
+    /// Reset the funding outpoint to the original one and setting the channel values to the given
+    /// ones.
+    fn reset_fund_outpoint(
+        &self,
+        channel_id: &ChannelId,
+        channel_value_satoshis: u64,
+        value_to_self_msat: u64,
     ) -> Result<(), Error>;
 }
 
@@ -351,6 +395,16 @@ where
         counter_party_node_id: &PublicKey,
     ) -> Result<(), Error> {
         self.force_close_broadcasting_latest_txn(channel_id, counter_party_node_id)
+            .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
+    }
+
+    fn reset_fund_outpoint(
+        &self,
+        channel_id: &ChannelId,
+        channel_value_satoshis: u64,
+        value_to_self_msat: u64,
+    ) -> Result<(), Error> {
+        self.reset_fund_output(channel_id, channel_value_satoshis, value_to_self_msat)
             .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 }

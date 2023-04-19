@@ -32,7 +32,6 @@ use dlc_manager::subchannel::{SubChannel, SubChannelState};
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
 use dlc_manager::{error::Error, ContractId, Storage};
-#[cfg(feature = "wallet")]
 use lightning::util::ser::{Readable, Writeable};
 #[cfg(feature = "wallet")]
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -54,6 +53,7 @@ const KEY_PAIR_TREE: u8 = 6;
 const SUB_CHANNEL_TREE: u8 = 7;
 #[cfg(feature = "wallet")]
 const ADDRESS_TREE: u8 = 8;
+const ACTION_KEY: u8 = 1;
 
 /// Implementation of Storage interface using the sled DB backend.
 pub struct SledStorageProvider {
@@ -466,6 +466,43 @@ impl Storage for SledStorageProvider {
             &[SubChannelPrefix::Offered.into()],
             None,
         )
+    }
+
+    fn save_sub_channel_actions(
+        &self,
+        actions: &[dlc_manager::sub_channel_manager::Action],
+    ) -> Result<(), Error> {
+        let mut buf = Vec::new();
+
+        for action in actions {
+            action.write(&mut buf)?;
+        }
+
+        self.db
+            .insert([ACTION_KEY], buf)
+            .map_err(to_storage_error)?;
+        Ok(())
+    }
+
+    fn get_sub_channel_actions(
+        &self,
+    ) -> Result<Vec<dlc_manager::sub_channel_manager::Action>, Error> {
+        let buf = match self.db.get([ACTION_KEY]).map_err(to_storage_error)? {
+            Some(buf) => buf,
+            None => return Ok(Vec::new()),
+        };
+
+        let len = buf.len();
+
+        let mut res = Vec::new();
+        let mut cursor = Cursor::new(buf);
+
+        while (cursor.position() as usize) < len - 1 {
+            let action = Readable::read(&mut cursor).map_err(to_storage_error)?;
+            res.push(action);
+        }
+
+        Ok(res)
     }
 }
 
@@ -1098,6 +1135,22 @@ mod tests {
                 .get_sub_channels()
                 .expect("Error retrieving offered sub channels");
             assert_eq!(4, offered_sub_channels.len());
+        }
+    );
+
+    sled_test!(
+        save_actions_roundtip_test,
+        |storage: SledStorageProvider| {
+            let actions: Vec<_> =
+                serde_json::from_str(include_str!("../test_files/sub_channel_actions.json"))
+                    .unwrap();
+            storage
+                .save_sub_channel_actions(&actions)
+                .expect("Error saving sub channel actions");
+            let recovered = storage
+                .get_sub_channel_actions()
+                .expect("Error getting sub channel actions");
+            assert_eq!(actions, recovered);
         }
     );
 }

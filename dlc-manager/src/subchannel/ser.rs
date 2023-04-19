@@ -6,7 +6,8 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 
 use super::{
     AcceptedSubChannel, CloseAcceptedSubChannel, CloseConfirmedSubChannel, CloseOfferedSubChannel,
-    ClosingSubChannel, OfferedSubChannel, SignedSubChannel, SubChannel, SubChannelState,
+    ClosingSubChannel, LnRollBackInfo, OfferedSubChannel, SignedSubChannel, SubChannel,
+    SubChannelState,
 };
 
 impl_dlc_writeable!(SubChannel, {
@@ -47,12 +48,15 @@ impl_dlc_writeable!(OfferedSubChannel, { (per_split_point, writeable) });
 
 impl_dlc_writeable_external!(SplitTx, split_tx, {(transaction, writeable), (output_script, writeable)});
 
+impl_dlc_writeable!(LnRollBackInfo, { (channel_value_satoshis, writeable), (value_to_self_msat, writeable) });
+
 impl_dlc_writeable!(AcceptedSubChannel, {
     (offer_per_split_point, writeable),
     (accept_per_split_point, writeable),
     (accept_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
-    (ln_glue_transaction, writeable)
+    (ln_glue_transaction, writeable),
+    (ln_rollback, writeable)
 });
 
 impl_dlc_writeable!(SignedSubChannel, {
@@ -62,7 +66,8 @@ impl_dlc_writeable!(SignedSubChannel, {
     (counter_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
     (ln_glue_transaction, writeable),
-    (counter_glue_signature, writeable)
+    (counter_glue_signature, writeable),
+    (ln_rollback, writeable)
 });
 
 impl_dlc_writeable!(CloseOfferedSubChannel, {

@@ -82,7 +82,12 @@ impl_dlc_writeable!(
 );
 
 /// A message to accept an offer to establish a DLC channel within an existing Lightning channel.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelAccept {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -154,6 +159,11 @@ impl_dlc_writeable!(
 
 /// A message to confirm the establishment of a DLC channel within an existing Lightning channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelConfirm {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -193,6 +203,11 @@ impl_dlc_writeable!(SubChannelConfirm, {
 
 /// A message to finalize the establishment of a DLC channel within an existing Lightning channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelFinalize {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -212,6 +227,11 @@ impl_dlc_writeable!(SubChannelFinalize, {
 /// A message to offer the collaborative (off-chain) closing of a DLC channel embedded within a
 /// Lightning channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelCloseOffer {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -227,6 +247,11 @@ impl_dlc_writeable!(SubChannelCloseOffer, {
 /// A message to accept the collaborative closing of a DLC channel embedded within a Lightning
 /// channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelCloseAccept {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -246,6 +271,11 @@ impl_dlc_writeable!(SubChannelCloseAccept, {
 /// A message to confirm the collaborative closing of a DLC channel embedded within a Lightning
 /// channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelCloseConfirm {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -274,6 +304,11 @@ impl_dlc_writeable!(SubChannelCloseConfirm, {
 /// A message to finalize the collaborative closing of a DLC channel embedded within a  Lightning
 /// channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SubChannelCloseFinalize {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
@@ -295,6 +330,11 @@ impl_dlc_writeable!(SubChannelCloseFinalize, {
 /// A message to reject an offer to collaboratively close a DLC channel embedded within a Lightning
 /// channel.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct Reject {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
