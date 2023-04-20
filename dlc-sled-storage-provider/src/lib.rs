@@ -361,6 +361,8 @@ impl Storage for SledStorageProvider {
                 },
             )
         .map_err(to_storage_error)?;
+
+        channel_tree.flush().map_err(|e| Error::StorageError(e.to_string()))?;
         Ok(())
     }
 
@@ -435,6 +437,8 @@ impl Storage for SledStorageProvider {
         self.sub_channel_tree()?
             .insert(subchannel.channel_id, serialized)
             .map_err(to_storage_error)?;
+
+        self.sub_channel_tree()?.flush().map_err(|e| Error::StorageError(e.to_string()))?;
         Ok(())
     }
 
