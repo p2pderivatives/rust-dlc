@@ -14,7 +14,7 @@ pub enum Error {
     /// An invalid state was encounter, likely to indicate a bug.
     InvalidState(String),
     /// An error occurred in the wallet component.
-    WalletError(Box<dyn std::error::Error>),
+    WalletError(Box<dyn std::error::Error + Send + Sync + 'static>),
     /// An error occurred in the blockchain component.
     BlockchainError(String),
     /// The storage component encountered an error.
