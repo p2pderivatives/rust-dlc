@@ -488,9 +488,11 @@ impl Storage for SledStorageProvider {
         &self,
     ) -> Result<Vec<dlc_manager::sub_channel_manager::Action>, Error> {
         let buf = match self.db.get([ACTION_KEY]).map_err(to_storage_error)? {
-            Some(buf) => buf,
-            None => return Ok(Vec::new()),
+            Some(buf) if buf.len() > 0 => buf,
+            Some(_) | None => return Ok(Vec::new()),
         };
+
+        debug_assert!(buf.len() > 0);
 
         let len = buf.len();
 
@@ -1153,4 +1155,19 @@ mod tests {
             assert_eq!(actions, recovered);
         }
     );
+
+    sled_test!(get_actions_unset_test, |storage: SledStorageProvider| {
+        let actions = storage
+            .get_sub_channel_actions()
+            .expect("Error getting sub channel actions");
+        assert_eq!(actions.len(), 0);
+    });
+
+    sled_test!(get_empty_actions_test, |storage: SledStorageProvider| {
+        storage.save_sub_channel_actions(&vec![]).unwrap();
+        let actions = storage
+            .get_sub_channel_actions()
+            .expect("Error getting sub channel actions");
+        assert_eq!(actions.len(), 0);
+    });
 }
