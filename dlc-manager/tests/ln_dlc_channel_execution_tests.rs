@@ -138,6 +138,7 @@ enum TestPath {
     CheatPreSplitCommit,
     CheatPostSplitCommit,
     OffChainClosed,
+    OffChainCloseOpenClose,
     SplitCheat,
     OfferRejected,
     CloseRejected,
@@ -549,6 +550,12 @@ fn ln_dlc_reconnect() {
     ln_dlc_test(TestPath::Reconnect);
 }
 
+#[test]
+#[ignore]
+fn ln_dlc_off_chain_close_open_close() {
+    ln_dlc_test(TestPath::OffChainCloseOpenClose);
+}
+
 // #[derive(Debug)]
 // pub struct TestParams {
 //     pub oracles: Vec<p2pd_oracle_client::P2PDOracleClient>,
@@ -893,21 +900,7 @@ fn ln_dlc_test(test_path: TestPath) {
             alice_node.dlc_manager.get_store().save();
         }
 
-        let contract_id =
-            assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
-
-        let (close_offer, _) = alice_node
-            .sub_channel_manager
-            .offer_subchannel_close(&channel_id, test_params.contract_input.accept_collateral)
-            .unwrap();
-
-        bob_node
-            .sub_channel_manager
-            .on_sub_channel_message(
-                &SubChannelMessage::CloseOffer(close_offer),
-                &alice_node.channel_manager.get_our_node_id(),
-            )
-            .unwrap();
+        off_chain_close_offer(&test_params, &alice_node, &bob_node, channel_id);
 
         if let TestPath::CloseRejected = test_path {
             let reject = bob_node
@@ -929,52 +922,21 @@ fn ln_dlc_test(test_path: TestPath) {
             return;
         }
 
-        let (close_accept, _) = bob_node
-            .sub_channel_manager
-            .accept_subchannel_close_offer(&channel_id)
-            .unwrap();
+        off_chain_close_finalize(&test_params, &alice_node, &bob_node, channel_id);
 
-        let close_confirm = alice_node
-            .sub_channel_manager
-            .on_sub_channel_message(
-                &SubChannelMessage::CloseAccept(close_accept),
-                &bob_node.channel_manager.get_our_node_id(),
-            )
-            .unwrap()
-            .unwrap();
-
-        let close_finalize = bob_node
-            .sub_channel_manager
-            .on_sub_channel_message(
-                &close_confirm,
-                &alice_node.channel_manager.get_our_node_id(),
-            )
-            .unwrap()
-            .unwrap();
-
-        alice_node
-            .sub_channel_manager
-            .on_sub_channel_message(&close_finalize, &bob_node.channel_manager.get_our_node_id())
-            .unwrap();
-
-        assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, Closed);
-        assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, Closed);
-
-        assert_channel_state_unlocked!(
-            alice_node.dlc_manager,
-            dlc_channel_id,
-            Signed,
-            CollaborativelyClosed
-        );
-        assert_channel_state_unlocked!(
-            bob_node.dlc_manager,
-            dlc_channel_id,
-            Signed,
-            CollaborativelyClosed
-        );
-
-        assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OffChainClosed);
-        assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id; OffChainClosed);
+        if let TestPath::OffChainCloseOpenClose = test_path {
+            offer_sub_channel(
+                &test_path,
+                &test_params,
+                &alice_node,
+                &bob_node,
+                &channel_id,
+                alice_descriptor.clone(),
+                bob_descriptor.clone(),
+            );
+            off_chain_close_offer(&test_params, &alice_node, &bob_node, channel_id);
+            off_chain_close_finalize(&test_params, &alice_node, &bob_node, channel_id);
+        }
 
         offer_sub_channel(
             &test_path,
@@ -1598,4 +1560,99 @@ fn assert_eq_accept(a: &SubChannelAccept, b: &SubChannelAccept) {
         payout_spk,
         payout_serial_id
     );
+}
+
+fn off_chain_close_offer(
+    test_params: &TestParams,
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    channel_id: ChannelId,
+) {
+    let sub_channel = alice_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(channel_id)
+        .unwrap()
+        .unwrap();
+
+    let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
+    let contract_id =
+        assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
+
+    let (close_offer, _) = alice_node
+        .sub_channel_manager
+        .offer_subchannel_close(&channel_id, test_params.contract_input.accept_collateral)
+        .unwrap();
+
+    bob_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &SubChannelMessage::CloseOffer(close_offer),
+            &alice_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap();
+}
+
+fn off_chain_close_finalize(
+    test_params: &TestParams,
+    alice_node: &LnDlcParty,
+    bob_node: &LnDlcParty,
+    channel_id: ChannelId,
+) {
+    let sub_channel = alice_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(channel_id)
+        .unwrap()
+        .unwrap();
+
+    let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
+    let contract_id =
+        assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
+    let (close_accept, _) = bob_node
+        .sub_channel_manager
+        .accept_subchannel_close_offer(&channel_id)
+        .unwrap();
+
+    let close_confirm = alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &SubChannelMessage::CloseAccept(close_accept),
+            &bob_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap()
+        .unwrap();
+
+    let close_finalize = bob_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            &close_confirm,
+            &alice_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap()
+        .unwrap();
+
+    alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(&close_finalize, &bob_node.channel_manager.get_our_node_id())
+        .unwrap();
+
+    assert_contract_state_unlocked!(alice_node.dlc_manager, contract_id, Closed);
+    assert_contract_state_unlocked!(bob_node.dlc_manager, contract_id, Closed);
+
+    assert_channel_state_unlocked!(
+        alice_node.dlc_manager,
+        dlc_channel_id,
+        Signed,
+        CollaborativelyClosed
+    );
+    assert_channel_state_unlocked!(
+        bob_node.dlc_manager,
+        dlc_channel_id,
+        Signed,
+        CollaborativelyClosed
+    );
+
+    assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OffChainClosed);
+    assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id; OffChainClosed);
 }
