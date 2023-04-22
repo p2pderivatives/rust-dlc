@@ -1969,11 +1969,10 @@ where
                     .expect("to have a per split seed"),
             )?;
 
-        let per_split_secret = derive_private_key(
-            self.dlc_channel_manager.get_secp(),
-            &state.signed_subchannel.own_per_split_point,
-            &per_split_seed,
-        );
+        let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
+            per_split_seed.as_ref(),
+            sub_channel.update_idx,
+        ))?;
 
         let finalize = SubChannelCloseFinalize {
             channel_id: confirm.channel_id,
