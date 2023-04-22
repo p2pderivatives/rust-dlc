@@ -895,7 +895,11 @@ fn ln_dlc_test(test_path: TestPath) {
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
-    if let TestPath::OffChainClosed | TestPath::SplitCheat | TestPath::CloseRejected = test_path {
+    if let TestPath::OffChainClosed
+    | TestPath::SplitCheat
+    | TestPath::CloseRejected
+    | TestPath::OffChainCloseOpenClose = test_path
+    {
         if let TestPath::SplitCheat = test_path {
             alice_node.dlc_manager.get_store().save();
         }
