@@ -687,7 +687,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                     periodic_check!(second, contract_id, Confirmed);
 
                     mocks::mock_time::set_time(
-                        ((EVENT_MATURITY + ManagerOptions::default().refund_delay) as u64) + 1,
+                        ((EVENT_MATURITY + ManagerOptions::default().refund_delay.min) as u64) + 1,
                     );
 
                     generate_blocks(10);

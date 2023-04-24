@@ -42,11 +42,34 @@ pub struct ManagerOptions {
     /// The number of btc confirmations required before moving the DLC to the confirmed state.
     pub nb_confirmations: u32,
     /// The refund delay window to trigger the refund.
-    pub refund_delay: u32,
+    pub refund_delay: RefundDelayWindow,
     /// The nSequence value used for CETs in DLC channels
     pub cet_nsequence: u32,
     /// Timeout in seconds when waiting for a peer's reply, after which a DLC channel
     pub peer_timeout: u64,
+}
+
+/// The min and max value in seconds until a DLC will be refunded.
+#[derive(Clone, Copy)]
+pub struct RefundDelayWindow {
+    /// The min delay in seconds to trigger the refund.
+    pub min: u32,
+    /// The max delay in seconds to trigger the refund.
+    pub max: u32,
+}
+
+impl Default for ManagerOptions {
+    fn default() -> Self {
+        Self {
+            nb_confirmations: 6,
+            refund_delay: RefundDelayWindow {
+                min: 86400 * 7,
+                max: 86400 * 14,
+            },
+            cet_nsequence: 288,
+            peer_timeout: 3600,
+        }
+    }
 }
 
 type ClosableContractInfo<'a> = Option<(
@@ -55,16 +78,6 @@ type ClosableContractInfo<'a> = Option<(
     Vec<(usize, OracleAttestation)>,
 )>;
 
-impl Default for ManagerOptions {
-    fn default() -> Self {
-        Self {
-            nb_confirmations: 6,
-            refund_delay: 86400 * 7,
-            cet_nsequence: 288,
-            peer_timeout: 3600,
-        }
-    }
-}
 /// Used to create and update DLCs.
 pub struct Manager<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref>
 where
@@ -362,8 +375,8 @@ where
     ) -> Result<(), Error> {
         offered_message.validate(
             &self.secp,
-            self.options.refund_delay,
-            self.options.refund_delay * 2,
+            self.options.refund_delay.min,
+            self.options.refund_delay.max,
         )?;
         let contract: OfferedContract =
             OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
@@ -1153,8 +1166,8 @@ where
     ) -> Result<(), Error> {
         offer_channel.validate(
             &self.secp,
-            self.options.refund_delay,
-            self.options.refund_delay * 2,
+            self.options.refund_delay.min,
+            self.options.refund_delay.max,
             self.options.cet_nsequence,
             self.options.cet_nsequence * 2,
         )?;
