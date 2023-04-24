@@ -17,7 +17,7 @@ use test_utils::*;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
-use dlc_manager::manager::{Manager, ManagerOptions};
+use dlc_manager::manager::Manager;
 use dlc_manager::{Blockchain, Oracle, Storage, Wallet};
 use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
@@ -502,7 +502,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
-            Some(ManagerOptions::default()),
+            None,
         )
         .unwrap(),
     ));
@@ -518,7 +518,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             bob_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
-            Some(ManagerOptions::default()),
+            None,
         )
         .unwrap(),
     ));
@@ -687,7 +687,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                     periodic_check!(second, contract_id, Confirmed);
 
                     mocks::mock_time::set_time(
-                        ((EVENT_MATURITY + ManagerOptions::default().refund_delay.min) as u64) + 1,
+                        ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY_MIN) as u64) + 1,
                     );
 
                     generate_blocks(10);

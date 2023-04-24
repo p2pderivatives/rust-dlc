@@ -5,7 +5,7 @@ use bitcoin::Amount;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::contract_input::ContractInput;
-use dlc_manager::manager::{Manager, ManagerOptions};
+use dlc_manager::manager::Manager;
 use dlc_manager::{
     channel::{signed_channel::SignedChannelState, Channel},
     contract::Contract,
@@ -347,7 +347,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
-            Some(ManagerOptions::default()),
+            None,
         )
         .unwrap(),
     ));
@@ -363,12 +363,12 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             bob_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
-            Some(ManagerOptions::default()),
+            None,
         )
         .unwrap(),
     ));
 
-    let cet_nsequence: u32 = ManagerOptions::default().cet_nsequence;
+    let cet_nsequence: u32 = dlc_manager::manager::CET_NSEQUENCE;
 
     let bob_manager_loop = Arc::clone(&bob_manager);
     let bob_manager_send = Arc::clone(&bob_manager);
@@ -559,7 +559,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         channel_id,
                         &sync_receive,
                         path,
-                        ManagerOptions::default().peer_timeout,
+                        dlc_manager::manager::PEER_TIMEOUT,
                     );
                 }
                 TestPath::SettleReject => {
@@ -634,7 +634,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 &sync_receive,
                                 &test_params.contract_input,
                                 path,
-                                ManagerOptions::default().peer_timeout,
+                                dlc_manager::manager::PEER_TIMEOUT,
                             );
                         }
                         TestPath::RenewReject => {

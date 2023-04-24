@@ -7,7 +7,6 @@ use disk::FilesystemLogger;
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
-use dlc_manager::manager::ManagerOptions;
 use dlc_manager::{Oracle, SystemTimeProvider};
 use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
 use lightning::ln::peer_handler::{
@@ -89,7 +88,7 @@ async fn main() {
             oracles,
             Arc::new(dlc_manager::SystemTimeProvider {}),
             bitcoind_provider.clone(),
-            Some(ManagerOptions::default()),
+            None,
         )
         .expect("Could not create manager."),
     ));

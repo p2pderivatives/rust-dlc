@@ -37,6 +37,18 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
 
+/// The number of btc confirmations required before moving the DLC to the confirmed state.
+pub const NB_CONFIRMATIONS: u32 = 6;
+/// The minimum time to trigger the refund.
+pub const REFUND_DELAY_MIN: u32 = 86400 * 7;
+/// The maximum time to trigger the refund.
+pub const REFUND_DELAY_MAX: u32 = 86400 * 7 * 2;
+/// The nSequence value used for CETs in DLC channels
+pub const CET_NSEQUENCE: u32 = 288;
+/// Timeout in seconds when waiting for a peer's reply, after which a DLC channel
+/// is forced closed.
+pub const PEER_TIMEOUT: u64 = 3600;
+
 /// The options used to configure the DLC manager.
 pub struct ManagerOptions {
     /// The number of btc confirmations required before moving the DLC to the confirmed state.
@@ -46,6 +58,7 @@ pub struct ManagerOptions {
     /// The nSequence value used for CETs in DLC channels
     pub cet_nsequence: u32,
     /// Timeout in seconds when waiting for a peer's reply, after which a DLC channel
+    /// is forced closed.
     pub peer_timeout: u64,
 }
 
@@ -2224,7 +2237,7 @@ where
 mod test {
     use dlc_messages::Message;
     use mocks::{
-        dlc_manager::{manager::Manager, manager::ManagerOptions, Oracle},
+        dlc_manager::{manager::Manager, Oracle},
         memory_storage_provider::MemoryStorage,
         mock_blockchain::MockBlockchain,
         mock_oracle_provider::MockOracle,
@@ -2264,7 +2277,7 @@ mod test {
             oracles,
             time,
             blockchain.clone(),
-            Some(ManagerOptions::default()),
+            None,
         )
         .unwrap()
     }
