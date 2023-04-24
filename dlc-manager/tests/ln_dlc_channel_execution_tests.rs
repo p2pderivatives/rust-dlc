@@ -926,7 +926,7 @@ fn ln_dlc_test(test_path: TestPath) {
             return;
         }
 
-        off_chain_close_finalize(&test_params, &alice_node, &bob_node, channel_id);
+        off_chain_close_finalize(&alice_node, &bob_node, channel_id);
 
         if let TestPath::OffChainCloseOpenClose = test_path {
             offer_sub_channel(
@@ -939,7 +939,7 @@ fn ln_dlc_test(test_path: TestPath) {
                 bob_descriptor.clone(),
             );
             off_chain_close_offer(&test_params, &alice_node, &bob_node, channel_id);
-            off_chain_close_finalize(&test_params, &alice_node, &bob_node, channel_id);
+            off_chain_close_finalize(&alice_node, &bob_node, channel_id);
         }
 
         offer_sub_channel(
@@ -1444,12 +1444,7 @@ fn offer_sub_channel(
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
 
     if let TestPath::Reconnect = test_path {
-        reconnect(
-            alice_node,
-            bob_node,
-            alice_descriptor.clone(),
-            bob_descriptor.clone(),
-        );
+        reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
 
         // For some weird reason uncommenting this triggers a stack overflow...
         // assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
@@ -1580,8 +1575,7 @@ fn off_chain_close_offer(
         .unwrap();
 
     let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
-    let contract_id =
-        assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
+    assert_channel_contract_state!(alice_node.dlc_manager, dlc_channel_id, Confirmed);
 
     let (close_offer, _) = alice_node
         .sub_channel_manager
@@ -1597,12 +1591,7 @@ fn off_chain_close_offer(
         .unwrap();
 }
 
-fn off_chain_close_finalize(
-    test_params: &TestParams,
-    alice_node: &LnDlcParty,
-    bob_node: &LnDlcParty,
-    channel_id: ChannelId,
-) {
+fn off_chain_close_finalize(alice_node: &LnDlcParty, bob_node: &LnDlcParty, channel_id: ChannelId) {
     let sub_channel = alice_node
         .dlc_manager
         .get_store()

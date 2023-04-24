@@ -1164,7 +1164,7 @@ mod tests {
     });
 
     sled_test!(get_empty_actions_test, |storage: SledStorageProvider| {
-        storage.save_sub_channel_actions(&vec![]).unwrap();
+        storage.save_sub_channel_actions(&[]).unwrap();
         let actions = storage
             .get_sub_channel_actions()
             .expect("Error getting sub channel actions");

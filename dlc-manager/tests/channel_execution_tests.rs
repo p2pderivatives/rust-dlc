@@ -545,7 +545,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         first_send,
                         second,
                         channel_id,
-                        &second_receive,
+                        second_receive,
                         &generate_blocks,
                     );
                 }
@@ -615,10 +615,10 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         settle_channel(
                             first.clone(),
                             first_send,
-                            first_receive.clone(),
+                            first_receive,
                             second.clone(),
                             second_send,
-                            second_receive.clone(),
+                            second_receive,
                             channel_id,
                         );
                     }
