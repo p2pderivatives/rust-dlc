@@ -275,8 +275,7 @@ mod tests {
     fn get_wallet() -> SimpleWallet<Rc<MockBlockchain>, Rc<MemoryStorage>> {
         let blockchain = Rc::new(MockBlockchain {});
         let storage = Rc::new(MemoryStorage::new());
-        let wallet = SimpleWallet::new(blockchain, storage, bitcoin::Network::Regtest);
-        wallet
+        SimpleWallet::new(blockchain, storage, bitcoin::Network::Regtest)
     }
 
     #[test]

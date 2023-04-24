@@ -55,7 +55,7 @@ fn get_established_channel_contract_id(dlc_party: &DlcParty, channel_id: &Channe
         .lock()
         .unwrap()
         .get_store()
-        .get_channel(&channel_id)
+        .get_channel(channel_id)
         .unwrap()
         .unwrap();
     if let Channel::Signed(s) = channel {
@@ -343,7 +343,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         Manager::new(
             Arc::clone(&alice_wallet),
             Arc::clone(&electrs),
-            alice_store.clone(),
+            alice_store,
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
@@ -736,7 +736,7 @@ fn close_established_channel<F>(
     generate_blocks: &F,
     cet_nsequence: u32,
 ) where
-    F: Fn(u64) -> (),
+    F: Fn(u64),
 {
     first
         .lock()
@@ -797,7 +797,7 @@ fn close_established_channel<F>(
     assert_contract_state!(second, contract_id, Closed);
 }
 
-fn cheat_punish<F: Fn(u64) -> ()>(
+fn cheat_punish<F: Fn(u64)>(
     first: DlcParty,
     second: DlcParty,
     channel_id: ChannelId,
@@ -1105,7 +1105,7 @@ fn renew_race(
     assert_channel_state!(second, channel_id, Signed, Settled);
 }
 
-fn collaborative_close<F: Fn(u64) -> ()>(
+fn collaborative_close<F: Fn(u64)>(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
     second: DlcParty,

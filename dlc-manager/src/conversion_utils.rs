@@ -48,11 +48,12 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::BitcoinEncoding(ref e) => write!(f, "Invalid encoding {}", e),
+            Error::BitcoinEncoding(_) => write!(f, "Invalid encoding"),
             Error::InvalidParameters => write!(f, "Invalid parameters."),
         }
     }
 }
+
 impl error::Error for Error {
     fn cause(&self) -> Option<&dyn error::Error> {
         match *self {
