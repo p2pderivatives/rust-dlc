@@ -48,7 +48,7 @@ impl_dlc_writeable!(OfferedSubChannel, { (per_split_point, writeable) });
 
 impl_dlc_writeable_external!(SplitTx, split_tx, {(transaction, writeable), (output_script, writeable)});
 
-impl_dlc_writeable!(LnRollBackInfo, { (channel_value_satoshis, writeable), (value_to_self_msat, writeable) });
+impl_dlc_writeable!(LnRollBackInfo, { (channel_value_satoshis, writeable), (value_to_self_msat, writeable), (funding_outpoint, writeable) });
 
 impl_dlc_writeable!(AcceptedSubChannel, {
     (offer_per_split_point, writeable),
@@ -73,11 +73,12 @@ impl_dlc_writeable!(SignedSubChannel, {
 impl_dlc_writeable!(CloseOfferedSubChannel, {
     (signed_subchannel, writeable),
     (offer_balance, writeable),
-    (accept_balance, writeable)
+    (accept_balance, writeable),
+    (is_offer, writeable)
 });
 
-impl_dlc_writeable!(CloseAcceptedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable) });
+impl_dlc_writeable!(CloseAcceptedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable) });
 
-impl_dlc_writeable!(CloseConfirmedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable) });
+impl_dlc_writeable!(CloseConfirmedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable) });
 
 impl_dlc_writeable!(ClosingSubChannel, { (signed_sub_channel, writeable) });

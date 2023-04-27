@@ -38,19 +38,18 @@ use crate::{
     chain_monitor::{ChannelInfo, RevokedTxType, TxType},
     channel::{
         generate_temporary_contract_id, offered_channel::OfferedChannel,
-        party_points::PartyBasePoints, Channel,
+        party_points::PartyBasePoints, signed_channel::SignedChannelState, Channel,
     },
     channel_updater::{
         self, FundingInfo, SubChannelSignInfo, SubChannelSignVerifyInfo, SubChannelVerifyInfo,
     },
-    contract::{contract_input::ContractInput, Contract, FundingInputInfo},
+    contract::{contract_input::ContractInput, ClosedContract, Contract, FundingInputInfo},
     error::Error,
     manager::{get_channel_in_state, get_contract_in_state, Manager, CET_NSEQUENCE},
     subchannel::{
         self, generate_temporary_channel_id, AcceptedSubChannel, CloseAcceptedSubChannel,
         CloseConfirmedSubChannel, CloseOfferedSubChannel, ClosingSubChannel, LNChannelManager,
-        LnRollBackInfo, OfferedSubChannel, ReestablishFlag, SignedSubChannel, SubChannel,
-        SubChannelState,
+        OfferedSubChannel, ReestablishFlag, SignedSubChannel, SubChannel, SubChannelState,
     },
     Blockchain, ChannelId, ContractId, Oracle, Signer, Storage, Time, Wallet,
 };
@@ -120,17 +119,37 @@ pub enum Action {
     /// The given sub channel should be moved to the signed state as the revoke and ack must have
     /// been given by the peer during the reestablishment of the LN channel.
     ForceSign(ChannelId),
+    /// The included [`SubChannelCloseOffer`] message shoud be re-submitted to the peer with
+    /// included public key.
+    ResendCloseOffer((SubChannelCloseOffer, PublicKey)),
+    /// The sub channel with specified `channel_id` should be re-accepted.
+    ReAcceptCloseOffer {
+        /// The id of the sub channel.
+        channel_id: ChannelId,
+        /// The balance of the local party in the DLC sub channel for settling it.
+        own_balance: u64,
+    },
+    /// The sub channel with specified [`ChannelId`] should be marked as
+    /// [`SubChannelState::OffChainClosed`] as the revoke and ack must have been given by the peer
+    /// during the reestablishment of the LN channel.
+    ForceOffChainClosed(ChannelId),
 }
 
 impl_dlc_writeable_enum!(Action,
     (0, ResendOffer),
-    (2, ForceSign);
+    (2, ForceSign),
+    (3, ResendCloseOffer),
+    (5, ForceOffChainClosed);
     (1, ReAccept, {
         (channel_id, writeable),
         (party_params, { cb_writeable, dlc_messages::ser_impls::party_params::write, dlc_messages::ser_impls::party_params::read }),
         (funding_inputs_info, vec),
         (accept_points, writeable),
         (per_update_seed_pk, writeable)
+    }),
+    (4, ReAcceptCloseOffer, {
+        (channel_id, writeable),
+        (own_balance, writeable)
     });;
 );
 
@@ -306,10 +325,6 @@ where
             PublicKey::from_secret_key(self.dlc_channel_manager.get_secp(), &per_split_secret);
         let per_split_seed_pk =
             PublicKey::from_secret_key(self.dlc_channel_manager.get_secp(), &per_split_seed);
-        let party_base_points = crate::utils::get_party_base_points(
-            self.dlc_channel_manager.get_secp(),
-            self.dlc_channel_manager.get_wallet(),
-        )?;
 
         let temporary_channel_id: ContractId =
             subchannel::generate_temporary_channel_id(*channel_id, update_idx, 0);
@@ -332,12 +347,45 @@ where
         offered_contract.offer_params.inputs = Vec::new();
         offered_contract.funding_inputs_info = Vec::new();
 
+        let offered_state = OfferedSubChannel {
+            per_split_point: next_per_split_point,
+        };
+
+        let sub_channel = match sub_channel {
+            Some(mut s) => {
+                s.state = SubChannelState::Offered(offered_state);
+                s
+            }
+            None => {
+                let party_base_points = crate::utils::get_party_base_points(
+                    self.dlc_channel_manager.get_secp(),
+                    self.dlc_channel_manager.get_wallet(),
+                )?;
+                SubChannel {
+                    channel_id: channel_details.channel_id,
+                    counter_party: channel_details.counterparty.node_id,
+                    per_split_seed: Some(per_split_seed_pk),
+                    fee_rate_per_vb: contract_input.fee_rate,
+                    is_offer: true,
+                    update_idx: INITIAL_SPLIT_NUMBER,
+                    state: SubChannelState::Offered(offered_state),
+                    counter_party_secrets: CounterpartyCommitmentSecrets::new(),
+                    own_base_points: party_base_points,
+                    counter_base_points: None,
+                    fund_value_satoshis: channel_details.channel_value_satoshis,
+                    original_funding_redeemscript: channel_details.funding_redeemscript.unwrap(),
+                    own_fund_pk: channel_details.holder_funding_pubkey,
+                    counter_fund_pk: channel_details.counter_funding_pubkey,
+                }
+            }
+        };
+
         let msg = SubChannelOffer {
             channel_id: channel_details.channel_id,
             next_per_split_point,
-            revocation_basepoint: party_base_points.revocation_basepoint,
-            publish_basepoint: party_base_points.publish_basepoint,
-            own_basepoint: party_base_points.own_basepoint,
+            revocation_basepoint: sub_channel.own_base_points.revocation_basepoint,
+            publish_basepoint: sub_channel.own_base_points.publish_basepoint,
+            own_basepoint: sub_channel.own_base_points.own_basepoint,
             channel_own_basepoint: offered_channel.party_points.own_basepoint,
             channel_publish_basepoint: offered_channel.party_points.publish_basepoint,
             channel_revocation_basepoint: offered_channel.party_points.revocation_basepoint,
@@ -350,33 +398,6 @@ where
             refund_locktime: offered_contract.refund_locktime,
             cet_nsequence: crate::manager::CET_NSEQUENCE,
             fee_rate_per_vbyte: contract_input.fee_rate,
-        };
-
-        let offered_state = OfferedSubChannel {
-            per_split_point: next_per_split_point,
-        };
-
-        let sub_channel = match sub_channel {
-            Some(mut s) => {
-                s.state = SubChannelState::Offered(offered_state);
-                s
-            }
-            None => SubChannel {
-                channel_id: channel_details.channel_id,
-                counter_party: channel_details.counterparty.node_id,
-                per_split_seed: Some(per_split_seed_pk),
-                fee_rate_per_vb: contract_input.fee_rate,
-                is_offer: true,
-                update_idx: INITIAL_SPLIT_NUMBER,
-                state: SubChannelState::Offered(offered_state),
-                counter_party_secrets: CounterpartyCommitmentSecrets::new(),
-                own_base_points: party_base_points,
-                counter_base_points: None,
-                fund_value_satoshis: channel_details.channel_value_satoshis,
-                original_funding_redeemscript: channel_details.funding_redeemscript.unwrap(),
-                own_fund_pk: channel_details.holder_funding_pubkey,
-                counter_fund_pk: channel_details.counter_funding_pubkey,
-            },
         };
 
         self.dlc_channel_manager.get_store().upsert_channel(
@@ -644,10 +665,7 @@ where
             accept_split_adaptor_signature: split_tx_adaptor_signature,
             split_tx,
             ln_glue_transaction: ln_glue_tx,
-            ln_rollback: LnRollBackInfo {
-                channel_value_satoshis: channel_details.channel_value_satoshis,
-                value_to_self_msat: channel_details.value_to_self_msat,
-            },
+            ln_rollback: (&channel_details).into(),
         };
 
         offered_sub_channel.state = SubChannelState::Accepted(accepted_sub_channel);
@@ -928,6 +946,7 @@ where
             signed_subchannel: state,
             offer_balance,
             accept_balance,
+            is_offer: true,
         };
 
         signed_subchannel.state = SubChannelState::CloseOffered(close_offered_subchannel);
@@ -950,6 +969,12 @@ where
             CloseOffered,
             None::<PublicKey>
         )?;
+
+        if state.is_offer {
+            return Err(Error::InvalidParameters(
+                "Cannot accept own offer".to_string(),
+            ));
+        }
 
         let dlc_channel_id = sub_channel
             .get_dlc_channel_id(0)
@@ -1001,7 +1026,9 @@ where
 
         let close_accepted_subchannel = CloseAcceptedSubChannel {
             signed_subchannel: state.signed_subchannel,
-            own_balance: state.offer_balance,
+            own_balance: state.accept_balance,
+            counter_balance: state.offer_balance,
+            ln_rollback: (&channel_details).into(),
         };
 
         sub_channel.state = SubChannelState::CloseAccepted(close_accepted_subchannel);
@@ -1089,6 +1116,81 @@ where
         )?;
 
         signed_sub_channel.state = SubChannelState::Signed(state);
+
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&signed_sub_channel)?;
+
+        Ok(())
+    }
+
+    fn mark_channel_offchain_closed(&self, channel_id: ChannelId) -> Result<(), Error> {
+        let (mut signed_sub_channel, state) = get_sub_channel_in_state!(
+            self.dlc_channel_manager,
+            channel_id,
+            CloseConfirmed,
+            None::<PublicKey>
+        )?;
+
+        let dlc_channel_id =
+            signed_sub_channel
+                .get_dlc_channel_id(0)
+                .ok_or(Error::InvalidState(
+                    "Could not get dlc channel id".to_string(),
+                ))?;
+        let mut channel = get_channel_in_state!(
+            self.dlc_channel_manager,
+            &dlc_channel_id,
+            Signed,
+            None::<PublicKey>
+        )?;
+        let contract = match channel.state {
+            SignedChannelState::Established { .. } => {
+                let contract = get_contract_in_state!(
+                    self.dlc_channel_manager,
+                    &channel
+                        .get_contract_id()
+                        .ok_or_else(|| Error::InvalidState(
+                            "No contract id in on_sub_channel_finalize".to_string()
+                        ))?,
+                    Signed,
+                    None::<PublicKey>
+                )?;
+
+                let offer = &contract.accepted_contract.offered_contract;
+                let party_params = if offer.is_offer_party {
+                    &offer.offer_params
+                } else {
+                    &contract.accepted_contract.accept_params
+                };
+                let collateral = party_params.collateral as i64;
+
+                let closed_contract = ClosedContract {
+                    attestations: None,
+                    signed_cet: None,
+                    contract_id: contract.accepted_contract.get_contract_id(),
+                    temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                    counter_party_id: contract.accepted_contract.offered_contract.counter_party,
+                    pnl: collateral - (state.own_balance as i64),
+                };
+                Some(Contract::Closed(closed_contract))
+            }
+            SignedChannelState::Settled { .. } => None,
+            _ => {
+                return Err(Error::InvalidState(format!(
+                    "Expected established of settled state but was in {:?} state",
+                    channel.state
+                )));
+            }
+        };
+
+        channel.state = SignedChannelState::CollaborativelyClosed;
+
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_channel(Channel::Signed(channel), contract)?;
+
+        signed_sub_channel.state = SubChannelState::OffChainClosed;
 
         self.dlc_channel_manager
             .get_store()
@@ -1245,11 +1347,7 @@ where
                 ))
             })?;
 
-        let ln_rollback = LnRollBackInfo {
-            channel_value_satoshis: channel_details.channel_value_satoshis,
-            value_to_self_msat: channel_details.value_to_self_msat,
-        };
-
+        let ln_rollback = (&channel_details).into();
         let offer_revoke_params = offered_sub_channel.own_base_points.get_revokable_params(
             self.dlc_channel_manager.get_secp(),
             &sub_channel_accept.revocation_basepoint,
@@ -1792,6 +1890,7 @@ where
             signed_subchannel: state,
             offer_balance,
             accept_balance: offer.accept_balance,
+            is_offer: false,
         };
 
         sub_channel.state = SubChannelState::CloseOffered(updated);
@@ -1891,6 +1990,8 @@ where
         let updated_channel = CloseConfirmedSubChannel {
             signed_subchannel: state.signed_subchannel,
             own_balance: state.offer_balance,
+            counter_balance: state.accept_balance,
+            ln_rollback: (&channel_details).into(),
         };
 
         sub_channel.state = SubChannelState::CloseConfirmed(updated_channel);
@@ -2139,6 +2240,59 @@ where
                             }
                         } else {
                             retain.push(Action::ForceSign(id));
+                        }
+                    } else {
+                        error!("Could not get channel details for id: {:?}", id);
+                    };
+                }
+                Action::ResendCloseOffer((offer, pk)) => {
+                    msgs.push((SubChannelMessage::CloseOffer(offer), pk));
+                }
+                Action::ReAcceptCloseOffer {
+                    channel_id,
+                    own_balance,
+                } => {
+                    if let Some(details) = self.ln_channel_manager.get_channel_details(&channel_id)
+                    {
+                        if details.is_usable {
+                            if let Ok((msg, p)) = self.accept_subchannel_close_offer(&channel_id) {
+                                msgs.push((SubChannelMessage::CloseAccept(msg), p));
+                            } else {
+                                error!(
+                                    "Could not re-accept close for sub channel {:?}, keeping the action",
+                                    channel_id
+                                );
+                                retain.push(Action::ReAcceptCloseOffer {
+                                    channel_id,
+                                    own_balance,
+                                });
+                            }
+                        } else {
+                            trace!(
+                                "Channel {:?} not yet useable, keeping the re-accept close action",
+                                channel_id
+                            );
+                            retain.push(Action::ReAcceptCloseOffer {
+                                channel_id,
+                                own_balance,
+                            });
+                        }
+                    } else {
+                        error!(
+                            "Could not get channel details for id: {:?}, giving up re-accepting the close offer",
+                            channel_id
+                        );
+                    };
+                }
+                Action::ForceOffChainClosed(id) => {
+                    if let Some(details) = self.ln_channel_manager.get_channel_details(&id) {
+                        if details.is_usable {
+                            if let Err(e) = self.mark_channel_offchain_closed(id) {
+                                error!("Unexpected error {} making channel {:?} as offchain closed, keeping the action to retry.", e, id);
+                                retain.push(Action::ForceOffChainClosed(id));
+                            }
+                        } else {
+                            retain.push(Action::ForceOffChainClosed(id));
                         }
                     } else {
                         error!("Could not get channel details for id: {:?}", id);
@@ -2423,7 +2577,12 @@ where
             }
             let updated_state = match &channel.state {
                 SubChannelState::Offered(o) if channel.is_offer => {
-                    if peer_state.is_none() {
+                    let has_not_received = match peer_state {
+                        None => true,
+                        Some(state) if state == ReestablishFlag::OffChainClosed as u8 => true,
+                        _ => false,
+                    };
+                    if has_not_received {
                         let dlc_channel_id = channel.get_dlc_channel_id(0).ok_or_else(|| {
                             Error::InvalidState("Could not get dlc channel id".to_string())
                         })?;
@@ -2468,8 +2627,9 @@ where
                     None
                 }
                 SubChannelState::Accepted(a) => {
-                    self.ln_channel_manager.reset_fund_outpoint(
+                    self.ln_channel_manager.set_funding_outpoint(
                         &channel.channel_id,
+                        &a.ln_rollback.funding_outpoint,
                         a.ln_rollback.channel_value_satoshis,
                         a.ln_rollback.value_to_self_msat,
                     )?;
@@ -2524,8 +2684,9 @@ where
                 SubChannelState::Confirmed(a) => {
                     if let Some(counter_state) = peer_state {
                         if counter_state == ReestablishFlag::Accepted as u8 {
-                            self.ln_channel_manager.reset_fund_outpoint(
+                            self.ln_channel_manager.set_funding_outpoint(
                                 &channel.channel_id,
+                                &a.ln_rollback.funding_outpoint,
                                 a.ln_rollback.channel_value_satoshis,
                                 a.ln_rollback.value_to_self_msat,
                             )?;
@@ -2573,6 +2734,70 @@ where
                                 .lock()
                                 .unwrap()
                                 .push(Action::ForceSign(channel_id));
+                            None
+                        }
+                    } else {
+                        //TODO(tibo): log + close channel?
+                        None
+                    }
+                }
+                SubChannelState::CloseOffered(offered) if offered.is_offer => {
+                    if let Some(counter_state) = peer_state {
+                        if counter_state == ReestablishFlag::Signed as u8 {
+                            let message = SubChannelCloseOffer {
+                                channel_id,
+                                accept_balance: offered.accept_balance,
+                            };
+
+                            self.actions
+                                .lock()
+                                .unwrap()
+                                .push(Action::ResendCloseOffer((message, channel.counter_party)));
+                        }
+                    }
+                    None
+                }
+                SubChannelState::CloseAccepted(accepted) => {
+                    self.ln_channel_manager.set_funding_outpoint(
+                        &channel.channel_id,
+                        &accepted.ln_rollback.funding_outpoint,
+                        accepted.ln_rollback.channel_value_satoshis,
+                        accepted.ln_rollback.value_to_self_msat,
+                    )?;
+                    self.actions
+                        .lock()
+                        .unwrap()
+                        .push(Action::ReAcceptCloseOffer {
+                            channel_id,
+                            own_balance: accepted.own_balance,
+                        });
+
+                    let close_offered = CloseOfferedSubChannel {
+                        signed_subchannel: accepted.signed_subchannel.clone(),
+                        offer_balance: accepted.counter_balance,
+                        accept_balance: accepted.own_balance,
+                        is_offer: false,
+                    };
+
+                    Some(SubChannelState::CloseOffered(close_offered))
+                }
+                SubChannelState::CloseConfirmed(confirmed) => {
+                    if let Some(counter_state) = peer_state {
+                        if counter_state == ReestablishFlag::CloseAccepted as u8 {
+                            self.ln_channel_manager.set_funding_outpoint(
+                                &channel.channel_id,
+                                &confirmed.ln_rollback.funding_outpoint,
+                                confirmed.ln_rollback.channel_value_satoshis,
+                                confirmed.ln_rollback.value_to_self_msat,
+                            )?;
+                            Some(SubChannelState::CloseOffered(CloseOfferedSubChannel {
+                                signed_subchannel: confirmed.signed_subchannel.clone(),
+                                offer_balance: confirmed.own_balance,
+                                accept_balance: confirmed.counter_balance,
+                                is_offer: true,
+                            }))
+                        } else {
+                            debug_assert_eq!(ReestablishFlag::OffChainClosed as u8, counter_state);
                             None
                         }
                     } else {

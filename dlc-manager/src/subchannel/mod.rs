@@ -106,6 +106,10 @@ impl SubChannel {
             SubChannelState::Accepted(_) => Some(ReestablishFlag::Accepted as u8),
             SubChannelState::Confirmed(_) => Some(ReestablishFlag::Confirmed as u8),
             SubChannelState::Signed(_) => Some(ReestablishFlag::Signed as u8),
+            SubChannelState::CloseOffered(_) => Some(ReestablishFlag::CloseOffered as u8),
+            SubChannelState::CloseAccepted(_) => Some(ReestablishFlag::CloseAccepted as u8),
+            SubChannelState::CloseConfirmed(_) => Some(ReestablishFlag::CloseConfirmed as u8),
+            SubChannelState::OffChainClosed => Some(ReestablishFlag::OffChainClosed as u8),
             _ => None,
         }
     }
@@ -150,6 +154,10 @@ pub(crate) enum ReestablishFlag {
     Accepted = 2,
     Confirmed = 3,
     Signed = 4,
+    CloseOffered = 5,
+    CloseAccepted = 6,
+    CloseConfirmed = 7,
+    OffChainClosed = 8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,6 +191,20 @@ pub struct LnRollBackInfo {
     pub channel_value_satoshis: u64,
     /// The original `value_to_self_msat` of the LN channel.
     pub value_to_self_msat: u64,
+    /// The original funding outpoint
+    pub funding_outpoint: lightning::chain::transaction::OutPoint,
+}
+
+impl From<&ChannelDetails> for LnRollBackInfo {
+    fn from(value: &ChannelDetails) -> Self {
+        Self {
+            channel_value_satoshis: value.channel_value_satoshis,
+            value_to_self_msat: value.balance_msat,
+            funding_outpoint: value
+                .funding_txo
+                .expect("to have a defined funding outpoint"),
+        }
+    }
 }
 
 impl AcceptedSubChannel {
@@ -235,6 +257,8 @@ pub struct CloseOfferedSubChannel {
     pub offer_balance: u64,
     /// The proposed balance of the accpet party for the DLC sub channel.
     pub accept_balance: u64,
+    /// Indicates if the local party is the one who made the offer.
+    pub is_offer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,6 +268,10 @@ pub struct CloseAcceptedSubChannel {
     pub signed_subchannel: SignedSubChannel,
     /// The balance of the local party for the DLC sub channel.
     pub own_balance: u64,
+    /// The balance of the remote party for the DLC sub channel.
+    pub counter_balance: u64,
+    /// Rollback information about the split channel
+    pub ln_rollback: LnRollBackInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,6 +281,10 @@ pub struct CloseConfirmedSubChannel {
     pub signed_subchannel: SignedSubChannel,
     /// The balance of the local party for the DLC sub channel.
     pub own_balance: u64,
+    /// The balance of the remote party for the DLC sub channel.
+    pub counter_balance: u64,
+    /// Rollback information about the split channel
+    pub ln_rollback: LnRollBackInfo,
 }
 
 /// Information about a sub channel that is in the process of being unilateraly closed.
@@ -306,11 +338,12 @@ pub trait LNChannelManager: ChannelMessageHandler {
         counter_party_node_id: &PublicKey,
     ) -> Result<(), Error>;
 
-    /// Reset the funding outpoint to the original one and setting the channel values to the given
+    /// Set the funding outpoint to the given one and sets the channel values to the given
     /// ones.
-    fn reset_fund_outpoint(
+    fn set_funding_outpoint(
         &self,
         channel_id: &ChannelId,
+        funding_outpoint: &lightning::chain::transaction::OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
     ) -> Result<(), Error>;
@@ -398,14 +431,20 @@ where
             .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 
-    fn reset_fund_outpoint(
+    fn set_funding_outpoint(
         &self,
         channel_id: &ChannelId,
+        funding_outpoint: &lightning::chain::transaction::OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
     ) -> Result<(), Error> {
-        self.reset_fund_output(channel_id, channel_value_satoshis, value_to_self_msat)
-            .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
+        self.set_funding_output(
+            channel_id,
+            funding_outpoint,
+            channel_value_satoshis,
+            value_to_self_msat,
+        )
+        .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 }
 

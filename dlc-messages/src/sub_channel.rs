@@ -226,7 +226,7 @@ impl_dlc_writeable!(SubChannelFinalize, {
 
 /// A message to offer the collaborative (off-chain) closing of a DLC channel embedded within a
 /// Lightning channel.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -246,7 +246,7 @@ impl_dlc_writeable!(SubChannelCloseOffer, {
 
 /// A message to accept the collaborative closing of a DLC channel embedded within a Lightning
 /// channel.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -270,7 +270,7 @@ impl_dlc_writeable!(SubChannelCloseAccept, {
 
 /// A message to confirm the collaborative closing of a DLC channel embedded within a Lightning
 /// channel.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
