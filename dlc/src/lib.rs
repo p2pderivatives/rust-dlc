@@ -45,7 +45,7 @@ pub mod util;
 /// Minimum value that can be included in a transaction output. Under this value,
 /// outputs are discarded
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#change-outputs
-const DUST_LIMIT: u64 = 1000;
+pub const DUST_LIMIT: u64 = 1000;
 
 /// The transaction version
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#funding-transaction
@@ -147,7 +147,7 @@ impl DlcTransactions {
 }
 
 /// Contains info about a utxo used for funding a DLC contract
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
@@ -236,7 +236,7 @@ impl std::error::Error for Error {
 /// Contains the parameters required for creating DLC transactions for a single
 /// party. Specifically these are the common fields between Offer and Accept
 /// messages.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),

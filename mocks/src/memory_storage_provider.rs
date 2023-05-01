@@ -8,6 +8,8 @@ use dlc_manager::channel::{
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
+use dlc_manager::sub_channel_manager::Action;
+use dlc_manager::subchannel::{SubChannel, SubChannelState};
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -18,11 +20,14 @@ use std::sync::{Mutex, RwLock};
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
     channels: RwLock<HashMap<ChannelId, Channel>>,
+    sub_channels: RwLock<HashMap<ChannelId, SubChannel>>,
     contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
     channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
+    sub_channels_saved: Mutex<Option<HashMap<ChannelId, SubChannel>>>,
     addresses: RwLock<HashMap<Address, SecretKey>>,
     utxos: RwLock<HashMap<OutPoint, Utxo>>,
     key_pairs: RwLock<HashMap<PublicKey, SecretKey>>,
+    actions: RwLock<Vec<Action>>,
 }
 
 impl MemoryStorage {
@@ -30,11 +35,14 @@ impl MemoryStorage {
         MemoryStorage {
             contracts: RwLock::new(HashMap::new()),
             channels: RwLock::new(HashMap::new()),
+            sub_channels: RwLock::new(HashMap::new()),
             contracts_saved: Mutex::new(None),
             channels_saved: Mutex::new(None),
+            sub_channels_saved: Mutex::new(None),
             addresses: RwLock::new(HashMap::new()),
             utxos: RwLock::new(HashMap::new()),
             key_pairs: RwLock::new(HashMap::new()),
+            actions: RwLock::new(Vec::new()),
         }
     }
 
@@ -54,6 +62,14 @@ impl MemoryStorage {
                 .expect("Could not get read lock")
                 .clone(),
         );
+
+        let mut sub_channels_saved = self.sub_channels_saved.lock().unwrap();
+        *sub_channels_saved = Some(
+            self.sub_channels
+                .read()
+                .expect("Could not get read lock")
+                .clone(),
+        );
     }
 
     pub fn rollback(&self) {
@@ -68,6 +84,12 @@ impl MemoryStorage {
         let mut tmp = None;
         std::mem::swap(&mut tmp, &mut *channels_saved);
         std::mem::swap(&mut *channels, &mut tmp.unwrap());
+
+        let mut sub_channels = self.sub_channels.write().unwrap();
+        let mut sub_channels_saved = self.sub_channels_saved.lock().unwrap();
+        let mut tmp = None;
+        std::mem::swap(&mut tmp, &mut *sub_channels_saved);
+        std::mem::swap(&mut *sub_channels, &mut tmp.unwrap());
     }
 }
 
@@ -253,6 +275,63 @@ impl Storage for MemoryStorage {
 
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, DaemonError> {
         Ok(None)
+    }
+
+    fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), DaemonError> {
+        let mut map = self.sub_channels.write().expect("Could not get write lock");
+        map.insert(subchannel.channel_id, subchannel.clone());
+        Ok(())
+    }
+
+    fn get_sub_channel(
+        &self,
+        channel_id: dlc_manager::ChannelId,
+    ) -> Result<Option<SubChannel>, DaemonError> {
+        let res = self
+            .sub_channels
+            .read()
+            .expect("could not get read lock")
+            .get(&channel_id)
+            .cloned();
+        Ok(res)
+    }
+
+    fn get_sub_channels(&self) -> Result<Vec<SubChannel>, DaemonError> {
+        Ok(self
+            .sub_channels
+            .read()
+            .expect("Could not get read lock")
+            .values()
+            .cloned()
+            .collect())
+    }
+
+    fn get_offered_sub_channels(&self) -> Result<Vec<SubChannel>, DaemonError> {
+        let map = self.sub_channels.read().expect("Could not get read lock");
+
+        let mut res: Vec<SubChannel> = Vec::new();
+
+        for (_, val) in map.iter() {
+            if let SubChannelState::Offered(_) = &val.state {
+                res.push(val.clone())
+            }
+        }
+
+        Ok(res)
+    }
+
+    fn save_sub_channel_actions(&self, actions: &[Action]) -> Result<(), DaemonError> {
+        let mut vec = self.actions.write().expect("Could not get write lock");
+        vec.append(&mut actions.to_vec());
+        Ok(())
+    }
+
+    fn get_sub_channel_actions(&self) -> Result<Vec<Action>, DaemonError> {
+        Ok(self
+            .actions
+            .read()
+            .expect("Could not get read lock")
+            .clone())
     }
 }
 

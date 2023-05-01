@@ -19,7 +19,7 @@ use secp256k1_zkp::PublicKey;
 
 use crate::{
     segmentation::{get_segments, segment_reader::SegmentReader},
-    Message, WireMessage,
+    ChannelMessage, Message, OnChainMessage, SubChannelMessage, WireMessage,
 };
 
 /// MessageHandler is used to send and receive messages through the custom
@@ -82,11 +82,11 @@ impl MessageHandler {
 }
 
 macro_rules! handle_read_dlc_messages {
-    ($msg_type:ident, $buffer:ident, $(($type_id:ident, $variant:ident)),*) => {{
+    ($msg_type:ident, $buffer:ident, $(($variant:ident, $subtype:ident, $(($type_id:ident, $subvariant:ident)),*)),*) => {{
         let decoded = match $msg_type {
-            $(
-                $crate::$type_id => Message::$variant(Readable::read(&mut $buffer)?),
-            )*
+            $($(
+                $crate::$type_id => Message::$variant($subtype::$subvariant(Readable::read(&mut $buffer)?)),
+            )*)*
             _ => return Ok(None),
         };
         Ok(Some(WireMessage::Message(decoded)))
@@ -100,21 +100,42 @@ fn read_dlc_message<R: ::std::io::Read>(
     handle_read_dlc_messages!(
         msg_type,
         buffer,
-        (OFFER_TYPE, Offer),
-        (ACCEPT_TYPE, Accept),
-        (SIGN_TYPE, Sign),
-        (OFFER_CHANNEL_TYPE, OfferChannel),
-        (ACCEPT_CHANNEL_TYPE, AcceptChannel),
-        (SIGN_CHANNEL_TYPE, SignChannel),
-        (SETTLE_CHANNEL_OFFER_TYPE, SettleOffer),
-        (SETTLE_CHANNEL_ACCEPT_TYPE, SettleAccept),
-        (SETTLE_CHANNEL_CONFIRM_TYPE, SettleConfirm),
-        (SETTLE_CHANNEL_FINALIZE_TYPE, SettleFinalize),
-        (RENEW_CHANNEL_OFFER_TYPE, RenewOffer),
-        (RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept),
-        (RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm),
-        (RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize),
-        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
+        (
+            OnChain,
+            OnChainMessage,
+            (OFFER_TYPE, Offer),
+            (ACCEPT_TYPE, Accept),
+            (SIGN_TYPE, Sign)
+        ),
+        (
+            Channel,
+            ChannelMessage,
+            (OFFER_CHANNEL_TYPE, Offer),
+            (ACCEPT_CHANNEL_TYPE, Accept),
+            (SIGN_CHANNEL_TYPE, Sign),
+            (SETTLE_CHANNEL_OFFER_TYPE, SettleOffer),
+            (SETTLE_CHANNEL_ACCEPT_TYPE, SettleAccept),
+            (SETTLE_CHANNEL_CONFIRM_TYPE, SettleConfirm),
+            (SETTLE_CHANNEL_FINALIZE_TYPE, SettleFinalize),
+            (RENEW_CHANNEL_OFFER_TYPE, RenewOffer),
+            (RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept),
+            (RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm),
+            (RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize),
+            (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
+        ),
+        (
+            SubChannel,
+            SubChannelMessage,
+            (SUB_CHANNEL_OFFER, Offer),
+            (SUB_CHANNEL_ACCEPT, Accept),
+            (SUB_CHANNEL_CONFIRM, Confirm),
+            (SUB_CHANNEL_FINALIZE, Finalize),
+            (SUB_CHANNEL_CLOSE_OFFER, CloseOffer),
+            (SUB_CHANNEL_CLOSE_ACCEPT, CloseAccept),
+            (SUB_CHANNEL_CLOSE_CONFIRM, CloseConfirm),
+            (SUB_CHANNEL_CLOSE_FINALIZE, CloseFinalize),
+            (SUB_CHANNEL_REJECT, Reject)
+        )
     )
 }
 
@@ -304,7 +325,7 @@ mod tests {
         let input = include_str!("./test_inputs/offer_msg.json");
         let msg: OfferDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
-        handler.send_message(some_pk(), Message::Offer(msg));
+        handler.send_message(some_pk(), Message::OnChain(OnChainMessage::Offer(msg)));
         assert_eq!(handler.msg_events.lock().unwrap().len(), 1);
     }
 
@@ -313,7 +334,7 @@ mod tests {
         let input = include_str!("./test_inputs/accept_msg.json");
         let msg: AcceptDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
-        handler.send_message(some_pk(), Message::Accept(msg));
+        handler.send_message(some_pk(), Message::OnChain(OnChainMessage::Accept(msg)));
         assert!(handler.msg_events.lock().unwrap().len() > 1);
     }
 
@@ -322,7 +343,7 @@ mod tests {
         let input = include_str!("./test_inputs/accept_msg.json");
         let msg: AcceptDlc = serde_json::from_str(input).unwrap();
         let handler = MessageHandler::new();
-        handler.send_message(some_pk(), Message::Accept(msg));
+        handler.send_message(some_pk(), Message::OnChain(OnChainMessage::Accept(msg)));
         handler.get_and_clear_pending_msg();
         assert!(!handler.has_pending_messages());
     }
@@ -343,7 +364,7 @@ mod tests {
             .expect("to be able to process segment start");
         let msg = handler.get_and_clear_received_messages();
         assert_eq!(1, msg.len());
-        if let (_, Message::Accept(_)) = msg[0] {
+        if let (_, Message::OnChain(OnChainMessage::Accept(_))) = msg[0] {
         } else {
             panic!("Expected an accept message");
         }

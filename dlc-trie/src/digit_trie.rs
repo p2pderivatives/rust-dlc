@@ -259,7 +259,7 @@ impl<'a, T> Iterator for DigitTrieIter<'a, T> {
                     while cur_child < (self.trie.base as isize) {
                         self.index_stack.push((Some(cur_index), cur_child + 1));
                         self.index_stack
-                            .push((cur_children[(cur_child as usize)], -1));
+                            .push((cur_children[cur_child as usize], -1));
                         match self.next() {
                             None => {
                                 self.index_stack.pop();

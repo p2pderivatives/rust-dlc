@@ -1,7 +1,8 @@
-use std::rc::Rc;
+use std::{ops::Deref, rc::Rc};
 
 use bitcoin::{Address, PackedLockTime, Script, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
+use lightning::chain::chaininterface::BroadcasterInterface;
 use secp256k1_zkp::{rand::seq::SliceRandom, SecretKey};
 
 use crate::mock_blockchain::MockBlockchain;
@@ -11,7 +12,10 @@ pub struct MockWallet {
 }
 
 impl MockWallet {
-    pub fn new(blockchain: &Rc<MockBlockchain>, nb_utxo: u16) -> Self {
+    pub fn new<T: Deref>(blockchain: &Rc<MockBlockchain<T>>, nb_utxo: u16) -> Self
+    where
+        T::Target: BroadcasterInterface,
+    {
         let mut utxos = Vec::with_capacity(nb_utxo as usize);
 
         for i in 0..nb_utxo {

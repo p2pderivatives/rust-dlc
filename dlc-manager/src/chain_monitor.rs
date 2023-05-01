@@ -1,4 +1,5 @@
-//!
+//! This module includes the [`ChainMonitor`] struct that helps watching the blockchain for
+//! transactions of interest in the context of DLC.
 
 use std::collections::HashMap;
 
@@ -42,8 +43,10 @@ pub(crate) enum TxType {
         is_offer: bool,
         revoked_tx_type: RevokedTxType,
     },
-    Current,
+    BufferTx,
     CollaborativeClose,
+    SplitTx,
+    SettleTx,
 }
 
 impl_dlc_writeable_enum!(TxType,;
@@ -53,16 +56,17 @@ impl_dlc_writeable_enum!(TxType,;
         (is_offer, writeable),
         (revoked_tx_type, writeable)
     });;
-    (1, Current), (2, CollaborativeClose)
+    (1, BufferTx), (2, CollaborativeClose), (3, SplitTx), (4, SettleTx)
 );
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
 pub(crate) enum RevokedTxType {
     Buffer,
     Settle,
+    Split,
 }
 
-impl_dlc_writeable_enum!(RevokedTxType,;;;(0, Buffer), (1, Settle));
+impl_dlc_writeable_enum!(RevokedTxType,;;;(0, Buffer), (1, Settle), (2, Split));
 
 impl ChainMonitor {
     /// Returns a new [`ChainMonitor`] with fields properly initialized.
@@ -74,12 +78,34 @@ impl ChainMonitor {
         }
     }
 
+    /// Returns true if the monitor doesn't contain any transaction to be watched.
+    pub fn is_empty(&self) -> bool {
+        self.watched_tx.is_empty()
+    }
+
     pub(crate) fn add_tx(&mut self, txid: Txid, channel_info: ChannelInfo) {
         self.watched_tx.insert(txid, channel_info);
     }
 
     pub(crate) fn remove_tx(&mut self, txid: &Txid) {
         self.watched_tx.remove(txid);
+    }
+
+    pub(crate) fn cleanup_channel(&mut self, channel_id: ChannelId) {
+        let to_remove = self
+            .watched_tx
+            .iter()
+            .filter_map(|x| {
+                if x.1.channel_id == channel_id {
+                    Some(*x.0)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for txid in to_remove {
+            self.watched_tx.remove(&txid);
+        }
     }
 
     pub(crate) fn process_block(
@@ -92,12 +118,16 @@ impl ChainMonitor {
         assert_eq!(self.last_height + 1, height);
 
         for tx in &block.txdata {
-            let txid = tx.txid();
-            if self.watched_tx.contains_key(&txid) {
-                let channel_info = self
-                    .watched_tx
-                    .get(&txid)
-                    .expect("to be able to retrieve the channel info");
+            let channel_info = self.watched_tx.get(&tx.txid()).or_else(|| {
+                for txid in tx.input.iter().map(|x| &x.previous_output.txid) {
+                    let info = self.watched_tx.get(txid);
+                    if info.is_some() {
+                        return info;
+                    }
+                }
+                None
+            });
+            if let Some(channel_info) = channel_info {
                 res.push((tx.clone(), channel_info.clone()));
             }
         }

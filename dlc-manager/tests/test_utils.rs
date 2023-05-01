@@ -48,36 +48,39 @@ macro_rules! receive_loop {
     ($receive:expr, $manager:expr, $send:expr, $expect_err:expr, $sync_send:expr, $rcv_callback: expr, $msg_callback: expr) => {
         thread::spawn(move || loop {
             match $receive.recv() {
-                Ok(Some(msg)) => match $manager.lock().unwrap().on_dlc_message(
-                    &msg,
-                    "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
-                        .parse()
-                        .unwrap(),
-                ) {
-                    Ok(opt) => {
-                        if $expect_err.load(Ordering::Relaxed) != false {
-                            panic!("Expected error not raised");
-                        }
-                        match opt {
-                            Some(msg) => {
-                                let msg_opt = $rcv_callback(msg);
-                                if let Some(msg) = msg_opt {
-                                    $msg_callback(&msg);
-                                    (&$send).send(Some(msg)).expect("Error sending");
-                                }
+                Ok(Some(msg)) => {
+                    let res = $manager.lock().unwrap().on_dlc_message(
+                        &msg,
+                        "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+                            .parse()
+                            .unwrap(),
+                    );
+                    $sync_send.send(()).expect("Error syncing");
+                    match res {
+                        Ok(opt) => {
+                            if $expect_err.load(Ordering::Relaxed) != false {
+                                panic!("Expected error not raised");
                             }
-                            None => {}
+                            match opt {
+                                Some(msg) => {
+                                    let msg_opt = $rcv_callback(msg);
+                                    if let Some(msg) = msg_opt {
+                                        $msg_callback(&msg);
+                                        (&$send).send(Some(msg)).expect("Error sending");
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        Err(e) => {
+                            if $expect_err.load(Ordering::Relaxed) != true {
+                                panic!("Unexpected error {}", e);
+                            }
                         }
                     }
-                    Err(e) => {
-                        if $expect_err.load(Ordering::Relaxed) != true {
-                            panic!("Unexpected error {}", e);
-                        }
-                    }
-                },
+                }
                 Ok(None) | Err(_) => return,
             };
-            $sync_send.send(()).expect("Error syncing");
         })
     };
 }
@@ -101,9 +104,14 @@ macro_rules! write_contract {
 #[macro_export]
 macro_rules! assert_contract_state {
     ($d:expr, $id:expr, $p:ident) => {
+        assert_contract_state_unlocked!($d.lock().unwrap(), $id, $p);
+    };
+}
+
+#[macro_export]
+macro_rules! assert_contract_state_unlocked {
+    ($d:expr, $id:expr, $p:ident) => {
         let res = $d
-            .lock()
-            .unwrap()
             .get_store()
             .get_contract(&$id)
             .expect("Could not retrieve contract");
@@ -119,6 +127,21 @@ macro_rules! assert_contract_state {
             panic!("Contract {:02x?} does not exist in store", $id);
         }
     };
+}
+
+#[macro_export]
+macro_rules! assert_channel_contract_state {
+    ($d: expr, $id: expr, $p: ident) => {{
+        let channel = $d
+            .get_store()
+            .get_channel(&$id)
+            .expect("Could not retrieve contract")
+            .expect(&format!("No such channel: {:?}", $id));
+        let contract_id = channel.get_contract_id().expect("No contract id");
+
+        assert_contract_state_unlocked!($d, contract_id, $p);
+        contract_id
+    }};
 }
 
 #[macro_export]
@@ -143,16 +166,35 @@ macro_rules! write_channel {
 }
 
 #[macro_export]
+macro_rules! write_sub_channel {
+    ($channel: ident, $state: ident) => {
+        use lightning::util::ser::Writeable;
+
+        let mut buf = Vec::new();
+        $channel
+            .write(&mut buf)
+            .expect("to be able to serialize the sub channel");
+        std::fs::write(format!("{}SubChannel", stringify!($state)), buf)
+            .expect("to be able to save the sub channel to file");
+    };
+}
+
+#[macro_export]
 macro_rules! assert_channel_state {
     ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
+        assert_channel_state_unlocked!($d.lock().unwrap(), $id, $p $(, $s)?)
+    }};
+}
+
+#[allow(unused_macros)]
+macro_rules! assert_channel_state_unlocked {
+    ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
         let res = $d
-            .lock()
-            .unwrap()
             .get_store()
             .get_channel(&$id)
             .expect("Could not retrieve contract");
         if let Some(Channel::$p(c)) = res {
-            $(if let SignedChannelState::$s { .. } = c.state {
+            $(if let dlc_manager::channel::signed_channel::SignedChannelState::$s { .. } = c.state {
             } else {
                 panic!("Unexpected signed channel state {:?}", c.state);
             })?
@@ -172,6 +214,61 @@ macro_rules! assert_channel_state {
             panic!("Unexpected channel state {}", state);
         }
     }};
+}
+
+#[macro_export]
+macro_rules! assert_sub_channel_state {
+    ($d:expr, $id:expr $(, $s_tuple: ident)? $(;$s_simple: ident)?) => {{
+        let res = $d
+            .get_dlc_manager()
+            .get_store()
+            .get_sub_channel(*$id)
+            .expect("Could not retrieve contract");
+        if let Some(sub_channel) = res {
+            $(if let SubChannelState::$s_tuple(_)  = sub_channel.state {
+            } else {
+                panic!("Unexpected sub channel state {:?}", sub_channel.state);
+            }
+            if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
+                write_sub_channel!(sub_channel, $s_tuple);
+            })?
+            $(if let SubChannelState::$s_simple  = sub_channel.state {
+            } else {
+                panic!("Unexpected sub channel state {:?}", sub_channel.state);
+            }
+            if std::env::var("GENERATE_SERIALIZED_SUB_CHANNEL").is_ok() {
+                write_sub_channel!(sub_channel, $s_simple);
+            })?
+
+            let dlc_channel_id = sub_channel.get_dlc_channel_id(0);
+
+            if let Some(dlc_channel_id) = dlc_channel_id {
+                match sub_channel.state {
+                    SubChannelState::Offered(_) => {
+                        assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id, Offered);
+                        assert_channel_contract_state!($d.get_dlc_manager(), dlc_channel_id, Offered);
+                    }
+                    SubChannelState::Accepted(_) => {
+                        assert_channel_state_unlocked!($d.get_dlc_manager(), dlc_channel_id, Accepted);
+                        assert_channel_contract_state!($d.get_dlc_manager(), dlc_channel_id, Accepted);
+                    }
+                    _ => {}
+                }
+            }
+
+        } else {
+            panic!("Sub channel not found");
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! assert_eq_fields {
+    ($a: expr, $b: expr, $($field: ident),*) => {
+       $(
+            assert_eq!($a.$field, $b.$field);
+        )*
+    };
 }
 
 pub fn enum_outcomes() -> Vec<String> {
@@ -218,20 +315,20 @@ pub fn get_difference_params() -> DifferenceParams {
     }
 }
 
-pub fn get_enum_contract_descriptor() -> ContractDescriptor {
+pub fn get_enum_contract_descriptor(total_collateral: u64) -> ContractDescriptor {
     let outcome_payouts: Vec<_> = enum_outcomes()
         .iter()
         .enumerate()
         .map(|(i, x)| {
             let payout = if i % 2 == 0 {
                 Payout {
-                    offer: TOTAL_COLLATERAL,
+                    offer: total_collateral,
                     accept: 0,
                 }
             } else {
                 Payout {
                     offer: 0,
-                    accept: TOTAL_COLLATERAL,
+                    accept: total_collateral,
                 }
             };
             EnumerationPayout {
@@ -275,8 +372,24 @@ pub fn get_enum_test_params(
     threshold: usize,
     oracles: Option<Vec<MockOracle>>,
 ) -> TestParams {
+    get_enum_test_params_custom_collateral(
+        nb_oracles,
+        threshold,
+        oracles,
+        OFFER_COLLATERAL,
+        ACCEPT_COLLATERAL,
+    )
+}
+
+pub fn get_enum_test_params_custom_collateral(
+    nb_oracles: usize,
+    threshold: usize,
+    oracles: Option<Vec<MockOracle>>,
+    offer_collateral: u64,
+    accept_collateral: u64,
+) -> TestParams {
     let oracles = oracles.unwrap_or_else(|| get_enum_oracles(nb_oracles, threshold));
-    let contract_descriptor = get_enum_contract_descriptor();
+    let contract_descriptor = get_enum_contract_descriptor(offer_collateral + accept_collateral);
     let contract_info = ContractInputInfo {
         contract_descriptor,
         oracles: OracleInput {
@@ -287,9 +400,9 @@ pub fn get_enum_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: OFFER_COLLATERAL,
-        accept_collateral: ACCEPT_COLLATERAL,
-        fee_rate: 2,
+        offer_collateral,
+        accept_collateral,
+        fee_rate: 1,
         contract_infos: vec![contract_info],
     };
 
@@ -473,6 +586,26 @@ pub fn get_numerical_test_params(
     contract_descriptor: ContractDescriptor,
     use_max_value: bool,
 ) -> TestParams {
+    get_numerical_test_params_custom_collateral(
+        oracle_numeric_infos,
+        threshold,
+        with_diff,
+        contract_descriptor,
+        use_max_value,
+        OFFER_COLLATERAL,
+        ACCEPT_COLLATERAL,
+    )
+}
+
+pub fn get_numerical_test_params_custom_collateral(
+    oracle_numeric_infos: &OracleNumericInfo,
+    threshold: usize,
+    with_diff: bool,
+    contract_descriptor: ContractDescriptor,
+    use_max_value: bool,
+    offer_collateral: u64,
+    accept_collateral: u64,
+) -> TestParams {
     let oracles =
         get_digit_decomposition_oracles(oracle_numeric_infos, threshold, with_diff, use_max_value);
     let contract_info = ContractInputInfo {
@@ -485,9 +618,9 @@ pub fn get_numerical_test_params(
     };
 
     let contract_input = ContractInput {
-        offer_collateral: OFFER_COLLATERAL,
-        accept_collateral: ACCEPT_COLLATERAL,
-        fee_rate: 2,
+        offer_collateral,
+        accept_collateral,
+        fee_rate: 1,
         contract_infos: vec![contract_info],
     };
 
@@ -505,7 +638,8 @@ pub fn get_enum_and_numerical_test_params(
 ) -> TestParams {
     let oracle_numeric_infos = get_same_num_digits_oracle_numeric_infos(nb_oracles);
     let enum_oracles = get_enum_oracles(nb_oracles, threshold);
-    let enum_contract_descriptor = get_enum_contract_descriptor();
+    let enum_contract_descriptor =
+        get_enum_contract_descriptor(OFFER_COLLATERAL + ACCEPT_COLLATERAL);
     let enum_contract_info = ContractInputInfo {
         oracles: OracleInput {
             public_keys: enum_oracles.iter().map(|x| x.get_public_key()).collect(),
@@ -542,7 +676,7 @@ pub fn get_enum_and_numerical_test_params(
     let contract_input = ContractInput {
         offer_collateral: OFFER_COLLATERAL,
         accept_collateral: ACCEPT_COLLATERAL,
-        fee_rate: 2,
+        fee_rate: 1,
         contract_infos,
     };
 

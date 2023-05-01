@@ -45,23 +45,25 @@ impl_dlc_writeable!(SignedChannel, {
     (roll_back_state, option),
     (own_per_update_seed, writeable),
     (counter_party_commitment_secrets, writeable),
-    (fee_rate_per_vb, writeable)
+    (fee_rate_per_vb, writeable),
+    (sub_channel_id, option)
 });
 
 impl_dlc_writeable_enum!(
     SignedChannelState,;
-    (0, Established, {(signed_contract_id, writeable), (own_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (counter_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (buffer_transaction, writeable), (is_offer, writeable)}),
+    (0, Established, {(signed_contract_id, writeable), (own_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (counter_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (buffer_transaction, writeable), (is_offer, writeable), (total_collateral, writeable)}),
     (1, SettledOffered, {(counter_payout, writeable), (next_per_update_point, writeable), (timeout, writeable)}),
-    (2, SettledReceived, {(own_payout, writeable), (counter_next_per_update_point, writeable)}),
-    (3, SettledAccepted, {(counter_next_per_update_point, writeable), (own_next_per_update_point, writeable), (settle_tx, writeable), (own_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable)}),
-    (4, SettledConfirmed, {(settle_tx, writeable), (counter_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (own_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (counter_next_per_update_point, writeable), (own_next_per_update_point, writeable), (timeout, writeable), (own_payout, writeable) }),
-    (5, Settled, {(settle_tx, writeable), (counter_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (own_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature})}),
+    (2, SettledReceived, {(own_payout, writeable), (counter_next_per_update_point, writeable), (counter_payout, writeable)}),
+    (3, SettledAccepted, {(counter_next_per_update_point, writeable), (own_next_per_update_point, writeable), (settle_tx, writeable), (own_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (counter_payout, writeable)}),
+    (4, SettledConfirmed, {(settle_tx, writeable), (counter_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (own_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (counter_next_per_update_point, writeable), (own_next_per_update_point, writeable), (timeout, writeable), (own_payout, writeable), (counter_payout, writeable) }),
+    (5, Settled, {(settle_tx, writeable), (counter_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (own_settle_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (own_payout, writeable), (counter_payout, writeable)}),
     (6, RenewOffered, {(offered_contract_id, writeable), (counter_payout, writeable), (is_offer, writeable), (offer_next_per_update_point, writeable), (timeout, writeable)}),
     (7, RenewAccepted, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable)}),
-    (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable)}),
+    (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
     (9, Closing, {(buffer_transaction, writeable), (signed_cet, writeable), (contract_id, writeable), (attestations, vec)}),
     (10, ClosedPunished, { (punishment_txid, writeable) }),
-    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) })
+    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) }),
+    (15, CounterClosing, { (buffer_txid, writeable) })
     ;;(12, Closed), (13, CounterClosed), (14, CollaborativelyClosed)
 );
 

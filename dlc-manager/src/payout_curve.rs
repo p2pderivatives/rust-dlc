@@ -174,7 +174,7 @@ trait Evaluable {
             )));
         }
 
-        if payout_double > total_collateral as f64 {
+        if payout_double.round() > total_collateral as f64 {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral".to_string(),
             ));
@@ -1214,5 +1214,38 @@ mod test {
         payout_function
             .to_range_payouts(7513, &rounding_intervals)
             .expect("To be able to compute the range payouts");
+    }
+
+    #[test]
+    fn floating_point_error_doesn_fail() {
+        let function = PayoutFunction::new(vec![PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+            PolynomialPayoutCurvePiece::new(vec![
+                PayoutPoint {
+                    event_outcome: 22352,
+                    outcome_payout: 0,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 55881,
+                    outcome_payout: 87455,
+                    extra_precision: 0,
+                },
+            ])
+            .unwrap(),
+        )])
+        .unwrap();
+
+        let rounding_mod = 1;
+
+        let rounding_intervals = RoundingIntervals {
+            intervals: vec![RoundingInterval {
+                begin_interval: 0,
+                rounding_mod,
+            }],
+        };
+
+        function
+            .to_range_payouts(87455, &rounding_intervals)
+            .expect("Not to fail");
     }
 }

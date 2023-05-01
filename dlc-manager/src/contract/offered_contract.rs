@@ -4,6 +4,7 @@ use crate::conversion_utils::{
     get_contract_info_and_announcements, get_tx_input_infos, BITCOIN_CHAINHASH, PROTOCOL_VERSION,
 };
 use crate::utils::get_new_serial_id;
+use crate::ContractId;
 
 use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
@@ -82,6 +83,7 @@ impl OfferedContract {
         counter_party: &PublicKey,
         refund_delay: u32,
         cet_locktime: u32,
+        temporary_contract_id: ContractId,
     ) -> Self {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
 
@@ -102,7 +104,7 @@ impl OfferedContract {
             })
             .collect::<Vec<ContractInfo>>();
         OfferedContract {
-            id: crate::utils::get_new_temporary_id(),
+            id: temporary_contract_id,
             is_offer_party: true,
             contract_info,
             offer_params: offer_params.clone(),

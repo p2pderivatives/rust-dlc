@@ -10,7 +10,9 @@ use dlc_manager::channel::signed_channel::SignedChannelStateType;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::contract::Contract;
 use dlc_manager::Storage;
+use dlc_messages::ChannelMessage;
 use dlc_messages::Message as DlcMessage;
+use dlc_messages::OnChainMessage;
 use hex_utils::{hex_str, to_slice};
 use lightning::ln::msgs::NetAddress;
 use serde::Deserialize;
@@ -194,21 +196,21 @@ pub(crate) async fn poll_for_user_input(
                     let is_contract = o == "offercontract";
                     let offer = tokio::task::spawn_blocking(move || {
                         if is_contract {
-                            DlcMessage::Offer(
+                            DlcMessage::OnChain(OnChainMessage::Offer(
                                 manager_clone
                                     .lock()
                                     .unwrap()
                                     .send_offer(&contract_input, pubkey)
                                     .expect("Error sending offer"),
-                            )
+                            ))
                         } else {
-                            DlcMessage::OfferChannel(
+                            DlcMessage::Channel(ChannelMessage::Offer(
                                 manager_clone
                                     .lock()
                                     .unwrap()
                                     .offer_channel(&contract_input, pubkey)
                                     .expect("Error sending offer channel"),
-                            )
+                            ))
                         }
                     })
                     .await
@@ -244,7 +246,8 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .accept_contract_offer(&contract_id)
                         .expect("Error accepting contract.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::Accept(msg));
+                    dlc_message_handler
+                        .send_message(node_id, DlcMessage::OnChain(OnChainMessage::Accept(msg)));
                     peer_manager.process_events();
                 }
                 "listcontracts" => {
@@ -336,7 +339,8 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .accept_channel(&channel_id)
                         .expect("Error accepting channel.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::AcceptChannel(msg));
+                    dlc_message_handler
+                        .send_message(node_id, DlcMessage::Channel(ChannelMessage::Accept(msg)));
                     peer_manager.process_events();
                 }
                 s @ "offersettlechannel" => {
@@ -354,7 +358,10 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .settle_offer(&channel_id, counter_payout)
                         .expect("Error getting settle offer message.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::SettleOffer(msg));
+                    dlc_message_handler.send_message(
+                        node_id,
+                        DlcMessage::Channel(ChannelMessage::SettleOffer(msg)),
+                    );
                     peer_manager.process_events();
                 }
                 l @ "acceptsettlechanneloffer" => {
@@ -364,7 +371,10 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .accept_settle_offer(&channel_id)
                         .expect("Error accepting settle channel offer.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::SettleAccept(msg));
+                    dlc_message_handler.send_message(
+                        node_id,
+                        DlcMessage::Channel(ChannelMessage::SettleAccept(msg)),
+                    );
                     peer_manager.process_events();
                 }
                 l @ "rejectsettlechanneloffer" => {
@@ -374,7 +384,8 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .reject_settle_offer(&channel_id)
                         .expect("Error rejecting settle channel offer.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::Reject(msg));
+                    dlc_message_handler
+                        .send_message(node_id, DlcMessage::Channel(ChannelMessage::Reject(msg)));
                     peer_manager.process_events();
                 }
                 "listsettlechanneloffers" => {
@@ -417,7 +428,10 @@ pub(crate) async fn poll_for_user_input(
                     })
                     .await
                     .unwrap();
-                    dlc_message_handler.send_message(node_id, DlcMessage::RenewOffer(renew_offer));
+                    dlc_message_handler.send_message(
+                        node_id,
+                        DlcMessage::Channel(ChannelMessage::RenewOffer(renew_offer)),
+                    );
                     peer_manager.process_events();
                 }
                 "listrenewchanneloffers" => {
@@ -457,7 +471,10 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .accept_renew_offer(&channel_id)
                         .expect("Error accepting channel.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::RenewAccept(msg));
+                    dlc_message_handler.send_message(
+                        node_id,
+                        DlcMessage::Channel(ChannelMessage::RenewAccept(msg)),
+                    );
                     peer_manager.process_events();
                 }
                 l @ "rejectrenewchanneloffer" => {
@@ -467,7 +484,8 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .reject_renew_offer(&channel_id)
                         .expect("Error rejecting settle channel offer.");
-                    dlc_message_handler.send_message(node_id, DlcMessage::Reject(msg));
+                    dlc_message_handler
+                        .send_message(node_id, DlcMessage::Channel(ChannelMessage::Reject(msg)));
                     peer_manager.process_events();
                 }
                 "listsignedchannels" => {
