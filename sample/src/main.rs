@@ -125,7 +125,7 @@ async fn main() {
         .unwrap();
 
     let keys_manager = Arc::new(KeysManager::new(
-        &sk.as_ref(),
+        sk.as_ref(),
         time.as_secs(),
         time.subsec_nanos(),
     ));
