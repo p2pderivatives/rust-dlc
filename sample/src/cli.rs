@@ -553,7 +553,7 @@ fn help() {
 
 fn list_peers(peer_manager: Arc<PeerManager>) {
     println!("\t{{");
-    for pubkey in peer_manager.get_peer_node_ids() {
+    for (pubkey, _) in peer_manager.get_peer_node_ids() {
         println!("\t\t pubkey: {}", pubkey);
     }
     println!("\t}},");
@@ -564,7 +564,7 @@ pub(crate) async fn connect_peer_if_necessary(
     peer_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
 ) -> Result<(), ()> {
-    for node_pubkey in peer_manager.get_peer_node_ids() {
+    for (node_pubkey, _) in peer_manager.get_peer_node_ids() {
         if node_pubkey == pubkey {
             return Ok(());
         }
@@ -585,7 +585,7 @@ pub(crate) async fn connect_peer_if_necessary(
                 match peer_manager
                     .get_peer_node_ids()
                     .iter()
-                    .find(|id| **id == pubkey)
+                    .find(|(id, _)| *id == pubkey)
                 {
                     Some(_) => break,
                     None => tokio::time::sleep(Duration::from_millis(10)).await,

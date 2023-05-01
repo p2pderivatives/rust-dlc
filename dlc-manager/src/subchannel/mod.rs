@@ -8,13 +8,14 @@ use dlc::channel::sub_channel::SplitTx;
 use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, FeeEstimator},
-        keysinterface::KeysInterface,
+        keysinterface::{EntropySource, NodeSigner, SignerProvider},
     },
     ln::{
         chan_utils::CounterpartyCommitmentSecrets,
         channelmanager::{ChannelDetails, ChannelManager},
         msgs::{ChannelMessageHandler, CommitmentSigned, RevokeAndACK},
     },
+    routing::router::Router,
     util::logger::Logger,
 };
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};
@@ -327,8 +328,12 @@ pub trait LNChannelManager: ChannelMessageHandler {
     ) -> Result<(), Error>;
 
     /// Gives the ability to access the funding secret key within the provided callback.
-    fn sign_with_fund_key_cb<F>(&self, channel_id: &[u8; 32], cb: &mut F)
-    where
+    fn sign_with_fund_key_cb<F>(
+        &self,
+        channel_id: &[u8; 32],
+        counter_party_node_id: &PublicKey,
+        cb: &mut F,
+    ) where
         F: FnMut(&SecretKey);
 
     /// Force close the channel with given `channel_id` and `counter_party_node_id`.
@@ -343,19 +348,23 @@ pub trait LNChannelManager: ChannelMessageHandler {
     fn set_funding_outpoint(
         &self,
         channel_id: &ChannelId,
+        counter_party_node_id: &PublicKey,
         funding_outpoint: &lightning::chain::transaction::OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
     ) -> Result<(), Error>;
 }
 
-impl<M: Deref, T: Deref, K: Deref, F: Deref, L: Deref> LNChannelManager
-    for ChannelManager<M, T, K, F, L>
+impl<M: Deref, T: Deref, ES: Deref, NS: Deref, K: Deref, F: Deref, R: Deref, L: Deref>
+    LNChannelManager for ChannelManager<M, T, ES, NS, K, F, R, L>
 where
-    M::Target: lightning::chain::Watch<<K::Target as KeysInterface>::Signer>,
+    M::Target: lightning::chain::Watch<<K::Target as SignerProvider>::Signer>,
     T::Target: BroadcasterInterface,
-    K::Target: KeysInterface,
+    ES::Target: EntropySource,
+    NS::Target: NodeSigner,
+    K::Target: SignerProvider,
     F::Target: FeeEstimator,
+    R::Target: Router,
     L::Target: Logger,
 {
     fn get_channel_details(&self, channel_id: &ChannelId) -> Option<ChannelDetails> {
@@ -413,11 +422,15 @@ where
             .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
     }
 
-    fn sign_with_fund_key_cb<SF>(&self, channel_id: &[u8; 32], cb: &mut SF)
-    where
+    fn sign_with_fund_key_cb<SF>(
+        &self,
+        channel_id: &[u8; 32],
+        counter_party_node_id: &PublicKey,
+        cb: &mut SF,
+    ) where
         SF: FnMut(&SecretKey),
     {
-        self.sign_with_fund_key_callback(channel_id, cb)
+        self.sign_with_fund_key_callback(channel_id, counter_party_node_id, cb)
             .map_err(|e| Error::InvalidParameters(format!("{e:?}")))
             .unwrap();
     }
@@ -434,12 +447,14 @@ where
     fn set_funding_outpoint(
         &self,
         channel_id: &ChannelId,
+        counter_party_node_id: &PublicKey,
         funding_outpoint: &lightning::chain::transaction::OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
     ) -> Result<(), Error> {
-        self.set_funding_output(
+        self.set_funding_outpoint(
             channel_id,
+            counter_party_node_id,
             funding_outpoint,
             channel_value_satoshis,
             value_to_self_msat,

@@ -550,8 +550,10 @@ where
         let ln_output_value = split_tx.transaction.output[0].value;
 
         let mut split_tx_adaptor_signature = None;
-        self.ln_channel_manager
-            .sign_with_fund_key_cb(channel_id, &mut |sk| {
+        self.ln_channel_manager.sign_with_fund_key_cb(
+            channel_id,
+            &offered_sub_channel.counter_party,
+            &mut |sk| {
                 split_tx_adaptor_signature = Some(
                     get_tx_adaptor_signature(
                         self.dlc_channel_manager.get_secp(),
@@ -563,7 +565,8 @@ where
                     )
                     .unwrap(),
                 );
-            });
+            },
+        );
 
         let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
 
@@ -715,8 +718,10 @@ where
 
         let mut own_sig = None;
 
-        self.ln_channel_manager
-            .sign_with_fund_key_cb(channel_id, &mut |fund_sk| {
+        self.ln_channel_manager.sign_with_fund_key_cb(
+            channel_id,
+            &signed.counter_party,
+            &mut |fund_sk| {
                 own_sig = Some(
                     dlc::util::get_raw_sig_for_tx_input(
                         self.dlc_channel_manager.get_secp(),
@@ -739,7 +744,8 @@ where
                     0,
                 )
                 .unwrap();
-            });
+            },
+        );
 
         dlc::verify_tx_input_sig(
             self.dlc_channel_manager.get_secp(),
@@ -1429,8 +1435,10 @@ where
 
         let channel_id = &channel_details.channel_id;
         let mut split_tx_adaptor_signature = None;
-        self.ln_channel_manager
-            .sign_with_fund_key_cb(channel_id, &mut |sk| {
+        self.ln_channel_manager.sign_with_fund_key_cb(
+            channel_id,
+            &offered_sub_channel.counter_party,
+            &mut |sk| {
                 split_tx_adaptor_signature = Some(
                     get_tx_adaptor_signature(
                         self.dlc_channel_manager.get_secp(),
@@ -1442,7 +1450,8 @@ where
                     )
                     .unwrap(),
                 );
-            });
+            },
+        );
 
         let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
 
@@ -2629,6 +2638,7 @@ where
                 SubChannelState::Accepted(a) => {
                     self.ln_channel_manager.set_funding_outpoint(
                         &channel.channel_id,
+                        peer_id,
                         &a.ln_rollback.funding_outpoint,
                         a.ln_rollback.channel_value_satoshis,
                         a.ln_rollback.value_to_self_msat,
@@ -2686,6 +2696,7 @@ where
                         if counter_state == ReestablishFlag::Accepted as u8 {
                             self.ln_channel_manager.set_funding_outpoint(
                                 &channel.channel_id,
+                                peer_id,
                                 &a.ln_rollback.funding_outpoint,
                                 a.ln_rollback.channel_value_satoshis,
                                 a.ln_rollback.value_to_self_msat,
@@ -2760,6 +2771,7 @@ where
                 SubChannelState::CloseAccepted(accepted) => {
                     self.ln_channel_manager.set_funding_outpoint(
                         &channel.channel_id,
+                        &channel.counter_party,
                         &accepted.ln_rollback.funding_outpoint,
                         accepted.ln_rollback.channel_value_satoshis,
                         accepted.ln_rollback.value_to_self_msat,
@@ -2786,6 +2798,7 @@ where
                         if counter_state == ReestablishFlag::CloseAccepted as u8 {
                             self.ln_channel_manager.set_funding_outpoint(
                                 &channel.channel_id,
+                                &channel.counter_party,
                                 &confirmed.ln_rollback.funding_outpoint,
                                 confirmed.ln_rollback.channel_value_satoshis,
                                 confirmed.ln_rollback.value_to_self_msat,
@@ -2892,21 +2905,19 @@ where
     fn handle_open_channel(
         &self,
         their_node_id: &PublicKey,
-        their_features: lightning::ln::features::InitFeatures,
         msg: &lightning::ln::msgs::OpenChannel,
     ) {
         self.ln_channel_manager
-            .handle_open_channel(their_node_id, their_features, msg)
+            .handle_open_channel(their_node_id, msg)
     }
 
     fn handle_accept_channel(
         &self,
         their_node_id: &PublicKey,
-        their_features: lightning::ln::features::InitFeatures,
         msg: &lightning::ln::msgs::AcceptChannel,
     ) {
         self.ln_channel_manager
-            .handle_accept_channel(their_node_id, their_features, msg)
+            .handle_accept_channel(their_node_id, msg)
     }
 
     fn handle_funding_created(
@@ -2936,14 +2947,8 @@ where
             .handle_channel_ready(their_node_id, msg)
     }
 
-    fn handle_shutdown(
-        &self,
-        their_node_id: &PublicKey,
-        their_features: &lightning::ln::features::InitFeatures,
-        msg: &lightning::ln::msgs::Shutdown,
-    ) {
-        self.ln_channel_manager
-            .handle_shutdown(their_node_id, their_features, msg)
+    fn handle_shutdown(&self, their_node_id: &PublicKey, msg: &lightning::ln::msgs::Shutdown) {
+        self.ln_channel_manager.handle_shutdown(their_node_id, msg)
     }
 
     fn handle_closing_signed(
@@ -3019,17 +3024,18 @@ where
             .handle_announcement_signatures(their_node_id, msg)
     }
 
-    fn peer_disconnected(&self, their_node_id: &PublicKey, no_connection_possible: bool) {
-        self.ln_channel_manager
-            .peer_disconnected(their_node_id, no_connection_possible)
+    fn peer_disconnected(&self, their_node_id: &PublicKey) {
+        self.ln_channel_manager.peer_disconnected(their_node_id)
     }
 
     fn peer_connected(
         &self,
         their_node_id: &PublicKey,
         msg: &lightning::ln::msgs::Init,
+        inbound: bool,
     ) -> Result<(), ()> {
-        self.ln_channel_manager.peer_connected(their_node_id, msg)
+        self.ln_channel_manager
+            .peer_connected(their_node_id, msg, inbound)
     }
 
     fn handle_channel_reestablish(

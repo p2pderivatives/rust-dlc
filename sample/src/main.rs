@@ -9,6 +9,7 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc_manager::{Oracle, SystemTimeProvider};
 use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
+use lightning::chain::keysinterface::KeysManager;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
@@ -27,6 +28,7 @@ pub(crate) type PeerManager = LdkPeerManager<
     Arc<IgnoringMessageHandler>,
     Arc<FilesystemLogger>,
     Arc<DlcMessageHandler>,
+    Arc<KeysManager>,
 >;
 
 pub(crate) type DlcManager = dlc_manager::manager::Manager<
@@ -122,6 +124,12 @@ async fn main() {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap();
 
+    let keys_manager = Arc::new(KeysManager::new(
+        &sk.as_ref(),
+        time.as_secs(),
+        time.subsec_nanos(),
+    ));
+
     // The peer manager helps us establish connections and communicate with our peers.
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         MessageHandler {
@@ -129,11 +137,11 @@ async fn main() {
             route_handler: Arc::new(IgnoringMessageHandler {}),
             onion_message_handler: Arc::new(IgnoringMessageHandler {}),
         },
-        sk,
         time.as_secs() as u32,
         &ephemeral_bytes,
         logger.clone(),
         dlc_message_handler.clone(),
+        Arc::clone(&keys_manager),
     ));
 
     let peer_manager_connection_handler = peer_manager.clone();

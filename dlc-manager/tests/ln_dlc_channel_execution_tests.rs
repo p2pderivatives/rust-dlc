@@ -3,7 +3,12 @@ mod test_utils;
 mod console_logger;
 mod custom_signer;
 
-use std::{collections::HashMap, convert::TryInto, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    convert::TryInto,
+    sync::{Arc, Mutex},
+    time::SystemTime,
+};
 
 use crate::test_utils::{
     get_enum_test_params_custom_collateral, refresh_wallet, TestParams, EVENT_MATURITY,
@@ -29,7 +34,7 @@ use electrs_blockchain_provider::{ElectrsBlockchainProvider, OutSpendResp};
 use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
-        keysinterface::{KeysInterface, KeysManager, Recipient},
+        keysinterface::{EntropySource, KeysManager, Recipient},
         BestBlock, Filter, Listen,
     },
     ln::{
@@ -38,8 +43,8 @@ use lightning::{
     },
     routing::{
         gossip::{NetworkGraph, NodeId},
-        router::{RouteHop, RouteParameters},
-        scoring::{ChannelUsage, Score},
+        router::{DefaultRouter, RouteHop, RouteParameters},
+        scoring::{ChannelUsage, LockableScore, ProbabilisticScorer, Score},
     },
     util::{
         config::UserConfig,
@@ -74,7 +79,16 @@ pub(crate) type ChannelManager = lightning::ln::channelmanager::ChannelManager<
     Arc<ChainMonitor>,
     Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<CustomKeysManager>,
+    Arc<CustomKeysManager>,
+    Arc<CustomKeysManager>,
     Arc<ElectrsBlockchainProvider>,
+    Arc<
+        DefaultRouter<
+            Arc<NetworkGraph<Arc<ConsoleLogger>>>,
+            Arc<ConsoleLogger>,
+            Arc<Mutex<TestScorer>>,
+        >,
+    >,
     Arc<ConsoleLogger>,
 >;
 
@@ -85,6 +99,7 @@ pub(crate) type PeerManager = lightning::ln::peer_handler::PeerManager<
     Arc<IgnoringMessageHandler>,
     Arc<ConsoleLogger>,
     Arc<IgnoringMessageHandler>,
+    Arc<CustomKeysManager>,
 >;
 
 type DlcChannelManager = Manager<
@@ -363,8 +378,8 @@ fn create_ln_node(
     let cur = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap();
-    let keys_manager = KeysManager::new(&key, cur.as_secs(), cur.subsec_nanos());
-    let consistent_keys_manager = Arc::new(CustomKeysManager::new(keys_manager));
+    let keys_manager = Arc::new(KeysManager::new(&key, cur.as_secs(), cur.subsec_nanos()));
+    let consistent_keys_manager = Arc::new(CustomKeysManager::new(keys_manager.clone()));
     let logger = Arc::new(console_logger::ConsoleLogger { name });
 
     std::fs::create_dir_all(data_dir).unwrap();
@@ -389,6 +404,17 @@ fn create_ln_node(
     user_config
         .channel_handshake_config
         .max_inbound_htlc_value_in_flight_percent_of_channel = 55;
+
+    let network_graph = Arc::new(NetworkGraph::new(Network::Regtest, logger.clone()));
+    let scorer_path = format!("{}/scorer", data_dir.clone());
+    let scorer = Arc::new(Mutex::new(TestScorer::with_penalty(0)));
+    let router = Arc::new(DefaultRouter::new(
+        network_graph.clone(),
+        logger.clone(),
+        keys_manager.get_secure_random_bytes(),
+        scorer.clone(),
+    ));
+
     let (blockhash, chain_height, channel_manager) = {
         let height = blockchain_provider.get_blockchain_height().unwrap();
         let last_block = blockchain_provider.get_block_at_height(height).unwrap();
@@ -402,7 +428,10 @@ fn create_ln_node(
             blockchain_provider.clone(),
             chain_monitor.clone(),
             mock_blockchain.clone(),
+            router,
             logger.clone(),
+            consistent_keys_manager.clone(),
+            consistent_keys_manager.clone(),
             consistent_keys_manager.clone(),
             user_config,
             chain_params,
@@ -419,7 +448,7 @@ fn create_ln_node(
     let mut ephemeral_bytes = [0; 32];
     thread_rng().fill_bytes(&mut ephemeral_bytes);
 
-    let network_graph = NetworkGraph::new(blockhash, logger.clone());
+    let network_graph = NetworkGraph::new(Network::Regtest, logger.clone());
 
     let storage = Arc::new(MemoryStorage::new());
 
@@ -458,13 +487,11 @@ fn create_ln_node(
     };
     let peer_manager = PeerManager::new(
         lightning_msg_handler,
-        consistent_keys_manager
-            .get_node_secret(Recipient::Node)
-            .unwrap(),
         current_time.try_into().unwrap(),
         &ephemeral_bytes,
         logger.clone(),
         Arc::new(IgnoringMessageHandler {}),
+        consistent_keys_manager.clone(),
     );
 
     LnDlcParty {
@@ -695,6 +722,7 @@ fn ln_dlc_test(test_path: TestPath) {
 
     let payment_params = lightning::routing::router::PaymentParameters::from_node_id(
         bob_node.channel_manager.get_our_node_id(),
+        70,
     );
 
     let payment_preimage = lightning::ln::PaymentPreimage([0; 32]);
@@ -703,7 +731,7 @@ fn ln_dlc_test(test_path: TestPath) {
     );
     let _ = bob_node
         .channel_manager
-        .create_inbound_payment_for_hash(payment_hash, None, 7200)
+        .create_inbound_payment_for_hash(payment_hash, None, 7200, None)
         .unwrap();
 
     let scorer = TestScorer::with_penalty(0);
@@ -711,7 +739,6 @@ fn ln_dlc_test(test_path: TestPath) {
     let route_params = RouteParameters {
         payment_params: payment_params.clone(),
         final_value_msat: 90000000,
-        final_cltv_expiry_delta: 70,
     };
 
     let route = lightning::routing::router::find_route(
@@ -755,7 +782,10 @@ fn ln_dlc_test(test_path: TestPath) {
     let get_commit_tx_from_node = |node: &LnDlcParty| {
         let mut res = node
             .persister
-            .read_channelmonitors(alice_node.keys_manager.clone())
+            .read_channelmonitors(
+                alice_node.keys_manager.clone(),
+                alice_node.keys_manager.clone(),
+            )
             .unwrap();
         assert!(res.len() == 1);
         let (_, channel_monitor) = res.remove(0);
@@ -802,7 +832,6 @@ fn ln_dlc_test(test_path: TestPath) {
     let route_params = RouteParameters {
         payment_params,
         final_value_msat: 900000,
-        final_cltv_expiry_delta: 70,
     };
 
     let route = lightning::routing::router::find_route(
@@ -1349,6 +1378,7 @@ fn offer_sub_channel(
     alice_descriptor: MockSocketDescriptor,
     bob_descriptor: MockSocketDescriptor,
 ) {
+    println!("STARTING!!!!!!!!!!!");
     let offer = offer_common(test_params, alice_node, channel_id);
 
     if let TestPath::Reconnect = test_path {
@@ -1409,7 +1439,9 @@ fn offer_sub_channel(
         assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
 
         // Bob should re-send the accept message
+        println!("Processing actions");
         let mut msgs = bob_node.sub_channel_manager.process_actions();
+        println!("Processed actions");
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
             assert_eq!(p, alice_node.channel_manager.get_our_node_id());
@@ -1532,6 +1564,10 @@ fn reconnect(
     alice_node.peer_manager.process_events();
     bob_node.peer_manager.process_events();
 
+    alice_node.process_events();
+    bob_node.process_events();
+    alice_node.process_events();
+    bob_node.process_events();
     alice_node.process_events();
     bob_node.process_events();
     alice_node.process_events();
