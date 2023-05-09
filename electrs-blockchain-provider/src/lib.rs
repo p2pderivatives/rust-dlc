@@ -12,6 +12,7 @@ use bitcoin_test_utils::tx_to_string;
 use dlc_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning_block_sync::{BlockData, BlockHeaderData, BlockSource, BlockSourceError};
+use log::error;
 use reqwest::blocking::Response;
 use serde::Deserialize;
 use serde::Serialize;
@@ -307,14 +308,18 @@ impl BroadcasterInterface for ElectrsBlockchainProvider {
     fn broadcast_transaction(&self, tx: &Transaction) {
         let client = self.client.clone();
         let host = self.host.clone();
-        let body = bitcoin_test_utils::tx_to_string(tx);
+        let tx_body = bitcoin_test_utils::tx_to_string(tx);
         std::thread::spawn(move || {
-            match client.post(format!("{host}tx")).body(body).send() {
+            match client
+                .post(format!("{host}tx"))
+                .body(tx_body.clone())
+                .send()
+            {
                 Err(_) => {}
                 Ok(res) => {
                     if res.error_for_status_ref().is_err() {
-                        // let body = res.text().unwrap_or_default();
-                        // TODO(tibo): log
+                        let body = res.text().unwrap_or_default();
+                        error!("Error broadcasting transaction {}: {}", tx_body, body);
                     }
                 }
             };
