@@ -11,6 +11,7 @@ bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 dlc-manager = {path = "../dlc-manager"}
 lightning = {version = "0.0.114"}
 lightning-block-sync = {version = "0.0.114"}
+log = "0.4.14"
 reqwest = {version = "0.11", features = ["blocking", "json"]}
 rust-bitcoin-coin-selection = {version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
 serde = {version = "*", features = ["derive"]}

@@ -1075,6 +1075,8 @@ fn ln_dlc_test(test_path: TestPath) {
         return;
     }
 
+    let commit_tx = get_commit_tx_from_node(&alice_node).remove(0);
+
     alice_node
         .sub_channel_manager
         .initiate_force_close_sub_channel(&channel_id)
@@ -1100,6 +1102,13 @@ fn ln_dlc_test(test_path: TestPath) {
     if let TestPath::CheatPostSplitCommit = test_path {
         let cheat_tx = post_split_commit_tx.unwrap()[0].clone();
         ln_cheated_check(&cheat_tx, &mut bob_node, electrs.clone(), &generate_blocks);
+    } else {
+        assert_eq!(
+            1,
+            electrs
+                .get_transaction_confirmations(&commit_tx.txid())
+                .unwrap()
+        );
     }
 
     generate_blocks(1);
@@ -1378,7 +1387,6 @@ fn offer_sub_channel(
     alice_descriptor: MockSocketDescriptor,
     bob_descriptor: MockSocketDescriptor,
 ) {
-    println!("STARTING!!!!!!!!!!!");
     let offer = offer_common(test_params, alice_node, channel_id);
 
     if let TestPath::Reconnect = test_path {
@@ -1439,9 +1447,7 @@ fn offer_sub_channel(
         assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
 
         // Bob should re-send the accept message
-        println!("Processing actions");
         let mut msgs = bob_node.sub_channel_manager.process_actions();
-        println!("Processed actions");
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
             assert_eq!(p, alice_node.channel_manager.get_our_node_id());
