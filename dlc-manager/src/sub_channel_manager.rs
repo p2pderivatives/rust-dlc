@@ -1,7 +1,7 @@
 //! # Module containing a manager enabling set up and update of DLC channels embedded within
 //! Lightning Network channels.
 
-use std::{ops::Deref, sync::Mutex};
+use std::{marker::PhantomData, ops::Deref, sync::Mutex};
 
 use bitcoin::{OutPoint, PackedLockTime, Script, Sequence};
 use dlc::{
@@ -19,7 +19,7 @@ use dlc_messages::{
     FundingSignatures, SubChannelMessage,
 };
 use lightning::{
-    chain::chaininterface::FeeEstimator,
+    chain::{chaininterface::FeeEstimator, keysinterface::ChannelSigner},
     ln::{
         chan_utils::{
             build_commitment_secret, derive_private_key, derive_private_revocation_key,
@@ -28,8 +28,8 @@ use lightning::{
         channelmanager::ChannelDetails,
         msgs::{ChannelMessageHandler, DecodeError, RevokeAndACK},
     },
-    util::events::MessageSendEventsProvider,
     util::ser::{Readable, Writeable, Writer},
+    util::{errors::APIError, events::MessageSendEventsProvider},
 };
 use log::{error, trace};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, SecretKey};
@@ -61,27 +61,27 @@ const INITIAL_SPLIT_NUMBER: u64 = (1 << 48) - 1;
 macro_rules! get_sub_channel_in_state {
     ($manager: expr, $channel_id: expr, $state: ident, $peer_id: expr) => {{
         match $manager.get_store().get_sub_channel($channel_id)? {
-            Some(sub_channel) => {
-                if let Some(p) = $peer_id as Option<PublicKey> {
-                    if sub_channel.counter_party != p {
-                        return Err(Error::InvalidParameters(format!(
-                            "Peer {:02x?} is not involved with {} {:02x?}.",
-                            $peer_id,
-                            stringify!($object_type),
-                            $channel_id
-                        )));
-                    }
-                }
-                if let SubChannelState::$state(s) = sub_channel.state.clone() {
-                    Ok((sub_channel, s))
-                } else {
-                    Err(Error::InvalidState(format!(
-                        "Expected {} state but got {:?}",
-                        stringify!($state),
-                        &sub_channel.state,
+            Some(sub_channel) => match $peer_id as Option<PublicKey> {
+                Some(p) if sub_channel.counter_party != p => {
+                    Err(Error::InvalidParameters(format!(
+                        "Peer {:02x?} is not involved with {} {:02x?}.",
+                        $peer_id,
+                        stringify!($object_type),
+                        $channel_id
                     )))
                 }
-            }
+                _ => {
+                    if let SubChannelState::$state(s) = sub_channel.state.clone() {
+                        Ok((sub_channel, s))
+                    } else {
+                        Err(Error::InvalidState(format!(
+                            "Expected {} state but got {:?}",
+                            stringify!($state),
+                            &sub_channel.state,
+                        )))
+                    }
+                }
+            },
             None => Err(Error::InvalidParameters(format!(
                 "Unknown {} id.",
                 stringify!($object_type)
@@ -163,9 +163,10 @@ pub struct SubChannelManager<
     T: Deref,
     F: Deref,
     D: Deref<Target = Manager<W, B, S, O, T, F>>,
+    SP: ChannelSigner,
 > where
     W::Target: Wallet,
-    M::Target: LNChannelManager,
+    M::Target: LNChannelManager<SP>,
     S::Target: Storage,
     B::Target: Blockchain,
     O::Target: Oracle,
@@ -175,6 +176,7 @@ pub struct SubChannelManager<
     ln_channel_manager: M,
     dlc_channel_manager: D,
     actions: Mutex<Vec<Action>>,
+    phantom: std::marker::PhantomData<SP>,
 }
 
 impl<
@@ -186,10 +188,11 @@ impl<
         T: Deref,
         F: Deref,
         D: Deref<Target = Manager<W, B, S, O, T, F>>,
-    > SubChannelManager<W, M, S, B, O, T, F, D>
+        SP: ChannelSigner,
+    > SubChannelManager<W, M, S, B, O, T, F, D, SP>
 where
     W::Target: Wallet,
-    M::Target: LNChannelManager,
+    M::Target: LNChannelManager<SP>,
     S::Target: Storage,
     B::Target: Blockchain,
     O::Target: Oracle,
@@ -203,6 +206,7 @@ where
             ln_channel_manager,
             dlc_channel_manager,
             actions: Mutex::new(actions),
+            phantom: PhantomData,
         })
     }
 
@@ -436,27 +440,7 @@ where
             Offered,
             None as Option<PublicKey>
         )?;
-
-        let per_split_seed = if let Some(per_split_seed_pk) = offered_sub_channel.per_split_seed {
-            self.dlc_channel_manager
-                .get_wallet()
-                .get_secret_key_for_pubkey(&per_split_seed_pk)?
-        } else {
-            self.dlc_channel_manager.get_wallet().get_new_secret_key()?
-        };
-        let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
-            per_split_seed.as_ref(),
-            offered_sub_channel.update_idx,
-        ))
-        .expect("a valid secret key.");
-
-        offered_sub_channel.per_split_seed = Some(PublicKey::from_secret_key(
-            self.dlc_channel_manager.get_secp(),
-            &per_split_seed,
-        ));
-
-        let next_per_split_point =
-            PublicKey::from_secret_key(self.dlc_channel_manager.get_secp(), &per_split_secret);
+        let counter_party = offered_sub_channel.counter_party;
 
         let channel_details = self
             .ln_channel_manager
@@ -464,225 +448,258 @@ where
             .ok_or_else(|| {
                 Error::InvalidParameters(format!("Unknown LN channel {channel_id:02x?}"))
             })?;
-
-        let temporary_channel_id =
-            offered_sub_channel
-                .get_dlc_channel_id(0)
-                .ok_or(Error::InvalidParameters(
-                    "Could not get dlc channel id".to_string(),
-                ))?;
-
-        let offered_channel = get_channel_in_state!(
-            self.dlc_channel_manager,
-            &temporary_channel_id,
-            Offered,
-            None as Option<PublicKey>
-        )?;
-
-        let offered_contract = get_contract_in_state!(
-            self.dlc_channel_manager,
-            &offered_channel.offered_contract_id,
-            Offered,
-            None as Option<PublicKey>
-        )?;
-
-        // Revalidate in case channel capacity has changed since receiving the offer.
-        let (own_to_self_msat, _) = validate_and_get_ln_values_per_party(
-            &channel_details,
-            offered_contract.total_collateral - offered_contract.offer_params.collateral,
-            offered_contract.offer_params.collateral,
-            offered_contract.fee_rate_per_vb,
-            false,
-        )?;
-
-        let funding_redeemscript = channel_details
-            .funding_redeemscript
-            .as_ref()
-            .unwrap()
-            .clone();
-
-        let funding_txo = channel_details
-            .funding_txo
-            .expect("to have a funding tx output");
-
-        let offer_revoke_params = offered_sub_channel
-            .counter_base_points
-            .as_ref()
-            .expect("to have counter base points")
-            .get_revokable_params(
-                self.dlc_channel_manager.get_secp(),
-                &offered_sub_channel.own_base_points.revocation_basepoint,
-                &state.per_split_point,
-            );
-
-        let accept_revoke_params = offered_sub_channel.own_base_points.get_revokable_params(
-            self.dlc_channel_manager.get_secp(),
-            &offered_sub_channel
-                .counter_base_points
-                .as_ref()
-                .expect("to have counter base points")
-                .revocation_basepoint,
-            &next_per_split_point,
-        );
-
-        let own_base_secret_key = self
-            .dlc_channel_manager
-            .get_wallet()
-            .get_secret_key_for_pubkey(&offered_sub_channel.own_base_points.own_basepoint)?;
-        let own_secret_key = derive_private_key(
-            self.dlc_channel_manager.get_secp(),
-            &next_per_split_point,
-            &own_base_secret_key,
-        );
-
-        let split_tx = dlc::channel::sub_channel::create_split_tx(
-            &offer_revoke_params,
-            &accept_revoke_params,
-            &OutPoint {
-                txid: funding_txo.txid,
-                vout: funding_txo.index as u32,
-            },
-            channel_details.channel_value_satoshis,
-            offered_contract.total_collateral,
-            offered_contract.fee_rate_per_vb,
-        )?;
-
-        let ln_output_value = split_tx.transaction.output[0].value;
-
-        let mut split_tx_adaptor_signature = None;
-        self.ln_channel_manager.sign_with_fund_key_cb(
+        let msg = self.ln_channel_manager.with_useable_channel_lock(
             channel_id,
-            &offered_sub_channel.counter_party,
-            &mut |sk| {
-                split_tx_adaptor_signature = Some(
-                    get_tx_adaptor_signature(
-                        self.dlc_channel_manager.get_secp(),
-                        &split_tx.transaction,
-                        channel_details.channel_value_satoshis,
-                        &funding_redeemscript,
-                        sk,
-                        &offer_revoke_params.publish_pk.inner,
-                    )
-                    .unwrap(),
+            &counter_party,
+            |channel_lock| {
+                let per_split_seed =
+                    if let Some(per_split_seed_pk) = offered_sub_channel.per_split_seed {
+                        self.dlc_channel_manager
+                            .get_wallet()
+                            .get_secret_key_for_pubkey(&per_split_seed_pk)?
+                    } else {
+                        self.dlc_channel_manager.get_wallet().get_new_secret_key()?
+                    };
+                let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
+                    per_split_seed.as_ref(),
+                    offered_sub_channel.update_idx,
+                ))
+                .expect("a valid secret key.");
+
+                offered_sub_channel.per_split_seed = Some(PublicKey::from_secret_key(
+                    self.dlc_channel_manager.get_secp(),
+                    &per_split_seed,
+                ));
+
+                let next_per_split_point = PublicKey::from_secret_key(
+                    self.dlc_channel_manager.get_secp(),
+                    &per_split_secret,
                 );
+
+                let temporary_channel_id =
+                    offered_sub_channel
+                        .get_dlc_channel_id(0)
+                        .ok_or(Error::InvalidParameters(
+                            "Could not get dlc channel id".to_string(),
+                        ))?;
+
+                let offered_channel = get_channel_in_state!(
+                    self.dlc_channel_manager,
+                    &temporary_channel_id,
+                    Offered,
+                    None as Option<PublicKey>
+                )?;
+
+                let offered_contract = get_contract_in_state!(
+                    self.dlc_channel_manager,
+                    &offered_channel.offered_contract_id,
+                    Offered,
+                    None as Option<PublicKey>
+                )?;
+
+                // Revalidate in case channel capacity has changed since receiving the offer.
+                let (own_to_self_msat, _) = validate_and_get_ln_values_per_party(
+                    &channel_details,
+                    offered_contract.total_collateral - offered_contract.offer_params.collateral,
+                    offered_contract.offer_params.collateral,
+                    offered_contract.fee_rate_per_vb,
+                    false,
+                )?;
+
+                let funding_redeemscript = channel_details
+                    .funding_redeemscript
+                    .as_ref()
+                    .unwrap()
+                    .clone();
+
+                let funding_txo = channel_details
+                    .funding_txo
+                    .expect("to have a funding tx output");
+
+                let offer_revoke_params = offered_sub_channel
+                    .counter_base_points
+                    .as_ref()
+                    .expect("to have counter base points")
+                    .get_revokable_params(
+                        self.dlc_channel_manager.get_secp(),
+                        &offered_sub_channel.own_base_points.revocation_basepoint,
+                        &state.per_split_point,
+                    );
+
+                let accept_revoke_params =
+                    offered_sub_channel.own_base_points.get_revokable_params(
+                        self.dlc_channel_manager.get_secp(),
+                        &offered_sub_channel
+                            .counter_base_points
+                            .as_ref()
+                            .expect("to have counter base points")
+                            .revocation_basepoint,
+                        &next_per_split_point,
+                    );
+
+                let own_base_secret_key = self
+                    .dlc_channel_manager
+                    .get_wallet()
+                    .get_secret_key_for_pubkey(
+                        &offered_sub_channel.own_base_points.own_basepoint,
+                    )?;
+                let own_secret_key = derive_private_key(
+                    self.dlc_channel_manager.get_secp(),
+                    &next_per_split_point,
+                    &own_base_secret_key,
+                );
+
+                let split_tx = dlc::channel::sub_channel::create_split_tx(
+                    &offer_revoke_params,
+                    &accept_revoke_params,
+                    &OutPoint {
+                        txid: funding_txo.txid,
+                        vout: funding_txo.index as u32,
+                    },
+                    channel_details.channel_value_satoshis,
+                    offered_contract.total_collateral,
+                    offered_contract.fee_rate_per_vb,
+                )
+                .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                let ln_output_value = split_tx.transaction.output[0].value;
+
+                let glue_tx_output_value = ln_output_value
+                    - dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)
+                        .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                let ln_glue_tx = dlc::channel::sub_channel::create_ln_glue_tx(
+                    &OutPoint {
+                        txid: split_tx.transaction.txid(),
+                        vout: 0,
+                    },
+                    &funding_redeemscript,
+                    PackedLockTime::ZERO,
+                    Sequence(crate::manager::CET_NSEQUENCE),
+                    glue_tx_output_value,
+                );
+
+                let mut split_tx_adaptor_signature = None;
+                self.ln_channel_manager
+                    .sign_with_fund_key_cb(channel_lock, &mut |sk| {
+                        split_tx_adaptor_signature = Some(
+                            get_tx_adaptor_signature(
+                                self.dlc_channel_manager.get_secp(),
+                                &split_tx.transaction,
+                                channel_details.channel_value_satoshis,
+                                &funding_redeemscript,
+                                sk,
+                                &offer_revoke_params.publish_pk.inner,
+                            )
+                            .unwrap(),
+                        );
+                    });
+
+                let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
+
+                let commitment_signed = self
+                    .ln_channel_manager
+                    .get_updated_funding_outpoint_commitment_signed(
+                        channel_lock,
+                        &OutPoint {
+                            txid: ln_glue_tx.txid(),
+                            vout: 0,
+                        },
+                        glue_tx_output_value,
+                        own_to_self_msat,
+                    )?;
+
+                let sub_channel_info = SubChannelSignInfo {
+                    funding_info: FundingInfo {
+                        funding_tx: split_tx.transaction.clone(),
+                        funding_script_pubkey: split_tx.output_script.clone(),
+                        funding_input_value: split_tx.transaction.output[1].value,
+                    },
+                    own_adaptor_sk: own_secret_key,
+                };
+
+                let (accepted_channel, mut accepted_contract, accept_channel) =
+                    channel_updater::accept_channel_offer_internal(
+                        self.dlc_channel_manager.get_secp(),
+                        &offered_channel,
+                        &offered_contract,
+                        self.dlc_channel_manager.get_wallet(),
+                        self.dlc_channel_manager.get_blockchain(),
+                        Some(sub_channel_info),
+                        params,
+                    )?;
+
+                let ln_glue_signature = dlc::util::get_raw_sig_for_tx_input(
+                    self.dlc_channel_manager.get_secp(),
+                    &ln_glue_tx,
+                    0,
+                    &split_tx.output_script,
+                    ln_output_value,
+                    &own_secret_key,
+                )
+                .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                // TODO(tibo): refactor properly.
+                accepted_contract.accept_params.inputs = Vec::new();
+                accepted_contract.funding_inputs = Vec::new();
+
+                let msg = SubChannelAccept {
+                    channel_id: *channel_id,
+                    split_adaptor_signature: split_tx_adaptor_signature,
+                    first_per_split_point: next_per_split_point,
+                    revocation_basepoint: offered_sub_channel.own_base_points.revocation_basepoint,
+                    publish_basepoint: offered_sub_channel.own_base_points.publish_basepoint,
+                    own_basepoint: offered_sub_channel.own_base_points.own_basepoint,
+                    commit_signature: commitment_signed.signature,
+                    htlc_signatures: commitment_signed.htlc_signatures,
+                    channel_revocation_basepoint: accept_channel.revocation_basepoint,
+                    channel_publish_basepoint: accept_channel.publish_basepoint,
+                    channel_own_basepoint: accept_channel.own_basepoint,
+                    cet_adaptor_signatures: accept_channel.cet_adaptor_signatures,
+                    buffer_adaptor_signature: accept_channel.buffer_adaptor_signature,
+                    refund_signature: accept_channel.refund_signature,
+                    first_per_update_point: accept_channel.first_per_update_point,
+                    payout_spk: accept_channel.payout_spk,
+                    payout_serial_id: accept_channel.payout_serial_id,
+                    ln_glue_signature,
+                };
+
+                self.dlc_channel_manager
+                    .get_chain_monitor()
+                    .lock()
+                    .unwrap()
+                    .add_tx(
+                        split_tx.transaction.txid(),
+                        ChannelInfo {
+                            channel_id: offered_sub_channel.channel_id,
+                            tx_type: TxType::SplitTx,
+                        },
+                    );
+
+                let accepted_sub_channel = AcceptedSubChannel {
+                    offer_per_split_point: state.per_split_point,
+                    accept_per_split_point: next_per_split_point,
+                    accept_split_adaptor_signature: split_tx_adaptor_signature,
+                    split_tx,
+                    ln_glue_transaction: ln_glue_tx,
+                    ln_rollback: (&channel_details).into(),
+                };
+
+                offered_sub_channel.state = SubChannelState::Accepted(accepted_sub_channel);
+
+                self.dlc_channel_manager.get_store().upsert_channel(
+                    Channel::Accepted(accepted_channel),
+                    Some(Contract::Accepted(accepted_contract)),
+                )?;
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&offered_sub_channel)?;
+                self.dlc_channel_manager.get_store().persist_chain_monitor(
+                    &self.dlc_channel_manager.get_chain_monitor().lock().unwrap(),
+                )?;
+                Ok(msg)
             },
-        );
-
-        let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
-
-        let glue_tx_output_value = ln_output_value
-            - dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)?;
-
-        let ln_glue_tx = dlc::channel::sub_channel::create_ln_glue_tx(
-            &OutPoint {
-                txid: split_tx.transaction.txid(),
-                vout: 0,
-            },
-            &funding_redeemscript,
-            PackedLockTime::ZERO,
-            Sequence(crate::manager::CET_NSEQUENCE),
-            glue_tx_output_value,
-        );
-
-        let commitment_signed = self
-            .ln_channel_manager
-            .get_updated_funding_outpoint_commitment_signed(
-                channel_id,
-                &offered_sub_channel.counter_party,
-                &OutPoint {
-                    txid: ln_glue_tx.txid(),
-                    vout: 0,
-                },
-                glue_tx_output_value,
-                own_to_self_msat,
-            )?;
-
-        let sub_channel_info = SubChannelSignInfo {
-            funding_info: FundingInfo {
-                funding_tx: split_tx.transaction.clone(),
-                funding_script_pubkey: split_tx.output_script.clone(),
-                funding_input_value: split_tx.transaction.output[1].value,
-            },
-            own_adaptor_sk: own_secret_key,
-        };
-        let (accepted_channel, mut accepted_contract, accept_channel) =
-            channel_updater::accept_channel_offer_internal(
-                self.dlc_channel_manager.get_secp(),
-                &offered_channel,
-                &offered_contract,
-                self.dlc_channel_manager.get_wallet(),
-                self.dlc_channel_manager.get_blockchain(),
-                Some(sub_channel_info),
-                params,
-            )?;
-
-        let ln_glue_signature = dlc::util::get_raw_sig_for_tx_input(
-            self.dlc_channel_manager.get_secp(),
-            &ln_glue_tx,
-            0,
-            &split_tx.output_script,
-            ln_output_value,
-            &own_secret_key,
         )?;
-
-        // TODO(tibo): refactor properly.
-        accepted_contract.accept_params.inputs = Vec::new();
-        accepted_contract.funding_inputs = Vec::new();
-
-        let msg = SubChannelAccept {
-            channel_id: *channel_id,
-            split_adaptor_signature: split_tx_adaptor_signature,
-            first_per_split_point: next_per_split_point,
-            revocation_basepoint: offered_sub_channel.own_base_points.revocation_basepoint,
-            publish_basepoint: offered_sub_channel.own_base_points.publish_basepoint,
-            own_basepoint: offered_sub_channel.own_base_points.own_basepoint,
-            commit_signature: commitment_signed.signature,
-            htlc_signatures: commitment_signed.htlc_signatures,
-            channel_revocation_basepoint: accept_channel.revocation_basepoint,
-            channel_publish_basepoint: accept_channel.publish_basepoint,
-            channel_own_basepoint: accept_channel.own_basepoint,
-            cet_adaptor_signatures: accept_channel.cet_adaptor_signatures,
-            buffer_adaptor_signature: accept_channel.buffer_adaptor_signature,
-            refund_signature: accept_channel.refund_signature,
-            first_per_update_point: accept_channel.first_per_update_point,
-            payout_spk: accept_channel.payout_spk,
-            payout_serial_id: accept_channel.payout_serial_id,
-            ln_glue_signature,
-        };
-
-        self.dlc_channel_manager
-            .get_chain_monitor()
-            .lock()
-            .unwrap()
-            .add_tx(
-                split_tx.transaction.txid(),
-                ChannelInfo {
-                    channel_id: offered_sub_channel.channel_id,
-                    tx_type: TxType::SplitTx,
-                },
-            );
-
-        let accepted_sub_channel = AcceptedSubChannel {
-            offer_per_split_point: state.per_split_point,
-            accept_per_split_point: next_per_split_point,
-            accept_split_adaptor_signature: split_tx_adaptor_signature,
-            split_tx,
-            ln_glue_transaction: ln_glue_tx,
-            ln_rollback: (&channel_details).into(),
-        };
-
-        offered_sub_channel.state = SubChannelState::Accepted(accepted_sub_channel);
-
-        self.dlc_channel_manager.get_store().upsert_channel(
-            Channel::Accepted(accepted_channel),
-            Some(Contract::Accepted(accepted_contract)),
-        )?;
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&offered_sub_channel)?;
-        self.dlc_channel_manager
-            .get_store()
-            .persist_chain_monitor(&self.dlc_channel_manager.get_chain_monitor().lock().unwrap())?;
 
         Ok((offered_sub_channel.counter_party, msg))
     }
@@ -695,82 +712,77 @@ where
             Signed,
             None::<PublicKey>
         )?;
-
+        let counter_party = signed.counter_party;
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(channel_id)
             .unwrap();
-
-        let publish_base_secret = self
-            .dlc_channel_manager
-            .get_wallet()
-            .get_secret_key_for_pubkey(&signed.own_base_points.publish_basepoint)?;
-
-        let publish_sk = derive_private_key(
-            self.dlc_channel_manager.get_secp(),
-            &state.own_per_split_point,
-            &publish_base_secret,
-        );
-
-        let counter_split_signature = state.counter_split_adaptor_signature.decrypt(&publish_sk)?;
-
-        let mut split_tx = state.split_tx.transaction.clone();
-
-        let mut own_sig = None;
-
-        self.ln_channel_manager.sign_with_fund_key_cb(
+        self.ln_channel_manager.with_useable_channel_lock(
             channel_id,
-            &signed.counter_party,
-            &mut |fund_sk| {
-                own_sig = Some(
-                    dlc::util::get_raw_sig_for_tx_input(
-                        self.dlc_channel_manager.get_secp(),
-                        &split_tx,
-                        0,
-                        &signed.original_funding_redeemscript,
-                        signed.fund_value_satoshis,
-                        fund_sk,
-                    )
-                    .unwrap(),
-                );
-                dlc::util::sign_multi_sig_input(
+            &counter_party,
+            |channel_lock| {
+                let publish_base_secret = self
+                    .dlc_channel_manager
+                    .get_wallet()
+                    .get_secret_key_for_pubkey(&signed.own_base_points.publish_basepoint)?;
+
+                let publish_sk = derive_private_key(
                     self.dlc_channel_manager.get_secp(),
-                    &mut split_tx,
-                    &counter_split_signature,
-                    &channel_details.counter_funding_pubkey,
-                    fund_sk,
-                    &signed.original_funding_redeemscript,
-                    signed.fund_value_satoshis,
-                    0,
-                )
-                .unwrap();
+                    &state.own_per_split_point,
+                    &publish_base_secret,
+                );
+
+                let counter_split_signature = state
+                    .counter_split_adaptor_signature
+                    .decrypt(&publish_sk)
+                    .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                let mut split_tx = state.split_tx.transaction.clone();
+
+                let mut own_sig = None;
+
+                self.ln_channel_manager
+                    .sign_with_fund_key_cb(channel_lock, &mut |fund_sk| {
+                        own_sig = Some(
+                            dlc::util::get_raw_sig_for_tx_input(
+                                self.dlc_channel_manager.get_secp(),
+                                &split_tx,
+                                0,
+                                &signed.original_funding_redeemscript,
+                                signed.fund_value_satoshis,
+                                fund_sk,
+                            )
+                            .unwrap(),
+                        );
+                        dlc::util::sign_multi_sig_input(
+                            self.dlc_channel_manager.get_secp(),
+                            &mut split_tx,
+                            &counter_split_signature,
+                            &channel_details.counter_funding_pubkey,
+                            fund_sk,
+                            &signed.original_funding_redeemscript,
+                            signed.fund_value_satoshis,
+                            0,
+                        )
+                        .unwrap();
+                    });
+                self.dlc_channel_manager
+                    .get_blockchain()
+                    .send_transaction(&split_tx)?;
+
+                let closing_sub_channel = ClosingSubChannel {
+                    signed_sub_channel: state,
+                };
+
+                signed.state = SubChannelState::Closing(closing_sub_channel);
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&signed)?;
+
+                Ok(())
             },
-        );
-
-        dlc::verify_tx_input_sig(
-            self.dlc_channel_manager.get_secp(),
-            &own_sig.unwrap(),
-            &split_tx,
-            0,
-            &signed.original_funding_redeemscript,
-            signed.fund_value_satoshis,
-            &channel_details.holder_funding_pubkey,
-        )
-        .unwrap();
-
-        self.dlc_channel_manager
-            .get_blockchain()
-            .send_transaction(&split_tx)?;
-
-        let closing_sub_channel = ClosingSubChannel {
-            signed_sub_channel: state,
-        };
-
-        signed.state = SubChannelState::Closing(closing_sub_channel);
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&signed)?;
+        )?;
 
         Ok(())
     }
@@ -982,47 +994,55 @@ where
             ));
         }
 
-        let dlc_channel_id = sub_channel
-            .get_dlc_channel_id(0)
-            .ok_or(Error::InvalidState(
-                "Could not get dlc channel id.".to_string(),
-            ))?;
-
-        let dlc_channel = get_channel_in_state!(
-            self.dlc_channel_manager,
-            &dlc_channel_id,
-            Signed,
-            None::<PublicKey>
-        )?;
-
-        let total_collateral =
-            dlc_channel.own_params.collateral + dlc_channel.counter_params.collateral;
-
-        debug_assert_eq!(state.accept_balance + state.offer_balance, total_collateral);
-
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(channel_id)
             .ok_or_else(|| Error::InvalidParameters(format!("Unknown channel {channel_id:?}")))?;
 
-        let (_, accept_fees) = per_party_fee(sub_channel.fee_rate_per_vb)?;
+        let commitment_signed = self.ln_channel_manager.with_useable_channel_lock(
+            channel_id,
+            &sub_channel.counter_party,
+            |channel_lock| {
+                let dlc_channel_id =
+                    sub_channel
+                        .get_dlc_channel_id(0)
+                        .ok_or(Error::InvalidState(
+                            "Could not get dlc channel id.".to_string(),
+                        ))?;
 
-        let ln_own_balance_msats = channel_details.outbound_capacity_msat
-            + channel_details.unspendable_punishment_reserve.unwrap() * 1000
-            + accept_fees * 1000
-            + state.accept_balance * 1000;
+                let dlc_channel = get_channel_in_state!(
+                    self.dlc_channel_manager,
+                    &dlc_channel_id,
+                    Signed,
+                    None::<PublicKey>
+                )?;
 
-        let fund_value = sub_channel.fund_value_satoshis;
+                let total_collateral =
+                    dlc_channel.own_params.collateral + dlc_channel.counter_params.collateral;
 
-        let commitment_signed = self
-            .ln_channel_manager
-            .get_updated_funding_outpoint_commitment_signed(
-                channel_id,
-                &sub_channel.counter_party,
-                &state.signed_subchannel.split_tx.transaction.input[0].previous_output,
-                fund_value,
-                ln_own_balance_msats,
-            )?;
+                debug_assert_eq!(state.accept_balance + state.offer_balance, total_collateral);
+
+                let (_, accept_fees) = per_party_fee(sub_channel.fee_rate_per_vb)?;
+
+                let ln_own_balance_msats = channel_details.outbound_capacity_msat
+                    + channel_details.unspendable_punishment_reserve.unwrap() * 1000
+                    + accept_fees * 1000
+                    + state.accept_balance * 1000;
+
+                let fund_value = sub_channel.fund_value_satoshis;
+
+                let commitment_signed = self
+                    .ln_channel_manager
+                    .get_updated_funding_outpoint_commitment_signed(
+                        channel_lock,
+                        &state.signed_subchannel.split_tx.transaction.input[0].previous_output,
+                        fund_value,
+                        ln_own_balance_msats,
+                    )?;
+
+                Ok(commitment_signed)
+            },
+        )?;
 
         let close_accept = SubChannelCloseAccept {
             channel_id: *channel_id,
@@ -1434,26 +1454,6 @@ where
         )?;
 
         let channel_id = &channel_details.channel_id;
-        let mut split_tx_adaptor_signature = None;
-        self.ln_channel_manager.sign_with_fund_key_cb(
-            channel_id,
-            &offered_sub_channel.counter_party,
-            &mut |sk| {
-                split_tx_adaptor_signature = Some(
-                    get_tx_adaptor_signature(
-                        self.dlc_channel_manager.get_secp(),
-                        &split_tx.transaction,
-                        channel_details.channel_value_satoshis,
-                        &funding_redeemscript,
-                        sk,
-                        &accept_revoke_params.publish_pk.inner,
-                    )
-                    .unwrap(),
-                );
-            },
-        );
-
-        let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
 
         let own_base_secret_key = self
             .dlc_channel_manager
@@ -1466,7 +1466,8 @@ where
         );
 
         let glue_tx_output_value = ln_output_value
-            - dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)?;
+            - dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)
+                .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
 
         let ln_glue_tx = dlc::channel::sub_channel::create_ln_glue_tx(
             &OutPoint {
@@ -1479,25 +1480,50 @@ where
             glue_tx_output_value,
         );
 
-        let commitment_signed = self
+        let (split_tx_adaptor_signature, commitment_signed, revoke_and_ack) = self
             .ln_channel_manager
-            .get_updated_funding_outpoint_commitment_signed(
-                &sub_channel_accept.channel_id,
-                counter_party,
-                &OutPoint {
-                    txid: ln_glue_tx.txid(),
-                    vout: 0,
-                },
-                glue_tx_output_value,
-                own_to_self_value_msat,
-            )?;
+            .with_useable_channel_lock(channel_id, counter_party, |channel_lock| {
+                let mut split_tx_adaptor_signature = None;
+                self.ln_channel_manager
+                    .sign_with_fund_key_cb(channel_lock, &mut |sk| {
+                        split_tx_adaptor_signature = Some(
+                            get_tx_adaptor_signature(
+                                self.dlc_channel_manager.get_secp(),
+                                &split_tx.transaction,
+                                channel_details.channel_value_satoshis,
+                                &funding_redeemscript,
+                                sk,
+                                &accept_revoke_params.publish_pk.inner,
+                            )
+                            .unwrap(),
+                        );
+                    });
 
-        let revoke_and_ack = self.ln_channel_manager.on_commitment_signed_get_raa(
-            &sub_channel_accept.channel_id,
-            counter_party,
-            &sub_channel_accept.commit_signature,
-            &sub_channel_accept.htlc_signatures,
-        )?;
+                let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
+
+                let commitment_signed = self
+                    .ln_channel_manager
+                    .get_updated_funding_outpoint_commitment_signed(
+                        channel_lock,
+                        &OutPoint {
+                            txid: ln_glue_tx.txid(),
+                            vout: 0,
+                        },
+                        glue_tx_output_value,
+                        own_to_self_value_msat,
+                    )?;
+                let revoke_and_ack = self.ln_channel_manager.on_commitment_signed_get_raa(
+                    channel_lock,
+                    &sub_channel_accept.commit_signature,
+                    &sub_channel_accept.htlc_signatures,
+                )?;
+
+                Ok((
+                    split_tx_adaptor_signature,
+                    commitment_signed,
+                    revoke_and_ack,
+                ))
+            })?;
 
         let accept_channel = AcceptChannel {
             temporary_channel_id: offered_channel.temporary_channel_id,
@@ -1623,19 +1649,6 @@ where
         sub_channel_confirm: &SubChannelConfirm,
         counter_party: &PublicKey,
     ) -> Result<SubChannelFinalize, Error> {
-        let (mut accepted_sub_channel, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            sub_channel_confirm.channel_id,
-            Accepted,
-            Some(*counter_party)
-        )?;
-
-        let raa = RevokeAndACK {
-            channel_id: sub_channel_confirm.channel_id,
-            per_commitment_secret: *sub_channel_confirm.per_commitment_secret.as_ref(),
-            next_per_commitment_point: sub_channel_confirm.next_per_commitment_point,
-        };
-
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(&sub_channel_confirm.channel_id)
@@ -1645,133 +1658,152 @@ where
                     sub_channel_confirm.channel_id
                 ))
             })?;
-
-        let accept_revoke_params = accepted_sub_channel.own_base_points.get_revokable_params(
-            self.dlc_channel_manager.get_secp(),
-            &accepted_sub_channel
-                .counter_base_points
-                .as_ref()
-                .expect("to have counter base points")
-                .revocation_basepoint,
-            &state.accept_per_split_point,
-        );
-
-        let funding_redeemscript = &accepted_sub_channel.original_funding_redeemscript;
-
-        dlc::channel::verify_tx_adaptor_signature(
-            self.dlc_channel_manager.get_secp(),
-            &state.split_tx.transaction,
-            accepted_sub_channel.fund_value_satoshis,
-            funding_redeemscript,
-            &channel_details.counter_funding_pubkey,
-            &accept_revoke_params.publish_pk.inner,
-            &sub_channel_confirm.split_adaptor_signature,
-        )?;
-
-        self.ln_channel_manager.revoke_and_ack(
+        let msg = self.ln_channel_manager.with_useable_channel_lock(
             &sub_channel_confirm.channel_id,
             counter_party,
-            &raa,
-        )?;
+            |channel_lock| {
+                let (mut accepted_sub_channel, state) = get_sub_channel_in_state!(
+                    self.dlc_channel_manager,
+                    sub_channel_confirm.channel_id,
+                    Accepted,
+                    Some(*counter_party)
+                )?;
 
-        let revoke_and_ack = self.ln_channel_manager.on_commitment_signed_get_raa(
-            &sub_channel_confirm.channel_id,
-            counter_party,
-            &sub_channel_confirm.commit_signature,
-            &sub_channel_confirm.htlc_signatures,
-        )?;
+                let raa = RevokeAndACK {
+                    channel_id: sub_channel_confirm.channel_id,
+                    per_commitment_secret: *sub_channel_confirm.per_commitment_secret.as_ref(),
+                    next_per_commitment_point: sub_channel_confirm.next_per_commitment_point,
+                };
 
-        let dlc_channel_id =
-            accepted_sub_channel
-                .get_dlc_channel_id(0)
-                .ok_or(Error::InvalidState(
-                    "Could not get dlc channel id".to_string(),
-                ))?;
+                let accept_revoke_params =
+                    accepted_sub_channel.own_base_points.get_revokable_params(
+                        self.dlc_channel_manager.get_secp(),
+                        &accepted_sub_channel
+                            .counter_base_points
+                            .as_ref()
+                            .expect("to have counter base points")
+                            .revocation_basepoint,
+                        &state.accept_per_split_point,
+                    );
 
-        let accepted_channel = get_channel_in_state!(
-            self.dlc_channel_manager,
-            &dlc_channel_id,
-            Accepted,
-            Some(*counter_party)
-        )?;
+                let funding_redeemscript = &accepted_sub_channel.original_funding_redeemscript;
 
-        let accepted_contract = get_contract_in_state!(
-            self.dlc_channel_manager,
-            &accepted_channel.accepted_contract_id,
-            Accepted,
-            Some(*counter_party)
-        )?;
+                dlc::channel::verify_tx_adaptor_signature(
+                    self.dlc_channel_manager.get_secp(),
+                    &state.split_tx.transaction,
+                    accepted_sub_channel.fund_value_satoshis,
+                    funding_redeemscript,
+                    &channel_details.counter_funding_pubkey,
+                    &accept_revoke_params.publish_pk.inner,
+                    &sub_channel_confirm.split_adaptor_signature,
+                )
+                .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
 
-        let sign_channel = dlc_messages::channel::SignChannel {
-            channel_id: sub_channel_confirm.channel_id,
-            cet_adaptor_signatures: sub_channel_confirm.cet_adaptor_signatures.clone(),
-            buffer_adaptor_signature: sub_channel_confirm.buffer_adaptor_signature,
-            refund_signature: sub_channel_confirm.refund_signature,
-            funding_signatures: FundingSignatures {
-                funding_signatures: vec![],
+                let dlc_channel_id =
+                    accepted_sub_channel
+                        .get_dlc_channel_id(0)
+                        .ok_or(Error::InvalidState(
+                            "Could not get dlc channel id".to_string(),
+                        ))?;
+
+                let accepted_channel = get_channel_in_state!(
+                    self.dlc_channel_manager,
+                    &dlc_channel_id,
+                    Accepted,
+                    Some(*counter_party)
+                )?;
+
+                let accepted_contract = get_contract_in_state!(
+                    self.dlc_channel_manager,
+                    &accepted_channel.accepted_contract_id,
+                    Accepted,
+                    Some(*counter_party)
+                )?;
+
+                self.ln_channel_manager.revoke_and_ack(channel_lock, &raa)?;
+
+                let revoke_and_ack = self.ln_channel_manager.on_commitment_signed_get_raa(
+                    channel_lock,
+                    &sub_channel_confirm.commit_signature,
+                    &sub_channel_confirm.htlc_signatures,
+                )?;
+
+                let sign_channel = dlc_messages::channel::SignChannel {
+                    channel_id: sub_channel_confirm.channel_id,
+                    cet_adaptor_signatures: sub_channel_confirm.cet_adaptor_signatures.clone(),
+                    buffer_adaptor_signature: sub_channel_confirm.buffer_adaptor_signature,
+                    refund_signature: sub_channel_confirm.refund_signature,
+                    funding_signatures: FundingSignatures {
+                        funding_signatures: vec![],
+                    },
+                };
+
+                let offer_revoke_params = accepted_sub_channel
+                    .counter_base_points
+                    .as_ref()
+                    .expect("to have counter base points")
+                    .get_revokable_params(
+                        self.dlc_channel_manager.get_secp(),
+                        &accepted_sub_channel.own_base_points.revocation_basepoint,
+                        &state.offer_per_split_point,
+                    );
+
+                let sub_channel_info = SubChannelVerifyInfo {
+                    funding_info: FundingInfo {
+                        funding_tx: state.split_tx.transaction.clone(),
+                        funding_script_pubkey: state.split_tx.output_script.clone(),
+                        funding_input_value: state.split_tx.transaction.output[1].value,
+                    },
+                    counter_adaptor_pk: offer_revoke_params.own_pk.inner,
+                    sub_channel_id: accepted_sub_channel.channel_id,
+                };
+
+                let (signed_channel, signed_contract) =
+                    channel_updater::verify_signed_channel_internal(
+                        self.dlc_channel_manager.get_secp(),
+                        &accepted_channel,
+                        &accepted_contract,
+                        &sign_channel,
+                        self.dlc_channel_manager.get_wallet(),
+                        Some(sub_channel_info),
+                        self.dlc_channel_manager.get_chain_monitor(),
+                    )?;
+
+                let signed_sub_channel = SignedSubChannel {
+                    own_per_split_point: state.accept_per_split_point,
+                    counter_per_split_point: state.offer_per_split_point,
+                    own_split_adaptor_signature: state.accept_split_adaptor_signature,
+                    counter_split_adaptor_signature: sub_channel_confirm.split_adaptor_signature,
+                    split_tx: state.split_tx.clone(),
+                    counter_glue_signature: sub_channel_confirm.ln_glue_signature,
+                    ln_glue_transaction: state.ln_glue_transaction,
+                    ln_rollback: state.ln_rollback,
+                };
+
+                let msg = SubChannelFinalize {
+                    channel_id: sub_channel_confirm.channel_id,
+                    per_commitment_secret: SecretKey::from_slice(
+                        &revoke_and_ack.per_commitment_secret,
+                    )
+                    .expect("a valid secret key"),
+                    next_per_commitment_point: revoke_and_ack.next_per_commitment_point,
+                };
+
+                accepted_sub_channel.state = SubChannelState::Signed(signed_sub_channel);
+
+                self.dlc_channel_manager.get_store().upsert_channel(
+                    Channel::Signed(signed_channel),
+                    Some(Contract::Confirmed(signed_contract)),
+                )?;
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&accepted_sub_channel)?;
+                self.dlc_channel_manager.get_store().persist_chain_monitor(
+                    &self.dlc_channel_manager.get_chain_monitor().lock().unwrap(),
+                )?;
+                Ok(msg)
             },
-        };
-
-        let offer_revoke_params = accepted_sub_channel
-            .counter_base_points
-            .as_ref()
-            .expect("to have counter base points")
-            .get_revokable_params(
-                self.dlc_channel_manager.get_secp(),
-                &accepted_sub_channel.own_base_points.revocation_basepoint,
-                &state.offer_per_split_point,
-            );
-
-        let sub_channel_info = SubChannelVerifyInfo {
-            funding_info: FundingInfo {
-                funding_tx: state.split_tx.transaction.clone(),
-                funding_script_pubkey: state.split_tx.output_script.clone(),
-                funding_input_value: state.split_tx.transaction.output[1].value,
-            },
-            counter_adaptor_pk: offer_revoke_params.own_pk.inner,
-            sub_channel_id: accepted_sub_channel.channel_id,
-        };
-
-        let (signed_channel, signed_contract) = channel_updater::verify_signed_channel_internal(
-            self.dlc_channel_manager.get_secp(),
-            &accepted_channel,
-            &accepted_contract,
-            &sign_channel,
-            self.dlc_channel_manager.get_wallet(),
-            Some(sub_channel_info),
-            self.dlc_channel_manager.get_chain_monitor(),
         )?;
-
-        let signed_sub_channel = SignedSubChannel {
-            own_per_split_point: state.accept_per_split_point,
-            counter_per_split_point: state.offer_per_split_point,
-            own_split_adaptor_signature: state.accept_split_adaptor_signature,
-            counter_split_adaptor_signature: sub_channel_confirm.split_adaptor_signature,
-            split_tx: state.split_tx.clone(),
-            counter_glue_signature: sub_channel_confirm.ln_glue_signature,
-            ln_glue_transaction: state.ln_glue_transaction,
-            ln_rollback: state.ln_rollback,
-        };
-
-        let msg = SubChannelFinalize {
-            channel_id: sub_channel_confirm.channel_id,
-            per_commitment_secret: SecretKey::from_slice(&revoke_and_ack.per_commitment_secret)
-                .expect("a valid secret key"),
-            next_per_commitment_point: revoke_and_ack.next_per_commitment_point,
-        };
-
-        accepted_sub_channel.state = SubChannelState::Signed(signed_sub_channel);
-
-        self.dlc_channel_manager.get_store().upsert_channel(
-            Channel::Signed(signed_channel),
-            Some(Contract::Confirmed(signed_contract)),
-        )?;
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&accepted_sub_channel)?;
-        self.dlc_channel_manager
-            .get_store()
-            .persist_chain_monitor(&self.dlc_channel_manager.get_chain_monitor().lock().unwrap())?;
 
         Ok(msg)
     }
@@ -1781,56 +1813,62 @@ where
         sub_channel_finalize: &SubChannelFinalize,
         counter_party: &PublicKey,
     ) -> Result<(), Error> {
-        let (mut signed_sub_channel, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            sub_channel_finalize.channel_id,
-            Confirmed,
-            Some(*counter_party)
-        )?;
-
-        let dlc_channel_id =
-            signed_sub_channel
-                .get_dlc_channel_id(0)
-                .ok_or(Error::InvalidState(
-                    "Could not get dlc channel id".to_string(),
-                ))?;
-        let channel = get_channel_in_state!(
-            self.dlc_channel_manager,
-            &dlc_channel_id,
-            Signed,
-            Some(*counter_party)
-        )?;
-        let contract = get_contract_in_state!(
-            self.dlc_channel_manager,
-            &channel
-                .get_contract_id()
-                .ok_or_else(|| Error::InvalidState(
-                    "No contract id in on_sub_channel_finalize".to_string()
-                ))?,
-            Signed,
-            Some(*counter_party)
-        )?;
-        let raa = RevokeAndACK {
-            channel_id: sub_channel_finalize.channel_id,
-            per_commitment_secret: sub_channel_finalize.per_commitment_secret.secret_bytes(),
-            next_per_commitment_point: sub_channel_finalize.next_per_commitment_point,
-        };
-        self.ln_channel_manager.revoke_and_ack(
+        self.ln_channel_manager.with_useable_channel_lock(
             &sub_channel_finalize.channel_id,
             counter_party,
-            &raa,
+            |channel_lock| {
+                let (mut signed_sub_channel, state) = get_sub_channel_in_state!(
+                    self.dlc_channel_manager,
+                    sub_channel_finalize.channel_id,
+                    Confirmed,
+                    Some(*counter_party)
+                )?;
+
+                let dlc_channel_id =
+                    signed_sub_channel
+                        .get_dlc_channel_id(0)
+                        .ok_or(Error::InvalidState(
+                            "Could not get dlc channel id".to_string(),
+                        ))?;
+                let channel = get_channel_in_state!(
+                    self.dlc_channel_manager,
+                    &dlc_channel_id,
+                    Signed,
+                    Some(*counter_party)
+                )?;
+                let contract = get_contract_in_state!(
+                    self.dlc_channel_manager,
+                    &channel
+                        .get_contract_id()
+                        .ok_or_else(|| Error::InvalidState(
+                            "No contract id in on_sub_channel_finalize".to_string()
+                        ))?,
+                    Signed,
+                    Some(*counter_party)
+                )?;
+                let raa = RevokeAndACK {
+                    channel_id: sub_channel_finalize.channel_id,
+                    per_commitment_secret: sub_channel_finalize
+                        .per_commitment_secret
+                        .secret_bytes(),
+                    next_per_commitment_point: sub_channel_finalize.next_per_commitment_point,
+                };
+
+                self.ln_channel_manager.revoke_and_ack(channel_lock, &raa)?;
+
+                self.dlc_channel_manager.get_store().upsert_channel(
+                    Channel::Signed(channel),
+                    Some(Contract::Confirmed(contract)),
+                )?;
+
+                signed_sub_channel.state = SubChannelState::Signed(state);
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&signed_sub_channel)?;
+                Ok(())
+            },
         )?;
-
-        self.dlc_channel_manager.get_store().upsert_channel(
-            Channel::Signed(channel),
-            Some(Contract::Confirmed(contract)),
-        )?;
-
-        signed_sub_channel.state = SubChannelState::Signed(state);
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&signed_sub_channel)?;
 
         Ok(())
     }
@@ -1916,102 +1954,109 @@ where
         accept: &SubChannelCloseAccept,
         counter_party: &PublicKey,
     ) -> Result<SubChannelCloseConfirm, Error> {
-        let (mut sub_channel, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            accept.channel_id,
-            CloseOffered,
-            Some(*counter_party)
-        )?;
-
         let channel_details = self
             .ln_channel_manager
             .get_channel_details(&accept.channel_id)
             .ok_or_else(|| {
                 Error::InvalidParameters(format!("Unknown channel {:?}", accept.channel_id))
             })?;
-
-        let (offer_fees, _) = per_party_fee(sub_channel.fee_rate_per_vb)?;
-        let ln_own_balance_msats = channel_details.outbound_capacity_msat
-            + channel_details.unspendable_punishment_reserve.unwrap_or(0) * 1000
-            + offer_fees * 1000
-            + state.offer_balance * 1000;
-
-        let fund_value = sub_channel.fund_value_satoshis;
-
-        let commitment_signed = self
-            .ln_channel_manager
-            .get_updated_funding_outpoint_commitment_signed(
-                &sub_channel.channel_id,
-                &sub_channel.counter_party,
-                &state.signed_subchannel.split_tx.transaction.input[0].previous_output,
-                fund_value,
-                ln_own_balance_msats,
-            )?;
-
-        let raa = self.ln_channel_manager.on_commitment_signed_get_raa(
-            &sub_channel.channel_id,
+        let close_confirm = self.ln_channel_manager.with_useable_channel_lock(
+            &accept.channel_id,
             counter_party,
-            &accept.commit_signature,
-            &accept.htlc_signatures,
+            |channel_lock| {
+                let (mut sub_channel, state) = get_sub_channel_in_state!(
+                    self.dlc_channel_manager,
+                    accept.channel_id,
+                    CloseOffered,
+                    Some(*counter_party)
+                )?;
+
+                let (offer_fees, _) = per_party_fee(sub_channel.fee_rate_per_vb)?;
+                let ln_own_balance_msats = channel_details.outbound_capacity_msat
+                    + channel_details.unspendable_punishment_reserve.unwrap_or(0) * 1000
+                    + offer_fees * 1000
+                    + state.offer_balance * 1000;
+
+                let fund_value = sub_channel.fund_value_satoshis;
+
+                let commitment_signed = self
+                    .ln_channel_manager
+                    .get_updated_funding_outpoint_commitment_signed(
+                        channel_lock,
+                        &state.signed_subchannel.split_tx.transaction.input[0].previous_output,
+                        fund_value,
+                        ln_own_balance_msats,
+                    )?;
+
+                let raa = self.ln_channel_manager.on_commitment_signed_get_raa(
+                    channel_lock,
+                    &accept.commit_signature,
+                    &accept.htlc_signatures,
+                )?;
+
+                let per_split_seed = self
+                    .dlc_channel_manager
+                    .get_wallet()
+                    .get_secret_key_for_pubkey(
+                        &sub_channel
+                            .per_split_seed
+                            .expect("to have a per split seed"),
+                    )?;
+
+                let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
+                    per_split_seed.as_ref(),
+                    sub_channel.update_idx,
+                ))
+                .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                let close_confirm = SubChannelCloseConfirm {
+                    channel_id: accept.channel_id,
+                    commit_signature: commitment_signed.signature,
+                    htlc_signatures: commitment_signed.htlc_signatures,
+                    split_revocation_secret: per_split_secret,
+                    commit_revocation_secret: SecretKey::from_slice(&raa.per_commitment_secret)
+                        .expect("a valid secret key"),
+                    next_per_commitment_point: raa.next_per_commitment_point,
+                };
+
+                self.dlc_channel_manager
+                    .get_chain_monitor()
+                    .lock()
+                    .unwrap()
+                    .add_tx(
+                        state.signed_subchannel.split_tx.transaction.txid(),
+                        ChannelInfo {
+                            channel_id: sub_channel.channel_id,
+                            tx_type: TxType::Revoked {
+                                update_idx: sub_channel.update_idx,
+                                own_adaptor_signature: state
+                                    .signed_subchannel
+                                    .own_split_adaptor_signature,
+                                is_offer: sub_channel.is_offer,
+                                revoked_tx_type: RevokedTxType::Split,
+                            },
+                        },
+                    );
+
+                let updated_channel = CloseConfirmedSubChannel {
+                    signed_subchannel: state.signed_subchannel,
+                    own_balance: state.offer_balance,
+                    counter_balance: state.accept_balance,
+                    ln_rollback: (&channel_details).into(),
+                };
+
+                sub_channel.state = SubChannelState::CloseConfirmed(updated_channel);
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&sub_channel)?;
+
+                self.dlc_channel_manager.get_store().persist_chain_monitor(
+                    &self.dlc_channel_manager.get_chain_monitor().lock().unwrap(),
+                )?;
+                Ok(close_confirm)
+            },
         )?;
-
-        let per_split_seed = self
-            .dlc_channel_manager
-            .get_wallet()
-            .get_secret_key_for_pubkey(
-                &sub_channel
-                    .per_split_seed
-                    .expect("to have a per split seed"),
-            )?;
-
-        let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
-            per_split_seed.as_ref(),
-            sub_channel.update_idx,
-        ))?;
-
-        let close_confirm = SubChannelCloseConfirm {
-            channel_id: accept.channel_id,
-            commit_signature: commitment_signed.signature,
-            htlc_signatures: commitment_signed.htlc_signatures,
-            split_revocation_secret: per_split_secret,
-            commit_revocation_secret: SecretKey::from_slice(&raa.per_commitment_secret)
-                .expect("a valid secret key"),
-            next_per_commitment_point: raa.next_per_commitment_point,
-        };
-
-        self.dlc_channel_manager
-            .get_chain_monitor()
-            .lock()
-            .unwrap()
-            .add_tx(
-                state.signed_subchannel.split_tx.transaction.txid(),
-                ChannelInfo {
-                    channel_id: sub_channel.channel_id,
-                    tx_type: TxType::Revoked {
-                        update_idx: sub_channel.update_idx,
-                        own_adaptor_signature: state.signed_subchannel.own_split_adaptor_signature,
-                        is_offer: sub_channel.is_offer,
-                        revoked_tx_type: RevokedTxType::Split,
-                    },
-                },
-            );
-
-        let updated_channel = CloseConfirmedSubChannel {
-            signed_subchannel: state.signed_subchannel,
-            own_balance: state.offer_balance,
-            counter_balance: state.accept_balance,
-            ln_rollback: (&channel_details).into(),
-        };
-
-        sub_channel.state = SubChannelState::CloseConfirmed(updated_channel);
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&sub_channel)?;
-
-        self.dlc_channel_manager
-            .get_store()
-            .persist_chain_monitor(&self.dlc_channel_manager.get_chain_monitor().lock().unwrap())?;
 
         Ok(close_confirm)
     }
@@ -2021,103 +2066,114 @@ where
         confirm: &SubChannelCloseConfirm,
         counter_party: &PublicKey,
     ) -> Result<SubChannelCloseFinalize, Error> {
-        let (mut sub_channel, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            confirm.channel_id,
-            CloseAccepted,
-            Some(*counter_party)
-        )?;
-
-        let dlc_channel_id = sub_channel
-            .get_dlc_channel_id(0)
-            .ok_or(Error::InvalidState(
-                "Could not get dlc channel id.".to_string(),
-            ))?;
-
-        let (dlc_channel, contract) = self
-            .dlc_channel_manager
-            .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
-
-        sub_channel
-            .counter_party_secrets
-            .provide_secret(
-                sub_channel.update_idx,
-                *confirm.split_revocation_secret.as_ref(),
-            )
-            .map_err(|_| Error::InvalidParameters("Invalid split revocation secret".to_string()))?;
-
-        debug_assert_eq!(
-            PublicKey::from_secret_key(
-                self.dlc_channel_manager.get_secp(),
-                &confirm.split_revocation_secret
-            ),
-            state.signed_subchannel.counter_per_split_point
-        );
-
-        let raa = RevokeAndACK {
-            channel_id: confirm.channel_id,
-            per_commitment_secret: *confirm.commit_revocation_secret.as_ref(),
-            next_per_commitment_point: confirm.next_per_commitment_point,
-        };
-
-        self.ln_channel_manager
-            .revoke_and_ack(&confirm.channel_id, counter_party, &raa)?;
-
-        let own_raa = self.ln_channel_manager.on_commitment_signed_get_raa(
-            &sub_channel.channel_id,
+        let finalize = self.ln_channel_manager.with_useable_channel_lock(
+            &confirm.channel_id,
             counter_party,
-            &confirm.commit_signature,
-            &confirm.htlc_signatures,
+            |channel_lock| {
+                let (mut sub_channel, state) = get_sub_channel_in_state!(
+                    self.dlc_channel_manager,
+                    confirm.channel_id,
+                    CloseAccepted,
+                    Some(*counter_party)
+                )?;
+
+                let dlc_channel_id =
+                    sub_channel
+                        .get_dlc_channel_id(0)
+                        .ok_or(Error::InvalidState(
+                            "Could not get dlc channel id.".to_string(),
+                        ))?;
+
+                let (dlc_channel, contract) = self
+                    .dlc_channel_manager
+                    .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
+
+                sub_channel
+                    .counter_party_secrets
+                    .provide_secret(
+                        sub_channel.update_idx,
+                        *confirm.split_revocation_secret.as_ref(),
+                    )
+                    .map_err(|_| {
+                        Error::InvalidParameters("Invalid split revocation secret".to_string())
+                    })?;
+
+                debug_assert_eq!(
+                    PublicKey::from_secret_key(
+                        self.dlc_channel_manager.get_secp(),
+                        &confirm.split_revocation_secret
+                    ),
+                    state.signed_subchannel.counter_per_split_point
+                );
+
+                let raa = RevokeAndACK {
+                    channel_id: confirm.channel_id,
+                    per_commitment_secret: *confirm.commit_revocation_secret.as_ref(),
+                    next_per_commitment_point: confirm.next_per_commitment_point,
+                };
+
+                self.ln_channel_manager.revoke_and_ack(channel_lock, &raa)?;
+
+                let own_raa = self.ln_channel_manager.on_commitment_signed_get_raa(
+                    channel_lock,
+                    &confirm.commit_signature,
+                    &confirm.htlc_signatures,
+                )?;
+
+                let per_split_seed = self
+                    .dlc_channel_manager
+                    .get_wallet()
+                    .get_secret_key_for_pubkey(
+                        &sub_channel
+                            .per_split_seed
+                            .expect("to have a per split seed"),
+                    )?;
+
+                let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
+                    per_split_seed.as_ref(),
+                    sub_channel.update_idx,
+                ))
+                .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                let finalize = SubChannelCloseFinalize {
+                    channel_id: confirm.channel_id,
+                    split_revocation_secret: per_split_secret,
+                    commit_revocation_secret: SecretKey::from_slice(&own_raa.per_commitment_secret)
+                        .expect("a valid secret key"),
+                    next_per_commitment_point: own_raa.next_per_commitment_point,
+                };
+
+                self.dlc_channel_manager
+                    .get_chain_monitor()
+                    .lock()
+                    .unwrap()
+                    .add_tx(
+                        state.signed_subchannel.split_tx.transaction.txid(),
+                        ChannelInfo {
+                            channel_id: sub_channel.channel_id,
+                            tx_type: TxType::Revoked {
+                                update_idx: sub_channel.update_idx,
+                                own_adaptor_signature: state
+                                    .signed_subchannel
+                                    .own_split_adaptor_signature,
+                                is_offer: sub_channel.is_offer,
+                                revoked_tx_type: RevokedTxType::Split,
+                            },
+                        },
+                    );
+
+                sub_channel.state = SubChannelState::OffChainClosed;
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_channel(Channel::Signed(dlc_channel), contract)?;
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&sub_channel)?;
+                Ok(finalize)
+            },
         )?;
-
-        let per_split_seed = self
-            .dlc_channel_manager
-            .get_wallet()
-            .get_secret_key_for_pubkey(
-                &sub_channel
-                    .per_split_seed
-                    .expect("to have a per split seed"),
-            )?;
-
-        let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
-            per_split_seed.as_ref(),
-            sub_channel.update_idx,
-        ))?;
-
-        let finalize = SubChannelCloseFinalize {
-            channel_id: confirm.channel_id,
-            split_revocation_secret: per_split_secret,
-            commit_revocation_secret: SecretKey::from_slice(&own_raa.per_commitment_secret)
-                .expect("a valid secret key"),
-            next_per_commitment_point: own_raa.next_per_commitment_point,
-        };
-
-        self.dlc_channel_manager
-            .get_chain_monitor()
-            .lock()
-            .unwrap()
-            .add_tx(
-                state.signed_subchannel.split_tx.transaction.txid(),
-                ChannelInfo {
-                    channel_id: sub_channel.channel_id,
-                    tx_type: TxType::Revoked {
-                        update_idx: sub_channel.update_idx,
-                        own_adaptor_signature: state.signed_subchannel.own_split_adaptor_signature,
-                        is_offer: sub_channel.is_offer,
-                        revoked_tx_type: RevokedTxType::Split,
-                    },
-                },
-            );
-
-        sub_channel.state = SubChannelState::OffChainClosed;
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_channel(Channel::Signed(dlc_channel), contract)?;
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&sub_channel)?;
 
         Ok(finalize)
     }
@@ -2127,52 +2183,59 @@ where
         finalize: &SubChannelCloseFinalize,
         counter_party: &PublicKey,
     ) -> Result<(), Error> {
-        let (mut sub_channel, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            finalize.channel_id,
-            CloseConfirmed,
-            Some(*counter_party)
-        )?;
-
-        sub_channel
-            .counter_party_secrets
-            .provide_secret(
-                sub_channel.update_idx,
-                *finalize.split_revocation_secret.as_ref(),
-            )
-            .map_err(|_| Error::InvalidParameters("Invalid split revocation secret".to_string()))?;
-
-        let dlc_channel_id = sub_channel
-            .get_dlc_channel_id(0)
-            .ok_or(Error::InvalidState(
-                "Could not get dlc channel id.".to_string(),
-            ))?;
-
-        let (dlc_channel, contract) = self
-            .dlc_channel_manager
-            .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
-
-        let revoke_and_ack = RevokeAndACK {
-            channel_id: finalize.channel_id,
-            per_commitment_secret: *finalize.commit_revocation_secret.as_ref(),
-            next_per_commitment_point: finalize.next_per_commitment_point,
-        };
-
-        self.ln_channel_manager.revoke_and_ack(
+        self.ln_channel_manager.with_useable_channel_lock(
             &finalize.channel_id,
             counter_party,
-            &revoke_and_ack,
+            |channel_lock| {
+                let (mut sub_channel, state) = get_sub_channel_in_state!(
+                    self.dlc_channel_manager,
+                    finalize.channel_id,
+                    CloseConfirmed,
+                    Some(*counter_party)
+                )?;
+
+                sub_channel
+                    .counter_party_secrets
+                    .provide_secret(
+                        sub_channel.update_idx,
+                        *finalize.split_revocation_secret.as_ref(),
+                    )
+                    .map_err(|_| {
+                        Error::InvalidParameters("Invalid split revocation secret".to_string())
+                    })?;
+
+                let dlc_channel_id =
+                    sub_channel
+                        .get_dlc_channel_id(0)
+                        .ok_or(Error::InvalidState(
+                            "Could not get dlc channel id.".to_string(),
+                        ))?;
+
+                let (dlc_channel, contract) = self
+                    .dlc_channel_manager
+                    .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
+
+                let revoke_and_ack = RevokeAndACK {
+                    channel_id: finalize.channel_id,
+                    per_commitment_secret: *finalize.commit_revocation_secret.as_ref(),
+                    next_per_commitment_point: finalize.next_per_commitment_point,
+                };
+
+                self.ln_channel_manager
+                    .revoke_and_ack(channel_lock, &revoke_and_ack)?;
+
+                sub_channel.state = SubChannelState::OffChainClosed;
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_channel(Channel::Signed(dlc_channel), contract)?;
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .upsert_sub_channel(&sub_channel)?;
+                Ok(())
+            },
         )?;
-
-        sub_channel.state = SubChannelState::OffChainClosed;
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_channel(Channel::Signed(dlc_channel), contract)?;
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&sub_channel)?;
 
         Ok(())
     }
@@ -2584,7 +2647,8 @@ where
                     channel_id, peer_id
                 )));
             }
-            let updated_state = match &channel.state {
+            let mut updated_state = None;
+            match &channel.state {
                 SubChannelState::Offered(o) if channel.is_offer => {
                     let has_not_received = match peer_state {
                         None => true,
@@ -2633,74 +2697,10 @@ where
                             .unwrap()
                             .push(Action::ResendOffer((offer_msg, contract.counter_party)));
                     }
-                    None
                 }
                 SubChannelState::Accepted(a) => {
-                    self.ln_channel_manager.set_funding_outpoint(
-                        &channel.channel_id,
-                        peer_id,
-                        &a.ln_rollback.funding_outpoint,
-                        a.ln_rollback.channel_value_satoshis,
-                        a.ln_rollback.value_to_self_msat,
-                    )?;
-                    let dlc_channel_id = channel.get_dlc_channel_id(0).ok_or_else(|| {
-                        Error::InvalidState("Could not get dlc channel id".to_string())
-                    })?;
-                    let dlc_channel = get_channel_in_state!(
-                        self.dlc_channel_manager,
-                        &dlc_channel_id,
-                        Accepted,
-                        None::<PublicKey>
-                    )?;
-                    let contract = get_contract_in_state!(
-                        self.dlc_channel_manager,
-                        &dlc_channel.accepted_contract_id,
-                        Accepted,
-                        None::<PublicKey>
-                    )?;
-
-                    let offered_channel = OfferedChannel {
-                        offered_contract_id: contract.offered_contract.id,
-                        temporary_channel_id: dlc_channel.temporary_channel_id,
-                        party_points: dlc_channel.offer_base_points,
-                        per_update_point: dlc_channel.offer_per_update_point,
-                        offer_per_update_seed: None,
-                        is_offer_party: false,
-                        counter_party: dlc_channel.counter_party,
-                        cet_nsequence: CET_NSEQUENCE,
-                    };
-                    self.dlc_channel_manager
-                        .get_store()
-                        .upsert_sub_channel(&channel)?;
-                    self.dlc_channel_manager.get_store().upsert_channel(
-                        Channel::Offered(offered_channel),
-                        Some(Contract::Offered(contract.offered_contract)),
-                    )?;
-                    let party_params = contract.accept_params.clone();
-                    let funding_inputs_info = contract.funding_inputs;
-                    let accept_points = dlc_channel.accept_base_points.clone();
-                    let per_update_seed_pk = dlc_channel.accept_per_update_seed;
-                    self.actions.lock().unwrap().push(Action::ReAccept {
-                        channel_id,
-                        party_params,
-                        funding_inputs_info,
-                        accept_points,
-                        per_update_seed_pk,
-                    });
-                    Some(SubChannelState::Offered(OfferedSubChannel {
-                        per_split_point: a.offer_per_split_point,
-                    }))
-                }
-                SubChannelState::Confirmed(a) => {
-                    if let Some(counter_state) = peer_state {
-                        if counter_state == ReestablishFlag::Accepted as u8 {
-                            self.ln_channel_manager.set_funding_outpoint(
-                                &channel.channel_id,
-                                peer_id,
-                                &a.ln_rollback.funding_outpoint,
-                                a.ln_rollback.channel_value_satoshis,
-                                a.ln_rollback.value_to_self_msat,
-                            )?;
+                    self.ln_channel_manager
+                        .with_useable_channel_lock(&channel.channel_id, peer_id, |channel_lock| {
                             let dlc_channel_id =
                                 channel.get_dlc_channel_id(0).ok_or_else(|| {
                                     Error::InvalidState("Could not get dlc channel id".to_string())
@@ -2708,48 +2708,126 @@ where
                             let dlc_channel = get_channel_in_state!(
                                 self.dlc_channel_manager,
                                 &dlc_channel_id,
-                                Signed,
+                                Accepted,
                                 None::<PublicKey>
                             )?;
                             let contract = get_contract_in_state!(
                                 self.dlc_channel_manager,
-                                &dlc_channel
-                                    .get_contract_id()
-                                    .expect("Signed contract should have a contract id"),
-                                Signed,
+                                &dlc_channel.accepted_contract_id,
+                                Accepted,
                                 None::<PublicKey>
                             )?;
-
                             let offered_channel = OfferedChannel {
-                                offered_contract_id: contract.accepted_contract.offered_contract.id,
+                                offered_contract_id: contract.offered_contract.id,
                                 temporary_channel_id: dlc_channel.temporary_channel_id,
-                                party_points: dlc_channel.own_points,
-                                per_update_point: dlc_channel.own_per_update_point,
-                                offer_per_update_seed: channel.per_split_seed,
+                                party_points: dlc_channel.offer_base_points,
+                                per_update_point: dlc_channel.offer_per_update_point,
+                                offer_per_update_seed: None,
                                 is_offer_party: false,
                                 counter_party: dlc_channel.counter_party,
-                                // TODO(tibo): use value from original offer
                                 cet_nsequence: CET_NSEQUENCE,
                             };
+                            self.dlc_channel_manager
+                                .get_store()
+                                .upsert_sub_channel(&channel)?;
                             self.dlc_channel_manager.get_store().upsert_channel(
                                 Channel::Offered(offered_channel),
-                                Some(Contract::Offered(
-                                    contract.accepted_contract.offered_contract,
-                                )),
+                                Some(Contract::Offered(contract.offered_contract)),
                             )?;
-                            Some(SubChannelState::Offered(OfferedSubChannel {
-                                per_split_point: a.own_per_split_point,
-                            }))
+                            let party_params = contract.accept_params.clone();
+                            let funding_inputs_info = contract.funding_inputs;
+                            let accept_points = dlc_channel.accept_base_points.clone();
+                            let per_update_seed_pk = dlc_channel.accept_per_update_seed;
+                            self.actions.lock().unwrap().push(Action::ReAccept {
+                                channel_id,
+                                party_params,
+                                funding_inputs_info,
+                                accept_points,
+                                per_update_seed_pk,
+                            });
+
+                            self.ln_channel_manager.set_funding_outpoint(
+                                channel_lock,
+                                &a.ln_rollback.funding_outpoint,
+                                a.ln_rollback.channel_value_satoshis,
+                                a.ln_rollback.value_to_self_msat,
+                            );
+                            updated_state = Some(SubChannelState::Offered(OfferedSubChannel {
+                                per_split_point: a.offer_per_split_point,
+                            }));
+
+                            Ok(())
+                        })
+                        .map_err(|e| Error::InvalidState(format!("{:?}", e)))?;
+                }
+                SubChannelState::Confirmed(a) => {
+                    if let Some(counter_state) = peer_state {
+                        if counter_state == ReestablishFlag::Accepted as u8 {
+                            self.ln_channel_manager
+                                .with_useable_channel_lock(
+                                    &channel.channel_id,
+                                    peer_id,
+                                    |channel_lock| {
+                                        let dlc_channel_id =
+                                            channel.get_dlc_channel_id(0).ok_or_else(|| {
+                                                Error::InvalidState(
+                                                    "Could not get dlc channel id".to_string(),
+                                                )
+                                            })?;
+                                        let dlc_channel = get_channel_in_state!(
+                                            self.dlc_channel_manager,
+                                            &dlc_channel_id,
+                                            Signed,
+                                            None::<PublicKey>
+                                        )?;
+                                        let contract = get_contract_in_state!(
+                                            self.dlc_channel_manager,
+                                            &dlc_channel.get_contract_id().expect(
+                                                "Signed contract should have a contract id"
+                                            ),
+                                            Signed,
+                                            None::<PublicKey>
+                                        )?;
+                                        let offered_channel = OfferedChannel {
+                                            offered_contract_id: contract
+                                                .accepted_contract
+                                                .offered_contract
+                                                .id,
+                                            temporary_channel_id: dlc_channel.temporary_channel_id,
+                                            party_points: dlc_channel.own_points,
+                                            per_update_point: dlc_channel.own_per_update_point,
+                                            offer_per_update_seed: channel.per_split_seed,
+                                            is_offer_party: false,
+                                            counter_party: dlc_channel.counter_party,
+                                            // TODO(tibo): use value from original offer
+                                            cet_nsequence: CET_NSEQUENCE,
+                                        };
+                                        self.ln_channel_manager.set_funding_outpoint(
+                                            channel_lock,
+                                            &a.ln_rollback.funding_outpoint,
+                                            a.ln_rollback.channel_value_satoshis,
+                                            a.ln_rollback.value_to_self_msat,
+                                        );
+                                        self.dlc_channel_manager.get_store().upsert_channel(
+                                            Channel::Offered(offered_channel),
+                                            Some(Contract::Offered(
+                                                contract.accepted_contract.offered_contract,
+                                            )),
+                                        )?;
+                                        updated_state =
+                                            Some(SubChannelState::Offered(OfferedSubChannel {
+                                                per_split_point: a.own_per_split_point,
+                                            }));
+                                        Ok(())
+                                    },
+                                )
+                                .map_err(|e| Error::InvalidState(format!("{:?}", e)))?;
                         } else {
                             self.actions
                                 .lock()
                                 .unwrap()
                                 .push(Action::ForceSign(channel_id));
-                            None
                         }
-                    } else {
-                        //TODO(tibo): log + close channel?
-                        None
                     }
                 }
                 SubChannelState::CloseOffered(offered) if offered.is_offer => {
@@ -2766,59 +2844,68 @@ where
                                 .push(Action::ResendCloseOffer((message, channel.counter_party)));
                         }
                     }
-                    None
                 }
                 SubChannelState::CloseAccepted(accepted) => {
-                    self.ln_channel_manager.set_funding_outpoint(
+                    self.ln_channel_manager.with_useable_channel_lock(
                         &channel.channel_id,
                         &channel.counter_party,
-                        &accepted.ln_rollback.funding_outpoint,
-                        accepted.ln_rollback.channel_value_satoshis,
-                        accepted.ln_rollback.value_to_self_msat,
+                        |channel_lock| {
+                            self.ln_channel_manager.set_funding_outpoint(
+                                channel_lock,
+                                &accepted.ln_rollback.funding_outpoint,
+                                accepted.ln_rollback.channel_value_satoshis,
+                                accepted.ln_rollback.value_to_self_msat,
+                            );
+                            self.actions
+                                .lock()
+                                .unwrap()
+                                .push(Action::ReAcceptCloseOffer {
+                                    channel_id,
+                                    own_balance: accepted.own_balance,
+                                });
+
+                            let close_offered = CloseOfferedSubChannel {
+                                signed_subchannel: accepted.signed_subchannel.clone(),
+                                offer_balance: accepted.counter_balance,
+                                accept_balance: accepted.own_balance,
+                                is_offer: false,
+                            };
+
+                            updated_state = Some(SubChannelState::CloseOffered(close_offered));
+                            Ok(())
+                        },
                     )?;
-                    self.actions
-                        .lock()
-                        .unwrap()
-                        .push(Action::ReAcceptCloseOffer {
-                            channel_id,
-                            own_balance: accepted.own_balance,
-                        });
-
-                    let close_offered = CloseOfferedSubChannel {
-                        signed_subchannel: accepted.signed_subchannel.clone(),
-                        offer_balance: accepted.counter_balance,
-                        accept_balance: accepted.own_balance,
-                        is_offer: false,
-                    };
-
-                    Some(SubChannelState::CloseOffered(close_offered))
                 }
                 SubChannelState::CloseConfirmed(confirmed) => {
                     if let Some(counter_state) = peer_state {
                         if counter_state == ReestablishFlag::CloseAccepted as u8 {
-                            self.ln_channel_manager.set_funding_outpoint(
+                            self.ln_channel_manager.with_useable_channel_lock(
                                 &channel.channel_id,
                                 &channel.counter_party,
-                                &confirmed.ln_rollback.funding_outpoint,
-                                confirmed.ln_rollback.channel_value_satoshis,
-                                confirmed.ln_rollback.value_to_self_msat,
+                                |channel_lock| {
+                                    self.ln_channel_manager.set_funding_outpoint(
+                                        channel_lock,
+                                        &confirmed.ln_rollback.funding_outpoint,
+                                        confirmed.ln_rollback.channel_value_satoshis,
+                                        confirmed.ln_rollback.value_to_self_msat,
+                                    );
+                                    updated_state = Some(SubChannelState::CloseOffered(
+                                        CloseOfferedSubChannel {
+                                            signed_subchannel: confirmed.signed_subchannel.clone(),
+                                            offer_balance: confirmed.own_balance,
+                                            accept_balance: confirmed.counter_balance,
+                                            is_offer: true,
+                                        },
+                                    ));
+                                    Ok(())
+                                },
                             )?;
-                            Some(SubChannelState::CloseOffered(CloseOfferedSubChannel {
-                                signed_subchannel: confirmed.signed_subchannel.clone(),
-                                offer_balance: confirmed.own_balance,
-                                accept_balance: confirmed.counter_balance,
-                                is_offer: true,
-                            }))
                         } else {
                             debug_assert_eq!(ReestablishFlag::OffChainClosed as u8, counter_state);
-                            None
                         }
-                    } else {
-                        //TODO(tibo): log + close channel?
-                        None
                     }
                 }
-                _ => None,
+                _ => {}
             };
 
             if let Some(state) = updated_state {
@@ -2892,10 +2979,11 @@ impl<
         T: Deref,
         F: Deref,
         D: Deref<Target = Manager<W, B, S, O, T, F>>,
-    > ChannelMessageHandler for SubChannelManager<W, M, S, B, O, T, F, D>
+        SP: ChannelSigner,
+    > ChannelMessageHandler for SubChannelManager<W, M, S, B, O, T, F, D, SP>
 where
     W::Target: Wallet,
-    M::Target: LNChannelManager,
+    M::Target: LNChannelManager<SP>,
     S::Target: Storage,
     B::Target: Blockchain,
     O::Target: Oracle,
@@ -3090,10 +3178,11 @@ impl<
         T: Deref,
         F: Deref,
         D: Deref<Target = Manager<W, B, S, O, T, F>>,
-    > MessageSendEventsProvider for SubChannelManager<W, M, S, B, O, T, F, D>
+        SP: ChannelSigner,
+    > MessageSendEventsProvider for SubChannelManager<W, M, S, B, O, T, F, D, SP>
 where
     W::Target: Wallet,
-    M::Target: LNChannelManager,
+    M::Target: LNChannelManager<SP>,
     S::Target: Storage,
     B::Target: Blockchain,
     O::Target: Oracle,

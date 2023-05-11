@@ -34,7 +34,7 @@ use electrs_blockchain_provider::{ElectrsBlockchainProvider, OutSpendResp};
 use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
-        keysinterface::{EntropySource, KeysManager, Recipient},
+        keysinterface::{EntropySource, KeysManager},
         BestBlock, Filter, Listen,
     },
     ln::{
@@ -44,7 +44,7 @@ use lightning::{
     routing::{
         gossip::{NetworkGraph, NodeId},
         router::{DefaultRouter, RouteHop, RouteParameters},
-        scoring::{ChannelUsage, LockableScore, ProbabilisticScorer, Score},
+        scoring::{ChannelUsage, Score},
     },
     util::{
         config::UserConfig,
@@ -120,6 +120,7 @@ type DlcSubChannelManager = SubChannelManager<
     Arc<MockTime>,
     Arc<ElectrsBlockchainProvider>,
     Arc<DlcChannelManager>,
+    CustomSigner,
 >;
 
 struct LnDlcParty {
@@ -406,7 +407,6 @@ fn create_ln_node(
         .max_inbound_htlc_value_in_flight_percent_of_channel = 55;
 
     let network_graph = Arc::new(NetworkGraph::new(Network::Regtest, logger.clone()));
-    let scorer_path = format!("{}/scorer", data_dir.clone());
     let scorer = Arc::new(Mutex::new(TestScorer::with_penalty(0)));
     let router = Arc::new(DefaultRouter::new(
         network_graph.clone(),
@@ -415,7 +415,7 @@ fn create_ln_node(
         scorer.clone(),
     ));
 
-    let (blockhash, chain_height, channel_manager) = {
+    let (chain_height, channel_manager) = {
         let height = blockchain_provider.get_blockchain_height().unwrap();
         let last_block = blockchain_provider.get_block_at_height(height).unwrap();
 
@@ -436,7 +436,7 @@ fn create_ln_node(
             user_config,
             chain_params,
         ));
-        (last_block.block_hash(), height, fresh_channel_manager)
+        (height, fresh_channel_manager)
     };
 
     // Step 12: Initialize the PeerManager
