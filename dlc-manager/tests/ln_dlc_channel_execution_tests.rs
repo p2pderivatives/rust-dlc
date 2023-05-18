@@ -1113,6 +1113,7 @@ fn ln_dlc_test(test_path: TestPath) {
 
     generate_blocks(1);
 
+    alice_node.update_to_chain_tip();
     bob_node.update_to_chain_tip();
 
     assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OnChainClosed);
@@ -1153,6 +1154,28 @@ fn ln_dlc_test(test_path: TestPath) {
         assert_channel_state_unlocked!(alice_node.dlc_manager, dlc_channel_id, Signed, Closed);
         assert_channel_state_unlocked!(bob_node.dlc_manager, dlc_channel_id, Signed, CounterClosed);
     }
+
+    generate_blocks(500);
+
+    alice_node.update_to_chain_tip();
+    bob_node.update_to_chain_tip();
+
+    alice_node.process_events();
+    bob_node.process_events();
+
+    let all_spent = electrs
+        .get_outspends(&commit_tx.txid())
+        .unwrap()
+        .into_iter()
+        .all(|x| {
+            if let OutSpendResp::Spent(_) = x {
+                true
+            } else {
+                false
+            }
+        });
+
+    assert!(all_spent);
 
     assert!(alice_node
         .dlc_manager
