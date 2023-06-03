@@ -19,6 +19,7 @@ use crate::sub_channel_manager::get_sub_channel_in_state;
 use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
 use crate::{ChannelId, ContractId, Signer};
+use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::Address;
 use bitcoin::Transaction;
 use dlc_messages::channel::{
@@ -1126,8 +1127,13 @@ where
         if self
             .blockchain
             .get_transaction_confirmations(&buffer_tx.txid())?
-            > CET_NSEQUENCE
+            >= CET_NSEQUENCE
         {
+            log::info!(
+                "Buffer transaction for contract {} has enough confirmations to spend from it",
+                serialize_hex(&contract_id)
+            );
+
             let confirmed_contract =
                 get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
 
