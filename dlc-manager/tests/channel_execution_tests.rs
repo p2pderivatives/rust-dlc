@@ -784,7 +784,7 @@ fn close_established_channel<F>(
         .periodic_check()
         .expect("to be able to do the periodic check");
 
-    assert_channel_state!(second, channel_id, Signed, CounterClosing);
+    assert_channel_state!(second, channel_id, Signed, Closing);
 
     first
         .lock()

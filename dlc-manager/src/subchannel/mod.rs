@@ -293,6 +293,8 @@ pub struct CloseConfirmedSubChannel {
 pub struct ClosingSubChannel {
     /// The signed sub channel that is being closed.
     pub signed_sub_channel: SignedSubChannel,
+    /// Whether the local party initiated the closing.
+    pub is_initiator: bool,
 }
 
 /// Provides the ability to access and update Lightning Network channels.

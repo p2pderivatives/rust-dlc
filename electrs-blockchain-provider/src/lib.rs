@@ -315,7 +315,9 @@ impl BroadcasterInterface for ElectrsBlockchainProvider {
                 .body(tx_body.clone())
                 .send()
             {
-                Err(_) => {}
+                Err(e) => {
+                    error!("Error broadcasting transaction {}: {}", tx_body, e);
+                }
                 Ok(res) => {
                     if res.error_for_status_ref().is_err() {
                         let body = res.text().unwrap_or_default();

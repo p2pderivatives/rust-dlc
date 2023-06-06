@@ -145,7 +145,6 @@ convertible_enum!(
         RenewAccepted,
         RenewOffered,
         RenewConfirmed,
-        CounterClosing,
     },
     SignedChannelStateType
 );

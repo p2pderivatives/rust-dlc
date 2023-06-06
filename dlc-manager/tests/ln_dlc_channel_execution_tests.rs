@@ -35,7 +35,7 @@ use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
         keysinterface::{EntropySource, KeysManager},
-        BestBlock, Filter, Listen,
+        BestBlock, Confirm,
     },
     ln::{
         channelmanager::{ChainParameters, PaymentId},
@@ -53,6 +53,7 @@ use lightning::{
     },
 };
 use lightning_persister::FilesystemPersister;
+use lightning_transaction_sync::EsploraSyncClient;
 use mocks::{
     memory_storage_provider::MemoryStorage,
     mock_blockchain::MockBlockchain,
@@ -68,7 +69,7 @@ use simple_wallet::WalletStorage;
 
 type ChainMonitor = lightning::chain::chainmonitor::ChainMonitor<
     CustomSigner,
-    Arc<dyn Filter>,
+    Arc<EsploraSyncClient<Arc<ConsoleLogger>>>,
     Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<ElectrsBlockchainProvider>,
     Arc<ConsoleLogger>,
@@ -130,13 +131,13 @@ struct LnDlcParty {
     keys_manager: Arc<CustomKeysManager>,
     logger: Arc<ConsoleLogger>,
     network_graph: NetworkGraph<Arc<ConsoleLogger>>,
-    chain_height: u64,
     sub_channel_manager: Arc<DlcSubChannelManager>,
     dlc_manager: Arc<DlcChannelManager>,
     blockchain: Arc<ElectrsBlockchainProvider>,
     mock_blockchain: Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     wallet: Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
     persister: Arc<FilesystemPersister>,
+    esplora_sync: Arc<EsploraSyncClient<Arc<ConsoleLogger>>>,
 }
 
 impl Drop for LnDlcParty {
@@ -163,26 +164,13 @@ enum TestPath {
 
 impl LnDlcParty {
     fn update_to_chain_tip(&mut self) {
-        let chain_tip_height = self.blockchain.get_blockchain_height().unwrap();
-        for i in self.chain_height + 1..=chain_tip_height {
-            let block = self.blockchain.get_block_at_height(i).unwrap();
-            self.channel_manager.block_connected(&block, i as u32);
-            for ftxo in self.chain_monitor.list_monitors() {
-                self.chain_monitor
-                    .get_monitor(ftxo)
-                    .unwrap()
-                    .block_connected(
-                        &block.header,
-                        &block.txdata.iter().enumerate().collect::<Vec<_>>(),
-                        i as u32,
-                        self.blockchain.clone(),
-                        self.blockchain.clone(),
-                        self.logger.clone(),
-                    );
-            }
-        }
-        self.chain_height = chain_tip_height;
-        self.sub_channel_manager.check_for_watched_tx().unwrap();
+        let confirmables = vec![
+            &*self.channel_manager as &(dyn Confirm + Sync + Send),
+            &*self.chain_monitor as &(dyn Confirm + Sync + Send),
+        ];
+
+        self.esplora_sync.sync(confirmables).unwrap();
+        self.sub_channel_manager.periodic_check();
         self.dlc_manager.periodic_check().unwrap();
     }
 
@@ -388,9 +376,14 @@ fn create_ln_node(
 
     let mock_blockchain = Arc::new(MockBlockchain::new(blockchain_provider.clone()));
 
+    let tx_sync = Arc::new(EsploraSyncClient::new(
+        "http://localhost:3004".to_string(),
+        Arc::clone(&logger),
+    ));
+
     let chain_monitor: Arc<ChainMonitor> =
         Arc::new(lightning::chain::chainmonitor::ChainMonitor::new(
-            None,
+            Some(tx_sync.clone()),
             mock_blockchain.clone(),
             logger.clone(),
             blockchain_provider.clone(),
@@ -415,7 +408,7 @@ fn create_ln_node(
         scorer.clone(),
     ));
 
-    let (chain_height, channel_manager) = {
+    let channel_manager = {
         let height = blockchain_provider.get_blockchain_height().unwrap();
         let last_block = blockchain_provider.get_block_at_height(height).unwrap();
 
@@ -436,7 +429,7 @@ fn create_ln_node(
             user_config,
             chain_params,
         ));
-        (height, fresh_channel_manager)
+        fresh_channel_manager
     };
 
     // Step 12: Initialize the PeerManager
@@ -501,13 +494,13 @@ fn create_ln_node(
         keys_manager: consistent_keys_manager,
         logger,
         network_graph,
-        chain_height,
         sub_channel_manager,
         dlc_manager,
         blockchain: blockchain_provider.clone(),
         mock_blockchain,
         wallet,
         persister,
+        esplora_sync: tx_sync,
     }
 }
 
@@ -875,7 +868,16 @@ fn ln_dlc_test(test_path: TestPath) {
     bob_node.process_events();
     alice_node.process_events();
 
+    bob_node.process_events();
+    alice_node.process_events();
+
     std::thread::sleep(std::time::Duration::from_secs(1));
+
+    bob_node.process_events();
+    alice_node.process_events();
+
+    bob_node.process_events();
+    alice_node.process_events();
 
     let sub_channel = alice_node
         .dlc_manager
@@ -1027,7 +1029,7 @@ fn ln_dlc_test(test_path: TestPath) {
             };
             alice_node
                 .sub_channel_manager
-                .initiate_force_close_sub_channel(&channel_id)
+                .force_close_sub_channel(&channel_id)
                 .unwrap();
 
             generate_blocks(1);
@@ -1077,9 +1079,19 @@ fn ln_dlc_test(test_path: TestPath) {
 
     let commit_tx = get_commit_tx_from_node(&alice_node).remove(0);
 
+    if let TestPath::CheatPostSplitCommit = test_path {
+        let alice_commit = get_commit_tx_from_node(&alice_node);
+        alice_node
+            .mock_blockchain
+            .discard_id(alice_commit[0].txid());
+
+        let bob_commit = get_commit_tx_from_node(&bob_node);
+        bob_node.mock_blockchain.discard_id(bob_commit[0].txid());
+    }
+
     alice_node
         .sub_channel_manager
-        .initiate_force_close_sub_channel(&channel_id)
+        .force_close_sub_channel(&channel_id)
         .unwrap();
 
     assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, Closing);
@@ -1090,18 +1102,20 @@ fn ln_dlc_test(test_path: TestPath) {
 
     generate_blocks(500);
 
-    alice_node
-        .sub_channel_manager
-        .finalize_force_close_sub_channels(&channel_id)
-        .unwrap();
+    alice_node.update_to_chain_tip();
+    bob_node.update_to_chain_tip();
+
+    alice_node.sub_channel_manager.periodic_check();
 
     generate_blocks(1);
 
+    alice_node.update_to_chain_tip();
     bob_node.update_to_chain_tip();
 
     if let TestPath::CheatPostSplitCommit = test_path {
         let cheat_tx = post_split_commit_tx.unwrap()[0].clone();
         ln_cheated_check(&cheat_tx, &mut bob_node, electrs.clone(), &generate_blocks);
+        return;
     } else {
         assert_eq!(
             1,
@@ -1121,12 +1135,7 @@ fn ln_dlc_test(test_path: TestPath) {
 
     if let Some(contract_id) = contract_id {
         assert_channel_state_unlocked!(alice_node.dlc_manager, dlc_channel_id, Signed, Closing);
-        assert_channel_state_unlocked!(
-            bob_node.dlc_manager,
-            dlc_channel_id,
-            Signed,
-            CounterClosing
-        );
+        assert_channel_state_unlocked!(bob_node.dlc_manager, dlc_channel_id, Signed, Closing);
 
         generate_blocks(dlc_manager::manager::CET_NSEQUENCE as u64);
 
@@ -1156,6 +1165,14 @@ fn ln_dlc_test(test_path: TestPath) {
     }
 
     generate_blocks(500);
+
+    alice_node.update_to_chain_tip();
+    bob_node.update_to_chain_tip();
+
+    alice_node.process_events();
+    bob_node.process_events();
+
+    generate_blocks(1);
 
     alice_node.update_to_chain_tip();
     bob_node.update_to_chain_tip();
@@ -1420,7 +1437,7 @@ fn offer_sub_channel(
             bob_descriptor.clone(),
         );
         // Alice should resend the offer message to bob as he has not received it yet.
-        let mut msgs = alice_node.sub_channel_manager.process_actions();
+        let mut msgs = alice_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::Offer(o), p) = msgs.pop().unwrap() {
             assert_eq!(p, bob_node.channel_manager.get_our_node_id());
@@ -1429,7 +1446,7 @@ fn offer_sub_channel(
             panic!("Expected an offer message");
         }
 
-        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, bob_node.sub_channel_manager.periodic_check().len());
     }
 
     bob_node
@@ -1447,8 +1464,8 @@ fn offer_sub_channel(
             alice_descriptor.clone(),
             bob_descriptor.clone(),
         );
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
-        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        assert_eq!(0, bob_node.sub_channel_manager.periodic_check().len());
     }
 
     assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
@@ -1470,7 +1487,7 @@ fn offer_sub_channel(
         assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
 
         // Bob should re-send the accept message
-        let mut msgs = bob_node.sub_channel_manager.process_actions();
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
             assert_eq!(p, alice_node.channel_manager.get_our_node_id());
@@ -1480,7 +1497,7 @@ fn offer_sub_channel(
             panic!("Expected an accept message");
         }
 
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
     }
 
     assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Accepted);
@@ -1505,9 +1522,9 @@ fn offer_sub_channel(
         assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
 
         // Bob should re-send the accept message
-        let mut msgs = bob_node.sub_channel_manager.process_actions();
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
         if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
             assert_eq!(p, alice_node.channel_manager.get_our_node_id());
             confirm = alice_node
@@ -1542,8 +1559,8 @@ fn offer_sub_channel(
         // assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
         // assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
 
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
-        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        assert_eq!(0, bob_node.sub_channel_manager.periodic_check().len());
     } else {
         alice_node
             .sub_channel_manager
@@ -1691,7 +1708,7 @@ fn off_chain_close_offer(
 
         assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, CloseOffered);
         assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, Signed);
-        let mut msgs = alice_node.sub_channel_manager.process_actions();
+        let mut msgs = alice_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::CloseOffer(c), p) = msgs.pop().unwrap() {
             assert_eq!(p, bob_node.channel_manager.get_our_node_id());
@@ -1717,8 +1734,8 @@ fn off_chain_close_offer(
             bob_descriptor.clone(),
         );
 
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
-        assert_eq!(0, bob_node.sub_channel_manager.process_actions().len());
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        assert_eq!(0, bob_node.sub_channel_manager.periodic_check().len());
     }
 }
 
@@ -1756,8 +1773,8 @@ fn off_chain_close_finalize(
         assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, CloseOffered);
         assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, CloseOffered);
 
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
-        let mut msgs = bob_node.sub_channel_manager.process_actions();
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::CloseAccept(c), p) = msgs.pop().unwrap() {
             assert_eq!(p, alice_node.channel_manager.get_our_node_id());
@@ -1787,8 +1804,8 @@ fn off_chain_close_finalize(
         assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, CloseOffered);
         assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, CloseOffered);
 
-        assert_eq!(0, alice_node.sub_channel_manager.process_actions().len());
-        let mut msgs = bob_node.sub_channel_manager.process_actions();
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
         if let (SubChannelMessage::CloseAccept(c), _) = msgs.pop().unwrap() {
             let close_confirm2 = alice_node

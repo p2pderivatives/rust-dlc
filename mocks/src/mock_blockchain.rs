@@ -11,6 +11,7 @@ where
 {
     inner: T,
     discard: Mutex<bool>,
+    discard_ids: Mutex<Vec<Txid>>,
 }
 
 impl<T: Deref> MockBlockchain<T>
@@ -21,11 +22,16 @@ where
         Self {
             inner,
             discard: Mutex::new(false),
+            discard_ids: Mutex::new(Vec::new()),
         }
     }
 
     pub fn start_discard(&self) {
         *self.discard.lock().unwrap() = true;
+    }
+
+    pub fn discard_id(&self, txid: Txid) {
+        self.discard_ids.lock().unwrap().push(txid);
     }
 }
 
@@ -34,7 +40,8 @@ where
     T::Target: BroadcasterInterface,
 {
     fn broadcast_transaction(&self, tx: &bitcoin::Transaction) {
-        if !*self.discard.lock().unwrap() {
+        if !*self.discard.lock().unwrap() && !self.discard_ids.lock().unwrap().contains(&tx.txid())
+        {
             self.inner.broadcast_transaction(tx);
         }
     }
@@ -108,4 +115,3 @@ where
         Ok(6)
     }
 }
-

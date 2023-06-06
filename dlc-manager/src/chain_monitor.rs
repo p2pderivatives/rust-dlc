@@ -20,7 +20,7 @@ const NB_SAVED_BLOCK_HASHES: usize = 6;
 /// and some associated information used to apply an action when the id is seen.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ChainMonitor {
-    watched_tx: HashMap<Txid, ChannelInfo>,
+    pub(crate) watched_tx: HashMap<Txid, ChannelInfo>,
     pub(crate) last_height: u64,
     pub(crate) last_block_hashes: Vec<BlockHash>,
 }

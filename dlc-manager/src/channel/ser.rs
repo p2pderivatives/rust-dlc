@@ -60,10 +60,9 @@ impl_dlc_writeable_enum!(
     (6, RenewOffered, {(offered_contract_id, writeable), (counter_payout, writeable), (is_offer, writeable), (offer_next_per_update_point, writeable), (timeout, writeable)}),
     (7, RenewAccepted, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable)}),
     (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
-    (9, Closing, {(buffer_transaction, writeable), (signed_cet, writeable), (contract_id, writeable), (attestations, vec)}),
+    (9, Closing, {(buffer_transaction, writeable), (contract_id, writeable), (is_initiator, writeable)}),
     (10, ClosedPunished, { (punishment_txid, writeable) }),
-    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) }),
-    (15, CounterClosing, { (buffer_txid, writeable) })
+    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) })
     ;;(12, Closed), (13, CounterClosed), (14, CollaborativelyClosed)
 );
 

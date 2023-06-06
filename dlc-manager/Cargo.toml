@@ -38,6 +38,7 @@ dlc-messages = {path = "../dlc-messages", features = ["serde"]}
 electrs-blockchain-provider = {path = "../electrs-blockchain-provider"}
 env_logger = "0.9.1"
 lightning-persister = {version = "0.0.114"}
+lightning-transaction-sync = {version = "0.0.114", features=["esplora-blocking"]}
 mocks = {path = "../mocks"}
 secp256k1-zkp = {version = "0.7.0", features = ["bitcoin_hashes", "rand", "rand-std", "global-context", "use-serde"]}
 serde = "1.0"

@@ -4,7 +4,6 @@
 
 use bitcoin::{Script, Transaction, Txid};
 use dlc::PartyParams;
-use dlc_messages::oracle_msgs::OracleAttestation;
 use lightning::ln::chan_utils::CounterpartyCommitmentSecrets;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey};
 
@@ -273,23 +272,15 @@ typed_enum!(
         Closing {
             /// The buffer transaction that was broadcast.
             buffer_transaction: Transaction,
-            /// The signed CET to be broadcast when the lock time has passed.
-            signed_cet: Transaction,
             /// The [`crate::ContractId`] of the contract that was used to close
             /// the channel.
             contract_id: ContractId,
-            /// The attestations used to decrypt the CET adaptor signature.
-            attestations: Vec<OracleAttestation>,
+            /// Whether the local party initiated the closing of the channel.
+            is_initiator: bool,
         },
         /// A [`SignedChannel`] is in `Closed` state when it was force closed by
         /// the local party.
         Closed,
-        /// A [`SignedChannel`] is in `CounterClosing` state when the counter party broadcasted a
-        /// buffer transaction.
-        CounterClosing {
-            /// The transaction id of the buffer transaction that was found on chain.
-            buffer_txid: Txid,
-        },
         /// A [`SignedChannel`] is in `CounterClosed` state when it was force
         /// closed by the counter party.
         CounterClosed,
@@ -327,14 +318,7 @@ impl SignedChannel {
     /// Returns the contract id associated with the channel if in a state where
     /// a contract is established or under establishment.
     pub fn get_contract_id(&self) -> Option<ContractId> {
-        match &self.state {
-            SignedChannelState::CounterClosing { .. } => self
-                .roll_back_state
-                .as_ref()
-                .expect("To have a rollback state")
-                .get_contract_id(),
-            _ => self.state.get_contract_id(),
-        }
+        self.state.get_contract_id()
     }
 }
 

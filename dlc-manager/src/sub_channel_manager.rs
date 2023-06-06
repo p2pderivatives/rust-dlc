@@ -31,7 +31,7 @@ use lightning::{
     util::ser::{Readable, Writeable, Writer},
     util::{errors::APIError, events::MessageSendEventsProvider},
 };
-use log::{error, trace};
+use log::{error, trace, warn};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, SecretKey};
 
 use crate::{
@@ -705,7 +705,7 @@ where
     }
 
     /// Start force closing the sub channel with given [`ChannelId`].
-    pub fn initiate_force_close_sub_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    pub fn force_close_sub_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
         let (mut signed, state) = get_sub_channel_in_state!(
             self.dlc_channel_manager,
             *channel_id,
@@ -772,6 +772,7 @@ where
 
                 let closing_sub_channel = ClosingSubChannel {
                     signed_sub_channel: state,
+                    is_initiator: true,
                 };
 
                 signed.state = SubChannelState::Closing(closing_sub_channel);
@@ -788,7 +789,7 @@ where
     }
 
     /// Finalize the closing of the sub channel with specified [`ChannelId`].
-    pub fn finalize_force_close_sub_channels(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    fn finalize_force_close_sub_channels(&self, channel_id: &ChannelId) -> Result<(), Error> {
         let (mut closing, state) = get_sub_channel_in_state!(
             self.dlc_channel_manager,
             *channel_id,
@@ -812,76 +813,92 @@ where
         let counter_party = closing.counter_party;
         let mut glue_tx = state.signed_sub_channel.ln_glue_transaction.clone();
 
-        let own_revoke_params = closing.own_base_points.get_revokable_params(
-            self.dlc_channel_manager.get_secp(),
-            &closing
+        if self
+            .dlc_channel_manager
+            .get_blockchain()
+            .get_transaction_confirmations(&glue_tx.txid())
+            .unwrap_or(0)
+            == 0
+        {
+            let own_revoke_params = closing.own_base_points.get_revokable_params(
+                self.dlc_channel_manager.get_secp(),
+                &closing
+                    .counter_base_points
+                    .as_ref()
+                    .expect("to have counter base points")
+                    .revocation_basepoint,
+                &signed_sub_channel.own_per_split_point,
+            );
+
+            let counter_revoke_params = closing
                 .counter_base_points
                 .as_ref()
                 .expect("to have counter base points")
-                .revocation_basepoint,
-            &signed_sub_channel.own_per_split_point,
-        );
+                .get_revokable_params(
+                    self.dlc_channel_manager.get_secp(),
+                    &closing.own_base_points.revocation_basepoint,
+                    &signed_sub_channel.counter_per_split_point,
+                );
 
-        let counter_revoke_params = closing
-            .counter_base_points
-            .as_ref()
-            .expect("to have counter base points")
-            .get_revokable_params(
+            let (offer_params, accept_params) = if closing.is_offer {
+                (&own_revoke_params, &counter_revoke_params)
+            } else {
+                (&counter_revoke_params, &own_revoke_params)
+            };
+
+            let own_base_secret_key = self
+                .dlc_channel_manager
+                .get_wallet()
+                .get_secret_key_for_pubkey(&closing.own_base_points.own_basepoint)?;
+            let own_secret_key = derive_private_key(
                 self.dlc_channel_manager.get_secp(),
-                &closing.own_base_points.revocation_basepoint,
-                &signed_sub_channel.counter_per_split_point,
+                &signed_sub_channel.own_per_split_point,
+                &own_base_secret_key,
             );
 
-        let (offer_params, accept_params) = if closing.is_offer {
-            (&own_revoke_params, &counter_revoke_params)
-        } else {
-            (&counter_revoke_params, &own_revoke_params)
-        };
+            let own_signature = dlc::util::get_raw_sig_for_tx_input(
+                self.dlc_channel_manager.get_secp(),
+                &glue_tx,
+                0,
+                &signed_sub_channel.split_tx.output_script,
+                signed_sub_channel.split_tx.transaction.output[0].value,
+                &own_secret_key,
+            )?;
 
-        let own_base_secret_key = self
-            .dlc_channel_manager
-            .get_wallet()
-            .get_secret_key_for_pubkey(&closing.own_base_points.own_basepoint)?;
-        let own_secret_key = derive_private_key(
-            self.dlc_channel_manager.get_secp(),
-            &signed_sub_channel.own_per_split_point,
-            &own_base_secret_key,
-        );
+            dlc::channel::satisfy_buffer_descriptor(
+                &mut glue_tx,
+                offer_params,
+                accept_params,
+                &own_revoke_params.own_pk.inner,
+                &own_signature,
+                &counter_revoke_params.own_pk,
+                &signed_sub_channel.counter_glue_signature,
+            )?;
 
-        let own_signature = dlc::util::get_raw_sig_for_tx_input(
-            self.dlc_channel_manager.get_secp(),
-            &glue_tx,
-            0,
-            &signed_sub_channel.split_tx.output_script,
-            signed_sub_channel.split_tx.transaction.output[0].value,
-            &own_secret_key,
-        )?;
-
-        dlc::channel::satisfy_buffer_descriptor(
-            &mut glue_tx,
-            offer_params,
-            accept_params,
-            &own_revoke_params.own_pk.inner,
-            &own_signature,
-            &counter_revoke_params.own_pk,
-            &signed_sub_channel.counter_glue_signature,
-        )?;
-
-        self.dlc_channel_manager
-            .get_blockchain()
-            .send_transaction(&glue_tx)?;
+            self.dlc_channel_manager
+                .get_blockchain()
+                .send_transaction(&glue_tx)?;
+        }
 
         let dlc_channel_id = closing.get_dlc_channel_id(0).ok_or(Error::InvalidState(
             "Could not get dlc channel id.".to_string(),
         ))?;
 
-        self.dlc_channel_manager
-            .force_close_sub_channel(&dlc_channel_id, (closing.clone(), &state))?;
+        if let Err(e) = self
+            .dlc_channel_manager
+            .force_close_sub_channel(&dlc_channel_id, (closing.clone(), &state))
+        {
+            error!("Error force closing DLC subchannel {}", e);
+        }
 
         self.ln_channel_manager
             .force_close_channel(channel_id, &counter_party)?;
 
-        closing.state = SubChannelState::OnChainClosed;
+        closing.state = if state.is_initiator {
+            SubChannelState::OnChainClosed
+        } else {
+            SubChannelState::CounterOnChainClosed
+        };
 
         let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
         chain_monitor.cleanup_channel(closing.channel_id);
@@ -2242,7 +2259,7 @@ where
 
     /// Process pending actions, potentially generating messages that should be sent to the
     /// adequate peer.
-    pub fn process_actions(&self) -> Vec<(SubChannelMessage, PublicKey)> {
+    fn process_actions(&self) -> Vec<(SubChannelMessage, PublicKey)> {
         let mut actions = self.actions.lock().unwrap();
         let mut retain = Vec::new();
         let mut msgs = Vec::new();
@@ -2378,9 +2395,48 @@ where
         msgs
     }
 
+    /// Checks for watched transactions, process pending actions and tries to finalize the closing
+    /// of sub channel whose closing has been initiated by the local or remote party. The returned
+    /// messages should be sent to the peer with the associated public key.
+    pub fn periodic_check(&self) -> Vec<(SubChannelMessage, PublicKey)> {
+        if let Err(e) = self.check_for_watched_tx() {
+            error!("Error checking for watched transactions: {}", e);
+        }
+
+        let msgs = self.process_actions();
+
+        if let Ok(sub_channels) = self.dlc_channel_manager.get_store().get_sub_channels() {
+            let closing_sub_channels = sub_channels.iter().filter(|x| {
+                if let SubChannelState::Closing(_) = &x.state {
+                    true
+                } else {
+                    false
+                }
+            });
+
+            for c in closing_sub_channels {
+                if let Err(e) = self.finalize_force_close_sub_channels(&c.channel_id) {
+                    warn!(
+                        "Could not finalize force closing of sub channel {:?}: {}",
+                        c.channel_id, e
+                    );
+                }
+            }
+        }
+
+        if let Err(e) = self.dlc_channel_manager.periodic_check() {
+            error!(
+                "Error performing periodic check of the channel manager: {}",
+                e
+            );
+        }
+
+        msgs
+    }
+
     /// Updtates the view of the blockchain processing transactions and acting upon them if
     /// necessary.
-    pub fn check_for_watched_tx(&self) -> Result<(), Error> {
+    fn check_for_watched_tx(&self) -> Result<(), Error> {
         let cur_height = self
             .dlc_channel_manager
             .get_blockchain()
@@ -2436,15 +2492,7 @@ where
                     let state = match &sub_channel.state {
                         SubChannelState::Signed(s) => s,
                         SubChannelState::Closing(_) => {
-                            sub_channel.state = SubChannelState::CounterOnChainClosed;
-                            self.dlc_channel_manager
-                                .get_store()
-                                .upsert_sub_channel(&sub_channel)?;
-                            self.dlc_channel_manager
-                                .get_chain_monitor()
-                                .lock()
-                                .unwrap()
-                                .cleanup_channel(sub_channel.channel_id);
+                            log::info!("Spotted closing split transaction on chain");
                             continue;
                         }
                         _ => {
@@ -2452,9 +2500,16 @@ where
                             continue;
                         }
                     };
+
                     let closing_sub_channel = ClosingSubChannel {
                         signed_sub_channel: state.clone(),
+                        is_initiator: false,
                     };
+                    self.dlc_channel_manager
+                        .get_chain_monitor()
+                        .lock()
+                        .unwrap()
+                        .remove_tx(&tx.txid());
                     sub_channel.state = SubChannelState::Closing(closing_sub_channel);
                     self.dlc_channel_manager
                         .get_store()

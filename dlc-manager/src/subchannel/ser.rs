@@ -81,4 +81,4 @@ impl_dlc_writeable!(CloseAcceptedSubChannel, { (signed_subchannel, writeable), (
 
 impl_dlc_writeable!(CloseConfirmedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable) });
 
-impl_dlc_writeable!(ClosingSubChannel, { (signed_sub_channel, writeable) });
+impl_dlc_writeable!(ClosingSubChannel, { (signed_sub_channel, writeable), (is_initiator, writeable) });
