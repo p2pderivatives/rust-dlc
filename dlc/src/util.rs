@@ -94,10 +94,17 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
     )
 }
 
-pub(crate) fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
+/// Returns the fee for the given weight at given fee rate.
+pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
     (f64::ceil((weight as f64) / 4.0) as u64)
         .checked_mul(fee_rate)
         .ok_or(Error::InvalidArgument)
+}
+
+/// Return the common base fee for a DLC for the given fee rate.
+pub fn get_common_fee(fee_rate: u64) -> Result<u64, Error> {
+    let base_weight = crate::FUND_TX_BASE_WEIGHT + crate::CET_BASE_WEIGHT;
+    weight_to_fee(base_weight, fee_rate)
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {

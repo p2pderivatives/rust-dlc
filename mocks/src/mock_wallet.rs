@@ -11,12 +11,12 @@ pub struct MockWallet {
 }
 
 impl MockWallet {
-    pub fn new(blockchain: &Rc<MockBlockchain>, nb_utxo: u16) -> Self {
-        let mut utxos = Vec::with_capacity(nb_utxo as usize);
+    pub fn new(blockchain: &Rc<MockBlockchain>, utxo_values: &[u64]) -> Self {
+        let mut utxos = Vec::with_capacity(utxo_values.len());
 
-        for i in 0..nb_utxo {
+        for utxo_value in utxo_values {
             let tx_out = TxOut {
-                value: 1000000 * i as u64,
+                value: *utxo_value,
                 script_pubkey: Script::default(),
             };
             let tx = Transaction {
@@ -102,7 +102,7 @@ impl Wallet for MockWallet {
             return Ok(res);
         }
 
-        Err(Error::InvalidParameters("".to_string()))
+        Err(Error::InvalidParameters("Not enought UTXOs".to_string()))
     }
 
     fn import_address(&self, _address: &Address) -> Result<(), dlc_manager::error::Error> {
