@@ -116,7 +116,8 @@ impl OfferedContract {
         }
     }
 
-    pub(crate) fn try_from_offer_dlc(
+    /// Convert an [`OfferDlc`] message to an [`OfferedContract`].
+    pub fn try_from_offer_dlc(
         offer_dlc: &OfferDlc,
         counter_party: PublicKey,
     ) -> Result<OfferedContract, crate::conversion_utils::Error> {

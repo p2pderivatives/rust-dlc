@@ -2209,9 +2209,12 @@ mod test {
     >;
 
     fn get_manager() -> TestManager {
-        let blockchain = Rc::new(MockBlockchain {});
+        let blockchain = Rc::new(MockBlockchain::new());
         let store = Rc::new(MemoryStorage::new());
-        let wallet = Rc::new(MockWallet::new(&blockchain, 100));
+        let wallet = Rc::new(MockWallet::new(
+            &blockchain,
+            &(0..100).map(|x| x as u64 * 1000000).collect::<Vec<_>>(),
+        ));
 
         let oracle_list = (0..5).map(|_| MockOracle::new()).collect::<Vec<_>>();
         let oracles: HashMap<bitcoin::XOnlyPublicKey, _> = oracle_list
