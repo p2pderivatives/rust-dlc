@@ -2441,12 +2441,9 @@ where
             .dlc_channel_manager
             .get_blockchain()
             .get_blockchain_height()?;
-        let last_height = self
-            .dlc_channel_manager
-            .get_chain_monitor()
-            .lock()
-            .unwrap()
-            .last_height;
+        let chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+
+        let last_height = chain_monitor.last_height;
 
         if cur_height < last_height {
             return Err(Error::InvalidState(
