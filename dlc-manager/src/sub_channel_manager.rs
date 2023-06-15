@@ -2441,7 +2441,7 @@ where
             .dlc_channel_manager
             .get_blockchain()
             .get_blockchain_height()?;
-        let chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
 
         let last_height = chain_monitor.last_height;
 
@@ -2460,12 +2460,7 @@ where
                 .get_blockchain()
                 .get_block_at_height(height)?;
 
-            let watch_res = self
-                .dlc_channel_manager
-                .get_chain_monitor()
-                .lock()
-                .unwrap()
-                .process_block(&block, height);
+            let watch_res = chain_monitor.process_block(&block, height);
 
             for (tx, channel_info) in &watch_res {
                 let mut sub_channel = match self
@@ -2502,11 +2497,7 @@ where
                         signed_sub_channel: state.clone(),
                         is_initiator: false,
                     };
-                    self.dlc_channel_manager
-                        .get_chain_monitor()
-                        .lock()
-                        .unwrap()
-                        .remove_tx(&tx.txid());
+                    chain_monitor.remove_tx(&tx.txid());
                     sub_channel.state = SubChannelState::Closing(closing_sub_channel);
                     self.dlc_channel_manager
                         .get_store()
@@ -2667,16 +2658,12 @@ where
 
             self.dlc_channel_manager.process_watched_txs(watch_res)?;
 
-            self.dlc_channel_manager
-                .get_chain_monitor()
-                .lock()
-                .unwrap()
-                .increment_height(&block.block_hash());
+            chain_monitor.increment_height(&block.block_hash());
         }
 
         self.dlc_channel_manager
             .get_store()
-            .persist_chain_monitor(&self.dlc_channel_manager.get_chain_monitor().lock().unwrap())?;
+            .persist_chain_monitor(&chain_monitor)?;
 
         Ok(())
     }
