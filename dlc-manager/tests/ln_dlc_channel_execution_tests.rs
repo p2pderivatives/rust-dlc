@@ -402,10 +402,10 @@ fn create_ln_node(
     let network_graph = Arc::new(NetworkGraph::new(Network::Regtest, logger.clone()));
     let scorer = Arc::new(Mutex::new(TestScorer::with_penalty(0)));
     let router = Arc::new(DefaultRouter::new(
-        network_graph.clone(),
+        network_graph,
         logger.clone(),
         keys_manager.get_secure_random_bytes(),
-        scorer.clone(),
+        scorer,
     ));
 
     let channel_manager = {
@@ -417,7 +417,7 @@ fn create_ln_node(
             best_block: BestBlock::new(last_block.block_hash(), height as u32),
         };
 
-        let fresh_channel_manager = Arc::new(ChannelManager::new(
+        Arc::new(ChannelManager::new(
             blockchain_provider.clone(),
             chain_monitor.clone(),
             mock_blockchain.clone(),
@@ -428,8 +428,7 @@ fn create_ln_node(
             consistent_keys_manager.clone(),
             user_config,
             chain_params,
-        ));
-        fresh_channel_manager
+        ))
     };
 
     // Step 12: Initialize the PeerManager
@@ -489,7 +488,7 @@ fn create_ln_node(
 
     LnDlcParty {
         peer_manager: Arc::new(peer_manager),
-        channel_manager: channel_manager.clone(),
+        channel_manager,
         chain_monitor,
         keys_manager: consistent_keys_manager,
         logger,
@@ -1727,12 +1726,7 @@ fn off_chain_close_offer(
         .unwrap();
 
     if let TestPath::Reconnect = test_path {
-        reconnect(
-            alice_node,
-            bob_node,
-            alice_descriptor.clone(),
-            bob_descriptor.clone(),
-        );
+        reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
 
         assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
         assert_eq!(0, bob_node.sub_channel_manager.periodic_check().len());
@@ -1794,12 +1788,7 @@ fn off_chain_close_finalize(
         .unwrap();
 
     if let TestPath::Reconnect = test_path {
-        reconnect(
-            alice_node,
-            bob_node,
-            alice_descriptor.clone(),
-            bob_descriptor.clone(),
-        );
+        reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
 
         assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, CloseOffered);
         assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, CloseOffered);
