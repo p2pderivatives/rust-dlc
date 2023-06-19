@@ -286,6 +286,8 @@ pub struct CloseConfirmedSubChannel {
     pub counter_balance: u64,
     /// Rollback information about the split channel
     pub ln_rollback: LnRollBackInfo,
+    /// Whether to check for LN secret (to deal with reestblishments)
+    pub check_ln_secret: bool,
 }
 
 /// Information about a sub channel that is in the process of being unilateraly closed.

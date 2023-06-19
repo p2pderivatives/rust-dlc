@@ -160,6 +160,7 @@ enum TestPath {
     OfferRejected,
     CloseRejected,
     Reconnect,
+    ReconnectReOfferAfterClose,
 }
 
 impl LnDlcParty {
@@ -575,6 +576,12 @@ fn ln_dlc_off_chain_close_open_close() {
     ln_dlc_test(TestPath::OffChainCloseOpenClose);
 }
 
+#[test]
+#[ignore]
+fn ln_dlc_offer_after_offchain_close_disconnect() {
+    ln_dlc_test(TestPath::ReconnectReOfferAfterClose);
+}
+
 // #[derive(Debug)]
 // pub struct TestParams {
 //     pub oracles: Vec<p2pd_oracle_client::P2PDOracleClient>,
@@ -929,7 +936,8 @@ fn ln_dlc_test(test_path: TestPath) {
     | TestPath::SplitCheat
     | TestPath::CloseRejected
     | TestPath::OffChainCloseOpenClose
-    | TestPath::Reconnect = test_path
+    | TestPath::Reconnect
+    | TestPath::ReconnectReOfferAfterClose = test_path
     {
         if let TestPath::SplitCheat = test_path {
             alice_node.dlc_manager.get_store().save();
@@ -972,7 +980,12 @@ fn ln_dlc_test(test_path: TestPath) {
             channel_id,
             alice_descriptor.clone(),
             bob_descriptor.clone(),
+            &test_params,
         );
+
+        if let TestPath::ReconnectReOfferAfterClose = test_path {
+            return;
+        }
 
         if let TestPath::OffChainCloseOpenClose = test_path {
             offer_sub_channel(
@@ -1000,6 +1013,7 @@ fn ln_dlc_test(test_path: TestPath) {
                 channel_id,
                 alice_descriptor.clone(),
                 bob_descriptor.clone(),
+                &test_params,
             );
         }
 
@@ -1740,6 +1754,7 @@ fn off_chain_close_finalize(
     channel_id: ChannelId,
     alice_descriptor: MockSocketDescriptor,
     bob_descriptor: MockSocketDescriptor,
+    test_params: &TestParams,
 ) {
     let sub_channel = alice_node
         .dlc_manager
@@ -1788,7 +1803,12 @@ fn off_chain_close_finalize(
         .unwrap();
 
     if let TestPath::Reconnect = test_path {
-        reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
 
         assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, CloseOffered);
         assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, CloseOffered);
@@ -1811,7 +1831,7 @@ fn off_chain_close_finalize(
         }
     }
 
-    let close_finalize = bob_node
+    let mut close_finalize = bob_node
         .sub_channel_manager
         .on_sub_channel_message(
             &close_confirm,
@@ -1819,6 +1839,56 @@ fn off_chain_close_finalize(
         )
         .unwrap()
         .unwrap();
+
+    if let TestPath::Reconnect = test_path {
+        reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
+
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
+        assert_eq!(1, msgs.len());
+        if let (SubChannelMessage::CloseFinalize(c), _) = msgs.pop().unwrap() {
+            close_finalize = SubChannelMessage::CloseFinalize(c);
+        } else {
+            panic!("Expected a close finalize message");
+        }
+    } else if let TestPath::ReconnectReOfferAfterClose = test_path {
+        offer_common(test_params, bob_node, &channel_id);
+        assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, Offered);
+
+        reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
+
+        assert_sub_channel_state!(bob_node.sub_channel_manager, &channel_id, Offered);
+
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
+        assert_eq!(2, msgs.len());
+        if let (SubChannelMessage::CloseFinalize(c), _) = msgs.remove(0) {
+            close_finalize = SubChannelMessage::CloseFinalize(c);
+            alice_node
+                .sub_channel_manager
+                .on_sub_channel_message(
+                    &close_finalize,
+                    &bob_node.channel_manager.get_our_node_id(),
+                )
+                .unwrap();
+            assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id; OffChainClosed);
+            if let (SubChannelMessage::Offer(o), _) = msgs.pop().unwrap() {
+                alice_node
+                    .sub_channel_manager
+                    .on_sub_channel_message(
+                        &SubChannelMessage::Offer(o),
+                        &bob_node.channel_manager.get_our_node_id(),
+                    )
+                    .unwrap();
+                assert_sub_channel_state!(alice_node.sub_channel_manager, &channel_id, Offered);
+                return;
+            } else {
+                panic!("Expected an offer message");
+            }
+        } else {
+            panic!("Expected a close finalize message");
+        }
+    }
 
     alice_node
         .sub_channel_manager

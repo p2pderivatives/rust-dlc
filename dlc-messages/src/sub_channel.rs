@@ -303,7 +303,7 @@ impl_dlc_writeable!(SubChannelCloseConfirm, {
 
 /// A message to finalize the collaborative closing of a DLC channel embedded within a  Lightning
 /// channel.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize),
@@ -315,16 +315,16 @@ pub struct SubChannelCloseFinalize {
     /// The pre-image of the split transaction revocation point.
     pub split_revocation_secret: SecretKey,
     /// The pre-image of the commit transaction revocation point.
-    pub commit_revocation_secret: SecretKey,
+    pub commit_revocation_secret: Option<SecretKey>,
     /// The point to be used for computing the revocation of the next commitment transaction.
-    pub next_per_commitment_point: PublicKey,
+    pub next_per_commitment_point: Option<PublicKey>,
 }
 
 impl_dlc_writeable!(SubChannelCloseFinalize, {
     (channel_id, writeable),
     (split_revocation_secret, writeable),
-    (commit_revocation_secret, writeable),
-    (next_per_commitment_point, writeable)
+    (commit_revocation_secret, option),
+    (next_per_commitment_point, option)
 });
 
 /// A message to reject an offer to collaboratively close a DLC channel embedded within a Lightning

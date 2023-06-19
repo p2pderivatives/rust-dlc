@@ -38,12 +38,12 @@ use crate::{
     chain_monitor::{ChannelInfo, RevokedTxType, TxType},
     channel::{
         generate_temporary_contract_id, offered_channel::OfferedChannel,
-        party_points::PartyBasePoints, signed_channel::SignedChannelState, Channel,
+        party_points::PartyBasePoints, Channel,
     },
     channel_updater::{
         self, FundingInfo, SubChannelSignInfo, SubChannelSignVerifyInfo, SubChannelVerifyInfo,
     },
-    contract::{contract_input::ContractInput, ClosedContract, Contract, FundingInputInfo},
+    contract::{contract_input::ContractInput, Contract, FundingInputInfo},
     error::Error,
     manager::{get_channel_in_state, get_contract_in_state, Manager, CET_NSEQUENCE},
     subchannel::{
@@ -129,17 +129,16 @@ pub enum Action {
         /// The balance of the local party in the DLC sub channel for settling it.
         own_balance: u64,
     },
-    /// The sub channel with specified [`ChannelId`] should be marked as
-    /// [`SubChannelState::OffChainClosed`] as the revoke and ack must have been given by the peer
-    /// during the reestablishment of the LN channel.
-    ForceOffChainClosed(ChannelId),
+    /// The given [`SubChannelCloseFinalize`] message should be re-sent to the peer with given
+    /// `PublicKey`.
+    ResendCloseFinalize((SubChannelCloseFinalize, PublicKey)),
 }
 
 impl_dlc_writeable_enum!(Action,
     (0, ResendOffer),
     (2, ForceSign),
     (3, ResendCloseOffer),
-    (5, ForceOffChainClosed);
+    (5, ResendCloseFinalize);
     (1, ReAccept, {
         (channel_id, writeable),
         (party_params, { cb_writeable, dlc_messages::ser_impls::party_params::write, dlc_messages::ser_impls::party_params::read }),
@@ -1167,81 +1166,6 @@ where
         Ok(())
     }
 
-    fn mark_channel_offchain_closed(&self, channel_id: ChannelId) -> Result<(), Error> {
-        let (mut signed_sub_channel, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            channel_id,
-            CloseConfirmed,
-            None::<PublicKey>
-        )?;
-
-        let dlc_channel_id =
-            signed_sub_channel
-                .get_dlc_channel_id(0)
-                .ok_or(Error::InvalidState(
-                    "Could not get dlc channel id".to_string(),
-                ))?;
-        let mut channel = get_channel_in_state!(
-            self.dlc_channel_manager,
-            &dlc_channel_id,
-            Signed,
-            None::<PublicKey>
-        )?;
-        let contract = match channel.state {
-            SignedChannelState::Established { .. } => {
-                let contract = get_contract_in_state!(
-                    self.dlc_channel_manager,
-                    &channel
-                        .get_contract_id()
-                        .ok_or_else(|| Error::InvalidState(
-                            "No contract id in on_sub_channel_finalize".to_string()
-                        ))?,
-                    Signed,
-                    None::<PublicKey>
-                )?;
-
-                let offer = &contract.accepted_contract.offered_contract;
-                let party_params = if offer.is_offer_party {
-                    &offer.offer_params
-                } else {
-                    &contract.accepted_contract.accept_params
-                };
-                let collateral = party_params.collateral as i64;
-
-                let closed_contract = ClosedContract {
-                    attestations: None,
-                    signed_cet: None,
-                    contract_id: contract.accepted_contract.get_contract_id(),
-                    temporary_contract_id: contract.accepted_contract.offered_contract.id,
-                    counter_party_id: contract.accepted_contract.offered_contract.counter_party,
-                    pnl: collateral - (state.own_balance as i64),
-                };
-                Some(Contract::Closed(closed_contract))
-            }
-            SignedChannelState::Settled { .. } => None,
-            _ => {
-                return Err(Error::InvalidState(format!(
-                    "Expected established of settled state but was in {:?} state",
-                    channel.state
-                )));
-            }
-        };
-
-        channel.state = SignedChannelState::CollaborativelyClosed;
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_channel(Channel::Signed(channel), contract)?;
-
-        signed_sub_channel.state = SubChannelState::OffChainClosed;
-
-        self.dlc_channel_manager
-            .get_store()
-            .upsert_sub_channel(&signed_sub_channel)?;
-
-        Ok(())
-    }
-
     fn on_subchannel_offer(
         &self,
         sub_channel_offer: &SubChannelOffer,
@@ -2060,6 +1984,7 @@ where
                     own_balance: state.offer_balance,
                     counter_balance: state.accept_balance,
                     ln_rollback: (&channel_details).into(),
+                    check_ln_secret: true,
                 };
 
                 sub_channel.state = SubChannelState::CloseConfirmed(updated_channel);
@@ -2155,9 +2080,11 @@ where
                 let finalize = SubChannelCloseFinalize {
                     channel_id: confirm.channel_id,
                     split_revocation_secret: per_split_secret,
-                    commit_revocation_secret: SecretKey::from_slice(&own_raa.per_commitment_secret)
-                        .expect("a valid secret key"),
-                    next_per_commitment_point: own_raa.next_per_commitment_point,
+                    commit_revocation_secret: Some(
+                        SecretKey::from_slice(&own_raa.per_commitment_secret)
+                            .expect("a valid secret key"),
+                    ),
+                    next_per_commitment_point: Some(own_raa.next_per_commitment_point),
                 };
 
                 self.dlc_channel_manager
@@ -2232,14 +2159,27 @@ where
                     .dlc_channel_manager
                     .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
 
-                let revoke_and_ack = RevokeAndACK {
-                    channel_id: finalize.channel_id,
-                    per_commitment_secret: *finalize.commit_revocation_secret.as_ref(),
-                    next_per_commitment_point: finalize.next_per_commitment_point,
-                };
+                if state.check_ln_secret {
+                    match (
+                        finalize.commit_revocation_secret.as_ref(),
+                        finalize.next_per_commitment_point.as_ref(),
+                    ) {
+                        (Some(secret), Some(point)) => {
+                            let revoke_and_ack = RevokeAndACK {
+                                channel_id: finalize.channel_id,
+                                per_commitment_secret: *secret.as_ref(),
+                                next_per_commitment_point: *point,
+                            };
 
-                self.ln_channel_manager
-                    .revoke_and_ack(channel_lock, &revoke_and_ack)?;
+                            self.ln_channel_manager
+                                .revoke_and_ack(channel_lock, &revoke_and_ack)?;
+                        }
+                        _ => return Err(APIError::ExternalError {
+                            err: "Did not get expected revocation secret and next commitment point"
+                                .to_string(),
+                        }),
+                    };
+                }
 
                 sub_channel.state = SubChannelState::OffChainClosed;
 
@@ -2373,19 +2313,8 @@ where
                         );
                     };
                 }
-                Action::ForceOffChainClosed(id) => {
-                    if let Some(details) = self.ln_channel_manager.get_channel_details(&id) {
-                        if details.is_usable {
-                            if let Err(e) = self.mark_channel_offchain_closed(id) {
-                                error!("Unexpected error {} making channel {:?} as offchain closed, keeping the action to retry.", e, id);
-                                retain.push(Action::ForceOffChainClosed(id));
-                            }
-                        } else {
-                            retain.push(Action::ForceOffChainClosed(id));
-                        }
-                    } else {
-                        error!("Could not get channel details for id: {:?}", id);
-                    };
+                Action::ResendCloseFinalize((msg, pk)) => {
+                    msgs.push((SubChannelMessage::CloseFinalize(msg), pk));
                 }
             };
         }
@@ -2692,6 +2621,18 @@ where
                     let has_not_received = match peer_state {
                         None => true,
                         Some(state) if state == ReestablishFlag::OffChainClosed as u8 => true,
+                        Some(state) if state == ReestablishFlag::CloseConfirmed as u8 => {
+                            let finalize = self.get_reconnect_close_finalize(&channel)?;
+
+                            self.actions
+                                .lock()
+                                .unwrap()
+                                .push(Action::ResendCloseFinalize((
+                                    finalize,
+                                    channel.counter_party,
+                                )));
+                            true
+                        }
                         _ => false,
                     };
                     if has_not_received {
@@ -2940,7 +2881,24 @@ where
                                 },
                             )?;
                         } else {
-                            debug_assert_eq!(ReestablishFlag::OffChainClosed as u8, counter_state);
+                            // LDK will provide the revocation secret through reestablishment.
+                            let mut confirmed = confirmed.clone();
+                            confirmed.check_ln_secret = false;
+                            updated_state = Some(SubChannelState::CloseConfirmed(confirmed));
+                        }
+                    }
+                }
+                SubChannelState::OffChainClosed => {
+                    if let Some(counter_state) = peer_state {
+                        let finalize = self.get_reconnect_close_finalize(&channel)?;
+                        if counter_state == ReestablishFlag::CloseConfirmed as u8 {
+                            self.actions
+                                .lock()
+                                .unwrap()
+                                .push(Action::ResendCloseFinalize((
+                                    finalize,
+                                    channel.counter_party,
+                                )));
                         }
                     }
                 }
@@ -2964,6 +2922,31 @@ where
         }
 
         Ok(())
+    }
+
+    fn get_reconnect_close_finalize(
+        &self,
+        channel: &SubChannel,
+    ) -> Result<SubChannelCloseFinalize, Error> {
+        let per_split_seed = self
+            .dlc_channel_manager
+            .get_wallet()
+            .get_secret_key_for_pubkey(
+                &channel.per_split_seed.expect("to have a per split seed"),
+            )?;
+
+        let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
+            per_split_seed.as_ref(),
+            channel.update_idx,
+        ))
+        .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+        Ok(SubChannelCloseFinalize {
+            channel_id: channel.channel_id,
+            split_revocation_secret: per_split_secret,
+            commit_revocation_secret: None,
+            next_per_commitment_point: None,
+        })
     }
 
     fn on_sub_channel_reject(&self, reject: &Reject, peer_id: &PublicKey) -> Result<(), Error> {
