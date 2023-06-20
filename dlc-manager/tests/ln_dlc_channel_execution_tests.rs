@@ -161,6 +161,7 @@ enum TestPath {
     CloseRejected,
     Reconnect,
     ReconnectReOfferAfterClose,
+    DisconnectedForceClose,
 }
 
 impl LnDlcParty {
@@ -580,6 +581,12 @@ fn ln_dlc_off_chain_close_open_close() {
 #[ignore]
 fn ln_dlc_offer_after_offchain_close_disconnect() {
     ln_dlc_test(TestPath::ReconnectReOfferAfterClose);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_disconnected_force_close() {
+    ln_dlc_test(TestPath::DisconnectedForceClose);
 }
 
 // #[derive(Debug)]
@@ -1100,6 +1107,14 @@ fn ln_dlc_test(test_path: TestPath) {
 
         let bob_commit = get_commit_tx_from_node(&bob_node);
         bob_node.mock_blockchain.discard_id(bob_commit[0].txid());
+    }
+
+    if let TestPath::DisconnectedForceClose = test_path {
+        alice_node
+            .peer_manager
+            .socket_disconnected(&alice_descriptor);
+
+        bob_node.peer_manager.socket_disconnected(&bob_descriptor);
     }
 
     alice_node

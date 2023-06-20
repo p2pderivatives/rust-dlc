@@ -16,6 +16,6 @@ members = [
 ]
 
 [patch.crates-io]
-lightning = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "dae31e3e" }
-lightning-net-tokio = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "dae31e3e" }
-lightning-persister = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "dae31e3e" }
+lightning = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "74690beb" }
+lightning-net-tokio = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "74690beb" }
+lightning-persister = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "74690beb" }

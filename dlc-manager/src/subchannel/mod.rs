@@ -306,8 +306,20 @@ where
 {
     /// Returns the details of the channel with given `channel_id` if found.
     fn get_channel_details(&self, channel_id: &ChannelId) -> Option<ChannelDetails>;
-    ///
+    /// Enable executing the provided callback while holding the lock of the channel with provided
+    /// id, making sure that the channel is in a useable state and that a connection is established
+    /// with the peer.
     fn with_useable_channel_lock<F, T>(
+        &self,
+        channel_id: &ChannelId,
+        counter_party_node_id: &PublicKey,
+        cb: F,
+    ) -> Result<T, APIError>
+    where
+        F: FnOnce(&mut ChannelLock<SP>) -> Result<T, APIError>;
+    /// Enable executing the provided callback while holding the lock of the channel without
+    /// checking the channel state or peer connection status.
+    fn with_channel_lock_no_check<F, T>(
         &self,
         channel_id: &ChannelId,
         counter_party_node_id: &PublicKey,
@@ -465,6 +477,20 @@ where
         ) -> Result<RV, APIError>,
     {
         self.with_useable_channel_lock(channel_id, counter_party_node_id, cb)
+    }
+
+    fn with_channel_lock_no_check<C, RV>(
+        &self,
+        channel_id: &ChannelId,
+        counter_party_node_id: &PublicKey,
+        cb: C,
+    ) -> Result<RV, APIError>
+    where
+        C: FnOnce(
+            &mut ChannelLock<<<K as Deref>::Target as SignerProvider>::Signer>,
+        ) -> Result<RV, APIError>,
+    {
+        self.with_channel_lock_no_check(channel_id, counter_party_node_id, cb)
     }
 }
 

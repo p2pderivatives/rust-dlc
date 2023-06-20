@@ -716,7 +716,7 @@ where
             .ln_channel_manager
             .get_channel_details(channel_id)
             .unwrap();
-        self.ln_channel_manager.with_useable_channel_lock(
+        self.ln_channel_manager.with_channel_lock_no_check(
             channel_id,
             &counter_party,
             |channel_lock| {
