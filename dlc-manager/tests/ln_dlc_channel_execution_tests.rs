@@ -1569,34 +1569,75 @@ fn offer_sub_channel(
     }
 
     alice_node.process_events();
-    let finalize = bob_node
+    let mut finalize = bob_node
         .sub_channel_manager
         .on_sub_channel_message(&confirm, &alice_node.channel_manager.get_our_node_id())
         .unwrap()
         .unwrap();
 
-    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Finalized);
 
     bob_node.process_events();
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
 
     if let TestPath::Reconnect = test_path {
+        reconnect(
+            alice_node,
+            bob_node,
+            alice_descriptor.clone(),
+            bob_descriptor.clone(),
+        );
+        assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Offered);
+        assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Offered);
+
+        // Bob should re-send the accept message
+        let mut msgs = bob_node.sub_channel_manager.periodic_check();
+        assert_eq!(1, msgs.len());
+        assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
+        if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+            assert_eq!(p, alice_node.channel_manager.get_our_node_id());
+            let confirm = alice_node
+                .sub_channel_manager
+                .on_sub_channel_message(
+                    &SubChannelMessage::Accept(a),
+                    &bob_node.channel_manager.get_our_node_id(),
+                )
+                .unwrap()
+                .unwrap();
+            finalize = bob_node
+                .sub_channel_manager
+                .on_sub_channel_message(&confirm, &alice_node.channel_manager.get_our_node_id())
+                .unwrap()
+                .unwrap();
+        } else {
+            panic!("Expected an accept message");
+        }
+    }
+
+    let revoke = alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
+        .unwrap()
+        .unwrap();
+    assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Finalized);
+
+    if let TestPath::Reconnect = test_path {
         reconnect(alice_node, bob_node, alice_descriptor, bob_descriptor);
 
-        // For some weird reason uncommenting this triggers a stack overflow...
-        // assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Confirmed);
-        // assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
+        assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
+        assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Finalized);
 
         assert_eq!(0, alice_node.sub_channel_manager.periodic_check().len());
         assert_eq!(0, bob_node.sub_channel_manager.periodic_check().len());
     } else {
-        alice_node
+        bob_node
             .sub_channel_manager
-            .on_sub_channel_message(&finalize, &bob_node.channel_manager.get_our_node_id())
+            .on_sub_channel_message(&revoke, &alice_node.channel_manager.get_our_node_id())
             .unwrap();
     }
-
     assert_sub_channel_state!(alice_node.sub_channel_manager, channel_id, Signed);
+    assert_sub_channel_state!(bob_node.sub_channel_manager, channel_id, Signed);
 
     alice_node.process_events();
 }

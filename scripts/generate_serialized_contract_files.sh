@@ -10,7 +10,7 @@ docker-compose up -d
 
 for FILE in ${CONTRACT_TEST_FILES[@]}
 do
-    GENERATE_SERIALIZED_CONTRACT=1 cargo test -- single_oracle_numerical_test --ignored --exact
+    RUST_MIN_STACK=104857600 GENERATE_SERIALIZED_CONTRACT=1 cargo test -- single_oracle_numerical_test --ignored --exact
     cp ${PWD}/dlc-manager/${FILE//1/} ${DEST}${FILE}
 done
 
@@ -18,7 +18,7 @@ CHANNEL_TEST_FILES=("OfferedChannel" "AcceptedChannel" "SignedChannelEstablished
 
 for FILE in ${CHANNEL_TEST_FILES[@]}
 do
-    GENERATE_SERIALIZED_CHANNEL=1 cargo test -- channel_settled_close_test --ignored --exact
+    RUST_MIN_STACK=104857600 GENERATE_SERIALIZED_CHANNEL=1 cargo test -- channel_settled_close_test --ignored --exact
     cp ${PWD}/dlc-manager/${FILE//1/} ${DEST}${FILE}
 done
 
@@ -26,7 +26,7 @@ SUB_CHANNEL_TEST_FILES=("OfferedSubChannel" "OfferedSubChannel1" "AcceptedSubCha
 
 for FILE in ${SUB_CHANNEL_TEST_FILES[@]}
 do
-    GENERATE_SERIALIZED_SUB_CHANNEL=1 cargo test -- ln_dlc_established_close --ignored --exact
+    RUST_MIN_STACK=104857600 GENERATE_SERIALIZED_SUB_CHANNEL=1 cargo test -- ln_dlc_established_close --ignored --exact
     cp ${PWD}/dlc-manager/${FILE//1/} ${DEST}${FILE}
 done
 

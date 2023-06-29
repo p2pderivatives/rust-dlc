@@ -19,7 +19,7 @@ for TEST_NAME in $LIST
 do
     if [ ! -z $TEST_NAME ]
     then
-        cargo test -- $TEST_NAME --ignored --exact --nocapture
+        RUST_MIN_STACK=104857600 cargo test -- $TEST_NAME --ignored --exact --nocapture
     fi
 done
 

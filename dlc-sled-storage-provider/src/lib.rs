@@ -145,6 +145,7 @@ convertible_enum!(
         RenewAccepted,
         RenewOffered,
         RenewConfirmed,
+        RenewFinalized,
     },
     SignedChannelStateType
 );
@@ -154,6 +155,7 @@ convertible_enum!(
         Offered = 1,
         Accepted,
         Confirmed,
+        Finalized,
         Signed,
         Closing,
         OnChainClosed,

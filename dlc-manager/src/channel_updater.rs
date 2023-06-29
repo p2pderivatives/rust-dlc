@@ -31,7 +31,8 @@ use dlc::{
 use dlc_messages::{
     channel::{
         AcceptChannel, CollaborativeCloseOffer, Reject, RenewAccept, RenewConfirm, RenewFinalize,
-        RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer, SignChannel,
+        RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
+        SignChannel,
     },
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingSignatures,
@@ -353,8 +354,8 @@ where
         temporary_channel_id: offered_channel.temporary_channel_id,
         channel_id,
         accept_per_update_seed: PublicKey::from_secret_key(secp, &per_update_seed),
-        accept_buffer_adaptor_signature: buffer_adaptor_signature,
         counter_party: offered_contract.counter_party,
+        accept_buffer_adaptor_signature: buffer_adaptor_signature,
     };
 
     let accept_channel = accepted_channel.get_accept_channel_msg(
@@ -1549,7 +1550,6 @@ where
         peer_timeout,
         signer,
         time,
-        None,
     )
 }
 
@@ -1561,7 +1561,6 @@ pub(crate) fn accept_channel_renewal_internal<S: Deref, T: Deref>(
     peer_timeout: u64,
     signer: &S,
     time: &T,
-    own_buffer_adaptor_sk: Option<SecretKey>,
 ) -> Result<(AcceptedContract, RenewAccept), Error>
 where
     S::Target: Signer,
@@ -1580,7 +1579,6 @@ where
         }
     };
 
-    let own_fund_sk = signer.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
     let own_base_secret_key =
         signer.get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
     let per_update_seed = signer.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
@@ -1632,23 +1630,6 @@ where
         buffer_nsequence,
     )?;
 
-    let own_buffer_adaptor_sk = own_buffer_adaptor_sk.as_ref().unwrap_or(&own_fund_sk);
-
-    let buffer_input_value = if signed_channel.is_sub_channel() {
-        signed_channel.fund_tx.output[1].value
-    } else {
-        signed_channel.fund_tx.output[signed_channel.fund_output_index].value
-    };
-
-    let buffer_adaptor_signature = get_tx_adaptor_signature(
-        secp,
-        &buffer_transaction,
-        buffer_input_value,
-        &dlc_transactions.funding_script_pubkey,
-        own_buffer_adaptor_sk,
-        &offer_revoke_params.publish_pk.inner,
-    )?;
-
     let own_secret_key = derive_private_key(secp, &accept_per_update_point, &own_base_secret_key);
 
     let (accepted_contract, adaptor_sigs) = accept_contract_internal(
@@ -1668,7 +1649,6 @@ where
         accept_per_update_point,
         buffer_transaction,
         buffer_script_pubkey,
-        accept_buffer_adaptor_signature: buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
     };
@@ -1678,7 +1658,6 @@ where
     let renew_accept = RenewAccept {
         channel_id: signed_channel.channel_id,
         next_per_update_point: accept_per_update_point,
-        buffer_adaptor_signature,
         cet_adaptor_signatures: (&adaptor_sigs as &[_]).into(),
         refund_signature: accepted_contract.accept_refund_signature,
     };
@@ -1714,7 +1693,6 @@ where
         signer,
         time,
         None,
-        None,
     )
 }
 
@@ -1728,7 +1706,6 @@ pub(crate) fn verify_renew_accept_and_confirm_internal<S: Deref, T: Deref>(
     signer: &S,
     time: &T,
     own_buffer_adaptor_sk: Option<SecretKey>,
-    counter_buffer_own_pk: Option<PublicKey>,
 ) -> Result<(SignedContract, RenewConfirm), Error>
 where
     S::Target: Signer,
@@ -1738,13 +1715,6 @@ where
 
     let own_base_secret_key =
         signer.get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
-
-    let per_update_seed = signer.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
-
-    let prev_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
-        per_update_seed.as_ref(),
-        signed_channel.update_idx,
-    ))?;
 
     let offer_per_update_point =
         get_signed_channel_state!(signed_channel, RenewOffered, offer_next_per_update_point)?;
@@ -1815,19 +1785,6 @@ where
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value
     };
     let own_buffer_adaptor_sk = own_buffer_adaptor_sk.as_ref().unwrap_or(&own_fund_sk);
-    let counter_buffer_own_pk = counter_buffer_own_pk
-        .as_ref()
-        .unwrap_or(&signed_contract.accepted_contract.accept_params.fund_pubkey);
-
-    verify_tx_adaptor_signature(
-        secp,
-        &buffer_transaction,
-        buffer_input_value,
-        &signed_channel.fund_script_pubkey,
-        counter_buffer_own_pk,
-        &offer_revoke_params.publish_pk.inner,
-        &renew_accept.buffer_adaptor_signature,
-    )?;
 
     let own_buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
@@ -1845,7 +1802,6 @@ where
         buffer_transaction,
         buffer_script_pubkey,
         offer_buffer_adaptor_signature: own_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature: renew_accept.buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
         total_collateral: offered_contract.total_collateral,
@@ -1855,7 +1811,6 @@ where
 
     let renew_confirm = RenewConfirm {
         channel_id: signed_channel.channel_id,
-        per_update_secret: prev_per_update_secret,
         buffer_adaptor_signature: own_buffer_adaptor_signature,
         cet_adaptor_signatures: (&cet_adaptor_signatures as &[_]).into(),
         refund_signature: signed_contract.offer_refund_signature,
@@ -1868,14 +1823,18 @@ where
 /// [`RenewAccept`] message, verifying the message and updating the state of the
 /// channel and associated contract the same time. Expects the channel to be in
 /// [`SignedChannelState::RenewAccepted`] state.
-pub fn verify_renew_confirm_and_finalize<S: Deref>(
+pub fn verify_renew_confirm_and_finalize<T: Deref, S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     accepted_contract: &AcceptedContract,
     renew_confirm: &RenewConfirm,
+    peer_timeout: u64,
+    time: &T,
     signer: &S,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedContract, RenewFinalize), Error>
 where
+    T::Target: Time,
     S::Target: Signer,
 {
     verify_renew_confirm_and_finalize_internal(
@@ -1883,26 +1842,35 @@ where
         signed_channel,
         accepted_contract,
         renew_confirm,
+        peer_timeout,
+        time,
         signer,
         None,
+        None,
+        chain_monitor,
     )
 }
 
-pub(crate) fn verify_renew_confirm_and_finalize_internal<S: Deref>(
+pub(crate) fn verify_renew_confirm_and_finalize_internal<S: Deref, T: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     accepted_contract: &AcceptedContract,
     renew_confirm: &RenewConfirm,
+    peer_timeout: u64,
+    time: &T,
     signer: &S,
     counter_buffer_own_pk: Option<PublicKey>,
+    own_buffer_adaptor_sk: Option<SecretKey>,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedContract, RenewFinalize), Error>
 where
+    T::Target: Time,
     S::Target: Signer,
 {
     let (
         &offer_per_update_point,
         &accept_per_update_point,
-        &accept_buffer_adaptor_signature,
+        own_payout,
         buffer_transaction,
         buffer_script_pubkey,
     ) = get_signed_channel_state!(
@@ -1910,7 +1878,7 @@ where
         RenewAccepted,
         offer_per_update_point,
         accept_per_update_point,
-        accept_buffer_adaptor_signature | buffer_transaction,
+        own_payout | buffer_transaction,
         buffer_script_pubkey
     )?;
 
@@ -1951,28 +1919,6 @@ where
         Some(signed_channel.channel_id),
     )?;
 
-    signed_channel.state = SignedChannelState::Established {
-        signed_contract_id: signed_contract.accepted_contract.get_contract_id(),
-        own_buffer_adaptor_signature: accept_buffer_adaptor_signature,
-        counter_buffer_adaptor_signature: renew_confirm.buffer_adaptor_signature,
-        buffer_transaction: buffer_transaction.clone(),
-        is_offer: false,
-        total_collateral: signed_contract
-            .accepted_contract
-            .offered_contract
-            .total_collateral,
-    };
-
-    signed_channel.update_idx -= 1;
-
-    signed_channel
-        .counter_party_commitment_secrets
-        .provide_secret(
-            signed_channel.update_idx + 1,
-            *renew_confirm.per_update_secret.as_ref(),
-        )
-        .map_err(|_| Error::InvalidParameters("Provided secret was invalid".to_string()))?;
-
     signed_channel.counter_per_update_point = offer_per_update_point;
     signed_channel.own_per_update_point = accept_per_update_point;
 
@@ -1980,29 +1926,82 @@ where
 
     let prev_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
         per_update_seed.as_ref(),
-        signed_channel.update_idx + 1,
+        signed_channel.update_idx,
     ))?;
+
+    let offer_revoke_params = signed_channel.counter_points.get_revokable_params(
+        secp,
+        &signed_channel.own_points.revocation_basepoint,
+        &signed_channel.counter_per_update_point,
+    );
+
+    let own_fund_sk = signer.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
+    let own_buffer_adaptor_sk = own_buffer_adaptor_sk.as_ref().unwrap_or(&own_fund_sk);
+
+    let buffer_input_value = if signed_channel.is_sub_channel() {
+        signed_channel.fund_tx.output[1].value
+    } else {
+        signed_channel.fund_tx.output[signed_channel.fund_output_index].value
+    };
+
+    let buffer_adaptor_signature = get_tx_adaptor_signature(
+        secp,
+        buffer_transaction,
+        buffer_input_value,
+        &signed_channel.fund_script_pubkey,
+        own_buffer_adaptor_sk,
+        &offer_revoke_params.publish_pk.inner,
+    )?;
+    let total_collateral =
+        signed_channel.own_params.collateral + signed_channel.counter_params.collateral;
+
+    chain_monitor.lock().unwrap().add_tx(
+        buffer_transaction.txid(),
+        ChannelInfo {
+            channel_id: signed_channel.channel_id,
+            tx_type: TxType::BufferTx,
+        },
+    );
+
+    signed_channel.state = SignedChannelState::RenewFinalized {
+        contract_id: signed_contract.accepted_contract.get_contract_id(),
+        offer_per_update_point,
+        accept_per_update_point,
+        buffer_transaction: buffer_transaction.clone(),
+        buffer_script_pubkey: buffer_script_pubkey.clone(),
+        offer_buffer_adaptor_signature: renew_confirm.buffer_adaptor_signature,
+        accept_buffer_adaptor_signature: buffer_adaptor_signature,
+        timeout: time.unix_time_now() + peer_timeout,
+        own_payout: *own_payout,
+        total_collateral,
+    };
 
     let renew_finalize = RenewFinalize {
         channel_id: signed_channel.channel_id,
         per_update_secret: prev_per_update_secret,
+        buffer_adaptor_signature,
     };
 
     Ok((signed_contract, renew_finalize))
 }
 
 /// Verify the given [`RenewFinalize`] and update the state of the channel.
-pub fn renew_channel_on_finalize(
+pub fn renew_channel_on_finalize<S: Deref>(
+    secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     renew_finalize: &RenewFinalize,
-) -> Result<(), Error> {
+    counter_buffer_own_pk: Option<PublicKey>,
+    signer: &S,
+) -> Result<RenewRevoke, Error>
+where
+    S::Target: Signer,
+{
     let (
         contract_id,
         total_collateral,
         offer_per_update_point,
         accept_per_update_point,
         offer_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature,
         buffer_transaction,
     ) = get_signed_channel_state!(
         signed_channel,
@@ -2011,13 +2010,37 @@ pub fn renew_channel_on_finalize(
         total_collateral,
         offer_per_update_point,
         accept_per_update_point,
-        offer_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature | buffer_transaction
+        offer_buffer_adaptor_signature | buffer_transaction
+    )?;
+
+    let offer_revoke_params = signed_channel.own_points.get_revokable_params(
+        secp,
+        &signed_channel.counter_points.revocation_basepoint,
+        offer_per_update_point,
+    );
+
+    let buffer_input_value = if signed_channel.is_sub_channel() {
+        signed_channel.fund_tx.output[1].value
+    } else {
+        signed_channel.fund_tx.output[signed_channel.fund_output_index].value
+    };
+    let counter_buffer_own_pk = counter_buffer_own_pk
+        .as_ref()
+        .unwrap_or(&signed_channel.counter_params.fund_pubkey);
+
+    verify_tx_adaptor_signature(
+        secp,
+        buffer_transaction,
+        buffer_input_value,
+        &signed_channel.fund_script_pubkey,
+        counter_buffer_own_pk,
+        &offer_revoke_params.publish_pk.inner,
+        &renew_finalize.buffer_adaptor_signature,
     )?;
 
     let state = SignedChannelState::Established {
         signed_contract_id: *contract_id,
-        counter_buffer_adaptor_signature: *accept_buffer_adaptor_signature,
+        counter_buffer_adaptor_signature: renew_finalize.buffer_adaptor_signature,
         own_buffer_adaptor_signature: *offer_buffer_adaptor_signature,
         buffer_transaction: buffer_transaction.clone(),
         is_offer: true,
@@ -2032,12 +2055,66 @@ pub fn renew_channel_on_finalize(
         )
         .map_err(|_| Error::InvalidParameters("Provided secret was invalid".to_string()))?;
 
+    let per_update_seed = signer.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
+
+    let prev_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
+        per_update_seed.as_ref(),
+        signed_channel.update_idx,
+    ))?;
+
     signed_channel.own_per_update_point = *offer_per_update_point;
     signed_channel.counter_per_update_point = *accept_per_update_point;
 
     signed_channel.state = state;
     signed_channel.roll_back_state = None;
     signed_channel.update_idx -= 1;
+
+    let msg = RenewRevoke {
+        channel_id: signed_channel.channel_id,
+        per_update_secret: prev_per_update_secret,
+    };
+
+    Ok(msg)
+}
+
+/// Verify the given [`RenewRevoke`] and update the state of the channel.
+pub fn renew_channel_on_revoke(
+    signed_channel: &mut SignedChannel,
+    renew_revoke: &RenewRevoke,
+) -> Result<(), Error> {
+    let (
+        contract_id,
+        total_collateral,
+        offer_buffer_adaptor_signature,
+        accept_buffer_adaptor_signature,
+        buffer_transaction,
+    ) = get_signed_channel_state!(
+        signed_channel,
+        RenewFinalized,
+        contract_id,
+        total_collateral,
+        offer_buffer_adaptor_signature,
+        accept_buffer_adaptor_signature | buffer_transaction
+    )?;
+
+    signed_channel
+        .counter_party_commitment_secrets
+        .provide_secret(
+            signed_channel.update_idx,
+            *renew_revoke.per_update_secret.as_ref(),
+        )
+        .map_err(|_| Error::InvalidParameters("Provided secret was invalid".to_string()))?;
+
+    signed_channel.update_idx -= 1;
+
+    signed_channel.state = SignedChannelState::Established {
+        signed_contract_id: *contract_id,
+        counter_buffer_adaptor_signature: *accept_buffer_adaptor_signature,
+        own_buffer_adaptor_signature: *offer_buffer_adaptor_signature,
+        buffer_transaction: buffer_transaction.clone(),
+        is_offer: true,
+        total_collateral: *total_collateral,
+    };
 
     Ok(())
 }
@@ -2335,6 +2412,8 @@ pub fn on_reject(signed_channel: &mut SignedChannel) -> Result<(), Error> {
 pub fn initiate_unilateral_close_established_channel<S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
+    buffer_adaptor_signature: EcdsaAdaptorSignature,
+    mut buffer_transaction: Transaction,
     signer: &S,
     sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
     is_initiator: bool,
@@ -2342,14 +2421,6 @@ pub fn initiate_unilateral_close_established_channel<S: Deref>(
 where
     S::Target: Signer,
 {
-    let (buffer_adaptor_signature, buffer_transaction) = get_signed_channel_state!(
-        signed_channel,
-        Established,
-        counter_buffer_adaptor_signature | buffer_transaction
-    )?;
-
-    let mut buffer_transaction = buffer_transaction.clone();
-
     let publish_base_secret =
         signer.get_secret_key_for_pubkey(&signed_channel.own_points.publish_basepoint)?;
 
