@@ -100,8 +100,6 @@ pub struct SubChannelAccept {
     /// The base point that will be used by the offer party in the 2 of 2 output
     /// of split transactions.
     pub own_basepoint: PublicKey,
-    /// The adaptor signature for the split transaction.
-    pub split_adaptor_signature: EcdsaAdaptorSignature,
     /// The signature for the new commit transaction of the Lightning channel.
     pub commit_signature: Signature,
     /// The htlc signatures for the new commit transaction of the Lightning channel.
@@ -140,7 +138,6 @@ impl_dlc_writeable!(
     (revocation_basepoint, writeable),
     (publish_basepoint, writeable),
     (own_basepoint, writeable),
-    (split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (commit_signature, writeable),
     (htlc_signatures, writeable),
     (first_per_split_point, writeable),
@@ -157,7 +154,7 @@ impl_dlc_writeable!(
     }
 );
 
-/// A message to confirm the establishment of a DLC channel within an existing Lightning channel.
+/// A message sent by the offer party to confirm the establishment of a DLC channel within an existing Lightning channel.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -167,10 +164,6 @@ impl_dlc_writeable!(
 pub struct SubChannelConfirm {
     /// The id of the Lightning channel the message relates to.
     pub channel_id: [u8; 32],
-    /// The pre-image of the revocation point used for the old commitment transaction.
-    pub per_commitment_secret: SecretKey,
-    /// The commitment point for the next Lightning commitment transaction.
-    pub next_per_commitment_point: PublicKey,
     /// The adaptor signature used for revocation of the split transaction.
     pub split_adaptor_signature: EcdsaAdaptorSignature,
     /// The signature for the new commitment transaction.
@@ -190,8 +183,6 @@ pub struct SubChannelConfirm {
 
 impl_dlc_writeable!(SubChannelConfirm, {
     (channel_id, writeable),
-    (per_commitment_secret, writeable),
-    (next_per_commitment_point, writeable),
     (split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (commit_signature, writeable),
     (htlc_signatures, writeable),
@@ -201,7 +192,8 @@ impl_dlc_writeable!(SubChannelConfirm, {
     (ln_glue_signature, writeable)
 });
 
-/// A message to finalize the establishment of a DLC channel within an existing Lightning channel.
+/// A message sent by the accept party to finalize the establishment of a DLC channel within an
+/// existing Lightning channel and revoking the previous commitment transaction.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -215,13 +207,37 @@ pub struct SubChannelFinalize {
     pub per_commitment_secret: SecretKey,
     /// The commitment point for the next Lightning commitment transaction.
     pub next_per_commitment_point: PublicKey,
+    /// The adaptor signature for the split transaction.
+    pub split_adaptor_signature: EcdsaAdaptorSignature,
 }
 
 impl_dlc_writeable!(SubChannelFinalize, {
     (channel_id, writeable),
     (per_commitment_secret, writeable),
-    (next_per_commitment_point, writeable)
+    (next_per_commitment_point, writeable),
+    (split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature})
+});
 
+/// A message sent by the offer party to revoke the previous commitment transaction.
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct SubChannelRevoke {
+    /// The id of the Lightning channel the message relates to.
+    pub channel_id: [u8; 32],
+    /// The pre-image of the revocation point used for the old commitment transaction.
+    pub per_commitment_secret: SecretKey,
+    /// The commitment point for the next Lightning commitment transaction.
+    pub next_per_commitment_point: PublicKey,
+}
+
+impl_dlc_writeable!(SubChannelRevoke, {
+    (channel_id, writeable),
+    (per_commitment_secret, writeable),
+    (next_per_commitment_point, writeable)
 });
 
 /// A message to offer the collaborative (off-chain) closing of a DLC channel embedded within a

@@ -42,8 +42,8 @@ use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signatu
 use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
 use channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
-    RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
-    SignChannel,
+    RenewFinalize, RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize,
+    SettleOffer, SignChannel,
 };
 use contract_msgs::ContractInfo;
 use dlc::{Error, TxInputInfo};
@@ -56,7 +56,7 @@ use segmentation::{SegmentChunk, SegmentStart};
 use sub_channel::{
     Reject as SubChannelReject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
     SubChannelCloseFinalize, SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize,
-    SubChannelOffer,
+    SubChannelOffer, SubChannelRevoke,
 };
 
 macro_rules! impl_type {
@@ -86,6 +86,7 @@ impl_type!(RENEW_CHANNEL_OFFER_TYPE, RenewOffer, 43014);
 impl_type!(RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept, 43016);
 impl_type!(RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm, 43018);
 impl_type!(RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize, 43020);
+impl_type!(RENEW_CHANNEL_REVOKE_TYPE, RenewRevoke, 43026);
 impl_type!(
     COLLABORATIVE_CLOSE_OFFER_TYPE,
     CollaborativeCloseOffer,
@@ -96,6 +97,7 @@ impl_type!(SUB_CHANNEL_OFFER, SubChannelOffer, 43034);
 impl_type!(SUB_CHANNEL_ACCEPT, SubChannelAccept, 43036);
 impl_type!(SUB_CHANNEL_CONFIRM, SubChannelConfirm, 43038);
 impl_type!(SUB_CHANNEL_FINALIZE, SubChannelFinalize, 43040);
+impl_type!(SUB_CHANNEL_REVOKE, SubChannelRevoke, 43052);
 impl_type!(SUB_CHANNEL_CLOSE_OFFER, SubChannelCloseOffer, 43042);
 impl_type!(SUB_CHANNEL_CLOSE_ACCEPT, SubChannelCloseAccept, 43044);
 impl_type!(SUB_CHANNEL_CLOSE_CONFIRM, SubChannelCloseConfirm, 43046);
@@ -545,6 +547,7 @@ pub enum ChannelMessage {
     RenewAccept(RenewAccept),
     RenewConfirm(RenewConfirm),
     RenewFinalize(RenewFinalize),
+    RenewRevoke(RenewRevoke),
     CollaborativeCloseOffer(CollaborativeCloseOffer),
     Reject(Reject),
 }
@@ -556,6 +559,7 @@ pub enum SubChannelMessage {
     Accept(SubChannelAccept),
     Confirm(SubChannelConfirm),
     Finalize(SubChannelFinalize),
+    Revoke(SubChannelRevoke),
     CloseOffer(SubChannelCloseOffer),
     CloseAccept(SubChannelCloseAccept),
     CloseConfirm(SubChannelCloseConfirm),
@@ -610,6 +614,7 @@ impl_type_writeable_for_enum!(ChannelMessage,
     RenewAccept,
     RenewConfirm,
     RenewFinalize,
+    RenewRevoke,
     CollaborativeCloseOffer,
     Reject
 });
@@ -620,6 +625,7 @@ impl_type_writeable_for_enum!(SubChannelMessage,
     Accept,
     Confirm,
     Finalize,
+    Revoke,
     CloseOffer,
     CloseAccept,
     CloseConfirm,

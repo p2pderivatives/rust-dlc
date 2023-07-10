@@ -6,8 +6,8 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 
 use super::{
     AcceptedSubChannel, CloseAcceptedSubChannel, CloseConfirmedSubChannel, CloseOfferedSubChannel,
-    ClosingSubChannel, LnRollBackInfo, OfferedSubChannel, SignedSubChannel, SubChannel,
-    SubChannelState,
+    ClosingSubChannel, ConfirmedSubChannel, LnRollBackInfo, OfferedSubChannel, SignedSubChannel,
+    SubChannel, SubChannelState,
 };
 
 impl_dlc_writeable!(SubChannel, {
@@ -31,17 +31,18 @@ impl_dlc_writeable_enum!(SubChannelState,
     (0, Offered),
     (1, Accepted),
     (2, Confirmed),
-    (3, Signed),
-    (4, Closing),
-    (5, CloseOffered),
-    (6, CloseAccepted),
-    (7, CloseConfirmed),
-    (8, ClosedPunished)
+    (3, Finalized),
+    (4, Signed),
+    (5, Closing),
+    (6, CloseOffered),
+    (7, CloseAccepted),
+    (8, CloseConfirmed),
+    (9, ClosedPunished)
     ;;;
-    (9, OnChainClosed),
-    (10, CounterOnChainClosed),
-    (11, OffChainClosed),
-    (12, Rejected)
+    (10, OnChainClosed),
+    (11, CounterOnChainClosed),
+    (12, OffChainClosed),
+    (13, Rejected)
 );
 
 impl_dlc_writeable!(OfferedSubChannel, { (per_split_point, writeable) });
@@ -53,10 +54,21 @@ impl_dlc_writeable!(LnRollBackInfo, { (channel_value_satoshis, writeable), (valu
 impl_dlc_writeable!(AcceptedSubChannel, {
     (offer_per_split_point, writeable),
     (accept_per_split_point, writeable),
-    (accept_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
     (ln_glue_transaction, writeable),
     (ln_rollback, writeable)
+});
+
+impl_dlc_writeable!(ConfirmedSubChannel, {
+    (own_per_split_point, writeable),
+    (counter_per_split_point, writeable),
+    (own_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
+    (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
+    (ln_glue_transaction, writeable),
+    (counter_glue_signature, writeable),
+    (ln_rollback, writeable),
+    (prev_commitment_secret, writeable),
+    (next_per_commitment_point, writeable)
 });
 
 impl_dlc_writeable!(SignedSubChannel, {

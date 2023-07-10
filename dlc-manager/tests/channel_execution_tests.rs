@@ -88,6 +88,7 @@ enum TestPath {
     RenewOfferTimeout,
     RenewAcceptTimeout,
     RenewConfirmTimeout,
+    RenewFinalizeTimeout,
     RenewReject,
     RenewRace,
     RenewEstablishedClose,
@@ -231,6 +232,15 @@ fn channel_renew_confirm_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::RenewConfirmTimeout,
+    );
+}
+
+#[test]
+#[ignore]
+fn channel_renew_finalize_timeout_test() {
+    channel_execution_test(
+        get_enum_test_params(1, 1, None),
+        TestPath::RenewFinalizeTimeout,
     );
 }
 
@@ -392,6 +402,11 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         }
         if let TestPath::RenewConfirmTimeout = path_copy {
             if let Message::Channel(ChannelMessage::RenewFinalize(_)) = msg {
+                return None;
+            }
+        }
+        if let TestPath::RenewFinalizeTimeout = path_copy {
+            if let Message::Channel(ChannelMessage::RenewRevoke(_)) = msg {
                 return None;
             }
         }
@@ -642,7 +657,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         }
                         TestPath::RenewOfferTimeout
                         | TestPath::RenewAcceptTimeout
-                        | TestPath::RenewConfirmTimeout => {
+                        | TestPath::RenewConfirmTimeout
+                        | TestPath::RenewFinalizeTimeout => {
                             renew_timeout(
                                 first,
                                 first_send,
@@ -653,6 +669,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 channel_id,
                                 &test_params.contract_input,
                                 path,
+                                &generate_blocks,
                             );
                         }
                         TestPath::RenewReject => {
@@ -1064,6 +1081,8 @@ fn renew_channel(
     second_receive.recv().expect("Error synchronizing");
     // Process Renew Finalize
     first_receive.recv().expect("Error synchronizing");
+    // Process Renew Revoke
+    second_receive.recv().expect("Error synchronizing");
 
     if let Some(prev_contract_id) = prev_contract_id {
         assert_contract_state!(first, prev_contract_id, Closed);
@@ -1223,7 +1242,7 @@ fn collaborative_close<F: Fn(u64)>(
     assert_contract_state!(first, contract_id, Closed);
 }
 
-fn renew_timeout(
+fn renew_timeout<F: Fn(u64)>(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
     first_receive: &Receiver<()>,
@@ -1233,6 +1252,7 @@ fn renew_timeout(
     channel_id: ChannelId,
     contract_input: &ContractInput,
     path: TestPath,
+    generate_blocks: &F,
 ) {
     {
         let (renew_offer, _) = first
@@ -1300,6 +1320,27 @@ fn renew_timeout(
                     .expect("not to error");
 
                 assert_channel_state!(first, channel_id, Signed, Closed);
+            } else if let TestPath::RenewFinalizeTimeout = path {
+                //Process confirm
+                second_receive.recv().expect("Error synchronizing");
+                // Process Finalize
+                first_receive.recv().expect("Error synchronizing");
+                mocks::mock_time::set_time(
+                    (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
+                );
+                second
+                    .lock()
+                    .unwrap()
+                    .periodic_check()
+                    .expect("not to error");
+                generate_blocks(289);
+                second
+                    .lock()
+                    .unwrap()
+                    .periodic_check()
+                    .expect("not to error");
+
+                assert_channel_state!(second, channel_id, Signed, Closed);
             }
         }
     }

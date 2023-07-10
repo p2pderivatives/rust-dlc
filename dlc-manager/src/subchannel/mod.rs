@@ -76,7 +76,10 @@ impl SubChannel {
         match &self.state {
             SubChannelState::Offered(_) => Some(temporary_channel_id),
             SubChannelState::Accepted(a) => Some(a.get_dlc_channel_id(temporary_channel_id, index)),
-            SubChannelState::Signed(s) | SubChannelState::Confirmed(s) => {
+            SubChannelState::Confirmed(s) => {
+                Some(s.get_dlc_channel_id(temporary_channel_id, index))
+            }
+            SubChannelState::Signed(s) | SubChannelState::Finalized(s) => {
                 Some(s.get_dlc_channel_id(temporary_channel_id, index))
             }
             SubChannelState::Closing(c) => Some(
@@ -106,6 +109,7 @@ impl SubChannel {
             SubChannelState::Offered(_) => Some(ReestablishFlag::Offered as u8),
             SubChannelState::Accepted(_) => Some(ReestablishFlag::Accepted as u8),
             SubChannelState::Confirmed(_) => Some(ReestablishFlag::Confirmed as u8),
+            SubChannelState::Finalized(_) => Some(ReestablishFlag::Finalized as u8),
             SubChannelState::Signed(_) => Some(ReestablishFlag::Signed as u8),
             SubChannelState::CloseOffered(_) => Some(ReestablishFlag::CloseOffered as u8),
             SubChannelState::CloseAccepted(_) => Some(ReestablishFlag::CloseAccepted as u8),
@@ -124,8 +128,12 @@ pub enum SubChannelState {
     /// The sub channel was accepted.
     Accepted(AcceptedSubChannel),
     /// The sub channel was confirmed.
-    Confirmed(SignedSubChannel),
-    /// The sub channel transactions have been signed.
+    Confirmed(ConfirmedSubChannel),
+    /// The sub channel transactions have been signed, awaiting revocation of the previous
+    /// commitment transaction.
+    Finalized(SignedSubChannel),
+    /// The sub channel transactions have been signed and the previous commitment transaction
+    /// revoked.
     Signed(SignedSubChannel),
     /// The sub channel is closing.
     Closing(ClosingSubChannel),
@@ -154,11 +162,12 @@ pub(crate) enum ReestablishFlag {
     Offered = 1,
     Accepted = 2,
     Confirmed = 3,
-    Signed = 4,
-    CloseOffered = 5,
-    CloseAccepted = 6,
-    CloseConfirmed = 7,
-    OffChainClosed = 8,
+    Finalized = 4,
+    Signed = 5,
+    CloseOffered = 6,
+    CloseAccepted = 7,
+    CloseConfirmed = 8,
+    OffChainClosed = 9,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,8 +184,6 @@ pub struct AcceptedSubChannel {
     pub offer_per_split_point: PublicKey,
     /// The current per split point of the accept party.
     pub accept_per_split_point: PublicKey,
-    /// The adaptor signature of the accepting party for the split transaction.
-    pub accept_split_adaptor_signature: EcdsaAdaptorSignature,
     /// Information about the split transaction for the sub channel.
     pub split_tx: SplitTx,
     /// Glue transaction that bridges the split transaction to the Lightning sub channel.
@@ -209,6 +216,40 @@ impl From<&ChannelDetails> for LnRollBackInfo {
 }
 
 impl AcceptedSubChannel {
+    fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
+        crate::utils::compute_id(
+            self.split_tx.transaction.txid(),
+            channel_idx as u16 + 1,
+            &temporary_channel_id,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Information about a sub channel offered by the local party whose transactions have been signed,
+/// but whose previous commitment transaction has not been revoked yet.
+pub struct ConfirmedSubChannel {
+    /// The current per split point of the local party.
+    pub own_per_split_point: PublicKey,
+    /// The current per split point of the remote party.
+    pub counter_per_split_point: PublicKey,
+    /// Adaptor signature of the local party for the split transaction.
+    pub own_split_adaptor_signature: EcdsaAdaptorSignature,
+    /// Information about the split transaction for the sub channel.
+    pub split_tx: SplitTx,
+    /// Glue transaction that bridges the split transaction to the Lightning sub channel.
+    pub ln_glue_transaction: Transaction,
+    /// Signature of the remote party for the glue transaction.
+    pub counter_glue_signature: Signature,
+    /// The secret to revoke the previous commitment transaction of the LN channel.
+    pub prev_commitment_secret: SecretKey,
+    /// The image of the next commitment point to be used to build a commitment transaction.
+    pub next_per_commitment_point: PublicKey,
+    /// Information used to facilitate the rollback of a channel split.
+    pub ln_rollback: LnRollBackInfo,
+}
+
+impl ConfirmedSubChannel {
     fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
         crate::utils::compute_id(
             self.split_tx.transaction.txid(),

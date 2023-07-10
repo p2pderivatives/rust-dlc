@@ -58,6 +58,6 @@ jobs:
       - name: Wait for electrs to be ready
         run: ./scripts/wait_for_electrs.sh
       - name: Run test
-        run: RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored --exact
+        run: RUST_MIN_STACK=104857600 RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored --exact
       - name: Stop bitcoin node
         run: ./scripts/stop_node.sh
