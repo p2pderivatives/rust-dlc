@@ -15,7 +15,7 @@ use crate::contract::{
 };
 use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract};
 use crate::error::Error;
-use crate::Signer;
+use crate::{AffectedContractIDs, Signer};
 use crate::{ChannelId, ContractId};
 use bitcoin::Address;
 use bitcoin::Transaction;
@@ -330,13 +330,15 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
-    pub fn periodic_check(&mut self) -> Result<(), Error> {
-        self.check_signed_contracts()?;
-        self.check_confirmed_contracts()?;
-        self.check_preclosed_contracts()?;
+    pub fn periodic_check(&mut self) -> Result<AffectedContractIDs, Error> {
+        let affected_contracts = AffectedContractIDs {
+            confirmed_contracts: self.check_signed_contracts()?,
+            pre_closed_contracts: self.check_confirmed_contracts()?,
+            closed_contracts: self.check_preclosed_contracts()?,
+        };
         self.channel_checks()?;
 
-        Ok(())
+        Ok(affected_contracts)
     }
 
     fn on_offer_message(
@@ -470,47 +472,59 @@ where
         Err(e)
     }
 
-    fn check_signed_contract(&mut self, contract: &SignedContract) -> Result<(), Error> {
+    fn check_signed_contract(
+        &mut self,
+        contract: &SignedContract,
+    ) -> Result<Option<ContractId>, Error> {
         let confirmations = self.blockchain.get_transaction_confirmations(
             &contract.accepted_contract.dlc_transactions.fund.txid(),
         )?;
         if confirmations >= NB_CONFIRMATIONS {
             self.store
                 .update_contract(&Contract::Confirmed(contract.clone()))?;
+            return Ok(Some(contract.accepted_contract.get_contract_id()));
         }
-        Ok(())
+        Ok(None)
     }
 
-    fn check_signed_contracts(&mut self) -> Result<(), Error> {
+    fn check_signed_contracts(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut contracts_to_confirm = Vec::new();
         for c in self.store.get_signed_contracts()? {
-            if let Err(e) = self.check_signed_contract(&c) {
-                error!(
+            match self.check_signed_contract(&c) {
+                Ok(Some(contract_id)) => contracts_to_confirm.push(contract_id),
+                Ok(None) => (),
+                Err(e) => error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
                     e
-                )
+                ),
             }
         }
 
-        Ok(())
+        Ok(contracts_to_confirm)
     }
 
-    fn check_confirmed_contracts(&mut self) -> Result<(), Error> {
+    fn check_confirmed_contracts(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut contracts_to_close = Vec::new();
         for c in self.store.get_confirmed_contracts()? {
             // Confirmed contracts from channel are processed in channel specific methods.
             if c.channel_id.is_some() {
                 continue;
             }
-            if let Err(e) = self.check_confirmed_contract(&c) {
-                error!(
-                    "Error checking confirmed contract {}: {}",
-                    c.accepted_contract.get_contract_id_string(),
-                    e
-                )
+            match self.check_confirmed_contract(&c) {
+                Err(e) => {
+                    error!(
+                        "Error checking confirmed contract {}: {}",
+                        c.accepted_contract.get_contract_id_string(),
+                        e
+                    )
+                }
+                Ok(Some(contract_id)) => contracts_to_close.push(contract_id),
+                Ok(None) => (),
             }
         }
 
-        Ok(())
+        Ok(contracts_to_close)
     }
 
     fn get_closable_contract_info<'a>(
@@ -549,7 +563,10 @@ where
         None
     }
 
-    fn check_confirmed_contract(&mut self, contract: &SignedContract) -> Result<(), Error> {
+    fn check_confirmed_contract(
+        &mut self,
+        contract: &SignedContract,
+    ) -> Result<Option<ContractId>, Error> {
         let closable_contract_info = self.get_closable_contract_info(contract);
         if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
             let cet = crate::contract_updater::get_signed_cet(
@@ -567,7 +584,7 @@ where
             ) {
                 Ok(closed_contract) => {
                     self.store.update_contract(&closed_contract)?;
-                    return Ok(());
+                    return Ok(Some(closed_contract.get_id()));
                 }
                 Err(e) => {
                     warn!(
@@ -582,24 +599,30 @@ where
 
         self.check_refund(contract)?;
 
-        Ok(())
+        Ok(None)
     }
 
-    fn check_preclosed_contracts(&mut self) -> Result<(), Error> {
+    fn check_preclosed_contracts(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut contracts_to_close = Vec::new();
         for c in self.store.get_preclosed_contracts()? {
-            if let Err(e) = self.check_preclosed_contract(&c) {
-                error!(
+            match self.check_preclosed_contract(&c) {
+                Ok(Some(contract_id)) => contracts_to_close.push(contract_id),
+                Ok(None) => (),
+                Err(e) => error!(
                     "Error checking pre-closed contract {}: {}",
                     c.signed_contract.accepted_contract.get_contract_id_string(),
                     e
-                )
+                ),
             }
         }
 
-        Ok(())
+        Ok(contracts_to_close)
     }
 
-    fn check_preclosed_contract(&mut self, contract: &PreClosedContract) -> Result<(), Error> {
+    fn check_preclosed_contract(
+        &mut self,
+        contract: &PreClosedContract,
+    ) -> Result<Option<ContractId>, Error> {
         let broadcasted_txid = contract.signed_cet.txid();
         let confirmations = self
             .blockchain
@@ -625,10 +648,11 @@ where
                     .compute_pnl(&contract.signed_cet),
             };
             self.store
-                .update_contract(&Contract::Closed(closed_contract))?;
+                .update_contract(&Contract::Closed(closed_contract.clone()))?;
+            return Ok(Some(closed_contract.contract_id));
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn close_contract(
@@ -2199,6 +2223,8 @@ mod test {
     use secp256k1_zkp::PublicKey;
     use std::{collections::HashMap, rc::Rc};
 
+    use crate::AffectedContractIDs;
+
     type TestManager = Manager<
         Rc<MockWallet>,
         Rc<MockBlockchain>,
@@ -2266,5 +2292,30 @@ mod test {
         manager
             .on_dlc_message(&offer_message, pubkey())
             .expect_err("To reject the second offer message");
+    }
+
+    #[test]
+    fn periodic_check_should_return_affected_contracts() {
+        let mut manager = get_manager();
+
+        let offer_message = Message::Offer(
+            serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap(),
+        );
+
+        manager
+            .on_dlc_message(&offer_message, pubkey())
+            .expect("To accept the first offer message");
+
+        let affected_contracts = manager.periodic_check().unwrap();
+
+        let expected_affected_contracts = AffectedContractIDs {
+            confirmed_contracts: vec![],
+            pre_closed_contracts: vec![],
+            closed_contracts: vec![],
+        };
+        assert_eq!(
+            expected_affected_contracts.confirmed_contracts,
+            affected_contracts.confirmed_contracts
+        );
     }
 }
