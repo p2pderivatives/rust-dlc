@@ -2261,10 +2261,7 @@ where
 
             self.process_watched_txs(watch_res)?;
 
-            self.chain_monitor
-                .lock()
-                .unwrap()
-                .increment_height(&block.block_hash());
+            self.chain_monitor.lock().unwrap().increment_height();
         }
 
         Ok(())

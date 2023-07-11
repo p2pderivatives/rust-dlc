@@ -3,10 +3,9 @@
 
 use std::collections::HashMap;
 
-use bitcoin::{Block, BlockHash, Transaction, Txid};
+use bitcoin::{Block, Transaction, Txid};
 use dlc_messages::ser_impls::{
-    read_ecdsa_adaptor_signature, read_hash_map, read_vec, write_ecdsa_adaptor_signature,
-    write_hash_map, write_vec,
+    read_ecdsa_adaptor_signature, read_hash_map, write_ecdsa_adaptor_signature, write_hash_map,
 };
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
@@ -14,18 +13,15 @@ use secp256k1_zkp::EcdsaAdaptorSignature;
 
 use crate::ChannelId;
 
-const NB_SAVED_BLOCK_HASHES: usize = 6;
-
 /// A `ChainMonitor` keeps a list of transaction ids to watch for in the blockchain,
 /// and some associated information used to apply an action when the id is seen.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ChainMonitor {
     pub(crate) watched_tx: HashMap<Txid, ChannelInfo>,
     pub(crate) last_height: u64,
-    pub(crate) last_block_hashes: Vec<BlockHash>,
 }
 
-impl_dlc_writeable!(ChainMonitor, { (watched_tx, { cb_writeable, write_hash_map, read_hash_map}), (last_height, writeable), (last_block_hashes, { cb_writeable, write_vec, read_vec}) });
+impl_dlc_writeable!(ChainMonitor, { (watched_tx, { cb_writeable, write_hash_map, read_hash_map}), (last_height, writeable) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ChannelInfo {
@@ -74,7 +70,6 @@ impl ChainMonitor {
         ChainMonitor {
             watched_tx: HashMap::new(),
             last_height: init_height,
-            last_block_hashes: Vec::with_capacity(NB_SAVED_BLOCK_HASHES),
         }
     }
 
@@ -138,11 +133,7 @@ impl ChainMonitor {
     /// To be safe this is a separate function from process block to make sure updates are
     /// saved before we update the state. It is better to re-process a block than not
     /// process it at all.
-    pub(crate) fn increment_height(&mut self, last_block_hash: &BlockHash) {
+    pub(crate) fn increment_height(&mut self) {
         self.last_height += 1;
-        self.last_block_hashes.push(*last_block_hash);
-        if self.last_block_hashes.len() > NB_SAVED_BLOCK_HASHES {
-            self.last_block_hashes.remove(0);
-        }
     }
 }

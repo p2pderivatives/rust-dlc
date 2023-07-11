@@ -3115,7 +3115,7 @@ where
 
             self.dlc_channel_manager.process_watched_txs(watch_res)?;
 
-            chain_monitor.increment_height(&block.block_hash());
+            chain_monitor.increment_height();
         }
 
         self.dlc_channel_manager
