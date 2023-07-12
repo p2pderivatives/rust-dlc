@@ -202,7 +202,7 @@ impl_dlc_writeable!(Utxo, {
 
 /// The response from periodic_check fn which returns the ids of the contracts that were affected in each state.
 #[derive(Clone, Debug)]
-pub struct AffectedContractIDs {
+pub struct UpdatedContractIDs {
     /// The list of contracts that were moved into the confirmed state.
     pub confirmed_contracts: Vec<ContractId>,
     /// The list of contracts that were moved into the pre-closed state.
