@@ -19,7 +19,7 @@ use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
 use dlc_manager::manager::Manager;
-use dlc_manager::{Blockchain, ContractId, Oracle, Storage, UpdatedContractIDs, Wallet};
+use dlc_manager::{Blockchain, Oracle, Storage, Wallet};
 use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
 use lightning::ln::wire::Type;
@@ -641,10 +641,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             assert_contract_state!(bob_manager_send, contract_id, Signed);
 
             // Should not change state and should not error
-            debug!(
-                "{:?}",
-                periodic_check!(bob_manager_send, contract_id, Signed)
-            );
+            periodic_check!(bob_manager_send, contract_id, Signed);
 
             sync_receive.recv().expect("Error synchronizing");
 
@@ -652,17 +649,13 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             generate_blocks(6);
 
-            debug!(
-                "{:?}",
-                periodic_check!(alice_manager_send, contract_id, Confirmed)
-            );
-            let updated_contract_ids: UpdatedContractIDs =
-                periodic_check!(bob_manager_send, contract_id, Confirmed);
-            debug!("updated contract ids: {:?}", updated_contract_ids);
-            assert_eq!(updated_contract_ids.confirmed_contracts, vec![contract_id]);
             assert_eq!(
-                updated_contract_ids.closed_contracts,
-                Vec::<ContractId>::new()
+                periodic_check!(alice_manager_send, contract_id, Confirmed),
+                vec![contract_id]
+            );
+            assert_eq!(
+                periodic_check!(bob_manager_send, contract_id, Confirmed),
+                vec![contract_id]
             );
 
             mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
@@ -676,29 +669,29 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             match path {
                 TestPath::Close => {
-                    debug!("{:?}", periodic_check!(first, contract_id, PreClosed));
+                    periodic_check!(first, contract_id, PreClosed);
 
                     // Randomly check with or without having the CET mined
                     let case = thread_rng().next_u64() % 3;
                     if case == 2 {
                         // cet becomes fully confirmed to blockchain
                         generate_blocks(6);
-                        debug!("{:?}", periodic_check!(first, contract_id, Closed));
-                        debug!("{:?}", periodic_check!(second, contract_id, Closed));
+                        periodic_check!(first, contract_id, Closed);
+                        periodic_check!(second, contract_id, Closed);
                     } else if case == 1 {
                         // cet is not yet fully confirmed to blockchain
                         generate_blocks(1);
-                        debug!("{:?}", periodic_check!(first, contract_id, PreClosed));
-                        debug!("{:?}", periodic_check!(second, contract_id, PreClosed));
+                        periodic_check!(first, contract_id, PreClosed);
+                        periodic_check!(second, contract_id, PreClosed);
                     } else {
-                        debug!("{:?}", periodic_check!(first, contract_id, PreClosed));
-                        debug!("{:?}", periodic_check!(second, contract_id, PreClosed));
+                        periodic_check!(first, contract_id, PreClosed);
+                        periodic_check!(second, contract_id, PreClosed);
                     }
                 }
                 TestPath::Refund => {
-                    debug!("{:?}", periodic_check!(first, contract_id, Confirmed));
+                    periodic_check!(first, contract_id, Confirmed);
 
-                    debug!("{:?}", periodic_check!(second, contract_id, Confirmed));
+                    periodic_check!(second, contract_id, Confirmed);
 
                     mocks::mock_time::set_time(
                         ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1,
@@ -706,14 +699,17 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
                     generate_blocks(10);
 
-                    debug!("{:?}", periodic_check!(first, contract_id, Refunded));
+                    periodic_check!(first, contract_id, Refunded);
 
                     // Randomly check with or without having the Refund mined.
                     if thread_rng().next_u32() % 2 == 0 {
                         generate_blocks(1);
                     }
 
-                    debug!("{:?}", periodic_check!(second, contract_id, Refunded));
+                    debug!(
+                        "{:?} asdfasdfasdf",
+                        periodic_check!(second, contract_id, Refunded)
+                    );
                 }
                 _ => unreachable!(),
             }

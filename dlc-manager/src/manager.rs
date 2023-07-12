@@ -15,8 +15,8 @@ use crate::contract::{
 };
 use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract};
 use crate::error::Error;
+use crate::Signer;
 use crate::{ChannelId, ContractId};
-use crate::{Signer, UpdatedContractIDs};
 use bitcoin::Address;
 use bitcoin::Transaction;
 use dlc_messages::channel::{
@@ -330,12 +330,12 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
-    pub fn periodic_check(&mut self) -> Result<UpdatedContractIDs, Error> {
-        let affected_contracts = UpdatedContractIDs {
-            confirmed_contracts: self.check_signed_contracts()?,
-            pre_closed_contracts: self.check_confirmed_contracts()?,
-            closed_contracts: self.check_preclosed_contracts()?,
-        };
+    pub fn periodic_check(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut affected_contracts = Vec::<ContractId>::new();
+        affected_contracts.extend_from_slice(&self.check_signed_contracts()?);
+        affected_contracts.extend_from_slice(&self.check_confirmed_contracts()?);
+        affected_contracts.extend_from_slice(&self.check_preclosed_contracts()?);
+
         self.channel_checks()?;
 
         Ok(affected_contracts)
