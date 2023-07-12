@@ -11,6 +11,7 @@ mod test_utils;
 use bitcoin::Amount;
 use dlc_manager::payout_curve::PayoutFunctionPiece;
 use electrs_blockchain_provider::ElectrsBlockchainProvider;
+use log::debug;
 use simple_wallet::SimpleWallet;
 use test_utils::*;
 
@@ -87,14 +88,16 @@ fn create_test_vector() {
 }
 
 macro_rules! periodic_check {
-    ($d:expr, $id:expr, $p:ident) => {
-        $d.lock()
+    ($d:expr, $id:expr, $p:ident) => {{
+        let updated_contract_ids = $d
+            .lock()
             .unwrap()
             .periodic_check()
             .expect("Periodic check error");
 
         assert_contract_state!($d, $id, $p);
-    };
+        updated_contract_ids
+    }};
 }
 
 fn numerical_common<F>(
@@ -646,8 +649,14 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             generate_blocks(6);
 
-            periodic_check!(alice_manager_send, contract_id, Confirmed);
-            periodic_check!(bob_manager_send, contract_id, Confirmed);
+            assert_eq!(
+                periodic_check!(alice_manager_send, contract_id, Confirmed),
+                vec![contract_id]
+            );
+            assert_eq!(
+                periodic_check!(bob_manager_send, contract_id, Confirmed),
+                vec![contract_id]
+            );
 
             mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
@@ -697,7 +706,10 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                         generate_blocks(1);
                     }
 
-                    periodic_check!(second, contract_id, Refunded);
+                    debug!(
+                        "{:?} asdfasdfasdf",
+                        periodic_check!(second, contract_id, Refunded)
+                    );
                 }
                 _ => unreachable!(),
             }

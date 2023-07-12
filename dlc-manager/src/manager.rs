@@ -330,13 +330,15 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
-    pub fn periodic_check(&mut self) -> Result<(), Error> {
-        self.check_signed_contracts()?;
-        self.check_confirmed_contracts()?;
-        self.check_preclosed_contracts()?;
+    pub fn periodic_check(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut affected_contracts = Vec::<ContractId>::new();
+        affected_contracts.extend_from_slice(&self.check_signed_contracts()?);
+        affected_contracts.extend_from_slice(&self.check_confirmed_contracts()?);
+        affected_contracts.extend_from_slice(&self.check_preclosed_contracts()?);
+
         self.channel_checks()?;
 
-        Ok(())
+        Ok(affected_contracts)
     }
 
     fn on_offer_message(
@@ -470,47 +472,56 @@ where
         Err(e)
     }
 
-    fn check_signed_contract(&mut self, contract: &SignedContract) -> Result<(), Error> {
+    fn check_signed_contract(&mut self, contract: &SignedContract) -> Result<bool, Error> {
         let confirmations = self.blockchain.get_transaction_confirmations(
             &contract.accepted_contract.dlc_transactions.fund.txid(),
         )?;
         if confirmations >= NB_CONFIRMATIONS {
             self.store
                 .update_contract(&Contract::Confirmed(contract.clone()))?;
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
-    fn check_signed_contracts(&mut self) -> Result<(), Error> {
+    fn check_signed_contracts(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut contracts_to_confirm = Vec::new();
         for c in self.store.get_signed_contracts()? {
-            if let Err(e) = self.check_signed_contract(&c) {
-                error!(
+            match self.check_signed_contract(&c) {
+                Ok(true) => contracts_to_confirm.push(c.accepted_contract.get_contract_id()),
+                Ok(false) => (),
+                Err(e) => error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
                     e
-                )
+                ),
             }
         }
 
-        Ok(())
+        Ok(contracts_to_confirm)
     }
 
-    fn check_confirmed_contracts(&mut self) -> Result<(), Error> {
+    fn check_confirmed_contracts(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut contracts_to_close = Vec::new();
         for c in self.store.get_confirmed_contracts()? {
             // Confirmed contracts from channel are processed in channel specific methods.
             if c.channel_id.is_some() {
                 continue;
             }
-            if let Err(e) = self.check_confirmed_contract(&c) {
-                error!(
-                    "Error checking confirmed contract {}: {}",
-                    c.accepted_contract.get_contract_id_string(),
-                    e
-                )
+            match self.check_confirmed_contract(&c) {
+                Err(e) => {
+                    error!(
+                        "Error checking confirmed contract {}: {}",
+                        c.accepted_contract.get_contract_id_string(),
+                        e
+                    )
+                }
+                Ok(true) => contracts_to_close.push(c.accepted_contract.get_contract_id()),
+                Ok(false) => (),
             }
         }
 
-        Ok(())
+        Ok(contracts_to_close)
     }
 
     fn get_closable_contract_info<'a>(
@@ -549,7 +560,7 @@ where
         None
     }
 
-    fn check_confirmed_contract(&mut self, contract: &SignedContract) -> Result<(), Error> {
+    fn check_confirmed_contract(&mut self, contract: &SignedContract) -> Result<bool, Error> {
         let closable_contract_info = self.get_closable_contract_info(contract);
         if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
             let cet = crate::contract_updater::get_signed_cet(
@@ -567,7 +578,7 @@ where
             ) {
                 Ok(closed_contract) => {
                     self.store.update_contract(&closed_contract)?;
-                    return Ok(());
+                    return Ok(true);
                 }
                 Err(e) => {
                     warn!(
@@ -582,24 +593,29 @@ where
 
         self.check_refund(contract)?;
 
-        Ok(())
+        Ok(false)
     }
 
-    fn check_preclosed_contracts(&mut self) -> Result<(), Error> {
+    fn check_preclosed_contracts(&mut self) -> Result<Vec<ContractId>, Error> {
+        let mut contracts_to_close = Vec::new();
         for c in self.store.get_preclosed_contracts()? {
-            if let Err(e) = self.check_preclosed_contract(&c) {
-                error!(
+            match self.check_preclosed_contract(&c) {
+                Ok(true) => {
+                    contracts_to_close.push(c.signed_contract.accepted_contract.get_contract_id())
+                }
+                Ok(false) => (),
+                Err(e) => error!(
                     "Error checking pre-closed contract {}: {}",
                     c.signed_contract.accepted_contract.get_contract_id_string(),
                     e
-                )
+                ),
             }
         }
 
-        Ok(())
+        Ok(contracts_to_close)
     }
 
-    fn check_preclosed_contract(&mut self, contract: &PreClosedContract) -> Result<(), Error> {
+    fn check_preclosed_contract(&mut self, contract: &PreClosedContract) -> Result<bool, Error> {
         let broadcasted_txid = contract.signed_cet.txid();
         let confirmations = self
             .blockchain
@@ -625,10 +641,11 @@ where
                     .compute_pnl(&contract.signed_cet),
             };
             self.store
-                .update_contract(&Contract::Closed(closed_contract))?;
+                .update_contract(&Contract::Closed(closed_contract.clone()))?;
+            return Ok(true);
         }
 
-        Ok(())
+        Ok(false)
     }
 
     fn close_contract(
