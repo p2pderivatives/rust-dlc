@@ -257,11 +257,18 @@ impl Storage for SledStorageProvider {
     }
 
     fn get_contracts(&self) -> Result<Vec<Contract>, Error> {
-        self.contract_tree()?
+        Ok(self
+            .contract_tree()?
             .iter()
             .values()
-            .map(|x| deserialize_contract(&x.unwrap()))
-            .collect::<Result<Vec<Contract>, Error>>()
+            .filter_map(|x| match deserialize_contract(&x.unwrap()) {
+                Ok(contract) => Some(contract),
+                Err(e) => {
+                    log::error!("Failed to deserialize contract: {e}");
+                    None
+                }
+            })
+            .collect::<Vec<Contract>>())
     }
 
     fn create_contract(&self, contract: &OfferedContract) -> Result<(), Error> {
@@ -458,11 +465,18 @@ impl Storage for SledStorageProvider {
     }
 
     fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
-        self.sub_channel_tree()?
+        Ok(self
+            .sub_channel_tree()?
             .iter()
             .values()
-            .map(|x| deserialize_sub_channel(&x.unwrap()))
-            .collect::<Result<Vec<SubChannel>, Error>>()
+            .filter_map(|x| match deserialize_sub_channel(&x.unwrap()) {
+                Ok(sub_channel) => Some(sub_channel),
+                Err(e) => {
+                    log::error!("Failed to deserialize subchannel: {e}");
+                    None
+                }
+            })
+            .collect::<Vec<SubChannel>>())
     }
 
     fn get_offered_sub_channels(&self) -> Result<Vec<SubChannel>, Error> {
