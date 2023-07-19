@@ -26,8 +26,10 @@ use secp256k1_zkp::{schnorr::Signature, XOnlyPublicKey};
 
 /// Enables interacting with a DLC oracle.
 pub struct P2PDOracleClient {
-    host: String,
-    public_key: XOnlyPublicKey,
+    /// Oracle server host.
+    pub host: String,
+    /// Oracle public key.
+    pub public_key: XOnlyPublicKey,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
