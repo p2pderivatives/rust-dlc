@@ -3,7 +3,7 @@
 
 use std::{marker::PhantomData, ops::Deref, sync::Mutex};
 
-use bitcoin::{OutPoint, PackedLockTime, Script, Sequence};
+use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction};
 use dlc::{
     channel::{get_tx_adaptor_signature, sub_channel::LN_GLUE_TX_WEIGHT},
     PartyParams,
@@ -38,12 +38,12 @@ use crate::{
     chain_monitor::{ChannelInfo, RevokedTxType, TxType},
     channel::{
         generate_temporary_contract_id, offered_channel::OfferedChannel,
-        party_points::PartyBasePoints, Channel,
+        party_points::PartyBasePoints, Channel, ClosedChannel,
     },
     channel_updater::{
         self, FundingInfo, SubChannelSignInfo, SubChannelSignVerifyInfo, SubChannelVerifyInfo,
     },
-    contract::{contract_input::ContractInput, Contract, FundingInputInfo},
+    contract::{contract_input::ContractInput, ClosedContract, Contract, FundingInputInfo},
     error::Error,
     manager::{get_channel_in_state, get_contract_in_state, Manager, CET_NSEQUENCE},
     subchannel::{
@@ -585,6 +585,10 @@ where
                     glue_tx_output_value,
                 );
 
+                let commitment_transactions = self
+                    .ln_channel_manager
+                    .get_latest_holder_commitment_txn(channel_lock)?;
+
                 let commitment_signed = self
                     .ln_channel_manager
                     .get_updated_funding_outpoint_commitment_signed(
@@ -669,6 +673,7 @@ where
                     split_tx,
                     ln_glue_transaction: ln_glue_tx,
                     ln_rollback: (&channel_details).into(),
+                    commitment_transactions,
                 };
 
                 offered_sub_channel.state = SubChannelState::Accepted(accepted_sub_channel);
@@ -692,80 +697,231 @@ where
 
     /// Start force closing the sub channel with given [`ChannelId`].
     pub fn force_close_sub_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
-        let (mut signed, state) = get_sub_channel_in_state!(
-            self.dlc_channel_manager,
-            *channel_id,
-            Signed,
-            None::<PublicKey>
-        )?;
-        let counter_party = signed.counter_party;
-        self.ln_channel_manager.with_channel_lock_no_check(
-            channel_id,
-            &counter_party,
-            |channel_lock| {
-                let publish_base_secret = self
-                    .dlc_channel_manager
-                    .get_wallet()
-                    .get_secret_key_for_pubkey(&signed.own_base_points.publish_basepoint)?;
+        let mut sub_channel = self
+            .dlc_channel_manager
+            .get_store()
+            .get_sub_channel(*channel_id)?
+            .ok_or(Error::InvalidParameters(format!(
+                "Unknown sub channel {:?}",
+                channel_id
+            )))?;
 
-                let publish_sk = derive_private_key(
-                    self.dlc_channel_manager.get_secp(),
-                    &state.own_per_split_point,
-                    &publish_base_secret,
-                );
+        match sub_channel.state {
+            // Force close by simply asking LDK to force close as the channel funding outpoint has
+            // not yet been updated (also updated sub-channel/channel/contract state).
+            SubChannelState::Offered(_) => self.force_close_with_ldk(sub_channel)?,
+            // Force close by using the saved LN commitment transactions from before the spliting of the
+            // channel.
+            SubChannelState::Accepted(ref a) => {
+                let commitment_transactions = a.commitment_transactions.clone();
 
-                let counter_split_signature = state
-                    .counter_split_adaptor_signature
-                    .decrypt(&publish_sk)
-                    .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
-
-                let mut split_tx = state.split_tx.transaction.clone();
-
-                let mut own_sig = None;
-
-                self.ln_channel_manager
-                    .sign_with_fund_key_cb(channel_lock, &mut |fund_sk| {
-                        own_sig = Some(
-                            dlc::util::get_raw_sig_for_tx_input(
-                                self.dlc_channel_manager.get_secp(),
-                                &split_tx,
-                                0,
-                                &signed.original_funding_redeemscript,
-                                signed.fund_value_satoshis,
-                                fund_sk,
-                            )
-                            .unwrap(),
+                self.force_close_with_saved_commitment(sub_channel, &commitment_transactions)?;
+            }
+            // Force close by using the saved LN commitment transactions from before the spliting of the
+            // channel.
+            SubChannelState::Confirmed(ref c) => {
+                let commitment_transactions = c.commitment_transactions.clone();
+                self.force_close_with_saved_commitment(sub_channel, &commitment_transactions)?;
+            }
+            // Force close by broadcasting the split transaction and marking the sub-channel as
+            // closing, which will trigger the periodic check to watch when the split transaction
+            // has enough confirmation to close both the LN channel and DLC channel (through LDK
+            // and the `Manager` respectively).
+            SubChannelState::Signed(_) | SubChannelState::Finalized(_) => {
+                self.force_close_signed_channel(sub_channel, None)?;
+            }
+            // Same as above, we simply forget that we made an offchain close offer. As we are
+            // force closing it is anyway not relevant.
+            SubChannelState::CloseOffered(c) => {
+                sub_channel.state = SubChannelState::Signed(c.signed_subchannel);
+                self.force_close_signed_channel(sub_channel, None)?;
+            }
+            // The closing mechanism is the same as for the `Signed` state, but we need to rollback
+            // the Lightning channel funding outpoint to use the glue transaction so that LDK
+            // reacts properly during the closing process.
+            SubChannelState::CloseAccepted(c) => {
+                self.ln_channel_manager.with_channel_lock_no_check(
+                    channel_id,
+                    &sub_channel.counter_party,
+                    |channel_lock| {
+                        self.ln_channel_manager.set_funding_outpoint(
+                            channel_lock,
+                            &lightning::chain::transaction::OutPoint {
+                                txid: c.signed_subchannel.ln_glue_transaction.txid(),
+                                index: 0,
+                            },
+                            c.ln_rollback.channel_value_satoshis,
+                            c.ln_rollback.value_to_self_msat,
                         );
-                        dlc::util::sign_multi_sig_input(
-                            self.dlc_channel_manager.get_secp(),
-                            &mut split_tx,
-                            &counter_split_signature,
-                            &signed.counter_fund_pk,
-                            fund_sk,
-                            &signed.original_funding_redeemscript,
-                            signed.fund_value_satoshis,
-                            0,
-                        )
-                        .unwrap();
-                    });
-                self.dlc_channel_manager
-                    .get_blockchain()
-                    .send_transaction(&split_tx)?;
+                        Ok(())
+                    },
+                )?;
+                sub_channel.state = SubChannelState::Signed(c.signed_subchannel);
+                self.force_close_signed_channel(sub_channel, Some(c.commitment_transactions))?;
+            }
+            // Once we are in `CloseConfirmed`, we can simply use LDK to close the Lightning
+            // channel.
+            SubChannelState::CloseConfirmed(_) => {
+                self.force_close_with_ldk(sub_channel)?;
+            }
+            // In these states, either the channel is already closed, or it should be force closed
+            // through LDK directly.
+            SubChannelState::OnChainClosed
+            | SubChannelState::CounterOnChainClosed
+            | SubChannelState::OffChainClosed
+            | SubChannelState::ClosedPunished(_)
+            | SubChannelState::Rejected
+            | SubChannelState::Closing(_) => {
+                return Err(Error::InvalidParameters(format!(
+                    "Tried to force close channel with {:?} state",
+                    sub_channel.state,
+                )));
+            }
+        };
 
-                let closing_sub_channel = ClosingSubChannel {
-                    signed_sub_channel: state,
-                    is_initiator: true,
-                };
+        Ok(())
+    }
 
-                signed.state = SubChannelState::Closing(closing_sub_channel);
+    fn force_close_with_ldk(&self, mut sub_channel: SubChannel) -> Result<(), Error> {
+        let dlc_channel_id = sub_channel
+            .get_dlc_channel_id(0)
+            .expect("to have a channel id in offered state");
+        let (closed_channel, closed_contract) =
+            self.get_closed_dlc_channel_and_contract(dlc_channel_id, false)?;
+        self.ln_channel_manager
+            .force_close_channel(&sub_channel.channel_id, &sub_channel.counter_party)?;
+        sub_channel.state = SubChannelState::OnChainClosed;
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&sub_channel)?;
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_channel(closed_channel, Some(closed_contract))?;
+        //TODO(tibo): this is actually unsafe, we shouldn't clean up the chain monitor before
+        //having the commitment transaction confirmed on chain.
+        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+        chain_monitor.cleanup_channel(sub_channel.channel_id);
+        chain_monitor.cleanup_channel(dlc_channel_id);
+        self.dlc_channel_manager
+            .get_store()
+            .persist_chain_monitor(&chain_monitor)
+    }
 
-                self.dlc_channel_manager
-                    .get_store()
-                    .upsert_sub_channel(&signed)?;
+    fn force_close_with_saved_commitment(
+        &self,
+        mut sub_channel: SubChannel,
+        commitment_transactions: &Vec<Transaction>,
+    ) -> Result<(), Error> {
+        // The Lightning commitment transaction is always first in the vector so this is safe.
+        for tx in commitment_transactions {
+            self.dlc_channel_manager
+                .get_blockchain()
+                .send_transaction(tx)?;
+        }
 
-                Ok(())
-            },
-        )?;
+        let dlc_channel_id = sub_channel
+            .get_dlc_channel_id(0)
+            .expect("to have a channel id in offered state");
+        let (closed_channel, closed_contract) =
+            self.get_closed_dlc_channel_and_contract(dlc_channel_id, false)?;
+        sub_channel.state = SubChannelState::OnChainClosed;
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_channel(closed_channel, Some(closed_contract))?;
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&sub_channel)?;
+        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+        chain_monitor.cleanup_channel(sub_channel.channel_id);
+        chain_monitor.cleanup_channel(dlc_channel_id);
+        self.dlc_channel_manager
+            .get_store()
+            .persist_chain_monitor(&chain_monitor)
+    }
+
+    fn force_close_signed_channel(
+        &self,
+        mut sub_channel: SubChannel,
+        commitment_transactions: Option<Vec<Transaction>>,
+    ) -> Result<(), Error> {
+        if let SubChannelState::Signed(state) | SubChannelState::Finalized(state) =
+            sub_channel.state.clone()
+        {
+            let channel_id = sub_channel.channel_id;
+            let counter_party = sub_channel.counter_party;
+            self.ln_channel_manager.with_channel_lock_no_check(
+                &channel_id,
+                &counter_party,
+                |channel_lock| {
+                    let publish_base_secret = self
+                        .dlc_channel_manager
+                        .get_wallet()
+                        .get_secret_key_for_pubkey(
+                            &sub_channel.own_base_points.publish_basepoint,
+                        )?;
+
+                    let publish_sk = derive_private_key(
+                        self.dlc_channel_manager.get_secp(),
+                        &state.own_per_split_point,
+                        &publish_base_secret,
+                    );
+
+                    let counter_split_signature = state
+                        .counter_split_adaptor_signature
+                        .decrypt(&publish_sk)
+                        .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
+
+                    let mut split_tx = state.split_tx.transaction.clone();
+
+                    let mut own_sig = None;
+
+                    self.ln_channel_manager
+                        .sign_with_fund_key_cb(channel_lock, &mut |fund_sk| {
+                            own_sig = Some(
+                                dlc::util::get_raw_sig_for_tx_input(
+                                    self.dlc_channel_manager.get_secp(),
+                                    &split_tx,
+                                    0,
+                                    &sub_channel.original_funding_redeemscript,
+                                    sub_channel.fund_value_satoshis,
+                                    fund_sk,
+                                )
+                                .unwrap(),
+                            );
+                            dlc::util::sign_multi_sig_input(
+                                self.dlc_channel_manager.get_secp(),
+                                &mut split_tx,
+                                &counter_split_signature,
+                                &sub_channel.counter_fund_pk,
+                                fund_sk,
+                                &sub_channel.original_funding_redeemscript,
+                                sub_channel.fund_value_satoshis,
+                                0,
+                            )
+                            .unwrap();
+                        });
+                    self.dlc_channel_manager
+                        .get_blockchain()
+                        .send_transaction(&split_tx)?;
+
+                    let closing_sub_channel = ClosingSubChannel {
+                        signed_sub_channel: state,
+                        is_initiator: true,
+                        commitment_transactions,
+                    };
+
+                    sub_channel.state = SubChannelState::Closing(closing_sub_channel);
+
+                    self.dlc_channel_manager
+                        .get_store()
+                        .upsert_sub_channel(&sub_channel)?;
+
+                    Ok(())
+                },
+            )?;
+        } else {
+            unreachable!("Should not call this method if not in Signed or Finalized state");
+        }
 
         Ok(())
     }
@@ -873,8 +1029,22 @@ where
             error!("Error force closing DLC subchannel {}", e);
         }
 
-        self.ln_channel_manager
-            .force_close_channel(channel_id, &counter_party)?;
+        if let Some(commitment_transactions) = &state.commitment_transactions {
+            for tx in commitment_transactions {
+                if let Err(e) = self
+                    .dlc_channel_manager
+                    .get_blockchain()
+                    .send_transaction(tx)
+                {
+                    error!("Could not broadcast transaction {}: {}", tx.txid(), e);
+                }
+            }
+        } else if let Err(e) = self
+            .ln_channel_manager
+            .force_close_channel(channel_id, &counter_party)
+        {
+            error!("Error force closing LN side of channel: {}", e);
+        };
 
         closing.state = if state.is_initiator {
             SubChannelState::OnChainClosed
@@ -891,6 +1061,83 @@ where
         self.dlc_channel_manager
             .get_store()
             .upsert_sub_channel(&closing)?;
+
+        Ok(())
+    }
+
+    /// Notify that LDK has decided to close the channel with given id. This MUST be called within
+    /// the event handler provided to LDK in reaction to the `ChannelClosed` event.
+    pub fn notify_ln_channel_closed(&self, channel_id: ChannelId) -> Result<(), Error> {
+        let mut sub_channel = self
+            .dlc_channel_manager
+            .get_store()
+            .get_sub_channel(channel_id)?
+            .ok_or(Error::InvalidParameters(format!(
+                "No channel with id {:?} found",
+                channel_id
+            )))?;
+
+        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+
+        let (updated_channel, updated_contract) = match sub_channel.state {
+            SubChannelState::Offered(_)
+            | SubChannelState::Accepted(_)
+            | SubChannelState::Confirmed(_)
+            | SubChannelState::CloseAccepted(_)
+            | SubChannelState::CloseConfirmed(_)
+            | SubChannelState::Finalized(_) => {
+                let dlc_channel_id = sub_channel
+                    .get_dlc_channel_id(0)
+                    .expect("to have a channel id");
+                let (closed_channel, closed_contract) =
+                    self.get_closed_dlc_channel_and_contract(dlc_channel_id, true)?;
+                sub_channel.state = SubChannelState::CounterOnChainClosed;
+                chain_monitor.cleanup_channel(sub_channel.channel_id);
+                chain_monitor.cleanup_channel(dlc_channel_id);
+                (Some(closed_channel), Some(closed_contract))
+            }
+            SubChannelState::OffChainClosed => {
+                chain_monitor.cleanup_channel(sub_channel.channel_id);
+                sub_channel.state = SubChannelState::CounterOnChainClosed;
+                (None, None)
+            }
+            SubChannelState::Signed(_)
+            | SubChannelState::Closing(_)
+            | SubChannelState::CloseOffered(_) => {
+                error!("Got close notification from LDK in a state that we don't handle yet");
+                return Ok(());
+            }
+            SubChannelState::OnChainClosed | SubChannelState::CounterOnChainClosed => {
+                info!(
+                    "Channel close notification received for channel: {:?}",
+                    sub_channel.channel_id
+                );
+                return Ok(());
+            }
+            SubChannelState::ClosedPunished(_) => {
+                warn!("Got close notification while in ClosedPunished.");
+                return Ok(());
+            }
+            SubChannelState::Rejected => {
+                info!("Counterparty closed channel in rejected state, marking as counter closed");
+                sub_channel.state = SubChannelState::CounterOnChainClosed;
+                (None, None)
+            }
+        };
+
+        if let Some(channel) = updated_channel {
+            self.dlc_channel_manager
+                .get_store()
+                .upsert_channel(channel, updated_contract)?;
+        }
+
+        self.dlc_channel_manager
+            .get_store()
+            .upsert_sub_channel(&sub_channel)?;
+
+        self.dlc_channel_manager
+            .get_store()
+            .persist_chain_monitor(&chain_monitor)?;
 
         Ok(())
     }
@@ -998,10 +1245,9 @@ where
             .get_channel_details(channel_id)
             .ok_or_else(|| Error::InvalidParameters(format!("Unknown channel {channel_id:?}")))?;
 
-        let commitment_signed = self.ln_channel_manager.with_useable_channel_lock(
-            channel_id,
-            &sub_channel.counter_party,
-            |channel_lock| {
+        let (commitment_signed, commitment_transactions) = self
+            .ln_channel_manager
+            .with_useable_channel_lock(channel_id, &sub_channel.counter_party, |channel_lock| {
                 let dlc_channel_id =
                     sub_channel
                         .get_dlc_channel_id(0)
@@ -1015,6 +1261,9 @@ where
                     Signed,
                     None::<PublicKey>
                 )?;
+                let commitment_transactions = self
+                    .ln_channel_manager
+                    .get_latest_holder_commitment_txn(channel_lock)?;
 
                 let total_collateral =
                     dlc_channel.own_params.collateral + dlc_channel.counter_params.collateral;
@@ -1039,9 +1288,8 @@ where
                         ln_own_balance_msats,
                     )?;
 
-                Ok(commitment_signed)
-            },
-        )?;
+                Ok((commitment_signed, commitment_transactions))
+            })?;
 
         let close_accept = SubChannelCloseAccept {
             channel_id: *channel_id,
@@ -1054,6 +1302,7 @@ where
             own_balance: state.accept_balance,
             counter_balance: state.offer_balance,
             ln_rollback: (&channel_details).into(),
+            commitment_transactions,
         };
 
         sub_channel.state = SubChannelState::CloseAccepted(close_accepted_subchannel);
@@ -1397,9 +1646,15 @@ where
             glue_tx_output_value,
         );
 
-        let (split_tx_adaptor_signature, commitment_signed, revoke_and_ack) = self
-            .ln_channel_manager
-            .with_useable_channel_lock(channel_id, counter_party, |channel_lock| {
+        let (
+            split_tx_adaptor_signature,
+            commitment_signed,
+            revoke_and_ack,
+            commitment_transactions,
+        ) = self.ln_channel_manager.with_useable_channel_lock(
+            channel_id,
+            counter_party,
+            |channel_lock| {
                 let mut split_tx_adaptor_signature = None;
                 self.ln_channel_manager
                     .sign_with_fund_key_cb(channel_lock, &mut |sk| {
@@ -1417,6 +1672,10 @@ where
                     });
 
                 let split_tx_adaptor_signature = split_tx_adaptor_signature.unwrap();
+
+                let commitment_transactions = self
+                    .ln_channel_manager
+                    .get_latest_holder_commitment_txn(channel_lock)?;
 
                 let commitment_signed = self
                     .ln_channel_manager
@@ -1439,8 +1698,10 @@ where
                     split_tx_adaptor_signature,
                     commitment_signed,
                     revoke_and_ack,
+                    commitment_transactions,
                 ))
-            })?;
+            },
+        )?;
 
         let accept_channel = AcceptChannel {
             temporary_channel_id: offered_channel.temporary_channel_id,
@@ -1539,6 +1800,7 @@ where
             prev_commitment_secret: SecretKey::from_slice(&revoke_and_ack.per_commitment_secret)
                 .expect("a valid secret key"),
             next_per_commitment_point: revoke_and_ack.next_per_commitment_point,
+            commitment_transactions,
         };
 
         offered_sub_channel.counter_base_points = Some(accept_points);
@@ -2047,24 +2309,9 @@ where
                     next_per_commitment_point: raa.next_per_commitment_point,
                 };
 
-                self.dlc_channel_manager
-                    .get_chain_monitor()
-                    .lock()
-                    .unwrap()
-                    .add_tx(
-                        state.signed_subchannel.split_tx.transaction.txid(),
-                        ChannelInfo {
-                            channel_id: sub_channel.channel_id,
-                            tx_type: TxType::Revoked {
-                                update_idx: sub_channel.update_idx,
-                                own_adaptor_signature: state
-                                    .signed_subchannel
-                                    .own_split_adaptor_signature,
-                                is_offer: sub_channel.is_offer,
-                                revoked_tx_type: RevokedTxType::Split,
-                            },
-                        },
-                    );
+                let commitment_transactions = self
+                    .ln_channel_manager
+                    .get_latest_holder_commitment_txn(channel_lock)?;
 
                 let updated_channel = CloseConfirmedSubChannel {
                     signed_subchannel: state.signed_subchannel,
@@ -2072,6 +2319,7 @@ where
                     counter_balance: state.accept_balance,
                     ln_rollback: (&channel_details).into(),
                     check_ln_secret: true,
+                    commitment_transactions,
                 };
 
                 sub_channel.state = SubChannelState::CloseConfirmed(updated_channel);
@@ -2195,13 +2443,21 @@ where
 
                 sub_channel.state = SubChannelState::OffChainClosed;
 
+                let mut chain_monitor =
+                    self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+                chain_monitor.cleanup_channel(dlc_channel_id);
+
                 self.dlc_channel_manager
                     .get_store()
-                    .upsert_channel(Channel::Signed(dlc_channel), contract)?;
+                    .upsert_channel(dlc_channel, contract)?;
 
                 self.dlc_channel_manager
                     .get_store()
                     .upsert_sub_channel(&sub_channel)?;
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .persist_chain_monitor(&chain_monitor)?;
                 Ok(finalize)
             },
         )?;
@@ -2246,6 +2502,25 @@ where
                     .dlc_channel_manager
                     .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
 
+                self.dlc_channel_manager
+                    .get_chain_monitor()
+                    .lock()
+                    .unwrap()
+                    .add_tx(
+                        state.signed_subchannel.split_tx.transaction.txid(),
+                        ChannelInfo {
+                            channel_id: sub_channel.channel_id,
+                            tx_type: TxType::Revoked {
+                                update_idx: sub_channel.update_idx,
+                                own_adaptor_signature: state
+                                    .signed_subchannel
+                                    .own_split_adaptor_signature,
+                                is_offer: sub_channel.is_offer,
+                                revoked_tx_type: RevokedTxType::Split,
+                            },
+                        },
+                    );
+
                 if state.check_ln_secret {
                     match (
                         finalize.commit_revocation_secret.as_ref(),
@@ -2270,13 +2545,21 @@ where
 
                 sub_channel.state = SubChannelState::OffChainClosed;
 
+                let mut chain_monitor =
+                    self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
+                chain_monitor.cleanup_channel(dlc_channel_id);
+
                 self.dlc_channel_manager
                     .get_store()
-                    .upsert_channel(Channel::Signed(dlc_channel), contract)?;
+                    .upsert_channel(dlc_channel, contract)?;
 
                 self.dlc_channel_manager
                     .get_store()
                     .upsert_sub_channel(&sub_channel)?;
+
+                self.dlc_channel_manager
+                    .get_store()
+                    .persist_chain_monitor(&chain_monitor)?;
                 Ok(())
             },
         )?;
@@ -2498,21 +2781,72 @@ where
                     // case of reorg, though if the counter party has sent the
                     // tx to close the channel it is unlikely that the tx will
                     // not be part of a future block.
-                    let state = match &sub_channel.state {
-                        SubChannelState::Signed(s) => s,
+                    let (state, commitment_transactions) = match &sub_channel.state {
+                        SubChannelState::Signed(s) => (s, None),
                         SubChannelState::Closing(_) => {
                             log::info!("Spotted closing split transaction on chain");
                             continue;
                         }
+                        SubChannelState::CloseOffered(s) => (&s.signed_subchannel, None),
+                        SubChannelState::CloseAccepted(s) => {
+                            if let Err(e) = self.ln_channel_manager.with_channel_lock_no_check(
+                                &sub_channel.channel_id,
+                                &sub_channel.counter_party,
+                                |channel_lock| {
+                                    self.ln_channel_manager.set_funding_outpoint(
+                                        channel_lock,
+                                        &lightning::chain::transaction::OutPoint {
+                                            txid: s.signed_subchannel.split_tx.transaction.txid(),
+                                            index: 0,
+                                        },
+                                        s.ln_rollback.channel_value_satoshis,
+                                        s.ln_rollback.value_to_self_msat,
+                                    );
+                                    Ok(())
+                                },
+                            ) {
+                                log::error!("Could not reset funding outpoint: {:?}", e);
+                            }
+                            (
+                                &s.signed_subchannel,
+                                Some(s.commitment_transactions.clone()),
+                            )
+                        }
+                        SubChannelState::CloseConfirmed(s) => {
+                            if let Err(e) = self.ln_channel_manager.with_channel_lock_no_check(
+                                &sub_channel.channel_id,
+                                &sub_channel.counter_party,
+                                |channel_lock| {
+                                    self.ln_channel_manager.set_funding_outpoint(
+                                        channel_lock,
+                                        &lightning::chain::transaction::OutPoint {
+                                            txid: s.signed_subchannel.split_tx.transaction.txid(),
+                                            index: 0,
+                                        },
+                                        s.ln_rollback.channel_value_satoshis,
+                                        s.ln_rollback.value_to_self_msat,
+                                    );
+                                    Ok(())
+                                },
+                            ) {
+                                log::error!("Could not reset funding outpoint: {:?}", e);
+                            }
+                            (
+                                &s.signed_subchannel,
+                                Some(s.commitment_transactions.clone()),
+                            )
+                        }
                         _ => {
-                            log::error!("Unexpected channel state");
+                            log::error!("Unexpected channel state {:?}", sub_channel.state);
                             continue;
                         }
                     };
 
+                    log::info!("Spotted split transaction, marking sub channel as closing");
                     let closing_sub_channel = ClosingSubChannel {
                         signed_sub_channel: state.clone(),
                         is_initiator: false,
+                        commitment_transactions,
                     };
                     chain_monitor.remove_tx(&tx.txid());
                     sub_channel.state = SubChannelState::Closing(closing_sub_channel);
@@ -3144,6 +3478,54 @@ where
         }
 
         Ok(())
+    }
+
+    fn get_closed_dlc_channel_and_contract(
+        &self,
+        channel_id: [u8; 32],
+        counter_closed: bool,
+    ) -> Result<(Channel, Contract), Error> {
+        let channel = self
+            .dlc_channel_manager
+            .get_store()
+            .get_channel(&channel_id)?
+            .ok_or(Error::InvalidParameters(format!(
+                "No such channel {:?}",
+                channel_id
+            )))?;
+        let closed_channel_data = ClosedChannel {
+            counter_party: channel.get_counter_party_id(),
+            temporary_channel_id: channel.get_temporary_id(),
+            channel_id: channel.get_id(),
+        };
+        let closed_channel = if counter_closed {
+            Channel::CounterClosed(closed_channel_data)
+        } else {
+            Channel::Closed(closed_channel_data)
+        };
+        let contract_id = channel
+            .get_contract_id()
+            .ok_or(Error::InvalidParameters(format!(
+                "Channel {:?} does not have a contract associated",
+                channel_id
+            )))?;
+        let contract = self
+            .dlc_channel_manager
+            .get_store()
+            .get_contract(&contract_id)?
+            .ok_or(Error::InvalidParameters(format!(
+                "No such contract {:?}",
+                contract_id
+            )))?;
+        let closed_contract = Contract::Closed(ClosedContract {
+            attestations: None,
+            signed_cet: None,
+            contract_id,
+            temporary_contract_id: contract.get_id(),
+            counter_party_id: contract.get_counter_party_id(),
+            pnl: 0,
+        });
+        Ok((closed_channel, closed_contract))
     }
 }
 

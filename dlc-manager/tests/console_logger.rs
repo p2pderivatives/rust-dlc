@@ -1,6 +1,7 @@
 use chrono::Utc;
 use lightning::util::logger::{Logger, Record};
 
+#[derive(Debug)]
 pub(crate) struct ConsoleLogger {
     pub name: String,
 }

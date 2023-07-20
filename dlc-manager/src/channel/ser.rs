@@ -3,7 +3,7 @@ use super::accepted_channel::AcceptedChannel;
 use super::offered_channel::OfferedChannel;
 use super::party_points::PartyBasePoints;
 use super::signed_channel::{SignedChannel, SignedChannelState};
-use super::{FailedAccept, FailedSign};
+use super::{ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign};
 
 use dlc_messages::ser_impls::{
     read_ecdsa_adaptor_signature, read_string, write_ecdsa_adaptor_signature, write_string,
@@ -60,12 +60,24 @@ impl_dlc_writeable_enum!(
     (6, RenewOffered, {(offered_contract_id, writeable), (counter_payout, writeable), (is_offer, writeable), (offer_next_per_update_point, writeable), (timeout, writeable)}),
     (7, RenewAccepted, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (timeout, writeable), (own_payout, writeable)}),
     (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
-    (15, RenewFinalized, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
-    (9, Closing, {(buffer_transaction, writeable), (contract_id, writeable), (is_initiator, writeable)}),
-    (10, ClosedPunished, { (punishment_txid, writeable) }),
+    (9, RenewFinalized, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
+    (10, Closing, {(buffer_transaction, writeable), (contract_id, writeable), (is_initiator, writeable)}),
     (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) })
-    ;;(12, Closed), (13, CounterClosed), (14, CollaborativelyClosed)
+    ;;
 );
 
 impl_dlc_writeable!(FailedAccept, {(temporary_channel_id, writeable), (error_message, {cb_writeable, write_string, read_string}), (accept_message, writeable), (counter_party, writeable)});
 impl_dlc_writeable!(FailedSign, {(channel_id, writeable), (error_message, {cb_writeable, write_string, read_string}), (sign_message, writeable), (counter_party, writeable)});
+
+impl_dlc_writeable!(ClosingChannel, {
+    (channel_id, writeable),
+    (counter_party, writeable),
+    (temporary_channel_id, writeable),
+    (rollback_state, option),
+    (buffer_transaction, writeable),
+    (contract_id, writeable),
+    (is_closer, writeable)
+
+});
+impl_dlc_writeable!(ClosedChannel, {(channel_id, writeable), (counter_party, writeable), (temporary_channel_id, writeable)});
+impl_dlc_writeable!(ClosedPunishedChannel, {(channel_id, writeable), (counter_party, writeable), (temporary_channel_id, writeable), (punish_txid, writeable)});

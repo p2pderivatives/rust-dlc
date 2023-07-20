@@ -1,6 +1,6 @@
 //! # Module containing structures and methods for working with DLC channels.
 
-use bitcoin::hashes::Hash;
+use bitcoin::{hashes::Hash, Transaction, Txid};
 use dlc_messages::channel::{AcceptChannel, SignChannel};
 use secp256k1_zkp::PublicKey;
 
@@ -27,6 +27,24 @@ pub enum Channel {
     Accepted(AcceptedChannel),
     /// A channel whose fund outputs have been signed by the offer party.
     Signed(SignedChannel),
+    /// A [`Channel`] is in `Closing` state when the local party
+    /// has broadcast a buffer transaction and is waiting to finalize the
+    /// closing of the channel by broadcasting a CET.
+    Closing(ClosingChannel),
+    /// A [`Channel`] is in `Closed` state when it was force closed by
+    /// the local party.
+    Closed(ClosedChannel),
+    /// A [`Channel`] is in `CounterClosed` state when it was force
+    /// closed by the counter party.
+    CounterClosed(ClosedChannel),
+    /// A [`Channel`] is in `ClosedPunished` state when the local
+    /// party broadcast a punishment transaction in response to the counter
+    /// party broadcasting a settle or buffer transaction for a revoked channel
+    /// state.
+    ClosedPunished(ClosedPunishedChannel),
+    /// A [`SignedChannel`] is in `CollaborativelyClosed` state when it was
+    /// collaboratively closed.
+    CollaborativelyClosed(ClosedChannel),
     /// A channel that failed when validating an
     /// [`dlc_messages::channel::AcceptChannel`] message.
     FailedAccept(FailedAccept),
@@ -43,8 +61,13 @@ impl std::fmt::Debug for Channel {
             Channel::Signed(_) => "signed",
             Channel::FailedAccept(_) => "failed accept",
             Channel::FailedSign(_) => "failed sign",
+            Channel::Closing(_) => "closing",
+            Channel::Closed(_) => "closed",
+            Channel::CounterClosed(_) => "counter closed",
+            Channel::ClosedPunished(_) => "closed punished",
+            Channel::CollaborativelyClosed(_) => "collaboratively closed",
         };
-        f.debug_struct("Contract").field("state", &state).finish()
+        f.debug_struct("Channel").field("state", &state).finish()
     }
 }
 
@@ -57,6 +80,11 @@ impl Channel {
             Channel::Signed(s) => s.counter_party,
             Channel::FailedAccept(f) => f.counter_party,
             Channel::FailedSign(f) => f.counter_party,
+            Channel::Closing(c) => c.counter_party,
+            Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
+                c.counter_party
+            }
+            Channel::ClosedPunished(c) => c.counter_party,
         }
     }
 }
@@ -91,6 +119,52 @@ pub struct FailedSign {
     pub sign_message: SignChannel,
 }
 
+#[derive(Clone)]
+/// A channel is closing when its buffer transaction was broadcast or detected on chain.
+pub struct ClosingChannel {
+    /// The [`secp256k1_zkp::PublicKey`] of the counter party.
+    pub counter_party: PublicKey,
+    /// The temporary [`crate::ChannelId`] of the channel.
+    pub temporary_channel_id: ChannelId,
+    /// The [`crate::ChannelId`] for the channel.
+    pub channel_id: ChannelId,
+    /// The previous state the channel was before being closed, if that state was the `Signed` one,
+    /// otherwise is `None`.
+    pub rollback_state: Option<SignedChannel>,
+    /// The buffer transaction that was broadcast.
+    pub buffer_transaction: Transaction,
+    /// The [`crate::ContractId`] of the contract that was used to close
+    /// the channel.
+    pub contract_id: ContractId,
+    /// Whether the local party initiated the closing of the channel.
+    pub is_closer: bool,
+}
+
+#[derive(Clone)]
+/// A channel is closed when its buffer transaction has been spent.
+pub struct ClosedChannel {
+    /// The [`secp256k1_zkp::PublicKey`] of the counter party.
+    pub counter_party: PublicKey,
+    /// The temporary [`crate::ChannelId`] of the channel.
+    pub temporary_channel_id: ChannelId,
+    /// The [`crate::ChannelId`] for the channel.
+    pub channel_id: ChannelId,
+}
+
+#[derive(Clone)]
+/// A channel is closed punished when the counter party broadcast a revoked transaction triggering
+/// the broadcast of a punishment transaction by the local party.
+pub struct ClosedPunishedChannel {
+    /// The [`secp256k1_zkp::PublicKey`] of the counter party.
+    pub counter_party: PublicKey,
+    /// The temporary [`crate::ChannelId`] of the channel.
+    pub temporary_channel_id: ChannelId,
+    /// The [`crate::ChannelId`] for the channel.
+    pub channel_id: ChannelId,
+    /// The transaction id of the punishment transaction that was broadcast.
+    pub punish_txid: Txid,
+}
+
 impl Channel {
     /// Returns the temporary [`crate::ChannelId`] for the channel.
     pub fn get_temporary_id(&self) -> ChannelId {
@@ -99,6 +173,10 @@ impl Channel {
             Channel::Accepted(a) => a.temporary_channel_id,
             Channel::Signed(s) => s.temporary_channel_id,
             Channel::FailedAccept(f) => f.temporary_channel_id,
+            Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
+                c.temporary_channel_id
+            }
+            Channel::ClosedPunished(c) => c.temporary_channel_id,
             _ => unimplemented!(),
         }
     }
@@ -111,6 +189,11 @@ impl Channel {
             Channel::Signed(s) => s.channel_id,
             Channel::FailedAccept(f) => f.temporary_channel_id,
             Channel::FailedSign(f) => f.channel_id,
+            Channel::Closing(c) => c.channel_id,
+            Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
+                c.channel_id
+            }
+            Channel::ClosedPunished(c) => c.channel_id,
         }
     }
 
@@ -122,6 +205,7 @@ impl Channel {
             Channel::Signed(s) => s.get_contract_id(),
             Channel::FailedAccept(_) => None,
             Channel::FailedSign(_) => None,
+            _ => None,
         }
     }
 }

@@ -4,7 +4,7 @@ use super::{Blockchain, Oracle, Storage, Time, Wallet};
 use crate::chain_monitor::{ChainMonitor, ChannelInfo, RevokedTxType, TxType};
 use crate::channel::offered_channel::OfferedChannel;
 use crate::channel::signed_channel::{SignedChannel, SignedChannelState, SignedChannelStateType};
-use crate::channel::Channel;
+use crate::channel::{Channel, ClosedChannel, ClosedPunishedChannel};
 use crate::channel_updater::verify_signed_channel;
 use crate::channel_updater::{self, get_signed_channel_state};
 use crate::contract::{
@@ -1071,7 +1071,7 @@ where
     /// Accept an offer to collaboratively close the channel. The close transaction
     /// will be broadcast and the state of the channel updated.
     pub fn accept_collaborative_close(&self, channel_id: &ChannelId) -> Result<(), Error> {
-        let mut signed_channel =
+        let signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
         let closed_contract = if let Some(SignedChannelState::Established {
@@ -1093,16 +1093,15 @@ where
             None
         };
 
-        let close_tx = crate::channel_updater::accept_collaborative_close_offer(
+        let (close_tx, closed_channel) = crate::channel_updater::accept_collaborative_close_offer(
             &self.secp,
-            &mut signed_channel,
+            &signed_channel,
             &self.wallet,
         )?;
 
         self.blockchain.send_transaction(&close_tx)?;
 
-        self.store
-            .upsert_channel(Channel::Signed(signed_channel), None)?;
+        self.store.upsert_channel(closed_channel, None)?;
 
         if let Some(closed_contract) = closed_contract {
             self.store
@@ -1114,7 +1113,7 @@ where
 
     fn try_finalize_closing_established_channel(
         &self,
-        mut signed_channel: SignedChannel,
+        signed_channel: SignedChannel,
     ) -> Result<(), Error> {
         let (buffer_tx, contract_id, &is_initiator) = get_signed_channel_state!(
             signed_channel,
@@ -1143,15 +1142,17 @@ where
                     Error::InvalidState("Could not get information to close contract".to_string())
                 })?;
 
-            let signed_cet = channel_updater::finalize_unilateral_close_settled_channel(
-                &self.secp,
-                &mut signed_channel,
-                &confirmed_contract,
-                contract_info,
-                &attestations,
-                adaptor_info,
-                &self.wallet,
-            )?;
+            let (signed_cet, closed_channel) =
+                channel_updater::finalize_unilateral_close_settled_channel(
+                    &self.secp,
+                    &signed_channel,
+                    &confirmed_contract,
+                    contract_info,
+                    &attestations,
+                    adaptor_info,
+                    &self.wallet,
+                    is_initiator,
+                )?;
 
             let closed_contract = self.close_contract(
                 &confirmed_contract,
@@ -1159,19 +1160,13 @@ where
                 attestations.iter().map(|x| &x.1).cloned().collect(),
             )?;
 
-            signed_channel.state = if is_initiator {
-                SignedChannelState::Closed
-            } else {
-                SignedChannelState::CounterClosed
-            };
-
             self.chain_monitor
                 .lock()
                 .unwrap()
                 .cleanup_channel(signed_channel.channel_id);
 
             self.store
-                .upsert_channel(Channel::Signed(signed_channel), Some(closed_contract))?;
+                .upsert_channel(closed_channel, Some(closed_contract))?;
         }
 
         Ok(())
@@ -1966,7 +1961,7 @@ where
                     _ => false,
                 };
 
-                let contract = if is_buffer_tx {
+                if is_buffer_tx {
                     let contract_id = signed_channel
                         .get_contract_id()
                         .expect("to have a contract id");
@@ -1978,21 +1973,34 @@ where
                     std::mem::swap(&mut signed_channel.state, &mut state);
 
                     signed_channel.roll_back_state = Some(state);
-                    None
+                    self.store
+                        .upsert_channel(Channel::Signed(signed_channel), None)?;
                 } else {
                     let contract_id = signed_channel.get_contract_id();
-                    signed_channel.state = {
+                    let closed_channel = {
                         match &signed_channel.state {
                             SignedChannelState::Closing { is_initiator, .. } => {
                                 if *is_initiator {
-                                    SignedChannelState::Closed
+                                    Channel::Closed(ClosedChannel {
+                                        counter_party: signed_channel.counter_party,
+                                        temporary_channel_id: signed_channel.temporary_channel_id,
+                                        channel_id: signed_channel.channel_id,
+                                    })
                                 } else {
-                                    SignedChannelState::CounterClosed
+                                    Channel::CounterClosed(ClosedChannel {
+                                        counter_party: signed_channel.counter_party,
+                                        temporary_channel_id: signed_channel.temporary_channel_id,
+                                        channel_id: signed_channel.channel_id,
+                                    })
                                 }
                             }
                             _ => {
                                 error!("Saw spending of buffer transaction without being in closing state");
-                                SignedChannelState::Closed
+                                Channel::Closed(ClosedChannel {
+                                    counter_party: signed_channel.counter_party,
+                                    temporary_channel_id: signed_channel.temporary_channel_id,
+                                    channel_id: signed_channel.channel_id,
+                                })
                             }
                         }
                     };
@@ -2000,7 +2008,7 @@ where
                         .lock()
                         .unwrap()
                         .cleanup_channel(signed_channel.channel_id);
-                    if let Some(contract_id) = contract_id {
+                    let contract = if let Some(contract_id) = contract_id {
                         let contract_opt = self.store.get_contract(&contract_id)?;
                         if let Some(contract) = contract_opt {
                             match contract {
@@ -2018,11 +2026,10 @@ where
                         }
                     } else {
                         None
-                    }
+                    };
+                    self.store.upsert_channel(closed_channel, contract)?;
                 };
 
-                self.store
-                    .upsert_channel(Channel::Signed(signed_channel), contract)?;
                 !is_buffer_tx
             } else if let TxType::Revoked {
                 update_idx,
@@ -2163,9 +2170,12 @@ where
 
                 self.blockchain.send_transaction(&signed_tx)?;
 
-                signed_channel.state = SignedChannelState::ClosedPunished {
-                    punishment_txid: signed_tx.txid(),
-                };
+                let closed_channel = Channel::ClosedPunished(ClosedPunishedChannel {
+                    counter_party: signed_channel.counter_party,
+                    temporary_channel_id: signed_channel.temporary_channel_id,
+                    channel_id: signed_channel.channel_id,
+                    punish_txid: signed_tx.txid(),
+                });
 
                 //TODO(tibo): should probably make sure the tx is confirmed somewhere before
                 //stop watching the cheating tx.
@@ -2173,8 +2183,7 @@ where
                     .lock()
                     .unwrap()
                     .cleanup_channel(signed_channel.channel_id);
-                self.store
-                    .upsert_channel(Channel::Signed(signed_channel), None)?;
+                self.store.upsert_channel(closed_channel, None)?;
                 true
             } else if let TxType::CollaborativeClose = channel_info.tx_type {
                 if let Some(SignedChannelState::Established {
@@ -2194,22 +2203,28 @@ where
                     self.store
                         .update_contract(&Contract::Closed(closed_contract))?;
                 }
-                signed_channel.state = SignedChannelState::CollaborativelyClosed;
+                let closed_channel = Channel::CollaborativelyClosed(ClosedChannel {
+                    counter_party: signed_channel.counter_party,
+                    temporary_channel_id: signed_channel.temporary_channel_id,
+                    channel_id: signed_channel.channel_id,
+                });
                 self.chain_monitor
                     .lock()
                     .unwrap()
                     .cleanup_channel(signed_channel.channel_id);
-                self.store
-                    .upsert_channel(Channel::Signed(signed_channel), None)?;
+                self.store.upsert_channel(closed_channel, None)?;
                 true
             } else if let TxType::SettleTx = channel_info.tx_type {
-                signed_channel.state = SignedChannelState::CounterClosed;
+                let closed_channel = Channel::CounterClosed(ClosedChannel {
+                    counter_party: signed_channel.counter_party,
+                    temporary_channel_id: signed_channel.temporary_channel_id,
+                    channel_id: signed_channel.channel_id,
+                });
                 self.chain_monitor
                     .lock()
                     .unwrap()
                     .cleanup_channel(signed_channel.channel_id);
-                self.store
-                    .upsert_channel(Channel::Signed(signed_channel), None)?;
+                self.store.upsert_channel(closed_channel, None)?;
                 true
             } else {
                 false
@@ -2322,12 +2337,6 @@ where
             SignedChannelState::Closing { .. } => Err(Error::InvalidState(
                 "Channel is already closing.".to_string(),
             )),
-            SignedChannelState::Closed
-            | SignedChannelState::CounterClosed
-            | SignedChannelState::CollaborativelyClosed
-            | SignedChannelState::ClosedPunished { .. } => {
-                Err(Error::InvalidState("Channel already closed.".to_string()))
-            }
         }
     }
 
@@ -2379,13 +2388,13 @@ where
     /// Unilaterally close a channel that has been settled.
     fn close_settled_channel(
         &self,
-        mut signed_channel: SignedChannel,
+        signed_channel: SignedChannel,
         sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
         is_initiator: bool,
     ) -> Result<(), Error> {
-        let settle_tx = crate::channel_updater::close_settled_channel_internal(
+        let (settle_tx, closed_channel) = crate::channel_updater::close_settled_channel_internal(
             &self.secp,
-            &mut signed_channel,
+            &signed_channel,
             &self.wallet,
             sub_channel,
             is_initiator,
@@ -2405,8 +2414,7 @@ where
             .unwrap()
             .cleanup_channel(signed_channel.channel_id);
 
-        self.store
-            .upsert_channel(Channel::Signed(signed_channel), None)?;
+        self.store.upsert_channel(closed_channel, None)?;
 
         Ok(())
     }
@@ -2417,8 +2425,8 @@ where
         &self,
         channel_id: ChannelId,
         own_balance: u64,
-    ) -> Result<(SignedChannel, Option<Contract>), Error> {
-        let mut channel = get_channel_in_state!(self, &channel_id, Signed, None::<PublicKey>)?;
+    ) -> Result<(Channel, Option<Contract>), Error> {
+        let channel = get_channel_in_state!(self, &channel_id, Signed, None::<PublicKey>)?;
 
         let contract = if let Some(contract_id) = channel.get_contract_id() {
             Some(Contract::Closed(self.get_collaboratively_closed_contract(
@@ -2430,9 +2438,13 @@ where
             None
         };
 
-        channel.state = SignedChannelState::CollaborativelyClosed;
+        let closed_channel = Channel::CollaborativelyClosed(ClosedChannel {
+            counter_party: channel.counter_party,
+            temporary_channel_id: channel.temporary_channel_id,
+            channel_id,
+        });
 
-        Ok((channel, contract))
+        Ok((closed_channel, contract))
     }
 
     fn get_collaboratively_closed_contract(

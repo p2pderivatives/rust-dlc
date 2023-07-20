@@ -9,6 +9,7 @@ use crate::{
         offered_channel::OfferedChannel,
         party_points::PartyBasePoints,
         signed_channel::{SignedChannel, SignedChannelState},
+        Channel, ClosedChannel,
     },
     contract::{
         accepted_contract::AcceptedContract, contract_info::ContractInfo,
@@ -2265,9 +2266,9 @@ where
 /// closing transaction and returning it.
 pub fn accept_collaborative_close_offer<C: Signing, S: Deref>(
     secp: &Secp256k1<C>,
-    signed_channel: &mut SignedChannel,
+    signed_channel: &SignedChannel,
     signer: &S,
-) -> Result<Transaction, Error>
+) -> Result<(Transaction, Channel), Error>
 where
     S::Target: Signer,
 {
@@ -2295,8 +2296,12 @@ where
     )?;
 
     // TODO(tibo): should only transition to close after confirmation.
-    signed_channel.state = SignedChannelState::CollaborativelyClosed;
-    Ok(close_tx)
+    let channel = Channel::CollaborativelyClosed(ClosedChannel {
+        counter_party: signed_channel.counter_party,
+        temporary_channel_id: signed_channel.temporary_channel_id,
+        channel_id: signed_channel.channel_id,
+    });
+    Ok((close_tx, channel))
 }
 
 fn get_settle_tx_and_adaptor_sig(
@@ -2528,13 +2533,14 @@ where
 /// Extract the CET and computes the signature for it, and marks the channel as closed.
 pub fn finalize_unilateral_close_settled_channel<S: Deref>(
     secp: &Secp256k1<All>,
-    signed_channel: &mut SignedChannel,
+    signed_channel: &SignedChannel,
     confirmed_contract: &SignedContract,
     contract_info: &ContractInfo,
     attestations: &[(usize, OracleAttestation)],
     adaptor_info: &AdaptorInfo,
     signer: &S,
-) -> Result<Transaction, Error>
+    is_initiator: bool,
+) -> Result<(Transaction, Channel), Error>
 where
     S::Target: Signer,
 {
@@ -2618,10 +2624,18 @@ where
         &adaptor_sigs[range_info.adaptor_index],
         &oracle_sigs,
     )?;
+    let closed_channel = ClosedChannel {
+        counter_party: signed_channel.counter_party,
+        temporary_channel_id: signed_channel.temporary_channel_id,
+        channel_id: signed_channel.channel_id,
+    };
+    let channel = if is_initiator {
+        Channel::Closed(closed_channel)
+    } else {
+        Channel::CounterClosed(closed_channel)
+    };
 
-    signed_channel.state = SignedChannelState::Closed;
-
-    Ok(cet)
+    Ok((cet, channel))
 }
 
 /// Sign the settlement transaction and update the state of the channel.
@@ -2630,7 +2644,7 @@ pub fn close_settled_channel<S: Deref>(
     signed_channel: &mut SignedChannel,
     signer: &S,
     is_initiator: bool,
-) -> Result<Transaction, Error>
+) -> Result<(Transaction, Channel), Error>
 where
     S::Target: Signer,
 {
@@ -2639,11 +2653,11 @@ where
 
 pub(crate) fn close_settled_channel_internal<S: Deref>(
     secp: &Secp256k1<All>,
-    signed_channel: &mut SignedChannel,
+    signed_channel: &SignedChannel,
     signer: &S,
     sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
     is_initiator: bool,
-) -> Result<Transaction, Error>
+) -> Result<(Transaction, Channel), Error>
 where
     S::Target: Signer,
 {
@@ -2744,10 +2758,18 @@ where
         )?;
     }
 
-    signed_channel.state = if is_initiator {
-        SignedChannelState::Closed
+    let channel = if is_initiator {
+        Channel::Closed(ClosedChannel {
+            counter_party: signed_channel.counter_party,
+            temporary_channel_id: signed_channel.temporary_channel_id,
+            channel_id: signed_channel.channel_id,
+        })
     } else {
-        SignedChannelState::CounterClosed
+        Channel::CounterClosed(ClosedChannel {
+            counter_party: signed_channel.counter_party,
+            temporary_channel_id: signed_channel.temporary_channel_id,
+            channel_id: signed_channel.channel_id,
+        })
     };
-    Ok(settle_tx)
+    Ok((settle_tx, channel))
 }

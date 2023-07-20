@@ -190,6 +190,12 @@ pub struct AcceptedSubChannel {
     pub ln_glue_transaction: Transaction,
     /// Information used to facilitate the rollback of a channel split.
     pub ln_rollback: LnRollBackInfo,
+    /// Commitment transactions of the previous Lightning channel state to broadcast in
+    /// order to force close the Lightning channel (in the `Accepted` state, the funding outpoint
+    /// has already been updated but we don't have the signatures required to force close the split
+    /// channel yet, so we need to keep the previous commitment transaction(s) to be able to force
+    /// close).
+    pub commitment_transactions: Vec<bitcoin::Transaction>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -247,6 +253,12 @@ pub struct ConfirmedSubChannel {
     pub next_per_commitment_point: PublicKey,
     /// Information used to facilitate the rollback of a channel split.
     pub ln_rollback: LnRollBackInfo,
+    /// Commitment transactions of the previous Lightning channel state to broadcast in
+    /// order to force close the Lightning channel (in the `Confirmed` state, the funding outpoint
+    /// has already been updated but we don't have the signatures required to force close the split
+    /// channel yet, so we need to keep the previous commitment transaction(s) to be able to force
+    /// close).
+    pub commitment_transactions: Vec<bitcoin::Transaction>,
 }
 
 impl ConfirmedSubChannel {
@@ -314,6 +326,12 @@ pub struct CloseAcceptedSubChannel {
     pub counter_balance: u64,
     /// Rollback information about the split channel
     pub ln_rollback: LnRollBackInfo,
+    /// Commitment transactions of the Lightning channel in the previous split state to use in
+    /// order to force close the Lightning channel (in the `CloseAccepted` state, the funding outpoint
+    /// has already been updated to remove the split transaction but we don't have the signature
+    /// for the new commitment transaction yet so we need to keep the commitment transaction from
+    /// the previous state to be able to force close).
+    pub commitment_transactions: Vec<Transaction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,6 +347,12 @@ pub struct CloseConfirmedSubChannel {
     pub ln_rollback: LnRollBackInfo,
     /// Whether to check for LN secret (to deal with reestblishments)
     pub check_ln_secret: bool,
+    /// Commitment transactions of the Lightning channel in the previous split state to use in
+    /// order to force close the Lightning channel (in the `CloseConfirmed` state, the funding outpoint
+    /// has already been updated to remove the split transaction but we don't have the signature
+    /// for the new commitment transaction yet so we need to keep the commitment transaction from
+    /// the previous state to be able to force close).
+    pub commitment_transactions: Vec<Transaction>,
 }
 
 /// Information about a sub channel that is in the process of being unilateraly closed.
@@ -338,6 +362,11 @@ pub struct ClosingSubChannel {
     pub signed_sub_channel: SignedSubChannel,
     /// Whether the local party initiated the closing.
     pub is_initiator: bool,
+    /// Commitment transactions to use to close the lightning side of the split channel for cases
+    /// where the LDK `ChannelManager` has been updated to a state which would prevent it to
+    /// properly force close, like when we are force closing during establishment or off chain
+    /// closing of a split channel.
+    pub commitment_transactions: Option<Vec<Transaction>>,
 }
 
 /// Provides the ability to access and update Lightning Network channels.
@@ -414,6 +443,13 @@ where
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
     );
+
+    /// Gets the latest commitment transactions and HTLC transactions that can be used to close the
+    /// channel.
+    fn get_latest_holder_commitment_txn(
+        &self,
+        channel_lock: &ChannelLock<SP>,
+    ) -> Result<Vec<Transaction>, Error>;
 }
 
 impl<M: Deref, T: Deref, ES: Deref, NS: Deref, K: Deref, F: Deref, R: Deref, L: Deref>
@@ -504,6 +540,19 @@ where
             channel_value_satoshis,
             value_to_self_msat,
         );
+    }
+
+    fn get_latest_holder_commitment_txn(
+        &self,
+        channel_lock: &ChannelLock<<K::Target as SignerProvider>::Signer>,
+    ) -> Result<Vec<Transaction>, Error> {
+        self.get_latest_holder_commitment_txn(channel_lock)
+            .map_err(|e| {
+                Error::InvalidState(format!(
+                    "Could not retrieve latest commitment transactions {:?}",
+                    e
+                ))
+            })
     }
 
     fn with_useable_channel_lock<C, RV>(
