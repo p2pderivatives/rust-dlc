@@ -209,7 +209,7 @@ pub fn create_settle_transaction(
         )?)
         / (output.len() as u64);
 
-    for mut o in &mut output {
+    for o in &mut output {
         o.value += remaining_fee;
     }
 
