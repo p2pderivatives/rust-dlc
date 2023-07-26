@@ -56,7 +56,8 @@ impl_dlc_writeable!(AcceptedSubChannel, {
     (accept_per_split_point, writeable),
     (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
     (ln_glue_transaction, writeable),
-    (ln_rollback, writeable)
+    (ln_rollback, writeable),
+    (commitment_transactions, vec)
 });
 
 impl_dlc_writeable!(ConfirmedSubChannel, {
@@ -68,7 +69,8 @@ impl_dlc_writeable!(ConfirmedSubChannel, {
     (counter_glue_signature, writeable),
     (ln_rollback, writeable),
     (prev_commitment_secret, writeable),
-    (next_per_commitment_point, writeable)
+    (next_per_commitment_point, writeable),
+    (commitment_transactions, vec)
 });
 
 impl_dlc_writeable!(SignedSubChannel, {
@@ -89,8 +91,8 @@ impl_dlc_writeable!(CloseOfferedSubChannel, {
     (is_offer, writeable)
 });
 
-impl_dlc_writeable!(CloseAcceptedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable) });
+impl_dlc_writeable!(CloseAcceptedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable), (commitment_transactions, vec) });
 
-impl_dlc_writeable!(CloseConfirmedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable), (check_ln_secret, writeable) });
+impl_dlc_writeable!(CloseConfirmedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable), (check_ln_secret, writeable), (commitment_transactions, vec) });
 
-impl_dlc_writeable!(ClosingSubChannel, { (signed_sub_channel, writeable), (is_initiator, writeable) });
+impl_dlc_writeable!(ClosingSubChannel, { (signed_sub_channel, writeable), (is_initiator, writeable), (commitment_transactions, {option_cb, dlc_messages::ser_impls::write_vec, dlc_messages::ser_impls::read_vec}) });

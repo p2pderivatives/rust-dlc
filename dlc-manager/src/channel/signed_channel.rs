@@ -2,7 +2,7 @@
 //! transaction inputs. This module contains the model for a signed channel,
 //! the possible states in which it can be as well as methods to work with it.
 
-use bitcoin::{Script, Transaction, Txid};
+use bitcoin::{Script, Transaction};
 use dlc::PartyParams;
 use lightning::ln::chan_utils::CounterpartyCommitmentSecrets;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey};
@@ -300,20 +300,6 @@ typed_enum!(
             /// Whether the local party initiated the closing of the channel.
             is_initiator: bool,
         },
-        /// A [`SignedChannel`] is in `Closed` state when it was force closed by
-        /// the local party.
-        Closed,
-        /// A [`SignedChannel`] is in `CounterClosed` state when it was force
-        /// closed by the counter party.
-        CounterClosed,
-        /// A [`SignedChannel`] is in `ClosedPublished` state when the local
-        /// party broadcast a punishment transaction in response to the counter
-        /// party broadcasting a settle or buffer transaction for a revoked channel
-        /// state.
-        ClosedPunished {
-            /// The transaction id of the punishment transaction that was broadcast.
-            punishment_txid: Txid,
-        },
         /// A [`SignedChannel`] is in `CollaborativeCloseOffered` state when the local party
         /// has sent a [`dlc_messages::channel::CollaborativeCloseOffer`] message.
         CollaborativeCloseOffered {
@@ -327,9 +313,6 @@ typed_enum!(
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
         },
-        /// A [`SignedChannel`] is in `CollaborativelyClosed` state when it was
-        /// collaboratively closed.
-        CollaborativelyClosed,
     },
     /// Enum automatically generated associating a number to each signed channel
     /// state.

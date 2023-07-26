@@ -820,7 +820,7 @@ fn close_established_channel<F>(
         .periodic_check()
         .expect("to be able to do the periodic check");
 
-    assert_channel_state!(first, channel_id, Signed, Closed);
+    assert_channel_state!(first, channel_id, Closed);
 
     assert_contract_state!(first, contract_id, PreClosed);
 
@@ -832,7 +832,7 @@ fn close_established_channel<F>(
         .periodic_check()
         .expect("to be able to do the periodic check");
 
-    assert_channel_state!(second, channel_id, Signed, CounterClosed);
+    assert_channel_state!(second, channel_id, CounterClosed);
     assert_contract_state!(second, contract_id, PreClosed);
 
     generate_blocks(5);
@@ -875,7 +875,7 @@ fn cheat_punish<F: Fn(u64)>(
         .periodic_check()
         .expect("the check to succeed");
 
-    assert_channel_state!(second, channel_id, Signed, ClosedPunished);
+    assert_channel_state!(second, channel_id, ClosedPunished);
 }
 
 fn settle_channel(
@@ -1227,7 +1227,7 @@ fn collaborative_close<F: Fn(u64)>(
         .accept_collaborative_close(&channel_id)
         .expect("to be able to accept a collaborative close");
 
-    assert_channel_state!(second, channel_id, Signed, CollaborativelyClosed);
+    assert_channel_state!(second, channel_id, CollaborativelyClosed);
     assert_contract_state!(second, contract_id, Closed);
 
     generate_blocks(2);
@@ -1238,7 +1238,7 @@ fn collaborative_close<F: Fn(u64)>(
         .periodic_check()
         .expect("the check to succeed");
 
-    assert_channel_state!(first, channel_id, Signed, CollaborativelyClosed);
+    assert_channel_state!(first, channel_id, CollaborativelyClosed);
     assert_contract_state!(first, contract_id, Closed);
 }
 
@@ -1279,7 +1279,7 @@ fn renew_timeout<F: Fn(u64)>(
                 .periodic_check()
                 .expect("not to error");
 
-            assert_channel_state!(first, channel_id, Signed, Closed);
+            assert_channel_state!(first, channel_id, Closed);
         } else {
             let (renew_accept, _) = second
                 .lock()
@@ -1306,7 +1306,7 @@ fn renew_timeout<F: Fn(u64)>(
                     .periodic_check()
                     .expect("not to error");
 
-                assert_channel_state!(second, channel_id, Signed, Closed);
+                assert_channel_state!(second, channel_id, Closed);
             } else if let TestPath::RenewConfirmTimeout = path {
                 // Process Confirm
                 second_receive.recv().expect("Error synchronizing");
@@ -1319,7 +1319,7 @@ fn renew_timeout<F: Fn(u64)>(
                     .periodic_check()
                     .expect("not to error");
 
-                assert_channel_state!(first, channel_id, Signed, Closed);
+                assert_channel_state!(first, channel_id, Closed);
             } else if let TestPath::RenewFinalizeTimeout = path {
                 //Process confirm
                 second_receive.recv().expect("Error synchronizing");
@@ -1340,7 +1340,7 @@ fn renew_timeout<F: Fn(u64)>(
                     .periodic_check()
                     .expect("not to error");
 
-                assert_channel_state!(second, channel_id, Signed, Closed);
+                assert_channel_state!(second, channel_id, Closed);
             }
         }
     }
@@ -1407,6 +1407,12 @@ fn settle_timeout(
                 .periodic_check()
                 .expect("not to error");
 
+            second
+                .lock()
+                .unwrap()
+                .get_store()
+                .get_channel(&channel_id)
+                .unwrap();
             assert_channel_state!(second, channel_id, Signed, Closing);
         } else if let TestPath::SettleConfirmTimeout = path {
             // Process Confirm

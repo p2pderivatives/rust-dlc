@@ -192,7 +192,7 @@ macro_rules! assert_channel_state_unlocked {
         let res = $d
             .get_store()
             .get_channel(&$id)
-            .expect("Could not retrieve contract");
+            .expect("Could not retrieve channel");
         if let Some(Channel::$p(c)) = res {
             $(if let dlc_manager::channel::signed_channel::SignedChannelState::$s { .. } = c.state {
             } else {
@@ -203,15 +203,7 @@ macro_rules! assert_channel_state_unlocked {
                 write_channel!(channel, $p);
             }
         } else {
-            let state = match res {
-                Some(Channel::Offered(_)) => "offered",
-                Some(Channel::Accepted(_)) => "accepted",
-                Some(Channel::Signed(_)) => "signed",
-                Some(Channel::FailedAccept(_)) => "failed accept",
-                Some(Channel::FailedSign(_)) => "failed sign",
-                None => "none",
-            };
-            panic!("Unexpected channel state {}", state);
+            panic!("Could not find requested channel");
         }
     }};
 }
