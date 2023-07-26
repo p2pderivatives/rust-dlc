@@ -8,9 +8,9 @@
 #![deny(non_camel_case_types)]
 #![deny(non_snake_case)]
 #![deny(unused_mut)]
-#![deny(dead_code)]
-#![deny(unused_imports)]
-#![deny(missing_docs)]
+// #![deny(dead_code)]
+// #![deny(unused_imports)]
+// #![deny(missing_docs)]
 
 extern crate async_trait;
 extern crate bitcoin;
@@ -25,27 +25,19 @@ extern crate log;
 extern crate rand_chacha;
 extern crate secp256k1_zkp;
 
-pub mod chain_monitor;
-pub mod channel;
-pub mod channel_updater;
 pub mod contract;
 pub mod contract_updater;
-mod conversion_utils;
+pub mod conversion_utils;
 pub mod error;
-pub mod manager;
 pub mod payout_curve;
-mod utils;
+pub mod utils;
 
 use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
-use chain_monitor::ChainMonitor;
-use channel::offered_channel::OfferedChannel;
-use channel::signed_channel::{SignedChannel, SignedChannelStateType};
-use channel::Channel;
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::ser_impls::{read_address, write_address};
-use error::Error;
+pub use error::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::XOnlyPublicKey;
@@ -145,25 +137,6 @@ pub trait Storage {
     /// Returns the set of contracts whos broadcasted cet has not been verified to be confirmed on
     /// blockchain
     fn get_preclosed_contracts(&self) -> Result<Vec<PreClosedContract>, Error>;
-    /// Update the state of the channel and optionally its associated contract
-    /// atomically.
-    fn upsert_channel(&self, channel: Channel, contract: Option<Contract>) -> Result<(), Error>;
-    /// Delete the channel with given [`ChannelId`] if any.
-    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), Error>;
-    /// Returns the channel with given [`ChannelId`] if any.
-    fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, Error>;
-    /// Returns the set of [`SignedChannel`] in the store. Returns only the one
-    /// with matching `channel_state` if set.
-    fn get_signed_channels(
-        &self,
-        channel_state: Option<SignedChannelStateType>,
-    ) -> Result<Vec<SignedChannel>, Error>;
-    /// Returns the set of channels in offer state.
-    fn get_offered_channels(&self) -> Result<Vec<OfferedChannel>, Error>;
-    /// Writes the [`ChainMonitor`] data to the store.
-    fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error>;
-    /// Returns the latest [`ChainMonitor`] in the store if any.
-    fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
 }
 
 /// Oracle trait provides access to oracle information.

@@ -10,9 +10,10 @@ use dlc_messages::FundingSignatures;
 use dlc_messages::SignDlc;
 use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
+use serde::{Serialize, Deserialize};
 
 /// Contain information about a contract that was fully signed.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SignedContract {
     /// The accepted contract that was signed.
     pub accepted_contract: AcceptedContract,
@@ -27,7 +28,7 @@ pub struct SignedContract {
 }
 
 impl SignedContract {
-    pub(crate) fn get_sign_dlc(
+    pub fn get_sign_dlc(
         &self,
         cet_adaptor_signatures: Vec<EcdsaAdaptorSignature>,
     ) -> SignDlc {

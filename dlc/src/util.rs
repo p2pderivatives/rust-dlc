@@ -37,7 +37,7 @@ pub(crate) fn get_sig_hash_msg(
 
 /// Convert a raw signature to DER encoded and append the sighash type, to use
 /// a signature in a signature script
-pub(crate) fn finalize_sig(sig: &Signature, sig_hash_type: EcdsaSighashType) -> Vec<u8> {
+pub fn finalize_sig(sig: &Signature, sig_hash_type: EcdsaSighashType) -> Vec<u8> {
     [
         sig.serialize_der().as_ref(),
         &[sig_hash_type.to_u32() as u8],
@@ -232,9 +232,6 @@ pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
     }
 }
 
-pub(crate) fn compute_var_int_prefix_size(len: usize) -> usize {
-    bitcoin::VarInt(len as u64).len()
-}
 
 /// Validate that the fee rate is not too high
 pub fn validate_fee_rate(fee_rate_per_vb: u64) -> Result<(), Error> {

@@ -116,7 +116,7 @@ where
     Ok((accepted_contract, accept_msg))
 }
 
-pub(crate) fn accept_contract_internal(
+pub fn accept_contract_internal(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     accept_params: &PartyParams,

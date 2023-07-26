@@ -10,11 +10,10 @@
 #![deny(unused_mut)]
 #![deny(dead_code)]
 #![deny(unused_imports)]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 
 extern crate bitcoin;
 extern crate core;
-extern crate miniscript;
 extern crate secp256k1_sys;
 extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
@@ -38,7 +37,6 @@ use secp256k1_zkp::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub mod channel;
 pub mod secp_utils;
 pub mod util;
 
@@ -113,7 +111,7 @@ pub struct EnumerationPayout {
 }
 
 /// Contains the necessary transactions for establishing a DLC
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DlcTransactions {
     /// The fund transaction locking both parties collaterals
     pub fund: Transaction,
@@ -183,8 +181,6 @@ pub enum Error {
     Sighash(bitcoin::util::sighash::Error),
     /// An invalid argument was provided
     InvalidArgument,
-    /// An error occurred in miniscript
-    Miniscript(miniscript::Error),
 }
 
 impl From<secp256k1_zkp::Error> for Error {
@@ -205,11 +201,6 @@ impl From<bitcoin::util::sighash::Error> for Error {
     }
 }
 
-impl From<miniscript::Error> for Error {
-    fn from(error: miniscript::Error) -> Error {
-        Error::Miniscript(error)
-    }
-}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -217,7 +208,6 @@ impl fmt::Display for Error {
             Error::Secp256k1(_) => write!(f, "Secp256k1 error"),
             Error::InvalidArgument => write!(f, "Invalid argument"),
             Error::Sighash(_) => write!(f, "Error while computing sighash"),
-            Error::Miniscript(_) => write!(f, "Error within miniscript"),
         }
     }
 }
@@ -228,7 +218,6 @@ impl std::error::Error for Error {
             Error::Secp256k1(e) => Some(e),
             Error::Sighash(e) => Some(e),
             Error::InvalidArgument => None,
-            Error::Miniscript(e) => Some(e),
         }
     }
 }
@@ -795,7 +784,7 @@ pub fn create_cet_adaptor_sigs_from_oracle_info(
         .collect()
 }
 
-fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey, Error> {
+pub fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey, Error> {
     let s_values = signatures
         .iter()
         .flatten()

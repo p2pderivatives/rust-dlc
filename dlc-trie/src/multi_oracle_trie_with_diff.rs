@@ -9,11 +9,12 @@ use crate::utils::get_value_callback;
 
 use crate::{DlcTrie, OracleNumericInfo, RangeInfo, TrieIterInfo};
 use dlc::{Error, RangePayout};
+use serde::{Deserialize, Serialize};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with multiple oracles where some difference between the outcomes
 /// of each oracle can be supported.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MultiOracleTrieWithDiff {
     /// The underlying trie of trie
     pub multi_trie: MultiTrie<RangeInfo>,

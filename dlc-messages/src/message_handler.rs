@@ -102,19 +102,7 @@ fn read_dlc_message<R: ::std::io::Read>(
         buffer,
         (OFFER_TYPE, Offer),
         (ACCEPT_TYPE, Accept),
-        (SIGN_TYPE, Sign),
-        (OFFER_CHANNEL_TYPE, OfferChannel),
-        (ACCEPT_CHANNEL_TYPE, AcceptChannel),
-        (SIGN_CHANNEL_TYPE, SignChannel),
-        (SETTLE_CHANNEL_OFFER_TYPE, SettleOffer),
-        (SETTLE_CHANNEL_ACCEPT_TYPE, SettleAccept),
-        (SETTLE_CHANNEL_CONFIRM_TYPE, SettleConfirm),
-        (SETTLE_CHANNEL_FINALIZE_TYPE, SettleFinalize),
-        (RENEW_CHANNEL_OFFER_TYPE, RenewOffer),
-        (RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept),
-        (RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm),
-        (RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize),
-        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
+        (SIGN_TYPE, Sign)
     )
 }
 

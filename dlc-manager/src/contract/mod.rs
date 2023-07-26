@@ -188,7 +188,7 @@ pub struct ClosedContract {
 
 /// Information about the adaptor signatures and the CET for which they are
 /// valid.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum AdaptorInfo {
     /// For enumeration outcome DLC, no special information needs to be kept.
     Enum,

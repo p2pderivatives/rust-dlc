@@ -52,7 +52,7 @@ pub struct LookupResult<'a, TValue, TPath> {
 }
 
 /// Enum representing the different type of nodes in a tree
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Node<TLeaf, TNode> {
     /// None is only used as a placeholder when taking mutable ownership of a
     /// node during insertion.
@@ -63,7 +63,7 @@ pub enum Node<TLeaf, TNode> {
     Node(TNode),
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 /// Structure that stores the indexes at which the CET and adaptor signature
 /// related to a given outcome are located in CET and adaptor signatures arrays
 /// respectively.

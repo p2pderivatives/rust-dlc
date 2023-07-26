@@ -304,7 +304,7 @@ impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
 });
 
 /// An attestation from an oracle providing signatures over an outcome value.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OracleAttestation {
     /// The public key of the oracle.
     pub oracle_public_key: XOnlyPublicKey,

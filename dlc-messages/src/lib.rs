@@ -7,7 +7,7 @@
 #![deny(non_snake_case)]
 #![deny(unused_mut)]
 #![deny(dead_code)]
-#![deny(unused_imports)]
+// #![deny(unused_imports)]
 #![deny(missing_docs)]
 
 extern crate bitcoin;
@@ -18,13 +18,9 @@ extern crate secp256k1_zkp;
 pub mod ser_macros;
 pub mod ser_impls;
 
-#[cfg(test)]
-extern crate bitcoin_test_utils;
 #[cfg(any(test, feature = "serde"))]
 extern crate serde;
 
-#[cfg(test)]
-extern crate serde_json;
 
 pub mod channel;
 pub mod contract_msgs;
@@ -506,19 +502,6 @@ pub enum Message {
     Offer(OfferDlc),
     Accept(AcceptDlc),
     Sign(SignDlc),
-    OfferChannel(OfferChannel),
-    AcceptChannel(AcceptChannel),
-    SignChannel(SignChannel),
-    SettleOffer(SettleOffer),
-    SettleAccept(SettleAccept),
-    SettleConfirm(SettleConfirm),
-    SettleFinalize(SettleFinalize),
-    RenewOffer(RenewOffer),
-    RenewAccept(RenewAccept),
-    RenewConfirm(RenewConfirm),
-    RenewFinalize(RenewFinalize),
-    CollaborativeCloseOffer(CollaborativeCloseOffer),
-    Reject(Reject),
 }
 
 macro_rules! impl_type_writeable_for_enum {
@@ -545,20 +528,7 @@ impl_type_writeable_for_enum!(Message,
 {
     Offer,
     Accept,
-    Sign,
-    OfferChannel,
-    AcceptChannel,
-    SignChannel,
-    SettleOffer,
-    SettleAccept,
-    SettleConfirm,
-    SettleFinalize,
-    RenewOffer,
-    RenewAccept,
-    RenewConfirm,
-    RenewFinalize,
-    CollaborativeCloseOffer,
-    Reject
+    Sign
 });
 
 #[derive(Debug, Clone)]

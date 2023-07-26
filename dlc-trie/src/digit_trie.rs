@@ -3,9 +3,10 @@
 
 use crate::{LookupResult, Node};
 use dlc::Error;
+use serde::{Deserialize, Serialize};
 
 /// Structure to store data inserted and looked-up based on digit paths.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DigitTrie<T> {
     /// Use the arena allocated approach which makes it easier to
     /// satisfy the borrow checker.  
@@ -128,13 +129,13 @@ impl<'a, T> DigitTrieIter<'a, T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct DigitLeaf<T> {
     data: T,
     prefix: Vec<usize>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct DigitNode<T> {
     children: Vec<Option<usize>>,
     prefix: Vec<usize>,

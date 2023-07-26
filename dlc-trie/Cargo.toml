@@ -12,7 +12,7 @@ parallel = ["rayon"]
 use-serde = ["serde", "dlc/use-serde"]
 
 [dependencies]
-bitcoin = {version = "0.29.2" }
+bitcoin = {version = "0.29.2", features = ["serde"]}
 dlc = {version = "0.4.0", path = "../dlc"}
 rayon = {version = "1.5", optional = true}
 secp256k1-zkp = {version = "0.7.0" }

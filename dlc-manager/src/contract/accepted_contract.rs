@@ -7,11 +7,12 @@ use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::AcceptDlc;
 use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
+use serde::{Deserialize, Serialize};
 
 use std::fmt::Write as _;
 
 /// An AcceptedContract represents a contract in the accepted state.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AcceptedContract {
     /// The offered contract that was accepted.
     pub offered_contract: OfferedContract,
@@ -54,7 +55,7 @@ impl AcceptedContract {
         string_id
     }
 
-    pub(crate) fn get_accept_contract_msg(
+    pub fn get_accept_contract_msg(
         &self,
         ecdsa_adaptor_signatures: &[EcdsaAdaptorSignature],
     ) -> AcceptDlc {

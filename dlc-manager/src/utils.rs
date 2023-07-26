@@ -12,7 +12,6 @@ use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
 use secp256k1_zkp::{PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::{
-    channel::party_points::PartyBasePoints,
     contract::{contract_info::ContractInfo, AdaptorInfo, FundingInputInfo},
     error::Error,
     Blockchain, Wallet,
@@ -131,26 +130,13 @@ where
     Ok((party_params, funding_privkey, funding_inputs_info))
 }
 
-pub(crate) fn get_party_base_points<C: Signing, W: Deref>(
-    secp: &Secp256k1<C>,
-    wallet: &W,
-) -> Result<PartyBasePoints, Error>
-where
-    W::Target: Wallet,
-{
-    Ok(PartyBasePoints {
-        own_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-        publish_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-        revocation_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-    })
-}
 
 fn get_half_common_fee(fee_rate: u64) -> u64 {
     let common_fee = get_common_fee(fee_rate);
     (common_fee as f64 / 2_f64).ceil() as u64
 }
 
-pub(crate) fn get_range_info_and_oracle_sigs(
+pub fn get_range_info_and_oracle_sigs(
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
     attestations: &[(usize, OracleAttestation)],

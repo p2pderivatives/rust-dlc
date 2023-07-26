@@ -10,11 +10,12 @@ use crate::multi_trie::{MultiTrie, MultiTrieDump, MultiTrieIterator};
 use crate::utils::{get_value_callback, pre_pad_vec};
 use crate::{DlcTrie, IndexedPath, LookupResult, OracleNumericInfo, RangeInfo, TrieIterInfo};
 use dlc::{Error, RangePayout};
+use serde::{Deserialize, Serialize};
 
 /// Data structure used to store adaptor signature information for numerical
 /// outcome DLC with t of n oracles where at least t oracles need to sign the
 /// same outcome for the contract to be able to close.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MultiOracleTrie {
     /// The underlying trie data structure.
     digit_trie: DigitTrie<Vec<RangeInfo>>,

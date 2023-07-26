@@ -3,7 +3,6 @@
 //! useful for derivation.
 
 use bitcoin::PublicKey as BitcoinPublicKey;
-use dlc::channel::RevokeParams;
 use lightning::ln::chan_utils::{derive_public_key, derive_public_revocation_key};
 use secp256k1_zkp::{All, PublicKey, Secp256k1, Signing, Verification};
 
