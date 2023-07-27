@@ -202,6 +202,7 @@ fn read_dlc_message<R: ::std::io::Read>(
             (SUB_CHANNEL_ACCEPT, Accept),
             (SUB_CHANNEL_CONFIRM, Confirm),
             (SUB_CHANNEL_FINALIZE, Finalize),
+            (SUB_CHANNEL_REVOKE, Revoke),
             (SUB_CHANNEL_CLOSE_OFFER, CloseOffer),
             (SUB_CHANNEL_CLOSE_ACCEPT, CloseAccept),
             (SUB_CHANNEL_CLOSE_CONFIRM, CloseConfirm),
