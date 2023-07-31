@@ -370,7 +370,7 @@ pub fn sign_cet<C: Signing>(
 
     descriptor
         .satisfy(&mut cet.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+        .map_err(|_| Error::InvalidArgument(format!("[sign_cet] error: couldn't sign CET")))?;
 
     Ok(())
 }
@@ -444,9 +444,11 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
         );
     }
 
-    descriptor
-        .satisfy(&mut tx.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+    descriptor.satisfy(&mut tx.input[0], sigs).map_err(|_| {
+        Error::InvalidArgument(format!(
+            "[create_and_sign_punish_buffer_transaction] error: couldn't sign buffer transaction"
+        ))
+    })?;
 
     Ok(tx)
 }
@@ -526,7 +528,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     descriptor
         .satisfy(&mut tx.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+        .map_err(|_| Error::InvalidArgument(format!("[create_and_sign_punish_settle_transaction] error: couldn't sign revoked settle transaction")))?;
 
     Ok(tx)
 }
