@@ -124,7 +124,9 @@ impl OfferChannel {
             && self.cet_nsequence >= min_cet_nsequence
             && self.cet_nsequence <= max_cet_nsequence;
         if !valid_dates {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(format!("[validate] error: invalid dates => CET locktime: {}, refund locktime: {}, CET nSequence: {}",
+                self.cet_locktime, self.refund_locktime, self.cet_nsequence
+            )));
         }
 
         match &self.contract_info {

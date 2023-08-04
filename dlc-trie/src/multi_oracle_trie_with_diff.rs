@@ -33,7 +33,8 @@ impl MultiOracleTrieWithDiff {
         let is_valid =
             nb_oracles >= 1 && threshold <= nb_oracles && min_support_exp < max_error_exp;
         if !is_valid {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(format!("[MultiOracleTrieWithDiff::new] error: invalid parameters => nb_oracles: {}, threshold: {}, min_support_exp: {}, max_error_exp: {}",
+                nb_oracles, threshold, min_support_exp, max_error_exp)));
         }
         let multi_trie = MultiTrie::new(
             oracle_numeric_infos,

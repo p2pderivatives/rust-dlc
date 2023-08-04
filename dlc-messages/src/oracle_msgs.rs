@@ -224,7 +224,11 @@ impl OracleEvent {
         if expected_nb_nonces == self.oracle_nonces.len() {
             Ok(())
         } else {
-            Err(Error::InvalidArgument)
+            Err(Error::InvalidArgument(format!(
+                "[validate] error: expected {} nonces, got {}",
+                expected_nb_nonces,
+                self.oracle_nonces.len()
+            )))?
         }
     }
 }

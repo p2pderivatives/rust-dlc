@@ -365,7 +365,8 @@ impl OfferDlc {
             ContractInfo::SingleContractInfo(s) => s.contract_info.oracle_info.validate(secp)?,
             ContractInfo::DisjointContractInfo(d) => {
                 if d.contract_infos.len() < 2 {
-                    return Err(Error::InvalidArgument);
+                    return Err(Error::InvalidArgument(format!("[validate] error: disjoint contract must have at least 2 contract infos, found {}",
+                        d.contract_infos.len())));
                 }
 
                 for c in &d.contract_infos {
@@ -379,7 +380,12 @@ impl OfferDlc {
             && closest_maturity_date + min_timeout_interval <= self.refund_locktime
             && self.refund_locktime <= closest_maturity_date + max_timeout_interval;
         if !valid_dates {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(format!("[validate] error: invalid locktimes => CET locktime: {}, refund locktime: {}, closest maturity date: {}, min timeout interval: {}, max timeout interval: {}",
+                self.cet_locktime,
+                self.refund_locktime,
+                closest_maturity_date,
+                min_timeout_interval,
+                max_timeout_interval)));
         }
 
         Ok(())

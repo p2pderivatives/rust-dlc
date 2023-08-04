@@ -69,7 +69,10 @@ pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
 macro_rules! checked_add {
     ($a: expr, $b: expr) => {
-        $a.checked_add($b).ok_or(Error::InvalidArgument)
+        $a.checked_add($b).ok_or(Error::InvalidArgument(format!(
+            "[checked_add] error: overflow when adding {} and {}",
+            $a, $b
+        )))
     };
     ($a: expr, $b: expr, $c: expr) => {
         checked_add!(checked_add!($a, $b)?, $c)
@@ -182,7 +185,7 @@ pub enum Error {
     /// An error while computing a signature hash
     Sighash(bitcoin::util::sighash::Error),
     /// An invalid argument was provided
-    InvalidArgument,
+    InvalidArgument(String),
     /// An error occurred in miniscript
     Miniscript(miniscript::Error),
 }
@@ -215,7 +218,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Secp256k1(_) => write!(f, "Secp256k1 error"),
-            Error::InvalidArgument => write!(f, "Invalid argument"),
+            Error::InvalidArgument(ref s) => write!(f, "Invalid argument: {}", s),
             Error::Sighash(_) => write!(f, "Error while computing sighash"),
             Error::Miniscript(_) => write!(f, "Error within miniscript"),
         }
@@ -227,7 +230,7 @@ impl std::error::Error for Error {
         match self {
             Error::Secp256k1(e) => Some(e),
             Error::Sighash(e) => Some(e),
-            Error::InvalidArgument => None,
+            Error::InvalidArgument(_) => None,
             Error::Miniscript(e) => Some(e),
         }
     }
@@ -278,7 +281,7 @@ impl PartyParams {
             let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
                 .len()
                 .checked_mul(4)
-                .ok_or(Error::InvalidArgument)?;
+                .ok_or(Error::InvalidArgument(format!("[get_change_output_and_fees] error: failed to transform a redeem script for a p2sh-p2w* output to a script signature")))?;
             inputs_weight = checked_add!(
                 inputs_weight,
                 TX_INPUT_BASE_WEIGHT,
@@ -290,7 +293,11 @@ impl PartyParams {
         // Value size + script length var_int + ouput script pubkey size
         let change_size = self.change_script_pubkey.len();
         // Change size is scaled by 4 from vBytes to weight units
-        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument)?;
+        let change_weight = change_size
+            .checked_mul(4)
+            .ok_or(Error::InvalidArgument(format!(
+                "[get_change_output_and_fees] error: failed to calculate change weight"
+            )))?;
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
@@ -309,17 +316,19 @@ impl PartyParams {
         let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
 
         // size of the payout script pubkey scaled by 4 from vBytes to weight units
-        let output_spk_weight = self
-            .payout_script_pubkey
-            .len()
-            .checked_mul(4)
-            .ok_or(Error::InvalidArgument)?;
+        let output_spk_weight =
+            self.payout_script_pubkey
+                .len()
+                .checked_mul(4)
+                .ok_or(Error::InvalidArgument(format!(
+            "[get_change_output_and_fees] error: failed to calculate payout script pubkey weight"
+        )))?;
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
         let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
         let required_input_funds =
             checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(format!("[get_change_output_and_fees] error: input amount is lower than the sum of the collateral plus the required fees => input_amount: {}, collateral: {}, fund fee: {}, cet_or_refund_fee: {}, extra_fee: {}", self.input_amount, self.collateral, fund_fee, cet_or_refund_fee, extra_fee)));
         }
 
         let change_output = TxOut {
@@ -477,7 +486,9 @@ pub(crate) fn create_cets_and_refund_tx(
     });
 
     if !has_proper_outcomes {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument(format!(
+            "[create_cets_and_refund_tx] error: payouts don't sum up to the total collateral amount"
+        )));
     }
 
     let cet_input = TxIn {
@@ -667,7 +678,11 @@ fn get_oracle_sig_point<C: secp256k1_zkp::Verification>(
     msgs: &[Message],
 ) -> Result<PublicKey, Error> {
     if oracle_info.nonces.len() < msgs.len() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument(format!(
+            "[get_oracle_sig_point] error: oracle has {} nonces, but {} messages were provided",
+            oracle_info.nonces.len(),
+            msgs.len()
+        )));
     }
 
     let sig_points: Vec<PublicKey> = oracle_info
@@ -690,7 +705,8 @@ pub fn get_adaptor_point_from_oracle_info<C: Verification>(
     msgs: &[Vec<Message>],
 ) -> Result<PublicKey, Error> {
     if oracle_infos.is_empty() || msgs.is_empty() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument(format!("[get_adaptor_point_from_oracle_info] error: oracle info and messages must not be empty"
+        )));
     }
 
     let mut oracle_sigpoints = Vec::with_capacity(msgs[0].len());
@@ -776,7 +792,10 @@ pub fn create_cet_adaptor_sigs_from_oracle_info(
     msgs: &[Vec<Vec<Message>>],
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     if msgs.len() != cets.len() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument(format!("[create_cet_adaptor_sigs_from_oracle_info] error: number of cets ({}) must match number of messages ({})",
+            cets.len(),
+            msgs.len()
+        )));
     }
 
     cets.iter()
