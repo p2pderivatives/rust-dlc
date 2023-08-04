@@ -1784,7 +1784,7 @@ fn make_ln_payment(alice_node: &LnDlcParty, bob_node: &LnDlcParty, final_value_m
     let scorer = TestScorer::with_penalty(0);
     let random_seed_bytes = bob_node.keys_manager.get_secure_random_bytes();
     let route_params = RouteParameters {
-        payment_params: payment_params.clone(),
+        payment_params,
         final_value_msat,
     };
 
@@ -2496,7 +2496,7 @@ fn off_chain_close_offer(test_params: &LnDlcTestParams, do_reconnect: bool) {
         .unwrap();
 
     if do_reconnect {
-        reconnect(&test_params);
+        reconnect(test_params);
 
         assert_sub_channel_state!(
             test_params.alice_node.sub_channel_manager,
@@ -2528,7 +2528,7 @@ fn off_chain_close_offer(test_params: &LnDlcTestParams, do_reconnect: bool) {
         .unwrap();
 
     if do_reconnect {
-        reconnect(&test_params);
+        reconnect(test_params);
 
         assert_eq!(
             0,
