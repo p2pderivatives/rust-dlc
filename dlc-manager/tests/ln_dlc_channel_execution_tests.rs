@@ -539,7 +539,7 @@ fn ln_dlc_established_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
@@ -553,7 +553,7 @@ fn ln_dlc_renewed_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
     let sub_channel = test_params
         .alice_node
         .dlc_manager
@@ -585,7 +585,7 @@ fn ln_dlc_settled_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
     let sub_channel = test_params
         .alice_node
         .dlc_manager
@@ -617,7 +617,7 @@ fn ln_dlc_settled_renewed_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
     let sub_channel = test_params
         .alice_node
         .dlc_manager
@@ -652,8 +652,8 @@ fn ln_dlc_pre_split_cheat() {
 
     let pre_split_commit_tx =
         get_commit_tx_from_node(&test_params.alice_node, &test_params.funding_txo);
-    offer_sub_channel(&test_params, false);
-    ln_cheated_check(&pre_split_commit_tx[0], &mut test_params);
+    open_sub_channel(&test_params);
+    cheat_with_revoked_tx(&pre_split_commit_tx[0], &mut test_params);
 }
 
 #[test]
@@ -663,7 +663,7 @@ fn ln_dlc_post_split_cheat() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     test_params.alice_node.mock_blockchain.start_discard();
 
@@ -720,20 +720,19 @@ fn ln_dlc_post_split_cheat() {
 
     test_params.generate_blocks(1);
 
-    ln_cheated_check(&post_split_commit_tx[0], &mut test_params);
+    cheat_with_revoked_tx(&post_split_commit_tx[0], &mut test_params);
 }
 
 #[test]
 #[ignore]
-fn ln_dlc_off_chain_close() {
+fn ln_dlc_force_close_after_off_chain_close() {
     let mut test_params = test_init();
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
-    off_chain_close_offer(&test_params, false);
-    off_chain_close_finalize(&test_params, false);
+    off_chain_close(&test_params);
 
     let alice_commit = get_commit_tx_from_node(&test_params.alice_node, &test_params.funding_txo);
 
@@ -774,15 +773,21 @@ fn ln_dlc_split_cheat() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    // Open DLC sub-channel.
+    open_sub_channel(&test_params);
+    // Save the state after first sub-channel opening.
     test_params.alice_node.dlc_manager.get_store().save();
 
-    off_chain_close_offer(&test_params, false);
-    off_chain_close_finalize(&test_params, false);
+    // Close the DLC sub-channel off-chain (reverting to regular LN channel).
+    off_chain_close(&test_params);
 
-    offer_sub_channel(&test_params, false);
+    // Re-open a DLC sub-channel.
+    open_sub_channel(&test_params);
 
+    // Restore the state of alice storage to that of the first opened DLC sub-channel.
     test_params.alice_node.dlc_manager.get_store().rollback();
+
+    // Get the transaction id of the split transaction for the first DLC sub-channel.
     let split_tx_id = match test_params
         .alice_node
         .dlc_manager
@@ -795,6 +800,9 @@ fn ln_dlc_split_cheat() {
         SubChannelState::Signed(s) => s.split_tx.transaction.txid(),
         a => panic!("Unexpected state {:?}", a),
     };
+
+    // Make Alice close the transaction. She will force close with the first split transaction
+    // which has already been revoked because we rolled back her state.
     test_params
         .alice_node
         .sub_channel_manager
@@ -803,6 +811,7 @@ fn ln_dlc_split_cheat() {
 
     test_params.generate_blocks(1);
 
+    // On seeing the revoked split transaction, Bob should react by spending both outputs.
     test_params.bob_node.update_to_chain_tip();
 
     let outspends = test_params.electrs.get_outspends(&split_tx_id).unwrap();
@@ -819,9 +828,12 @@ fn ln_dlc_split_cheat() {
         .collect::<Vec<_>>();
 
     assert_eq!(spent.len(), 2);
+    // Bob should have used the same transaction to spend both outputs.
     assert_eq!(spent[0].txid, spent[1].txid);
+
     let spending_tx = test_params.electrs.get_transaction(&spent[0].txid).unwrap();
 
+    // We make sure that the output address of the penalty transaction belongs to Bob.
     let receive_addr =
         Address::from_script(&spending_tx.output[0].script_pubkey, Network::Regtest).unwrap();
 
@@ -852,7 +864,7 @@ fn ln_dlc_rejected_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     off_chain_close_offer(&test_params, false);
 
@@ -890,12 +902,11 @@ fn ln_dlc_reconnect() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, true);
+    offer_sub_channel_with_reconnect(&test_params);
 
-    off_chain_close_offer(&test_params, true);
-    off_chain_close_finalize(&test_params, true);
+    off_chain_close_with_reconnect(&test_params);
 
-    offer_sub_channel(&test_params, true);
+    offer_sub_channel_with_reconnect(&test_params);
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
@@ -904,22 +915,20 @@ fn ln_dlc_reconnect() {
 
 #[test]
 #[ignore]
-fn ln_dlc_off_chain_close_open_close() {
+fn ln_dlc_force_close_after_three_sub_channel_open() {
     let mut test_params = test_init();
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
-    off_chain_close_offer(&test_params, false);
-    off_chain_close_finalize(&test_params, false);
+    off_chain_close(&test_params);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
-    off_chain_close_offer(&test_params, false);
-    off_chain_close_finalize(&test_params, false);
+    off_chain_close(&test_params);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
@@ -933,7 +942,7 @@ fn ln_dlc_offer_after_offchain_close_disconnect() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     off_chain_close_offer(&test_params, false);
 
@@ -962,7 +971,7 @@ fn ln_dlc_offer_after_offchain_close_disconnect() {
         .unwrap()
         .unwrap();
 
-    offer_common(
+    generate_offer(
         &test_params.test_params,
         &test_params.bob_node,
         &test_params.channel_id,
@@ -1031,7 +1040,7 @@ fn ln_dlc_disconnected_force_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
@@ -1307,7 +1316,7 @@ fn ln_dlc_close_offered_force_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::OfferSent);
 
@@ -1340,7 +1349,7 @@ fn ln_dlc_close_offered_force_close2() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::OfferSent);
 
@@ -1373,7 +1382,7 @@ fn ln_dlc_close_offered_force_close3() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::OfferReceived);
 
@@ -1405,7 +1414,7 @@ fn ln_dlc_close_offered_force_close4() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::OfferReceived);
 
@@ -1438,7 +1447,7 @@ fn ln_dlc_close_accepted_force_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::Accepted);
 
@@ -1471,7 +1480,7 @@ fn ln_dlc_close_accepted_force_close2() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::Accepted);
 
@@ -1504,7 +1513,7 @@ fn ln_dlc_close_confirmed_force_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::Confirmed);
 
@@ -1537,7 +1546,7 @@ fn ln_dlc_close_confirmed_force_close2() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     go_to_off_chain_close_state(&test_params, TargetState::Confirmed);
 
@@ -1571,7 +1580,7 @@ fn ln_dlc_close_finalized_force_close() {
 
     make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
 
-    offer_sub_channel(&test_params, false);
+    open_sub_channel(&test_params);
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
@@ -1937,7 +1946,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &ChannelId) {
         .unwrap();
 }
 
-fn ln_cheated_check(cheat_tx: &Transaction, test_params: &mut LnDlcTestParams) {
+fn cheat_with_revoked_tx(cheat_tx: &Transaction, test_params: &mut LnDlcTestParams) {
     test_params.electrs.broadcast_transaction(cheat_tx);
 
     // wait for cheat tx to be confirmed
@@ -2021,7 +2030,7 @@ fn ln_cheated_check(cheat_tx: &Transaction, test_params: &mut LnDlcTestParams) {
         .any(|x| *x == receive_addr));
 }
 
-fn offer_common(
+fn generate_offer(
     test_params: &TestParams,
     offerer: &LnDlcParty,
     channel_id: &ChannelId,
@@ -2053,8 +2062,16 @@ fn offer_common(
     offer
 }
 
-fn offer_sub_channel(test_params: &LnDlcTestParams, do_reconnect: bool) {
-    let offer = offer_common(
+fn open_sub_channel(test_params: &LnDlcTestParams) {
+    offer_sub_channel_internal(test_params, false);
+}
+
+fn offer_sub_channel_with_reconnect(test_params: &LnDlcTestParams) {
+    offer_sub_channel_internal(test_params, true);
+}
+
+fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool) {
+    let offer = generate_offer(
         &test_params.test_params,
         &test_params.alice_node,
         &test_params.channel_id,
@@ -2411,7 +2428,7 @@ fn reconnect(test_params: &LnDlcTestParams) {
 }
 
 fn reject_offer(test_params: &LnDlcTestParams) {
-    let offer = offer_common(
+    let offer = generate_offer(
         &test_params.test_params,
         &test_params.alice_node,
         &test_params.channel_id,
@@ -2709,6 +2726,19 @@ fn off_chain_close_finalize(test_params: &LnDlcTestParams, do_reconnect: bool) {
     assert_sub_channel_state!(test_params.bob_node.sub_channel_manager, &test_params.channel_id; OffChainClosed);
 }
 
+fn off_chain_close(test_params: &LnDlcTestParams) {
+    off_chain_close_internal(test_params, false);
+}
+
+fn off_chain_close_with_reconnect(test_params: &LnDlcTestParams) {
+    off_chain_close_internal(test_params, true);
+}
+
+fn off_chain_close_internal(test_params: &LnDlcTestParams, do_reconnect: bool) {
+    off_chain_close_offer(test_params, do_reconnect);
+    off_chain_close_finalize(test_params, do_reconnect);
+}
+
 fn force_close_stable(test_params: &mut LnDlcTestParams) {
     let commit_tx =
         get_commit_tx_from_node(&test_params.alice_node, &test_params.funding_txo).remove(0);
@@ -2975,7 +3005,7 @@ fn force_close_mid_protocol(
 }
 
 fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: TargetState) {
-    let offer = offer_common(
+    let offer = generate_offer(
         &test_params.test_params,
         &test_params.alice_node,
         &test_params.channel_id,
