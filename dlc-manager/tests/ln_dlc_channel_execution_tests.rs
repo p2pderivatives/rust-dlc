@@ -990,39 +990,38 @@ fn ln_dlc_offer_after_offchain_close_disconnect() {
             .periodic_check()
             .len()
     );
-    let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
-    assert_eq!(2, msgs.len());
-    if let (SubChannelMessage::CloseFinalize(c), _) = msgs.remove(0) {
-        let close_finalize = SubChannelMessage::CloseFinalize(c);
-        test_params
-            .alice_node
-            .sub_channel_manager
-            .on_sub_channel_message(
-                &close_finalize,
-                &test_params.bob_node.channel_manager.get_our_node_id(),
-            )
-            .unwrap();
-        assert_sub_channel_state!(test_params.alice_node.sub_channel_manager, &test_params.channel_id; OffChainClosed);
-        if let (SubChannelMessage::Offer(o), _) = msgs.pop().unwrap() {
-            test_params
-                .alice_node
-                .sub_channel_manager
-                .on_sub_channel_message(
-                    &SubChannelMessage::Offer(o),
-                    &test_params.bob_node.channel_manager.get_our_node_id(),
-                )
-                .unwrap();
-            assert_sub_channel_state!(
-                test_params.alice_node.sub_channel_manager,
-                &test_params.channel_id,
-                Offered
-            );
-        } else {
-            panic!("Expected an offer message");
+    let msgs = test_params.bob_node.sub_channel_manager.periodic_check();
+
+    let (close_finalize, offer) = match msgs.as_slice() {
+        [(c @ SubChannelMessage::CloseFinalize(_), _), (o @ SubChannelMessage::Offer(_), _)] => {
+            (c, o)
         }
-    } else {
-        panic!("Expected a close finalize message");
-    }
+        msgs => panic!("Unexpected messages: {:?}", msgs),
+    };
+
+    test_params
+        .alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            close_finalize,
+            &test_params.bob_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap();
+    assert_sub_channel_state!(test_params.alice_node.sub_channel_manager, &test_params.channel_id; OffChainClosed);
+
+    test_params
+        .alice_node
+        .sub_channel_manager
+        .on_sub_channel_message(
+            offer,
+            &test_params.bob_node.channel_manager.get_our_node_id(),
+        )
+        .unwrap();
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Offered
+    );
 }
 
 #[test]
