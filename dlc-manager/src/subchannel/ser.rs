@@ -31,18 +31,18 @@ impl_dlc_writeable_enum!(SubChannelState,
     (0, Offered),
     (1, Accepted),
     (2, Confirmed),
-    (3, Finalized),
-    (4, Signed),
-    (5, Closing),
-    (6, CloseOffered),
-    (7, CloseAccepted),
-    (8, CloseConfirmed),
-    (9, ClosedPunished)
+    (13, Finalized),
+    (3, Signed),
+    (4, Closing),
+    (5, CloseOffered),
+    (6, CloseAccepted),
+    (7, CloseConfirmed),
+    (8, ClosedPunished)
     ;;;
-    (10, OnChainClosed),
-    (11, CounterOnChainClosed),
-    (12, OffChainClosed),
-    (13, Rejected)
+    (9, OnChainClosed),
+    (10, CounterOnChainClosed),
+    (11, OffChainClosed),
+    (12, Rejected)
 );
 
 impl_dlc_writeable!(OfferedSubChannel, { (per_split_point, writeable) });
