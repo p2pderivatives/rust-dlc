@@ -30,7 +30,7 @@ use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
 };
-use log::{error, warn};
+use log::{debug, error, warn};
 use secp256k1_zkp::XOnlyPublicKey;
 use secp256k1_zkp::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
@@ -273,6 +273,7 @@ where
         counter_party: PublicKey,
     ) -> Result<OfferDlc, Error> {
         contract_input.validate()?;
+        debug!("Creating DLC with {:?}", contract_input);
 
         let oracle_announcements = contract_input
             .contract_infos
@@ -429,6 +430,12 @@ where
         oracle_inputs: &OracleInput,
     ) -> Result<Vec<OracleAnnouncement>, Error> {
         let mut announcements = Vec::new();
+        debug!("Getting Attestor Announcements");
+        debug!(
+            "Received Attestor Public Keys: {:?} ",
+            oracle_inputs.public_keys
+        );
+        debug!("Manager Attestor Public Keys: {:?}", self.oracles.keys());
         for pubkey in &oracle_inputs.public_keys {
             let oracle = self
                 .oracles
