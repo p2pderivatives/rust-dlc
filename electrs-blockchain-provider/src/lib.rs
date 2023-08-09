@@ -1,3 +1,5 @@
+use log::{debug, warn};
+use std::any::type_name;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -70,15 +72,38 @@ impl ElectrsBlockchainProvider {
     }
 
     fn get_text(&self, sub_url: &str) -> Result<String, Error> {
-        self.get(sub_url)?.text().map_err(|x| {
-            dlc_manager::error::Error::IOError(std::io::Error::new(std::io::ErrorKind::Other, x))
-        })
+        match self.get(sub_url)?.text() {
+            Ok(text) => {
+                debug!(
+                    "Got text response from blockchain: {:?} from requested url: {}",
+                    text, sub_url
+                );
+                Ok(text)
+            }
+            Err(e) => {
+                warn!("Error getting url: {}, and error: {}", sub_url, e);
+                Err(dlc_manager::error::Error::IOError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e,
+                )))
+            }
+        }
     }
 
     fn get_u64(&self, sub_url: &str) -> Result<u64, Error> {
-        self.get_text(sub_url)?
-            .parse()
-            .map_err(|e: std::num::ParseIntError| Error::BlockchainError(e.to_string()))
+        match self.get_text(sub_url) {
+            Ok(text) => Ok(text.parse().map_err(|e: std::num::ParseIntError| {
+                debug!("Error parsing u64 from request to url: {}", e);
+                Error::BlockchainError(e.to_string())
+            })?),
+            Err(e) => {
+                warn!("Error getting url: {}, and error: {}", sub_url, e);
+                Err(dlc_manager::error::Error::IOError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e,
+                )))
+            }
+        }
     }
 
     fn get_bytes(&self, sub_url: &str) -> Result<Vec<u8>, Error> {
@@ -93,9 +118,9 @@ impl ElectrsBlockchainProvider {
     where
         T: serde::de::DeserializeOwned,
     {
-        self.get(sub_url)?
-            .json::<T>()
-            .map_err(|e| Error::BlockchainError(e.to_string()))
+        let json_as_string = self.get_text(sub_url)?;
+        debug!("Converting text to JSON for type {}", type_name::<T>());
+        serde_json::from_str(&json_as_string).map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
     pub fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
