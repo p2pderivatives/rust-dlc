@@ -26,6 +26,7 @@ impl std::fmt::Display for Error {
     }
 }
 
+#[cfg(not(feature = "no-std"))]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {

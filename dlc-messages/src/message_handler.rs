@@ -3,12 +3,12 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
-    io::Cursor,
     sync::Mutex,
 };
 
 use lightning::ln::features::{InitFeatures, NodeFeatures};
 use lightning::{
+    io::Cursor,
     ln::{
         msgs::{DecodeError, LightningError},
         peer_handler::CustomMessageHandler,
@@ -94,7 +94,7 @@ macro_rules! handle_read_dlc_messages {
     }};
 }
 
-fn read_dlc_message<R: ::std::io::Read>(
+fn read_dlc_message<R: ::lightning::io::Read>(
     msg_type: u16,
     mut buffer: &mut R,
 ) -> Result<Option<WireMessage>, DecodeError> {
@@ -123,7 +123,7 @@ fn read_dlc_message<R: ::std::io::Read>(
 /// custom messages in the LDK.
 impl CustomMessageReader for MessageHandler {
     type CustomMessage = WireMessage;
-    fn read<R: ::std::io::Read>(
+    fn read<R: ::lightning::io::Read>(
         &self,
         msg_type: u16,
         mut buffer: &mut R,
@@ -151,9 +151,7 @@ impl CustomMessageHandler for MessageHandler {
         org: &PublicKey,
     ) -> Result<(), LightningError> {
         let mut segment_readers = self.segment_readers.lock().unwrap();
-        let segment_reader = segment_readers
-            .entry(*org)
-            .or_insert_with(SegmentReader::new);
+        let segment_reader = segment_readers.entry(*org).or_default();
 
         if segment_reader.expecting_chunk() {
             match msg {
