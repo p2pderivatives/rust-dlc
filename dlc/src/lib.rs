@@ -222,6 +222,7 @@ impl fmt::Display for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -713,12 +714,14 @@ pub fn create_cet_adaptor_sig_from_point<C: secp256k1_zkp::Signing>(
 ) -> Result<EcdsaAdaptorSignature, Error> {
     let sig_hash = util::get_sig_hash_msg(cet, 0, funding_script_pubkey, fund_output_value)?;
 
-    Ok(secp256k1_zkp::EcdsaAdaptorSignature::encrypt(
-        secp,
-        &sig_hash,
-        funding_sk,
-        adaptor_point,
-    ))
+    #[cfg(feature = "std")]
+    let res = EcdsaAdaptorSignature::encrypt(secp, &sig_hash, funding_sk, adaptor_point);
+
+    #[cfg(not(feature = "std"))]
+    let res =
+        EcdsaAdaptorSignature::encrypt_no_aux_rand(secp, &sig_hash, funding_sk, adaptor_point);
+
+    Ok(res)
 }
 
 /// Create an adaptor signature for the given cet using the provided oracle infos.

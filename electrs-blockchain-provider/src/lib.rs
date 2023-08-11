@@ -56,8 +56,8 @@ impl ElectrsBlockchainProvider {
             .get(format!("{}{}", self.host, sub_url))
             .send()
             .map_err(|x| {
-                dlc_manager::error::Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                    lightning::io::ErrorKind::Other,
                     x,
                 ))
             })
@@ -72,7 +72,10 @@ impl ElectrsBlockchainProvider {
 
     fn get_text(&self, sub_url: &str) -> Result<String, Error> {
         self.get(sub_url)?.text().map_err(|x| {
-            dlc_manager::error::Error::IOError(std::io::Error::new(std::io::ErrorKind::Other, x))
+            dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                lightning::io::ErrorKind::Other,
+                x,
+            ))
         })
     }
 
@@ -112,8 +115,8 @@ impl Blockchain for ElectrsBlockchainProvider {
             .body(tx_to_string(transaction))
             .send()
             .map_err(|x| {
-                dlc_manager::error::Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                    lightning::io::ErrorKind::Other,
                     x,
                 ))
             })?;
