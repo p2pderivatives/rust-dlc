@@ -12,6 +12,7 @@ use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
+use lightning::sign::KeysManager;
 use lightning_net_tokio::SocketDescriptor;
 use p2pd_oracle_client::P2PDOracleClient;
 use std::collections::hash_map::HashMap;
@@ -27,6 +28,7 @@ pub(crate) type PeerManager = LdkPeerManager<
     Arc<IgnoringMessageHandler>,
     Arc<FilesystemLogger>,
     Arc<DlcMessageHandler>,
+    Arc<KeysManager>,
 >;
 
 pub(crate) type DlcManager = dlc_manager::manager::Manager<
@@ -122,18 +124,24 @@ async fn main() {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap();
 
+    let km = Arc::new(KeysManager::new(
+        &sk.secret_bytes(),
+        time.as_secs(),
+        time.as_nanos() as u32,
+    ));
+
     // The peer manager helps us establish connections and communicate with our peers.
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(
         MessageHandler {
             chan_handler: Arc::new(ErroringMessageHandler::new()),
             route_handler: Arc::new(IgnoringMessageHandler {}),
             onion_message_handler: Arc::new(IgnoringMessageHandler {}),
+            custom_message_handler: dlc_message_handler.clone(),
         },
-        sk,
         time.as_secs() as u32,
         &ephemeral_bytes,
         logger.clone(),
-        dlc_message_handler.clone(),
+        km,
     ));
 
     let peer_manager_connection_handler = peer_manager.clone();
