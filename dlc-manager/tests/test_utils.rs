@@ -202,6 +202,8 @@ macro_rules! assert_channel_state_unlocked {
                 let channel = Channel::$p(c);
                 write_channel!(channel, $p);
             }
+        } else if let Some(c) = res {
+            panic!("Unexpected channel state {:?}", c);
         } else {
             panic!("Could not find requested channel");
         }
