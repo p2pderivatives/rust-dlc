@@ -7,6 +7,7 @@ use std::{
     sync::Mutex,
 };
 
+use lightning::ln::features::{InitFeatures, NodeFeatures};
 use lightning::{
     ln::{
         msgs::{DecodeError, LightningError},
@@ -207,6 +208,14 @@ impl CustomMessageHandler for MessageHandler {
 
     fn get_and_clear_pending_msg(&self) -> Vec<(PublicKey, Self::CustomMessage)> {
         self.msg_events.lock().unwrap().drain(..).collect()
+    }
+
+    fn provided_node_features(&self) -> NodeFeatures {
+        NodeFeatures::empty()
+    }
+
+    fn provided_init_features(&self, _their_node_id: &PublicKey) -> InitFeatures {
+        InitFeatures::empty()
     }
 }
 

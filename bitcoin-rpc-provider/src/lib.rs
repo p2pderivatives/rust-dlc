@@ -25,18 +25,11 @@ use rust_bitcoin_coin_selection::select_coins;
 /// The minimum feerate we are allowed to send, as specify by LDK.
 const MIN_FEERATE: u32 = 253;
 
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub enum Target {
-    Background,
-    Normal,
-    HighPriority,
-}
-
 pub struct BitcoinCoreProvider {
     client: Arc<Mutex<Client>>,
     // Used to implement the FeeEstimator interface, heavily inspired by
     // https://github.com/lightningdevkit/ldk-sample/blob/main/src/bitcoind_client.rs#L26
-    fees: Arc<HashMap<Target, AtomicU32>>,
+    fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
 }
 
 #[derive(Debug)]
@@ -107,10 +100,10 @@ impl BitcoinCoreProvider {
 
     pub fn new_from_rpc_client(rpc_client: Client) -> Self {
         let client = Arc::new(Mutex::new(rpc_client));
-        let mut fees: HashMap<Target, AtomicU32> = HashMap::new();
-        fees.insert(Target::Background, AtomicU32::new(MIN_FEERATE));
-        fees.insert(Target::Normal, AtomicU32::new(2000));
-        fees.insert(Target::HighPriority, AtomicU32::new(5000));
+        let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
+        fees.insert(ConfirmationTarget::Background, AtomicU32::new(MIN_FEERATE));
+        fees.insert(ConfirmationTarget::Normal, AtomicU32::new(2000));
+        fees.insert(ConfirmationTarget::HighPriority, AtomicU32::new(5000));
         let fees = Arc::new(fees);
         poll_for_fee_estimates(client.clone(), fees.clone());
         BitcoinCoreProvider { client, fees }
@@ -372,35 +365,22 @@ impl Blockchain for BitcoinCoreProvider {
 }
 
 impl FeeEstimator for BitcoinCoreProvider {
-    fn get_est_sat_per_1000_weight(
-        &self,
-        confirmation_target: lightning::chain::chaininterface::ConfirmationTarget,
-    ) -> u32 {
-        match confirmation_target {
-            ConfirmationTarget::Background => self
-                .fees
-                .get(&Target::Background)
-                .unwrap()
-                .load(Ordering::Acquire),
-            ConfirmationTarget::Normal => self
-                .fees
-                .get(&Target::Normal)
-                .unwrap()
-                .load(Ordering::Acquire),
-            ConfirmationTarget::HighPriority => self
-                .fees
-                .get(&Target::HighPriority)
-                .unwrap()
-                .load(Ordering::Acquire),
-        }
+    fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
+        self.fees
+            .get(&confirmation_target)
+            .unwrap()
+            .load(Ordering::Acquire)
     }
 }
 
-fn poll_for_fee_estimates(client: Arc<Mutex<Client>>, fees: Arc<HashMap<Target, AtomicU32>>) {
+fn poll_for_fee_estimates(
+    client: Arc<Mutex<Client>>,
+    fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
+) {
     std::thread::spawn(move || loop {
         match query_fee_estimate(&client, 144, EstimateMode::Economical) {
             Ok(fee_rate) => {
-                fees.get(&Target::Background)
+                fees.get(&ConfirmationTarget::Background)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
             }
@@ -410,7 +390,7 @@ fn poll_for_fee_estimates(client: Arc<Mutex<Client>>, fees: Arc<HashMap<Target, 
         };
         match query_fee_estimate(&client, 18, EstimateMode::Conservative) {
             Ok(fee_rate) => {
-                fees.get(&Target::Normal)
+                fees.get(&ConfirmationTarget::Normal)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
             }
@@ -420,7 +400,7 @@ fn poll_for_fee_estimates(client: Arc<Mutex<Client>>, fees: Arc<HashMap<Target, 
         };
         match query_fee_estimate(&client, 6, EstimateMode::Conservative) {
             Ok(fee_rate) => {
-                fees.get(&Target::HighPriority)
+                fees.get(&ConfirmationTarget::HighPriority)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
             }
