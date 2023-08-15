@@ -1,6 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use bitcoin::{Script, Transaction, TxOut};
+use dlc_manager::{
+    error::Error,
+    subchannel::{LnDlcChannelSigner, LnDlcSignerProvider},
+};
 use lightning::{
     chain::keysinterface::{
         ChannelSigner, EcdsaChannelSigner, EntropySource, ExtraSign, InMemorySigner, KeysManager,
@@ -252,6 +256,45 @@ impl Readable for CustomSigner {
     }
 }
 
+impl LnDlcChannelSigner for CustomSigner {
+    fn get_holder_split_tx_signature(
+        &self,
+        secp: &Secp256k1<secp256k1_zkp::All>,
+        split_tx: &Transaction,
+        original_funding_redeemscript: &Script,
+        original_channel_value_satoshis: u64,
+    ) -> Result<secp256k1_zkp::ecdsa::Signature, Error> {
+        dlc::util::get_raw_sig_for_tx_input(
+            secp,
+            &split_tx,
+            0,
+            original_funding_redeemscript,
+            original_channel_value_satoshis,
+            &self.in_memory_signer.lock().unwrap().funding_key,
+        )
+        .map_err(|e| e.into())
+    }
+
+    fn get_holder_split_tx_adaptor_signature(
+        &self,
+        secp: &Secp256k1<secp256k1_zkp::All>,
+        split_tx: &Transaction,
+        original_channel_value_satoshis: u64,
+        original_funding_redeemscript: &Script,
+        other_publish_key: &secp256k1_zkp::PublicKey,
+    ) -> Result<secp256k1_zkp::EcdsaAdaptorSignature, Error> {
+        dlc::channel::get_tx_adaptor_signature(
+            secp,
+            &split_tx,
+            original_channel_value_satoshis,
+            original_funding_redeemscript,
+            &self.in_memory_signer.lock().unwrap().funding_key,
+            other_publish_key,
+        )
+        .map_err(|e| e.into())
+    }
+}
+
 impl WriteableEcdsaChannelSigner for CustomSigner {}
 
 pub struct CustomKeysManager {
@@ -322,6 +365,16 @@ impl SignerProvider for CustomKeysManager {
 
     fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
         self.keys_manager.get_shutdown_scriptpubkey()
+    }
+}
+
+impl LnDlcSignerProvider<CustomSigner> for CustomKeysManager {
+    fn derive_ln_dlc_channel_signer(
+        &self,
+        channel_value_satoshis: u64,
+        channel_keys_id: [u8; 32],
+    ) -> CustomSigner {
+        self.derive_channel_signer(channel_value_satoshis, channel_keys_id)
     }
 }
 

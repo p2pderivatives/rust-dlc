@@ -12,6 +12,7 @@ where
     inner: T,
     discard: Mutex<bool>,
     discard_ids: Mutex<Vec<Txid>>,
+    est_fee: Mutex<u32>,
 }
 
 impl<T: Deref> MockBlockchain<T>
@@ -23,6 +24,7 @@ where
             inner,
             discard: Mutex::new(false),
             discard_ids: Mutex::new(Vec::new()),
+            est_fee: Mutex::new(500),
         }
     }
 
@@ -32,6 +34,10 @@ where
 
     pub fn discard_id(&self, txid: Txid) {
         self.discard_ids.lock().unwrap().push(txid);
+    }
+
+    pub fn set_est_fee(&self, est_fee: u32) {
+        *self.est_fee.lock().unwrap() = est_fee;
     }
 }
 
@@ -83,7 +89,7 @@ where
         &self,
         _confirmation_target: lightning::chain::chaininterface::ConfirmationTarget,
     ) -> u32 {
-        unimplemented!()
+        *self.est_fee.lock().unwrap()
     }
 }
 

@@ -165,37 +165,45 @@ pub fn sign_multi_sig_input<C: Signing>(
     input_value: u64,
     input_index: usize,
 ) -> Result<(), Error> {
-    let own_sig = get_sig_for_tx_input(
+    let own_sig = get_raw_sig_for_tx_input(
         secp,
         transaction,
         input_index,
         script_pubkey,
         input_value,
-        EcdsaSighashType::All,
         sk,
     )?;
 
-    let own_pk = &PublicKey::from_secret_key(secp, sk);
+    let own_pk = PublicKey::from_secret_key(secp, sk);
 
-    let other_finalized_sig = finalize_sig(other_sig, EcdsaSighashType::All);
-
-    transaction.input[input_index].witness = if own_pk < other_pk {
-        Witness::from_vec(vec![
-            Vec::new(),
-            own_sig,
-            other_finalized_sig,
-            script_pubkey.to_bytes(),
-        ])
-    } else {
-        Witness::from_vec(vec![
-            Vec::new(),
-            other_finalized_sig,
-            own_sig,
-            script_pubkey.to_bytes(),
-        ])
-    };
+    finalize_multi_sig_input_transaction(
+        transaction,
+        vec![(*other_pk, *other_sig), (own_pk, own_sig)],
+        script_pubkey,
+        input_index,
+    );
 
     Ok(())
+}
+
+/// Sorts signatures based on the lexicographical order of associated public keys, appends
+/// `EcdsaSighashType::All` to each signature, and insert them in the transaction witness for the
+/// provided input index, together with the given script pubkey.
+pub fn finalize_multi_sig_input_transaction(
+    transaction: &mut Transaction,
+    mut signature_pubkey_pairs: Vec<(PublicKey, Signature)>,
+    script_pubkey: &Script,
+    input_index: usize,
+) {
+    signature_pubkey_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let mut signatures = signature_pubkey_pairs
+        .into_iter()
+        .map(|(_, s)| finalize_sig(&s, EcdsaSighashType::All))
+        .collect();
+    let mut witness = vec![Vec::new()];
+    witness.append(&mut signatures);
+    witness.push(script_pubkey.to_bytes());
+    transaction.input[input_index].witness = Witness::from_vec(witness);
 }
 
 /// Transforms a redeem script for a p2sh-p2w* output to a script signature.
