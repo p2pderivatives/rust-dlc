@@ -193,6 +193,7 @@ fn read_dlc_message<R: ::std::io::Read>(
             (RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept),
             (RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm),
             (RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize),
+            (RENEW_CHANNEL_REVOKE_TYPE, RenewRevoke),
             (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
         ),
         (
