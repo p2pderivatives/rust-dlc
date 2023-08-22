@@ -9,7 +9,6 @@ use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, FeeEstimator},
         chainmonitor::ChainMonitor,
-        keysinterface::{EntropySource, NodeSigner, SignerProvider, WriteableEcdsaChannelSigner},
         Watch,
     },
     ln::{
@@ -18,6 +17,7 @@ use lightning::{
         msgs::{ChannelMessageHandler, CommitmentSigned, RevokeAndACK},
     },
     routing::router::Router,
+    sign::{EntropySource, NodeSigner, SignerProvider, WriteableEcdsaChannelSigner},
     util::{errors::APIError, logger::Logger},
 };
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};
@@ -397,7 +397,7 @@ pub struct ClosingSubChannel {
 /// Provides the ability to access and update Lightning Network channels.
 pub trait LNChannelManager<SP>: ChannelMessageHandler
 where
-    SP: lightning::chain::keysinterface::ChannelSigner,
+    SP: lightning::sign::ChannelSigner,
 {
     /// Returns the details of the channel with given `channel_id` if found.
     fn get_channel_details(&self, channel_id: &ChannelId) -> Option<ChannelDetails>;

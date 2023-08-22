@@ -9,10 +9,10 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc_manager::{Oracle, SystemTimeProvider};
 use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
-use lightning::chain::keysinterface::KeysManager;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
+use lightning::sign::KeysManager;
 use lightning_net_tokio::SocketDescriptor;
 use p2pd_oracle_client::P2PDOracleClient;
 use std::collections::hash_map::HashMap;
@@ -136,11 +136,11 @@ async fn main() {
             chan_handler: Arc::new(ErroringMessageHandler::new()),
             route_handler: Arc::new(IgnoringMessageHandler {}),
             onion_message_handler: Arc::new(IgnoringMessageHandler {}),
+            custom_message_handler: dlc_message_handler.clone(),
         },
         time.as_secs() as u32,
         &ephemeral_bytes,
         logger.clone(),
-        dlc_message_handler.clone(),
         Arc::clone(&keys_manager),
     ));
 

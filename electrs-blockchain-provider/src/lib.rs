@@ -12,7 +12,6 @@ use bitcoin_test_utils::tx_to_string;
 use dlc_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning_block_sync::{BlockData, BlockHeaderData, BlockSource, BlockSourceError};
-use log::error;
 use reqwest::blocking::Response;
 use serde::Deserialize;
 use serde::Serialize;
@@ -21,6 +20,7 @@ const MIN_FEERATE: u32 = 253;
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Target {
+    Minimum = 1008,
     Background = 144,
     Normal = 18,
     HighPriority = 6,
@@ -203,6 +203,11 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
 impl FeeEstimator for ElectrsBlockchainProvider {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
         let est = match confirmation_target {
+            ConfirmationTarget::MempoolMinimum => self
+                .fees
+                .get(&Target::Minimum)
+                .unwrap()
+                .load(Ordering::Acquire),
             ConfirmationTarget::Background => self
                 .fees
                 .get(&Target::Background)
@@ -305,26 +310,25 @@ impl BlockSource for ElectrsBlockchainProvider {
 }
 
 impl BroadcasterInterface for ElectrsBlockchainProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) {
+    fn broadcast_transactions(&self, txs: &[&Transaction]) {
         let client = self.client.clone();
         let host = self.host.clone();
-        let tx_body = bitcoin_test_utils::tx_to_string(tx);
+        let bodies = txs
+            .iter()
+            .map(|tx| bitcoin_test_utils::tx_to_string(tx))
+            .collect::<Vec<_>>();
         std::thread::spawn(move || {
-            match client
-                .post(format!("{host}tx"))
-                .body(tx_body.clone())
-                .send()
-            {
-                Err(e) => {
-                    error!("Error broadcasting transaction {}: {}", tx_body, e);
-                }
-                Ok(res) => {
-                    if res.error_for_status_ref().is_err() {
-                        let body = res.text().unwrap_or_default();
-                        error!("Error broadcasting transaction {}: {}", tx_body, body);
+            for body in bodies {
+                match client.post(format!("{host}tx")).body(body).send() {
+                    Err(_) => {}
+                    Ok(res) => {
+                        if res.error_for_status_ref().is_err() {
+                            // let body = res.text().unwrap_or_default();
+                            // TODO(tibo): log
+                        }
                     }
-                }
-            };
+                };
+            }
         });
     }
 }

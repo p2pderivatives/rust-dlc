@@ -45,18 +45,21 @@ impl<T: Deref> BroadcasterInterface for MockBlockchain<T>
 where
     T::Target: BroadcasterInterface,
 {
-    fn broadcast_transaction(&self, tx: &bitcoin::Transaction) {
-        if !*self.discard.lock().unwrap() && !self.discard_ids.lock().unwrap().contains(&tx.txid())
-        {
-            self.inner.broadcast_transaction(tx);
-        }
+    fn broadcast_transactions(&self, txs: &[&Transaction]) {
+        let to_discard = self.discard_ids.lock().unwrap();
+        let to_send = txs
+            .iter()
+            .filter(|tx| !to_discard.contains(&tx.txid()))
+            .cloned()
+            .collect::<Vec<&Transaction>>();
+        self.inner.broadcast_transactions(&to_send);
     }
 }
 
 pub struct MockBroadcaster {}
 
 impl BroadcasterInterface for MockBroadcaster {
-    fn broadcast_transaction(&self, _tx: &bitcoin::Transaction) {
+    fn broadcast_transactions(&self, _tx: &[&bitcoin::Transaction]) {
         unimplemented!();
     }
 }

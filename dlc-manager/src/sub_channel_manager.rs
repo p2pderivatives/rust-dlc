@@ -19,7 +19,8 @@ use dlc_messages::{
     FundingSignatures, SubChannelMessage,
 };
 use lightning::{
-    chain::{chaininterface::FeeEstimator, keysinterface::ChannelSigner},
+    chain::chaininterface::FeeEstimator,
+    events::{ClosureReason, MessageSendEventsProvider},
     ln::{
         chan_utils::{
             build_commitment_secret, derive_private_key, derive_private_revocation_key,
@@ -28,9 +29,9 @@ use lightning::{
         channelmanager::ChannelDetails,
         msgs::{ChannelMessageHandler, DecodeError, RevokeAndACK},
     },
-    util::{errors::APIError, events::MessageSendEventsProvider},
+    sign::ChannelSigner,
     util::{
-        events::ClosureReason,
+        errors::APIError,
         ser::{Readable, Writeable, Writer},
     },
 };
@@ -1229,6 +1230,12 @@ where
             }
             ClosureReason::OutdatedChannelManager => {
                 info!("Channel {channel_id:?} closed due to outdated channel manager.");
+                return Ok(());
+            }
+            ClosureReason::CounterpartyCoopClosedUnfundedChannel => {
+                info!(
+                    "Channel {channel_id:?} closed due to counter party closing unfunded channel."
+                );
                 return Ok(());
             }
         };
@@ -3868,6 +3875,92 @@ where
         self.ln_channel_manager
             .provided_init_features(their_node_id)
     }
+
+    fn handle_open_channel_v2(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::OpenChannelV2,
+    ) {
+        self.ln_channel_manager
+            .handle_open_channel_v2(their_node_id, msg)
+    }
+
+    fn handle_accept_channel_v2(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::AcceptChannelV2,
+    ) {
+        self.ln_channel_manager
+            .handle_accept_channel_v2(their_node_id, msg)
+    }
+
+    fn handle_tx_add_input(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::TxAddInput,
+    ) {
+        self.ln_channel_manager
+            .handle_tx_add_input(their_node_id, msg)
+    }
+
+    fn handle_tx_add_output(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::TxAddOutput,
+    ) {
+        self.ln_channel_manager
+            .handle_tx_add_output(their_node_id, msg)
+    }
+
+    fn handle_tx_remove_input(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::TxRemoveInput,
+    ) {
+        self.ln_channel_manager
+            .handle_tx_remove_input(their_node_id, msg)
+    }
+
+    fn handle_tx_remove_output(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::TxRemoveOutput,
+    ) {
+        self.ln_channel_manager
+            .handle_tx_remove_output(their_node_id, msg)
+    }
+
+    fn handle_tx_complete(&self, their_node_id: &PublicKey, msg: &lightning::ln::msgs::TxComplete) {
+        self.ln_channel_manager
+            .handle_tx_complete(their_node_id, msg)
+    }
+
+    fn handle_tx_signatures(
+        &self,
+        their_node_id: &PublicKey,
+        msg: &lightning::ln::msgs::TxSignatures,
+    ) {
+        self.ln_channel_manager
+            .handle_tx_signatures(their_node_id, msg)
+    }
+
+    fn handle_tx_init_rbf(&self, their_node_id: &PublicKey, msg: &lightning::ln::msgs::TxInitRbf) {
+        self.ln_channel_manager
+            .handle_tx_init_rbf(their_node_id, msg)
+    }
+
+    fn handle_tx_ack_rbf(&self, their_node_id: &PublicKey, msg: &lightning::ln::msgs::TxAckRbf) {
+        self.ln_channel_manager
+            .handle_tx_ack_rbf(their_node_id, msg)
+    }
+
+    fn handle_tx_abort(&self, their_node_id: &PublicKey, msg: &lightning::ln::msgs::TxAbort) {
+        self.ln_channel_manager.handle_tx_abort(their_node_id, msg)
+    }
+
+    fn get_genesis_hashes(&self) -> Option<Vec<bitcoin::blockdata::constants::ChainHash>> {
+        self.ln_channel_manager.get_genesis_hashes()
+    }
 }
 
 impl<
@@ -3895,14 +3988,11 @@ where
     F::Target: FeeEstimator,
     SP::Target: LnDlcSignerProvider<LCS>,
 {
-    fn get_and_clear_pending_msg_events(&self) -> Vec<lightning::util::events::MessageSendEvent> {
+    fn get_and_clear_pending_msg_events(&self) -> Vec<lightning::events::MessageSendEvent> {
         let mut msg_events = self.ln_channel_manager.get_and_clear_pending_msg_events();
 
         for event in msg_events.iter_mut() {
-            if let lightning::util::events::MessageSendEvent::SendChannelReestablish {
-                msg, ..
-            } = event
-            {
+            if let lightning::events::MessageSendEvent::SendChannelReestablish { msg, .. } = event {
                 match self.dlc_channel_manager.get_store().get_sub_channel(msg.channel_id) {
                             Err(e) => error!("Unexpected error {} trying to retrieve sub channel {:?} during sending of reestablish.", e, msg.channel_id),
                             Ok(None) => trace!("No sub channel with id {:?} to reestablish", msg.channel_id),

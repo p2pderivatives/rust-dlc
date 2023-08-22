@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use bitcoin::{Script, Transaction, TxOut};
 use dlc_manager::{
@@ -6,12 +9,12 @@ use dlc_manager::{
     subchannel::{LnDlcChannelSigner, LnDlcSignerProvider},
 };
 use lightning::{
-    chain::keysinterface::{
-        ChannelSigner, EcdsaChannelSigner, EntropySource, ExtraSign, InMemorySigner, KeysManager,
-        NodeSigner, SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
-    },
     ln::{chan_utils::ChannelPublicKeys, msgs::DecodeError, script::ShutdownScript},
-    util::ser::{Readable, Writeable},
+    sign::{
+        ChannelSigner, EcdsaChannelSigner, EntropySource, InMemorySigner, KeysManager, NodeSigner,
+        SignerProvider, SpendableOutputDescriptor, WriteableEcdsaChannelSigner,
+    },
+    util::ser::{ReadableArgs, Writeable},
 };
 use secp256k1_zkp::{Secp256k1, SecretKey, Signing};
 
@@ -85,6 +88,13 @@ impl ChannelSigner for CustomSigner {
             .lock()
             .unwrap()
             .provide_channel_parameters(channel_parameters)
+    }
+
+    fn set_channel_value_satoshis(&mut self, value: u64) {
+        self.in_memory_signer
+            .lock()
+            .unwrap()
+            .set_channel_value_satoshis(value)
     }
 }
 
@@ -222,24 +232,18 @@ impl EcdsaChannelSigner for CustomSigner {
             .unwrap()
             .sign_channel_announcement_with_funding_key(msg, secp_ctx)
     }
-}
 
-impl ExtraSign for CustomSigner {
-    fn sign_with_fund_key_callback<F>(&self, cb: &mut F)
-    where
-        F: FnMut(&secp256k1_zkp::SecretKey),
-    {
+    fn sign_holder_htlc_transaction(
+        &self,
+        htlc_tx: &Transaction,
+        input: usize,
+        htlc_descriptor: &lightning::events::bump_transaction::HTLCDescriptor,
+        secp_ctx: &Secp256k1<bitcoin::secp256k1::All>,
+    ) -> Result<secp256k1_zkp::ecdsa::Signature, ()> {
         self.in_memory_signer
             .lock()
             .unwrap()
-            .sign_with_fund_key_callback(cb)
-    }
-
-    fn set_channel_value_satoshis(&mut self, value: u64) {
-        self.in_memory_signer
-            .lock()
-            .unwrap()
-            .set_channel_value_satoshis(value)
+            .sign_holder_htlc_transaction(htlc_tx, input, htlc_descriptor, secp_ctx)
     }
 }
 
@@ -249,9 +253,12 @@ impl Writeable for CustomSigner {
     }
 }
 
-impl Readable for CustomSigner {
-    fn read<R: std::io::Read>(reader: &mut R) -> Result<Self, DecodeError> {
-        let in_memory_signer = InMemorySigner::read(reader)?;
+impl<ES: Deref> ReadableArgs<ES> for CustomSigner
+where
+    ES::Target: EntropySource,
+{
+    fn read<R: std::io::Read>(reader: &mut R, entropy_source: ES) -> Result<Self, DecodeError> {
+        let in_memory_signer = InMemorySigner::read(reader, entropy_source)?;
         Ok(Self::new(in_memory_signer))
     }
 }
@@ -322,6 +329,7 @@ impl CustomKeysManager {
             outputs,
             change_destination_script,
             feerate_sat_per_1000_weight,
+            None,
             secp_ctx,
         )
     }
@@ -356,14 +364,14 @@ impl SignerProvider for CustomKeysManager {
     }
 
     fn read_chan_signer(&self, reader: &[u8]) -> Result<Self::Signer, DecodeError> {
-        CustomSigner::read(&mut std::io::Cursor::new(reader))
+        CustomSigner::read(&mut std::io::Cursor::new(reader), self)
     }
 
-    fn get_destination_script(&self) -> Script {
+    fn get_destination_script(&self) -> Result<Script, ()> {
         self.keys_manager.get_destination_script()
     }
 
-    fn get_shutdown_scriptpubkey(&self) -> ShutdownScript {
+    fn get_shutdown_scriptpubkey(&self) -> Result<ShutdownScript, ()> {
         self.keys_manager.get_shutdown_scriptpubkey()
     }
 }
@@ -385,20 +393,20 @@ impl EntropySource for CustomKeysManager {
 }
 
 impl NodeSigner for CustomKeysManager {
-    fn get_inbound_payment_key_material(&self) -> lightning::chain::keysinterface::KeyMaterial {
+    fn get_inbound_payment_key_material(&self) -> lightning::sign::KeyMaterial {
         self.keys_manager.get_inbound_payment_key_material()
     }
 
     fn get_node_id(
         &self,
-        recipient: lightning::chain::keysinterface::Recipient,
+        recipient: lightning::sign::Recipient,
     ) -> Result<secp256k1_zkp::PublicKey, ()> {
         self.keys_manager.get_node_id(recipient)
     }
 
     fn ecdh(
         &self,
-        recipient: lightning::chain::keysinterface::Recipient,
+        recipient: lightning::sign::Recipient,
         other_key: &secp256k1_zkp::PublicKey,
         tweak: Option<&secp256k1_zkp::Scalar>,
     ) -> Result<secp256k1_zkp::ecdh::SharedSecret, ()> {
@@ -409,7 +417,7 @@ impl NodeSigner for CustomKeysManager {
         &self,
         hrp_bytes: &[u8],
         invoice_data: &[bitcoin::bech32::u5],
-        recipient: lightning::chain::keysinterface::Recipient,
+        recipient: lightning::sign::Recipient,
     ) -> Result<secp256k1_zkp::ecdsa::RecoverableSignature, ()> {
         self.keys_manager
             .sign_invoice(hrp_bytes, invoice_data, recipient)
