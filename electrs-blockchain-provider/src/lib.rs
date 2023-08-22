@@ -1,4 +1,4 @@
-use log::{debug, warn};
+use log::{error, trace, warn};
 use std::any::type_name;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -74,9 +74,10 @@ impl ElectrsBlockchainProvider {
     fn get_text(&self, sub_url: &str) -> Result<String, Error> {
         match self.get(sub_url)?.text() {
             Ok(text) => {
-                debug!(
+                trace!(
                     "Got text response from blockchain: {:?} from requested url: {}",
-                    text, sub_url
+                    text,
+                    sub_url
                 );
                 Ok(text)
             }
@@ -93,7 +94,7 @@ impl ElectrsBlockchainProvider {
     fn get_u64(&self, sub_url: &str) -> Result<u64, Error> {
         match self.get_text(sub_url) {
             Ok(text) => Ok(text.parse().map_err(|e: std::num::ParseIntError| {
-                debug!("Error parsing u64 from request to url: {}", e);
+                error!("Error parsing u64 from request to url: {}", e);
                 Error::BlockchainError(e.to_string())
             })?),
             Err(e) => {
@@ -119,7 +120,7 @@ impl ElectrsBlockchainProvider {
         T: serde::de::DeserializeOwned,
     {
         let json_as_string = self.get_text(sub_url)?;
-        debug!("Converting text to JSON for type {}", type_name::<T>());
+        trace!("Converting text to JSON for type {}", type_name::<T>());
         serde_json::from_str(&json_as_string).map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
