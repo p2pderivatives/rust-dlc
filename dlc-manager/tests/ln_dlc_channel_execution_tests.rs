@@ -1075,7 +1075,7 @@ fn ln_dlc_disconnected_force_close() {
 fn ln_dlc_offered_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::OfferReceived);
+    go_to_established_target_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1099,7 +1099,7 @@ fn ln_dlc_offered_force_close() {
 fn ln_dlc_offered_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::OfferReceived);
+    go_to_established_target_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1124,7 +1124,7 @@ fn ln_dlc_offered_force_close2() {
 fn ln_dlc_accepted_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Accepted);
+    go_to_established_target_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1149,7 +1149,7 @@ fn ln_dlc_accepted_force_close() {
 fn ln_dlc_accepted_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Accepted);
+    go_to_established_target_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1185,7 +1185,7 @@ fn ln_dlc_accepted_force_close2() {
 fn ln_dlc_confirmed_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Confirmed);
+    go_to_established_target_state(&test_params, TargetState::Confirmed, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1222,7 +1222,7 @@ fn ln_dlc_confirmed_force_close() {
 fn ln_dlc_confirmed_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Confirmed);
+    go_to_established_target_state(&test_params, TargetState::Confirmed, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1259,7 +1259,7 @@ fn ln_dlc_confirmed_force_close2() {
 fn ln_dlc_finalized_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Finalized);
+    go_to_established_target_state(&test_params, TargetState::Finalized, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1298,7 +1298,7 @@ fn ln_dlc_finalized_force_close() {
 fn ln_dlc_finalized_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Finalized);
+    go_to_established_target_state(&test_params, TargetState::Finalized, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1635,7 +1635,7 @@ fn ln_dlc_ldk_auto_close_established_test() {
 fn ln_dlc_ldk_auto_close_offered_test() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::OfferReceived);
+    go_to_established_target_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1658,7 +1658,7 @@ fn ln_dlc_ldk_auto_close_offered_test() {
 fn ln_dlc_ldk_auto_close_accepted_test() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Accepted);
+    go_to_established_target_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1688,15 +1688,66 @@ fn ln_dlc_ldk_auto_close_accepted_test() {
     ldk_auto_close(&mut test_params, &commit_tx);
 }
 
-//TODO(tibo): Find a way to trigger an ldk auto force close in this state. Changing the fee does
-//not work because Alice is awaiting a revoke from Bob and doesn't send the fee update message,
-//sending a bad commitment signature also doesn't really fit with the state.
-// fn ln_dlc_ldk_auto_close_confirmed_test() {
-// }
-// #[test]
-// #[ignore]
-// fn ln_dlc_ldk_auto_close_finalized_test() {
-// }
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_confirmed_test() {
+    let mut test_params = test_init();
+
+    go_to_established_target_state(&test_params, TargetState::Confirmed, true);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Accepted
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Confirmed
+    );
+
+    let sub_channel = test_params
+        .bob_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(test_params.channel_id)
+        .unwrap()
+        .unwrap();
+    let commit_tx = if let SubChannelState::Confirmed(a) = &sub_channel.state {
+        a.commitment_transactions[0].clone()
+    } else {
+        unreachable!();
+    };
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_finalized_test() {
+    let mut test_params = test_init();
+
+    go_to_established_target_state(&test_params, TargetState::Finalized, false);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Confirmed
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Finalized
+    );
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
 
 #[test]
 #[ignore]
@@ -1760,17 +1811,39 @@ fn ln_dlc_ldk_auto_close_close_accepted_test() {
     ldk_auto_close(&mut test_params, &commit_tx);
 }
 
-//TODO(tibo): find a way to test this state.
-// #[test]
-// #[ignore]
-// fn ln_dlc_ldk_auto_close_close_confirmed_test() {
-// }
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_close_confirmed_test() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    open_sub_channel(&test_params);
+
+    go_to_off_chain_close_state(&test_params, TargetState::Confirmed, true);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseAccepted
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseConfirmed
+    );
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
 
 #[test]
 #[ignore]
-/// Force close triggered by the party who offered to force close the channel, after their
-/// counter party processed the close confirm message, but before they processed the close
-/// finalize message.
 fn ln_dlc_ldk_auto_close_close_finalized_test() {
     let mut test_params = test_init();
 
@@ -3200,25 +3273,32 @@ fn force_close_mid_protocol(
     assert!(all_spent);
 }
 
-fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: TargetState) {
-    let offer = generate_offer(
-        &test_params.test_params,
-        &test_params.alice_node,
-        &test_params.channel_id,
-    );
+fn go_to_established_target_state(
+    test_params: &LnDlcTestParams,
+    target_state: TargetState,
+    reverse_offerer: bool,
+) {
+    let (offerer, accepter) = if !reverse_offerer {
+        (&test_params.alice_node, &test_params.bob_node)
+    } else {
+        (&test_params.bob_node, &test_params.alice_node)
+    };
 
-    test_params
-        .bob_node
+    let offer = generate_offer(&test_params.test_params, &offerer, &test_params.channel_id);
+
+    accepter
         .sub_channel_manager
-        .on_sub_channel_message(&SubChannelMessage::Offer(offer), &test_params.alice_node_id)
+        .on_sub_channel_message(
+            &SubChannelMessage::Offer(offer),
+            &offerer.channel_manager.get_our_node_id(),
+        )
         .unwrap();
 
     if target_state == TargetState::OfferReceived {
         return;
     }
 
-    let (_, accept) = test_params
-        .bob_node
+    let (_, accept) = accepter
         .sub_channel_manager
         .accept_sub_channel(&test_params.channel_id)
         .unwrap();
@@ -3227,10 +3307,12 @@ fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: T
         return;
     }
 
-    let confirm = test_params
-        .alice_node
+    let confirm = offerer
         .sub_channel_manager
-        .on_sub_channel_message(&SubChannelMessage::Accept(accept), &test_params.bob_node_id)
+        .on_sub_channel_message(
+            &SubChannelMessage::Accept(accept),
+            &accepter.channel_manager.get_our_node_id(),
+        )
         .unwrap()
         .unwrap();
 
@@ -3238,10 +3320,9 @@ fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: T
         return;
     }
 
-    test_params
-        .bob_node
+    accepter
         .sub_channel_manager
-        .on_sub_channel_message(&confirm, &test_params.alice_node_id)
+        .on_sub_channel_message(&confirm, &offerer.channel_manager.get_our_node_id())
         .unwrap();
 }
 
@@ -3328,7 +3409,11 @@ fn ldk_auto_close(test_params: &mut LnDlcTestParams, commit_tx: &Transaction) {
 
     let channel_id = sub_channel.channel_id;
 
-    test_params.alice_node.mock_blockchain.set_est_fee(10000);
+    test_params
+        .bob_node
+        .channel_manager
+        .force_close_broadcasting_latest_txn(&test_params.channel_id, &test_params.alice_node_id)
+        .unwrap();
     test_params.alice_node.process_events();
     test_params.bob_node.process_events();
     test_params.alice_node.process_events();

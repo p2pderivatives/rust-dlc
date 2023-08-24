@@ -1156,9 +1156,7 @@ where
                         sub_channel.state = SubChannelState::OnChainClosed;
                         (None, None)
                     }
-                    SubChannelState::Accepted(_)
-                    | SubChannelState::Confirmed(_)
-                    | SubChannelState::Finalized(_) => {
+                    SubChannelState::Accepted(_) | SubChannelState::Confirmed(_) => {
                         return self.force_close_sub_channel_internal(sub_channel);
                     }
                     SubChannelState::CloseAccepted(ref c) => {
@@ -1204,7 +1202,7 @@ where
                         )?;
                         return Ok(());
                     }
-                    SubChannelState::Signed(ref s) => {
+                    SubChannelState::Signed(ref s) | SubChannelState::Finalized(ref s) => {
                         let split_input = &s.split_tx.transaction.input[0];
                         let funding_txo = lightning::chain::transaction::OutPoint {
                             txid: split_input.previous_output.txid,
