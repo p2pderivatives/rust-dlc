@@ -117,6 +117,16 @@ impl MessageHandler {
                     );
                     false
                 }
+                Message::SubChannel(SubChannelMessage::Finalize(message))
+                if node_id == disconnected_node_id =>
+                    {
+                        log::warn!(
+                        "Dropping SubChannelFinalize message for channel {:?} \
+                         after peer {node_id} disconnected",
+                        message.channel_id
+                    );
+                        false
+                    }
                 Message::SubChannel(SubChannelMessage::CloseConfirm(message))
                     if node_id == disconnected_node_id =>
                 {
@@ -127,6 +137,16 @@ impl MessageHandler {
                     );
                     false
                 }
+                Message::SubChannel(SubChannelMessage::CloseFinalize(message))
+                if node_id == disconnected_node_id =>
+                    {
+                        log::warn!(
+                        "Dropping SubChannelCloseFinalize message for channel {:?} \
+                         after peer {node_id} disconnected",
+                        message.channel_id
+                    );
+                        false
+                    }
                 // Keep any other message
                 _ => true,
             }
