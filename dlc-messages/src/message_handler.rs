@@ -88,6 +88,11 @@ impl MessageHandler {
         }
     }
 
+    /// Returns whether there are any new received messages to process.
+    pub fn has_pending_messages_to_process(&self) -> bool {
+        !self.msg_received.lock().unwrap().is_empty()
+    }
+
     /// Returns the messages received by the message handler and empty the
     /// receiving buffer.
     pub fn get_and_clear_received_messages(&self) -> Vec<(PublicKey, Message)> {
