@@ -32,10 +32,10 @@ use lightning::{
     },
 };
 use log::{error, info, trace, warn};
-use secp256k1_zkp::{ecdsa::Signature, PublicKey, SecretKey};
+use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};
 
 use crate::{
-    chain_monitor::{ChainMonitor, ChannelInfo, RevokedTxType, TxType},
+    chain_monitor::{ChannelInfo, RevokedTxType, TxType},
     channel::{
         generate_temporary_contract_id, offered_channel::OfferedChannel,
         party_points::PartyBasePoints, Channel, ClosedChannel,
@@ -727,39 +727,26 @@ where
                 "Unknown sub channel {:?}",
                 channel_id
             )))?;
-        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
-        self.force_close_sub_channel_internal(sub_channel, &mut chain_monitor)
+        self.force_close_sub_channel_internal(sub_channel)
     }
 
-    fn force_close_sub_channel_internal(
-        &self,
-        mut sub_channel: SubChannel,
-        chain_monitor: &mut ChainMonitor,
-    ) -> Result<(), Error> {
+    fn force_close_sub_channel_internal(&self, mut sub_channel: SubChannel) -> Result<(), Error> {
         match sub_channel.state {
             // Force close by simply asking LDK to force close as the channel funding outpoint has
             // not yet been updated (also updated sub-channel/channel/contract state).
-            SubChannelState::Offered(_) => self.force_close_with_ldk(sub_channel, chain_monitor)?,
+            SubChannelState::Offered(_) => self.force_close_with_ldk(sub_channel)?,
             // Force close by using the saved LN commitment transactions from before the spliting of the
             // channel.
             SubChannelState::Accepted(ref a) => {
                 let commitment_transactions = a.commitment_transactions.clone();
 
-                self.force_close_with_saved_commitment(
-                    sub_channel,
-                    &commitment_transactions,
-                    chain_monitor,
-                )?;
+                self.force_close_with_saved_commitment(sub_channel, &commitment_transactions)?;
             }
             // Force close by using the saved LN commitment transactions from before the spliting of the
             // channel.
             SubChannelState::Confirmed(ref c) => {
                 let commitment_transactions = c.commitment_transactions.clone();
-                self.force_close_with_saved_commitment(
-                    sub_channel,
-                    &commitment_transactions,
-                    chain_monitor,
-                )?;
+                self.force_close_with_saved_commitment(sub_channel, &commitment_transactions)?;
             }
             // Force close by broadcasting the split transaction and marking the sub-channel as
             // closing, which will trigger the periodic check to watch when the split transaction
@@ -800,7 +787,7 @@ where
             // Once we are in `CloseConfirmed`, we can simply use LDK to close the Lightning
             // channel.
             SubChannelState::CloseConfirmed(_) => {
-                self.force_close_with_ldk(sub_channel, chain_monitor)?;
+                self.force_close_with_ldk(sub_channel)?;
             }
             // In these states, either the channel is already closed, or it should be force closed
             // through LDK directly.
@@ -820,11 +807,7 @@ where
         Ok(())
     }
 
-    fn force_close_with_ldk(
-        &self,
-        mut sub_channel: SubChannel,
-        chain_monitor: &mut ChainMonitor,
-    ) -> Result<(), Error> {
+    fn force_close_with_ldk(&self, mut sub_channel: SubChannel) -> Result<(), Error> {
         let dlc_channel_id = sub_channel
             .get_dlc_channel_id(0)
             .expect("to have a channel id in offered state");
@@ -841,18 +824,18 @@ where
             .upsert_channel(closed_channel, Some(closed_contract))?;
         //TODO(tibo): this is actually unsafe, we shouldn't clean up the chain monitor before
         //having the commitment transaction confirmed on chain.
+        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
         chain_monitor.cleanup_channel(sub_channel.channel_id);
         chain_monitor.cleanup_channel(dlc_channel_id);
         self.dlc_channel_manager
             .get_store()
-            .persist_chain_monitor(chain_monitor)
+            .persist_chain_monitor(&chain_monitor)
     }
 
     fn force_close_with_saved_commitment(
         &self,
         mut sub_channel: SubChannel,
         commitment_transactions: &Vec<Transaction>,
-        chain_monitor: &mut ChainMonitor,
     ) -> Result<(), Error> {
         // The Lightning commitment transaction is always first in the vector so this is safe.
         for tx in commitment_transactions {
@@ -873,11 +856,12 @@ where
         self.dlc_channel_manager
             .get_store()
             .upsert_sub_channel(&sub_channel)?;
+        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
         chain_monitor.cleanup_channel(sub_channel.channel_id);
         chain_monitor.cleanup_channel(dlc_channel_id);
         self.dlc_channel_manager
             .get_store()
-            .persist_chain_monitor(chain_monitor)?;
+            .persist_chain_monitor(&chain_monitor)?;
         Ok(())
     }
 
@@ -907,20 +891,8 @@ where
 
             let mut split_tx = state.split_tx.transaction.clone();
 
-            let mut signers = self.ln_channel_signers.lock().unwrap();
+            let own_split_sig = self.get_holder_split_tx_signature(&sub_channel, &split_tx)?;
 
-            let signer = signers.entry(sub_channel.channel_id).or_insert(
-                self.signer_provider.derive_ln_dlc_channel_signer(
-                    sub_channel.fund_value_satoshis,
-                    sub_channel.channel_keys_id,
-                ),
-            );
-            let own_split_sig = signer.get_holder_split_tx_signature(
-                self.dlc_channel_manager.get_secp(),
-                &split_tx,
-                &sub_channel.original_funding_redeemscript,
-                sub_channel.fund_value_satoshis,
-            )?;
             dlc::util::finalize_multi_sig_input_transaction(
                 &mut split_tx,
                 vec![
@@ -1108,8 +1080,6 @@ where
                 channel_id
             )))?;
 
-        let mut chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
-
         let (updated_channel, updated_contract) = match closure_reason {
             ClosureReason::CounterpartyForceClosed { .. }
             | ClosureReason::CommitmentTxConfirmed => match sub_channel.state {
@@ -1125,11 +1095,15 @@ where
                     let (closed_channel, closed_contract) =
                         self.get_closed_dlc_channel_and_contract(dlc_channel_id, true)?;
                     sub_channel.state = SubChannelState::CounterOnChainClosed;
+                    let mut chain_monitor =
+                        self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
                     chain_monitor.cleanup_channel(sub_channel.channel_id);
                     chain_monitor.cleanup_channel(dlc_channel_id);
                     (Some(closed_channel), Some(closed_contract))
                 }
                 SubChannelState::OffChainClosed => {
+                    let mut chain_monitor =
+                        self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
                     chain_monitor.cleanup_channel(sub_channel.channel_id);
                     sub_channel.state = SubChannelState::CounterOnChainClosed;
                     (None, None)
@@ -1137,12 +1111,13 @@ where
                 SubChannelState::Signed(_)
                 | SubChannelState::Closing(_)
                 | SubChannelState::CloseOffered(_) => {
-                    error!("Got notification of LN channel closure by counter party in a state where we do not expect it.");
-                    return Ok(());
+                    return Err(Error::InvalidState(
+                                "Got notification of LN channel closure by counter party in a state where we do not expect it.".to_string())
+                            );
                 }
                 SubChannelState::OnChainClosed | SubChannelState::CounterOnChainClosed => {
                     info!(
-                        "Channel close notification received for channel: {:?}",
+                        "Channel close notification received for closed channel: {:?}",
                         sub_channel.channel_id
                     );
                     return Ok(());
@@ -1168,11 +1143,15 @@ where
                         let (closed_channel, closed_contract) =
                             self.get_closed_dlc_channel_and_contract(dlc_channel_id, false)?;
                         sub_channel.state = SubChannelState::OnChainClosed;
+                        let mut chain_monitor =
+                            self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
                         chain_monitor.cleanup_channel(sub_channel.channel_id);
                         chain_monitor.cleanup_channel(dlc_channel_id);
                         (Some(closed_channel), Some(closed_contract))
                     }
                     SubChannelState::OffChainClosed => {
+                        let mut chain_monitor =
+                            self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
                         chain_monitor.cleanup_channel(sub_channel.channel_id);
                         sub_channel.state = SubChannelState::OnChainClosed;
                         (None, None)
@@ -1180,8 +1159,7 @@ where
                     SubChannelState::Accepted(_)
                     | SubChannelState::Confirmed(_)
                     | SubChannelState::Finalized(_) => {
-                        return self
-                            .force_close_sub_channel_internal(sub_channel, &mut chain_monitor);
+                        return self.force_close_sub_channel_internal(sub_channel);
                     }
                     SubChannelState::CloseAccepted(ref c) => {
                         let split_input = &c.signed_subchannel.split_tx.transaction.input[0];
@@ -1242,7 +1220,22 @@ where
                     _ => return Ok(()),
                 }
             }
-            _ => return Ok(()),
+            ClosureReason::CooperativeClosure => {
+                info!("Channel {channel_id:?} was cooperatively closed");
+                return Ok(());
+            }
+            ClosureReason::FundingTimedOut => {
+                info!("Channel {channel_id:?} timed out");
+                return Ok(());
+            }
+            ClosureReason::DisconnectedPeer => {
+                info!("Channel {channel_id:?} closed due to disconnected peer before funding completed.");
+                return Ok(());
+            }
+            ClosureReason::OutdatedChannelManager => {
+                info!("Channel {channel_id:?} closed due to outdated channel manager.");
+                return Ok(());
+            }
         };
 
         if let Some(channel) = updated_channel {
@@ -1251,6 +1244,7 @@ where
                 .upsert_channel(channel, updated_contract)?;
         }
 
+        let chain_monitor = self.dlc_channel_manager.get_chain_monitor().lock().unwrap();
         self.dlc_channel_manager
             .get_store()
             .persist_chain_monitor(&chain_monitor)?;
@@ -1783,19 +1777,11 @@ where
             channel_id,
             counter_party,
             |channel_lock| {
-                let mut signers = self.ln_channel_signers.lock().unwrap();
-
-                let signer = signers.entry(*channel_id).or_insert(
-                    self.signer_provider.derive_ln_dlc_channel_signer(
-                        channel_details.channel_value_satoshis,
-                        channel_details.channel_keys_id,
-                    ),
-                );
-
-                let split_tx_adaptor_signature = signer.get_holder_split_tx_adaptor_signature(
-                    self.dlc_channel_manager.get_secp(),
-                    &split_tx.transaction,
+                let split_tx_adaptor_signature = self.get_holder_split_tx_adaptor_signature(
+                    *channel_id,
                     channel_details.channel_value_satoshis,
+                    channel_details.channel_keys_id,
+                    &split_tx.transaction,
                     &funding_redeemscript,
                     &accept_revoke_params.publish_pk.inner,
                 )?;
@@ -2068,19 +2054,11 @@ where
                         self.dlc_channel_manager.get_chain_monitor(),
                     )?;
 
-                let mut signers = self.ln_channel_signers.lock().unwrap();
-
-                let signer = signers.entry(sub_channel_confirm.channel_id).or_insert(
-                    self.signer_provider.derive_ln_dlc_channel_signer(
-                        channel_details.channel_value_satoshis,
-                        channel_details.channel_keys_id,
-                    ),
-                );
-
-                let split_adaptor_signature = signer.get_holder_split_tx_adaptor_signature(
-                    self.dlc_channel_manager.get_secp(),
-                    &state.split_tx.transaction,
+                let split_adaptor_signature = self.get_holder_split_tx_adaptor_signature(
+                    sub_channel_confirm.channel_id,
                     accepted_sub_channel.fund_value_satoshis,
+                    channel_details.channel_keys_id,
+                    &state.split_tx.transaction,
                     funding_redeemscript,
                     &offer_revoke_params.publish_pk.inner,
                 )?;
@@ -3660,6 +3638,51 @@ where
             pnl: 0,
         });
         Ok((closed_channel, closed_contract))
+    }
+
+    fn get_holder_split_tx_signature(
+        &self,
+        sub_channel: &SubChannel,
+        split_tx: &Transaction,
+    ) -> Result<Signature, Error> {
+        let mut signers = self.ln_channel_signers.lock().unwrap();
+        let signer = signers.entry(sub_channel.channel_id).or_insert(
+            self.signer_provider.derive_ln_dlc_channel_signer(
+                sub_channel.fund_value_satoshis,
+                sub_channel.channel_keys_id,
+            ),
+        );
+        signer.get_holder_split_tx_signature(
+            self.dlc_channel_manager.get_secp(),
+            split_tx,
+            &sub_channel.original_funding_redeemscript,
+            sub_channel.fund_value_satoshis,
+        )
+    }
+
+    fn get_holder_split_tx_adaptor_signature(
+        &self,
+        channel_id: [u8; 32],
+        channel_value_satoshis: u64,
+        channel_keys_id: [u8; 32],
+        split_tx: &Transaction,
+        funding_redeemscript: &Script,
+        counter_publish_pk: &PublicKey,
+    ) -> Result<EcdsaAdaptorSignature, Error> {
+        let mut signers = self.ln_channel_signers.lock().unwrap();
+
+        let signer = signers.entry(channel_id).or_insert(
+            self.signer_provider
+                .derive_ln_dlc_channel_signer(channel_value_satoshis, channel_keys_id),
+        );
+
+        signer.get_holder_split_tx_adaptor_signature(
+            self.dlc_channel_manager.get_secp(),
+            split_tx,
+            channel_value_satoshis,
+            funding_redeemscript,
+            counter_publish_pk,
+        )
     }
 }
 
