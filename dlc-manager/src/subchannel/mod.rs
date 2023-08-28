@@ -408,6 +408,7 @@ where
         &self,
         channel_id: &ChannelId,
         counter_party_node_id: &PublicKey,
+        commit_tx_number: Option<u64>,
         cb: F,
     ) -> Result<T, APIError>
     where
@@ -430,7 +431,7 @@ where
         funding_outpoint: &OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
-    ) -> Result<CommitmentSigned, APIError>;
+    ) -> Result<(CommitmentSigned, u64), APIError>;
     /// Provides commitment transaction and HTLCs signatures and returns a [`RevokeAndACK`]
     /// message.
     fn on_commitment_signed_get_raa(
@@ -512,7 +513,7 @@ where
         funding_outpoint: &OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
-    ) -> Result<CommitmentSigned, APIError> {
+    ) -> Result<(CommitmentSigned, u64), APIError> {
         self.get_updated_funding_outpoint_commitment_signed(
             channel_lock,
             &lightning::chain::transaction::OutPoint {
@@ -569,6 +570,7 @@ where
         &self,
         channel_id: &ChannelId,
         counter_party_node_id: &PublicKey,
+        commit_tx_number: Option<u64>,
         cb: C,
     ) -> Result<RV, APIError>
     where
@@ -576,7 +578,7 @@ where
             &mut ChannelLock<<<K as Deref>::Target as SignerProvider>::Signer>,
         ) -> Result<RV, APIError>,
     {
-        self.with_useable_channel_lock(channel_id, counter_party_node_id, cb)
+        self.with_useable_channel_lock(channel_id, counter_party_node_id, commit_tx_number, cb)
     }
 
     fn with_channel_lock_no_check<C, RV>(

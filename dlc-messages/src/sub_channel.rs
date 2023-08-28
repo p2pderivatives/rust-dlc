@@ -102,6 +102,8 @@ pub struct SubChannelAccept {
     pub own_basepoint: PublicKey,
     /// The signature for the new commit transaction of the Lightning channel.
     pub commit_signature: Signature,
+    /// The commit transaction number for which the above signature is intended.
+    pub commit_tx_number: u64,
     /// The htlc signatures for the new commit transaction of the Lightning channel.
     pub htlc_signatures: Vec<Signature>,
     /// The first point used to derive public private key pairs used for the split transaction.
@@ -139,6 +141,7 @@ impl_dlc_writeable!(
     (publish_basepoint, writeable),
     (own_basepoint, writeable),
     (commit_signature, writeable),
+    (commit_tx_number, writeable),
     (htlc_signatures, writeable),
     (first_per_split_point, writeable),
     (channel_revocation_basepoint, writeable),
@@ -168,6 +171,8 @@ pub struct SubChannelConfirm {
     pub split_adaptor_signature: EcdsaAdaptorSignature,
     /// The signature for the new commitment transaction.
     pub commit_signature: Signature,
+    /// The commit transaction number for which the above signature is intended.
+    pub commit_tx_number: u64,
     /// The htlc signatures for the new commitment transaction.
     pub htlc_signatures: Vec<Signature>,
     /// The adaptor signatures for the DLC channel CETs.
@@ -185,6 +190,7 @@ impl_dlc_writeable!(SubChannelConfirm, {
     (channel_id, writeable),
     (split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
     (commit_signature, writeable),
+    (commit_tx_number, writeable),
     (htlc_signatures, writeable),
     (cet_adaptor_signatures, writeable),
     (buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
@@ -274,6 +280,8 @@ pub struct SubChannelCloseAccept {
     /// The signature for the new commitment transaction The signature for the new commitment
     /// transaction.
     pub commit_signature: Signature,
+    /// The commit transaction number for which the above signature is intended.
+    pub commit_tx_number: u64,
     /// The htlc signatures for the new commitment transactions.
     pub htlc_signatures: Vec<Signature>,
 }
@@ -281,6 +289,7 @@ pub struct SubChannelCloseAccept {
 impl_dlc_writeable!(SubChannelCloseAccept, {
     (channel_id, writeable),
     (commit_signature, writeable),
+    (commit_tx_number, writeable),
     (htlc_signatures, writeable)
 });
 
@@ -298,6 +307,8 @@ pub struct SubChannelCloseConfirm {
     /// The signature for the new commitment transaction The signature for the new commitment
     /// transaction.
     pub commit_signature: Signature,
+    /// The commit transaction number for which the above signature is intended.
+    pub commit_tx_number: u64,
     /// The htlc signatures for the new commitment transactions.
     pub htlc_signatures: Vec<Signature>,
     /// The pre-image of the split transaction revocation point.
@@ -311,6 +322,7 @@ pub struct SubChannelCloseConfirm {
 impl_dlc_writeable!(SubChannelCloseConfirm, {
     (channel_id, writeable),
     (commit_signature, writeable),
+    (commit_tx_number, writeable),
     (htlc_signatures, writeable),
     (split_revocation_secret, writeable),
     (commit_revocation_secret, writeable),
