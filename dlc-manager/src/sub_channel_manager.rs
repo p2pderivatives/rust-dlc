@@ -3,7 +3,9 @@
 
 use std::{collections::HashMap, marker::PhantomData, ops::Deref, sync::Mutex};
 
-use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction};
+use bitcoin::{
+    consensus::encode::serialize_hex, OutPoint, PackedLockTime, Script, Sequence, Transaction,
+};
 use dlc::{channel::sub_channel::LN_GLUE_TX_WEIGHT, PartyParams};
 use dlc_messages::{
     channel::{AcceptChannel, OfferChannel},
@@ -1110,16 +1112,10 @@ where
                 }
                 SubChannelState::Signed(_)
                 | SubChannelState::Closing(_)
-                | SubChannelState::CloseOffered(_) => {
-                    return Err(Error::InvalidState(
-                                "Got notification of LN channel closure by counter party in a state where we do not expect it.".to_string())
-                            );
-                }
-                SubChannelState::OnChainClosed | SubChannelState::CounterOnChainClosed => {
-                    info!(
-                        "Channel close notification received for closed channel: {:?}",
-                        sub_channel.channel_id
-                    );
+                | SubChannelState::CloseOffered(_)
+                | SubChannelState::OnChainClosed
+                | SubChannelState::CounterOnChainClosed => {
+                    info!("Got notification of LN channel ({}) closure by counter party in state {} where we do not have to react.", serialize_hex(&channel_id), sub_channel.state);
                     return Ok(());
                 }
                 SubChannelState::ClosedPunished(_) => {

@@ -1,7 +1,7 @@
 //! # Module containing structures and methods for working with DLC channels embedded in Lightning
 //! channels.
 
-use std::ops::Deref;
+use std::{fmt::Display, ops::Deref};
 
 use bitcoin::{hashes::Hash, OutPoint, Script, Transaction, Txid};
 use dlc::channel::sub_channel::SplitTx;
@@ -157,6 +157,27 @@ pub enum SubChannelState {
     ClosedPunished(Txid),
     /// An offer to establish a sub channel was rejected.
     Rejected,
+}
+
+impl Display for SubChannelState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubChannelState::Offered(_) => write!(f, "Offered"),
+            SubChannelState::Accepted(_) => write!(f, "Accepted"),
+            SubChannelState::Confirmed(_) => write!(f, "Confirmed"),
+            SubChannelState::Finalized(_) => write!(f, "Finalized"),
+            SubChannelState::Signed(_) => write!(f, "Signed"),
+            SubChannelState::Closing(_) => write!(f, "Closing"),
+            SubChannelState::OnChainClosed => write!(f, "OnChainClosed"),
+            SubChannelState::CounterOnChainClosed => write!(f, "CounterOnChainClosed"),
+            SubChannelState::CloseOffered(_) => write!(f, "CloseOffered"),
+            SubChannelState::CloseAccepted(_) => write!(f, "CloseAccepted"),
+            SubChannelState::CloseConfirmed(_) => write!(f, "CloseConfirmed"),
+            SubChannelState::OffChainClosed => write!(f, "OffChainClosed"),
+            SubChannelState::ClosedPunished(_) => write!(f, "ClosedPunished"),
+            SubChannelState::Rejected => write!(f, "Rejected"),
+        }
+    }
 }
 
 /// Flags associated with states that must be communicated to the remote node during
