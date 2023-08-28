@@ -2524,8 +2524,9 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
         Confirmed
     );
 
-    if do_reconnect {
+    if true {
         reconnect(test_params);
+
         assert_sub_channel_state!(
             test_params.alice_node.sub_channel_manager,
             &test_params.channel_id,
@@ -2536,6 +2537,17 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
             &test_params.channel_id,
             Offered
         );
+
+        if let Err(e) = test_params
+            .alice_node
+            .sub_channel_manager
+            .on_sub_channel_message(
+                &finalize,
+                &test_params.bob_node.channel_manager.get_our_node_id(),
+            )
+        {
+            println!("{}", e);
+        }
 
         // Bob should re-send the accept message
         let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
@@ -2550,7 +2562,7 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
         );
         if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.alice_node.channel_manager.get_our_node_id());
-            let confirm = test_params
+            let _ = test_params
                 .alice_node
                 .sub_channel_manager
                 .on_sub_channel_message(
@@ -2559,15 +2571,50 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
                 )
                 .unwrap()
                 .unwrap();
-            finalize = test_params
-                .bob_node
-                .sub_channel_manager
-                .on_sub_channel_message(
-                    &confirm,
-                    &test_params.alice_node.channel_manager.get_our_node_id(),
-                )
-                .unwrap()
-                .unwrap();
+            reconnect(test_params);
+            assert_sub_channel_state!(
+                test_params.alice_node.sub_channel_manager,
+                &test_params.channel_id,
+                Offered
+            );
+            assert_sub_channel_state!(
+                test_params.bob_node.sub_channel_manager,
+                &test_params.channel_id,
+                Offered
+            );
+            let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
+            assert_eq!(1, msgs.len());
+            assert_eq!(
+                0,
+                test_params
+                    .alice_node
+                    .sub_channel_manager
+                    .periodic_check()
+                    .len()
+            );
+            if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+                assert_eq!(p, test_params.alice_node.channel_manager.get_our_node_id());
+                let confirm = test_params
+                    .alice_node
+                    .sub_channel_manager
+                    .on_sub_channel_message(
+                        &SubChannelMessage::Accept(a),
+                        &test_params.bob_node.channel_manager.get_our_node_id(),
+                    )
+                    .unwrap()
+                    .unwrap();
+                finalize = test_params
+                    .bob_node
+                    .sub_channel_manager
+                    .on_sub_channel_message(
+                        &confirm,
+                        &test_params.alice_node.channel_manager.get_our_node_id(),
+                    )
+                    .unwrap()
+                    .unwrap();
+            } else {
+                panic!();
+            }
         } else {
             panic!("Expected an accept message");
         }
