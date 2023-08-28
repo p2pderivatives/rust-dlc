@@ -137,6 +137,26 @@ impl MessageHandler {
                     );
                     false
                 }
+                Message::SubChannel(SubChannelMessage::Accept(message))
+                if node_id == disconnected_node_id =>
+                    {
+                        log::warn!(
+                        "Dropping SubChannelAccept message for channel {:?} \
+                         after peer {node_id} disconnected",
+                        message.channel_id
+                    );
+                        false
+                    }
+                Message::SubChannel(SubChannelMessage::CloseAccept(message))
+                if node_id == disconnected_node_id =>
+                    {
+                        log::warn!(
+                        "Dropping SubChannelAccept message for channel {:?} \
+                         after peer {node_id} disconnected",
+                        message.channel_id
+                    );
+                        false
+                    }
                 // Keep any other message
                 _ => true,
             }
