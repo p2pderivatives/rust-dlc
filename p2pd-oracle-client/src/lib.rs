@@ -135,7 +135,7 @@ fn parse_event_id(event_id: &str) -> Result<(String, DateTime<Utc>), DlcManagerE
     let naive_date_time = NaiveDateTime::from_timestamp_opt(timestamp, 0).ok_or_else(|| {
         DlcManagerError::InvalidParameters(format!("Invalid timestamp {} in event id", timestamp))
     })?;
-    let date_time = DateTime::from_utc(naive_date_time, Utc);
+    let date_time = DateTime::from_naive_utc_and_offset(naive_date_time, Utc);
     Ok((asset_id.to_string(), date_time))
 }
 
