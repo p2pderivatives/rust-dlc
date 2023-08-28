@@ -1920,6 +1920,7 @@ where
         Some(signed_channel.channel_id),
     )?;
 
+    let prev_offer_per_update_point = signed_channel.counter_per_update_point;
     signed_channel.counter_per_update_point = offer_per_update_point;
     signed_channel.own_per_update_point = accept_per_update_point;
 
@@ -1966,8 +1967,7 @@ where
 
     signed_channel.state = SignedChannelState::RenewFinalized {
         contract_id: signed_contract.accepted_contract.get_contract_id(),
-        offer_per_update_point,
-        accept_per_update_point,
+        prev_offer_per_update_point,
         buffer_transaction: buffer_transaction.clone(),
         buffer_script_pubkey: buffer_script_pubkey.clone(),
         offer_buffer_adaptor_signature: renew_confirm.buffer_adaptor_signature,
@@ -2048,6 +2048,14 @@ where
         total_collateral: *total_collateral,
     };
 
+    if PublicKey::from_secret_key(secp, &renew_finalize.per_update_secret)
+        != signed_channel.counter_per_update_point
+    {
+        return Err(Error::InvalidParameters(
+            "Invalid per update secret in channel renew finalize".to_string(),
+        ));
+    }
+
     signed_channel
         .counter_party_commitment_secrets
         .provide_secret(
@@ -2080,12 +2088,14 @@ where
 
 /// Verify the given [`RenewRevoke`] and update the state of the channel.
 pub fn renew_channel_on_revoke(
+    secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     renew_revoke: &RenewRevoke,
 ) -> Result<(), Error> {
     let (
         contract_id,
         total_collateral,
+        prev_offer_per_update_point,
         offer_buffer_adaptor_signature,
         accept_buffer_adaptor_signature,
         buffer_transaction,
@@ -2094,9 +2104,18 @@ pub fn renew_channel_on_revoke(
         RenewFinalized,
         contract_id,
         total_collateral,
+        prev_offer_per_update_point,
         offer_buffer_adaptor_signature,
         accept_buffer_adaptor_signature | buffer_transaction
     )?;
+
+    if PublicKey::from_secret_key(secp, &renew_revoke.per_update_secret)
+        != *prev_offer_per_update_point
+    {
+        return Err(Error::InvalidParameters(
+            "Invalid per update secret in channel renew revoke".to_string(),
+        ));
+    }
 
     signed_channel
         .counter_party_commitment_secrets

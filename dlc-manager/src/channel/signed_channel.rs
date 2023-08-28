@@ -264,12 +264,9 @@ typed_enum!(
         RenewFinalized {
             /// The [`crate::ContractId`] of the offered contract.
             contract_id: ContractId,
-            /// The per update point to be used by the offer party for the setup
-            /// of the next channel state.
-            offer_per_update_point: PublicKey,
-            /// The per update point to be used by the accept party for the setup
-            /// of the next channel state.
-            accept_per_update_point: PublicKey,
+            /// The previous per update point that was used by the offer party for the previous
+            /// state of the channel.
+            prev_offer_per_update_point: PublicKey,
             /// The buffer transaction.
             buffer_transaction: Transaction,
             /// The buffer transaction script pubkey.

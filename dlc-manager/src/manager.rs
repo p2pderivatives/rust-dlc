@@ -1888,7 +1888,11 @@ where
         let mut signed_channel =
             get_channel_in_state!(self, &renew_revoke.channel_id, Signed, Some(*peer_id))?;
 
-        crate::channel_updater::renew_channel_on_revoke(&mut signed_channel, renew_revoke)?;
+        crate::channel_updater::renew_channel_on_revoke(
+            &self.secp,
+            &mut signed_channel,
+            renew_revoke,
+        )?;
 
         self.store
             .upsert_channel(Channel::Signed(signed_channel), None)
