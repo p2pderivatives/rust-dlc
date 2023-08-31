@@ -35,7 +35,7 @@ use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
         keysinterface::{EntropySource, KeysManager},
-        BestBlock, Confirm, Watch,
+        BestBlock, Confirm,
     },
     ln::{
         channelmanager::{ChainParameters, PaymentId},
@@ -72,7 +72,7 @@ type ChainMonitor = lightning::chain::chainmonitor::ChainMonitor<
     CustomSigner,
     Arc<EsploraSyncClient<Arc<ConsoleLogger>>>,
     Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
-    Arc<ElectrsBlockchainProvider>,
+    Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<ConsoleLogger>,
     Arc<FilesystemPersister>,
 >;
@@ -83,7 +83,7 @@ pub(crate) type ChannelManager = lightning::ln::channelmanager::ChannelManager<
     Arc<CustomKeysManager>,
     Arc<CustomKeysManager>,
     Arc<CustomKeysManager>,
-    Arc<ElectrsBlockchainProvider>,
+    Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<
         DefaultRouter<
             Arc<NetworkGraph<Arc<ConsoleLogger>>>,
@@ -116,12 +116,15 @@ type DlcChannelManager = Manager<
 type DlcSubChannelManager = SubChannelManager<
     Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
     Arc<ChannelManager>,
+    Arc<ChainMonitor>,
     Arc<MemoryStorage>,
     Arc<ElectrsBlockchainProvider>,
     Arc<MockOracle>,
     Arc<MockTime>,
     Arc<ElectrsBlockchainProvider>,
     Arc<DlcChannelManager>,
+    CustomSigner,
+    Arc<CustomKeysManager>,
     CustomSigner,
 >;
 
@@ -161,8 +164,8 @@ impl LnDlcParty {
     }
 
     fn process_events(&self) {
-        self.peer_manager.process_events();
         self.channel_manager.process_pending_events(self);
+        self.peer_manager.process_events();
         self.channel_manager.timer_tick_occurred();
         self.chain_monitor.process_pending_events(self);
     }
@@ -367,10 +370,12 @@ impl EventHandler for LnDlcParty {
                     .unwrap();
                 self.blockchain.broadcast_transaction(&spending_tx);
             }
-            Event::ChannelClosed { channel_id, .. } => {
+            Event::ChannelClosed {
+                channel_id, reason, ..
+            } => {
                 if let Err(error) = self
                     .sub_channel_manager
-                    .notify_ln_channel_closed(channel_id)
+                    .notify_ln_channel_closed(channel_id, &reason)
                 {
                     error!(
                         "Error notifying sub channel manager of LN channel closing: {}",
@@ -415,7 +420,7 @@ fn create_ln_node(
             Some(tx_sync.clone()),
             mock_blockchain.clone(),
             logger.clone(),
-            blockchain_provider.clone(),
+            mock_blockchain.clone(),
             persister.clone(),
         ));
 
@@ -447,7 +452,7 @@ fn create_ln_node(
         };
 
         Arc::new(ChannelManager::new(
-            blockchain_provider.clone(),
+            mock_blockchain.clone(),
             chain_monitor.clone(),
             mock_blockchain.clone(),
             router,
@@ -498,8 +503,15 @@ fn create_ln_node(
         .unwrap(),
     );
 
-    let sub_channel_manager =
-        Arc::new(SubChannelManager::new(channel_manager.clone(), dlc_manager.clone()).unwrap());
+    let sub_channel_manager = Arc::new(
+        SubChannelManager::new(
+            channel_manager.clone(),
+            dlc_manager.clone(),
+            chain_monitor.clone(),
+            consistent_keys_manager.clone(),
+        )
+        .unwrap(),
+    );
 
     let lightning_msg_handler = MessageHandler {
         chan_handler: sub_channel_manager.clone(),
@@ -1063,7 +1075,7 @@ fn ln_dlc_disconnected_force_close() {
 fn ln_dlc_offered_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::OfferReceived);
+    go_to_established_target_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1087,7 +1099,7 @@ fn ln_dlc_offered_force_close() {
 fn ln_dlc_offered_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::OfferReceived);
+    go_to_established_target_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1112,7 +1124,7 @@ fn ln_dlc_offered_force_close2() {
 fn ln_dlc_accepted_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Accepted);
+    go_to_established_target_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1137,7 +1149,7 @@ fn ln_dlc_accepted_force_close() {
 fn ln_dlc_accepted_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Accepted);
+    go_to_established_target_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1173,7 +1185,7 @@ fn ln_dlc_accepted_force_close2() {
 fn ln_dlc_confirmed_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Confirmed);
+    go_to_established_target_state(&test_params, TargetState::Confirmed, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1210,7 +1222,7 @@ fn ln_dlc_confirmed_force_close() {
 fn ln_dlc_confirmed_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Confirmed);
+    go_to_established_target_state(&test_params, TargetState::Confirmed, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1247,7 +1259,7 @@ fn ln_dlc_confirmed_force_close2() {
 fn ln_dlc_finalized_force_close() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Finalized);
+    go_to_established_target_state(&test_params, TargetState::Finalized, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1286,7 +1298,7 @@ fn ln_dlc_finalized_force_close() {
 fn ln_dlc_finalized_force_close2() {
     let mut test_params = test_init();
 
-    go_to_established_target_state(&test_params, TargetState::Finalized);
+    go_to_established_target_state(&test_params, TargetState::Finalized, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1318,7 +1330,7 @@ fn ln_dlc_close_offered_force_close() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::OfferSent);
+    go_to_off_chain_close_state(&test_params, TargetState::OfferSent, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1351,7 +1363,7 @@ fn ln_dlc_close_offered_force_close2() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::OfferSent);
+    go_to_off_chain_close_state(&test_params, TargetState::OfferSent, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1384,7 +1396,7 @@ fn ln_dlc_close_offered_force_close3() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::OfferReceived);
+    go_to_off_chain_close_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1416,7 +1428,7 @@ fn ln_dlc_close_offered_force_close4() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::OfferReceived);
+    go_to_off_chain_close_state(&test_params, TargetState::OfferReceived, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1449,7 +1461,7 @@ fn ln_dlc_close_accepted_force_close() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::Accepted);
+    go_to_off_chain_close_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1482,7 +1494,7 @@ fn ln_dlc_close_accepted_force_close2() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::Accepted);
+    go_to_off_chain_close_state(&test_params, TargetState::Accepted, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1515,7 +1527,7 @@ fn ln_dlc_close_confirmed_force_close() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::Confirmed);
+    go_to_off_chain_close_state(&test_params, TargetState::Confirmed, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1548,7 +1560,7 @@ fn ln_dlc_close_confirmed_force_close2() {
 
     open_sub_channel(&test_params);
 
-    go_to_off_chain_close_state(&test_params, TargetState::Confirmed);
+    go_to_off_chain_close_state(&test_params, TargetState::Confirmed, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1584,7 +1596,7 @@ fn ln_dlc_close_finalized_force_close() {
 
     mocks::mock_time::set_time(EVENT_MATURITY as u64);
 
-    go_to_off_chain_close_state(&test_params, TargetState::Finalized);
+    go_to_off_chain_close_state(&test_params, TargetState::Finalized, false);
 
     assert_sub_channel_state!(
         test_params.alice_node.sub_channel_manager,
@@ -1602,6 +1614,263 @@ fn ln_dlc_close_finalized_force_close() {
         get_commit_tx_from_node(&test_params.alice_node, &test_params.funding_txo).remove(0);
 
     force_close_mid_protocol(&mut test_params, false, &commit_tx);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_established_test() {
+    let mut test_params = test_init();
+
+    open_sub_channel(&test_params);
+
+    let commit_tx = get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo);
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    ldk_auto_close(&mut test_params, &commit_tx[0]);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_offered_test() {
+    let mut test_params = test_init();
+
+    go_to_established_target_state(&test_params, TargetState::OfferReceived, false);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Offered
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Offered
+    );
+
+    let commit_tx = get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo);
+    ldk_auto_close(&mut test_params, &commit_tx[0]);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_accepted_test() {
+    let mut test_params = test_init();
+
+    go_to_established_target_state(&test_params, TargetState::Accepted, false);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Offered
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Accepted
+    );
+
+    let sub_channel = test_params
+        .bob_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(test_params.channel_id)
+        .unwrap()
+        .unwrap();
+    let commit_tx = if let SubChannelState::Accepted(a) = &sub_channel.state {
+        a.commitment_transactions[0].clone()
+    } else {
+        unreachable!();
+    };
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_confirmed_test() {
+    let mut test_params = test_init();
+
+    go_to_established_target_state(&test_params, TargetState::Confirmed, true);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Accepted
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Confirmed
+    );
+
+    let sub_channel = test_params
+        .bob_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(test_params.channel_id)
+        .unwrap()
+        .unwrap();
+    let commit_tx = if let SubChannelState::Confirmed(a) = &sub_channel.state {
+        a.commitment_transactions[0].clone()
+    } else {
+        unreachable!();
+    };
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_finalized_test() {
+    let mut test_params = test_init();
+
+    go_to_established_target_state(&test_params, TargetState::Finalized, false);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Confirmed
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Finalized
+    );
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_close_offered_test() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    open_sub_channel(&test_params);
+
+    go_to_off_chain_close_state(&test_params, TargetState::OfferReceived, false);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseOffered
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseOffered
+    );
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_close_accepted_test() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    open_sub_channel(&test_params);
+
+    go_to_off_chain_close_state(&test_params, TargetState::Accepted, false);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseOffered
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseAccepted
+    );
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_close_confirmed_test() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    open_sub_channel(&test_params);
+
+    go_to_off_chain_close_state(&test_params, TargetState::Confirmed, true);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseAccepted
+    );
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseConfirmed
+    );
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_ldk_auto_close_close_finalized_test() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    open_sub_channel(&test_params);
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    go_to_off_chain_close_state(&test_params, TargetState::Finalized, true);
+
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        CloseConfirmed
+    );
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id;
+        OffChainClosed
+    );
+
+    let commit_tx =
+        get_commit_tx_from_node(&test_params.bob_node, &test_params.funding_txo).remove(0);
+
+    ldk_auto_close(&mut test_params, &commit_tx);
 }
 
 fn test_init() -> LnDlcTestParams {
@@ -1843,7 +2112,7 @@ fn get_commit_tx_from_node(
     funding_txo: &lightning::chain::transaction::OutPoint,
 ) -> Vec<Transaction> {
     node.chain_monitor
-        .get_latest_holder_commitment_txn(*funding_txo)
+        .get_latest_holder_commitment_txn(funding_txo)
         .expect("to be able to get latest holder commitment transaction")
 }
 
@@ -3004,25 +3273,32 @@ fn force_close_mid_protocol(
     assert!(all_spent);
 }
 
-fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: TargetState) {
-    let offer = generate_offer(
-        &test_params.test_params,
-        &test_params.alice_node,
-        &test_params.channel_id,
-    );
+fn go_to_established_target_state(
+    test_params: &LnDlcTestParams,
+    target_state: TargetState,
+    reverse_offerer: bool,
+) {
+    let (offerer, accepter) = if !reverse_offerer {
+        (&test_params.alice_node, &test_params.bob_node)
+    } else {
+        (&test_params.bob_node, &test_params.alice_node)
+    };
 
-    test_params
-        .bob_node
+    let offer = generate_offer(&test_params.test_params, &offerer, &test_params.channel_id);
+
+    accepter
         .sub_channel_manager
-        .on_sub_channel_message(&SubChannelMessage::Offer(offer), &test_params.alice_node_id)
+        .on_sub_channel_message(
+            &SubChannelMessage::Offer(offer),
+            &offerer.channel_manager.get_our_node_id(),
+        )
         .unwrap();
 
     if target_state == TargetState::OfferReceived {
         return;
     }
 
-    let (_, accept) = test_params
-        .bob_node
+    let (_, accept) = accepter
         .sub_channel_manager
         .accept_sub_channel(&test_params.channel_id)
         .unwrap();
@@ -3031,10 +3307,12 @@ fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: T
         return;
     }
 
-    let confirm = test_params
-        .alice_node
+    let confirm = offerer
         .sub_channel_manager
-        .on_sub_channel_message(&SubChannelMessage::Accept(accept), &test_params.bob_node_id)
+        .on_sub_channel_message(
+            &SubChannelMessage::Accept(accept),
+            &accepter.channel_manager.get_our_node_id(),
+        )
         .unwrap()
         .unwrap();
 
@@ -3042,16 +3320,23 @@ fn go_to_established_target_state(test_params: &LnDlcTestParams, target_state: T
         return;
     }
 
-    test_params
-        .bob_node
+    accepter
         .sub_channel_manager
-        .on_sub_channel_message(&confirm, &test_params.alice_node_id)
+        .on_sub_channel_message(&confirm, &offerer.channel_manager.get_our_node_id())
         .unwrap();
 }
 
-fn go_to_off_chain_close_state(test_params: &LnDlcTestParams, target_state: TargetState) {
-    let (close_offer, _) = test_params
-        .alice_node
+fn go_to_off_chain_close_state(
+    test_params: &LnDlcTestParams,
+    target_state: TargetState,
+    reverse_closer: bool,
+) {
+    let (closer, closee) = if reverse_closer {
+        (&test_params.bob_node, &test_params.alice_node)
+    } else {
+        (&test_params.alice_node, &test_params.bob_node)
+    };
+    let (close_offer, _) = closer
         .sub_channel_manager
         .offer_subchannel_close(
             &test_params.channel_id,
@@ -3063,12 +3348,11 @@ fn go_to_off_chain_close_state(test_params: &LnDlcTestParams, target_state: Targ
         return;
     }
 
-    test_params
-        .bob_node
+    closee
         .sub_channel_manager
         .on_sub_channel_message(
             &SubChannelMessage::CloseOffer(close_offer),
-            &test_params.alice_node.channel_manager.get_our_node_id(),
+            &closer.channel_manager.get_our_node_id(),
         )
         .unwrap();
 
@@ -3076,8 +3360,7 @@ fn go_to_off_chain_close_state(test_params: &LnDlcTestParams, target_state: Targ
         return;
     }
 
-    let (accept, _) = test_params
-        .bob_node
+    let (accept, _) = closee
         .sub_channel_manager
         .accept_subchannel_close_offer(&test_params.channel_id)
         .unwrap();
@@ -3086,12 +3369,11 @@ fn go_to_off_chain_close_state(test_params: &LnDlcTestParams, target_state: Targ
         return;
     }
 
-    let confirm = test_params
-        .alice_node
+    let confirm = closer
         .sub_channel_manager
         .on_sub_channel_message(
             &SubChannelMessage::CloseAccept(accept),
-            &test_params.bob_node.channel_manager.get_our_node_id(),
+            &closee.channel_manager.get_our_node_id(),
         )
         .unwrap()
         .unwrap();
@@ -3100,12 +3382,117 @@ fn go_to_off_chain_close_state(test_params: &LnDlcTestParams, target_state: Targ
         return;
     }
 
+    closee
+        .sub_channel_manager
+        .on_sub_channel_message(&confirm, &closer.channel_manager.get_our_node_id())
+        .unwrap();
+}
+
+fn ldk_auto_close(test_params: &mut LnDlcTestParams, commit_tx: &Transaction) {
+    let sub_channel = test_params
+        .alice_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(test_params.channel_id)
+        .unwrap()
+        .unwrap();
+    let dlc_channel_id_alice = sub_channel.get_dlc_channel_id(0);
+
+    let sub_channel = test_params
+        .bob_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(sub_channel.channel_id)
+        .unwrap()
+        .unwrap();
+    let dlc_channel_id_bob = sub_channel.get_dlc_channel_id(0);
+
+    let channel_id = sub_channel.channel_id;
+
     test_params
         .bob_node
-        .sub_channel_manager
-        .on_sub_channel_message(
-            &confirm,
-            &test_params.alice_node.channel_manager.get_our_node_id(),
-        )
+        .channel_manager
+        .force_close_broadcasting_latest_txn(&test_params.channel_id, &test_params.alice_node_id)
         .unwrap();
+    test_params.alice_node.process_events();
+    test_params.bob_node.process_events();
+    test_params.alice_node.process_events();
+    test_params.bob_node.process_events();
+    test_params.alice_node.process_events();
+    test_params.bob_node.process_events();
+    test_params.alice_node.process_events();
+    test_params.bob_node.process_events();
+
+    test_params.generate_blocks(500);
+    test_params.bob_node.update_to_chain_tip();
+    test_params.bob_node.process_events();
+
+    assert_sub_channel_state!(test_params.bob_node.sub_channel_manager, &channel_id; OnChainClosed);
+
+    test_params.generate_blocks(3);
+
+    test_params.bob_node.update_to_chain_tip();
+    test_params.alice_node.update_to_chain_tip();
+    test_params.alice_node.process_events();
+
+    assert_sub_channel_state!(test_params.alice_node.sub_channel_manager, &channel_id; CounterOnChainClosed);
+
+    test_params.generate_blocks(500);
+
+    test_params.bob_node.update_to_chain_tip();
+    test_params.bob_node.process_events();
+    test_params.alice_node.update_to_chain_tip();
+    test_params.alice_node.process_events();
+
+    test_params.generate_blocks(2);
+
+    test_params.bob_node.update_to_chain_tip();
+    test_params.bob_node.process_events();
+    test_params.alice_node.update_to_chain_tip();
+    test_params.alice_node.process_events();
+
+    if let Some(dlc_channel_id_alice) = dlc_channel_id_alice {
+        assert_channel_state_unlocked!(
+            test_params.alice_node.dlc_manager,
+            dlc_channel_id_alice,
+            CounterClosed
+        );
+    }
+    if let Some(dlc_channel_id_bob) = dlc_channel_id_bob {
+        assert_channel_state_unlocked!(
+            test_params.bob_node.dlc_manager,
+            dlc_channel_id_bob,
+            Closed
+        );
+    }
+
+    assert!(test_params
+        .bob_node
+        .dlc_manager
+        .get_chain_monitor()
+        .lock()
+        .unwrap()
+        .is_empty());
+    assert!(test_params
+        .alice_node
+        .dlc_manager
+        .get_chain_monitor()
+        .lock()
+        .unwrap()
+        .is_empty());
+
+    let all_spent = test_params
+        .electrs
+        .get_outspends(&commit_tx.txid())
+        .unwrap()
+        .into_iter()
+        .all(|x| {
+            if let OutSpendResp::Spent(_) = x {
+                true
+            } else {
+                false
+            }
+        });
+
+    assert!(all_spent);
 }

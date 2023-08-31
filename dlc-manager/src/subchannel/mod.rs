@@ -1,14 +1,16 @@
 //! # Module containing structures and methods for working with DLC channels embedded in Lightning
 //! channels.
 
-use std::ops::Deref;
+use std::{fmt::Display, ops::Deref};
 
 use bitcoin::{hashes::Hash, OutPoint, Script, Transaction, Txid};
 use dlc::channel::sub_channel::SplitTx;
 use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, FeeEstimator},
-        keysinterface::{EntropySource, NodeSigner, SignerProvider},
+        chainmonitor::ChainMonitor,
+        keysinterface::{EntropySource, NodeSigner, SignerProvider, WriteableEcdsaChannelSigner},
+        Watch,
     },
     ln::{
         chan_utils::CounterpartyCommitmentSecrets,
@@ -56,6 +58,8 @@ pub struct SubChannel {
     pub counter_fund_pk: PublicKey,
     /// The revocation secrets from the remote party for already revoked split transactions.
     pub counter_party_secrets: CounterpartyCommitmentSecrets,
+    /// The id used to derive the keys for the Lightning channel.
+    pub channel_keys_id: [u8; 32],
 }
 
 impl std::fmt::Debug for SubChannel {
@@ -153,6 +157,27 @@ pub enum SubChannelState {
     ClosedPunished(Txid),
     /// An offer to establish a sub channel was rejected.
     Rejected,
+}
+
+impl Display for SubChannelState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubChannelState::Offered(_) => write!(f, "Offered"),
+            SubChannelState::Accepted(_) => write!(f, "Accepted"),
+            SubChannelState::Confirmed(_) => write!(f, "Confirmed"),
+            SubChannelState::Finalized(_) => write!(f, "Finalized"),
+            SubChannelState::Signed(_) => write!(f, "Signed"),
+            SubChannelState::Closing(_) => write!(f, "Closing"),
+            SubChannelState::OnChainClosed => write!(f, "OnChainClosed"),
+            SubChannelState::CounterOnChainClosed => write!(f, "CounterOnChainClosed"),
+            SubChannelState::CloseOffered(_) => write!(f, "CloseOffered"),
+            SubChannelState::CloseAccepted(_) => write!(f, "CloseAccepted"),
+            SubChannelState::CloseConfirmed(_) => write!(f, "CloseConfirmed"),
+            SubChannelState::OffChainClosed => write!(f, "OffChainClosed"),
+            SubChannelState::ClosedPunished(_) => write!(f, "ClosedPunished"),
+            SubChannelState::Rejected => write!(f, "Rejected"),
+        }
+    }
 }
 
 /// Flags associated with states that must be communicated to the remote node during
@@ -422,11 +447,6 @@ where
         revoke_and_ack: &RevokeAndACK,
     ) -> Result<(), APIError>;
 
-    /// Gives the ability to access the funding secret key within the provided callback.
-    fn sign_with_fund_key_cb<F>(&self, channel_lock: &mut ChannelLock<SP>, cb: &mut F)
-    where
-        F: FnMut(&SecretKey);
-
     /// Force close the channel with given `channel_id` and `counter_party_node_id`.
     fn force_close_channel(
         &self,
@@ -443,13 +463,26 @@ where
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
     );
+}
 
+/// Provides methods to interact with a `ChainMonitor` for a Lightning channel (in particular the
+/// one from LDK).
+pub trait LNChainMonitor {
     /// Gets the latest commitment transactions and HTLC transactions that can be used to close the
     /// channel.
     fn get_latest_holder_commitment_txn(
         &self,
-        channel_lock: &ChannelLock<SP>,
+        funding_txo: &lightning::chain::transaction::OutPoint,
     ) -> Result<Vec<Transaction>, Error>;
+
+    /// Updates the funding transaction output of the channel monitor associated with the channel
+    /// specified by `old_funding_txo`.
+    fn update_channel_funding_txo(
+        &self,
+        old_funding_txo: &lightning::chain::transaction::OutPoint,
+        new_funding_txo: &lightning::chain::transaction::OutPoint,
+        channel_value_satoshis: u64,
+    ) -> Result<(), Error>;
 }
 
 impl<M: Deref, T: Deref, ES: Deref, NS: Deref, K: Deref, F: Deref, R: Deref, L: Deref>
@@ -508,16 +541,6 @@ where
         self.revoke_and_ack_commitment(channel_lock, revoke_and_ack)
     }
 
-    fn sign_with_fund_key_cb<SF>(
-        &self,
-        channel_lock: &mut ChannelLock<<K::Target as SignerProvider>::Signer>,
-        cb: &mut SF,
-    ) where
-        SF: FnMut(&SecretKey),
-    {
-        self.sign_with_fund_key_callback(channel_lock, cb);
-    }
-
     fn force_close_channel(
         &self,
         channel_id: &[u8; 32],
@@ -540,19 +563,6 @@ where
             channel_value_satoshis,
             value_to_self_msat,
         );
-    }
-
-    fn get_latest_holder_commitment_txn(
-        &self,
-        channel_lock: &ChannelLock<<K::Target as SignerProvider>::Signer>,
-    ) -> Result<Vec<Transaction>, Error> {
-        self.get_latest_holder_commitment_txn(channel_lock)
-            .map_err(|e| {
-                Error::InvalidState(format!(
-                    "Could not retrieve latest commitment transactions {:?}",
-                    e
-                ))
-            })
     }
 
     fn with_useable_channel_lock<C, RV>(
@@ -584,6 +594,52 @@ where
     }
 }
 
+impl<
+        ChannelSigner: WriteableEcdsaChannelSigner,
+        C: Deref,
+        T: Deref,
+        F: Deref,
+        L: Deref,
+        P: Deref,
+    > LNChainMonitor for ChainMonitor<ChannelSigner, C, T, F, L, P>
+where
+    C::Target: lightning::chain::Filter,
+    T::Target: BroadcasterInterface,
+    F::Target: FeeEstimator,
+    L::Target: Logger,
+    P::Target: lightning::chain::chainmonitor::Persist<ChannelSigner>,
+{
+    fn get_latest_holder_commitment_txn(
+        &self,
+        funding_txo: &lightning::chain::transaction::OutPoint,
+    ) -> Result<Vec<Transaction>, Error> {
+        self.get_latest_holder_commitment_txn(funding_txo)
+            .map_err(|e| {
+                Error::InvalidParameters(format!("Could not get channel monitor: {:?}", e))
+            })
+    }
+
+    fn update_channel_funding_txo(
+        &self,
+        old_funding_txo: &lightning::chain::transaction::OutPoint,
+        new_funding_txo: &lightning::chain::transaction::OutPoint,
+        channel_value_satoshis: u64,
+    ) -> Result<(), Error> {
+        match Watch::update_channel_funding_txo(
+            self,
+            *old_funding_txo,
+            *new_funding_txo,
+            channel_value_satoshis,
+        ) {
+            lightning::chain::ChannelMonitorUpdateStatus::Completed => Ok(()),
+            s => Err(Error::InvalidState(format!(
+                "Unexpected channel monitor status {:?}",
+                s
+            ))),
+        }
+    }
+}
+
 /// Generate a temporary channel id for a DLC channel based on the LN channel id, the update index of the
 /// split transaction and the index of the DLC channel within the sub channel.
 pub fn generate_temporary_channel_id(
@@ -596,4 +652,43 @@ pub fn generate_temporary_channel_id(
     data.extend_from_slice(&split_update_idx.to_be_bytes());
     data.extend_from_slice(&channel_index.to_be_bytes());
     bitcoin::hashes::sha256::Hash::hash(&data).into_inner()
+}
+
+/// Trait to be implemented by a signing component providing the ability to sign LN/DLC split
+/// transactions. It is required that the signer's keys are identical to the ones used for the
+/// original Lightning channel.
+pub trait LnDlcChannelSigner {
+    /// Get the signature for the split transaction using the LN channel holder funding secret key.
+    fn get_holder_split_tx_signature(
+        &self,
+        secp: &secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
+        split_tx: &Transaction,
+        original_funding_redeemscript: &Script,
+        original_channel_value_satoshis: u64,
+    ) -> Result<Signature, Error>;
+
+    /// Get an adaptor signature for the split transaction using the LN channel holder funding
+    /// secret key as the signing key, and the remote party publish public key as adaptor key.
+    fn get_holder_split_tx_adaptor_signature(
+        &self,
+        secp: &secp256k1_zkp::Secp256k1<secp256k1_zkp::All>,
+        split_tx: &Transaction,
+        original_channel_value_satoshis: u64,
+        original_funding_redeemscript: &Script,
+        other_publish_key: &PublicKey,
+    ) -> Result<EcdsaAdaptorSignature, Error>;
+}
+
+/// Generates `Signer` that are able to sign split transaction for LN/DLC channels.
+pub trait LnDlcSignerProvider<Signer: LnDlcChannelSigner> {
+    /// Derives the private key material backing a `Signer`.
+    ///
+    /// To derive a new `Signer`, the same `channel_keys_id` and `channel_value_satoshis` parameter
+    /// that were provided to generate the LDK `ChannelSigner` shoud be passed, and the
+    /// implementation should derive the same key values.
+    fn derive_ln_dlc_channel_signer(
+        &self,
+        channel_value_satoshis: u64,
+        channel_keys_id: [u8; 32],
+    ) -> Signer;
 }
