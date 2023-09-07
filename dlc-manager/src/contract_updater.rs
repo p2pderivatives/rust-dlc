@@ -734,3 +734,40 @@ where
     )?;
     Ok(refund)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use mocks::dlc_manager::contract::offered_contract::OfferedContract;
+    use secp256k1_zkp::PublicKey;
+
+    #[test]
+    fn accept_contract_test() {
+        let offer_dlc =
+            serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap();
+        let dummy_pubkey: PublicKey =
+            "02e6642fd69bd211f93f7f1f36ca51a26a5290eb2dd1b0d8279a87bb0d480c8443"
+                .parse()
+                .unwrap();
+        let offered_contract =
+            OfferedContract::try_from_offer_dlc(&offer_dlc, dummy_pubkey).unwrap();
+        let blockchain = Rc::new(mocks::mock_blockchain::MockBlockchain::new());
+        let fee_rate: u64 = offered_contract.fee_rate_per_vb;
+        let utxo_value: u64 = offered_contract.total_collateral
+            - offered_contract.offer_params.collateral
+            + crate::utils::get_half_common_fee(fee_rate).unwrap();
+        let wallet = Rc::new(mocks::mock_wallet::MockWallet::new(
+            &blockchain,
+            &[utxo_value, 10000],
+        ));
+
+        mocks::dlc_manager::contract_updater::accept_contract(
+            secp256k1_zkp::SECP256K1,
+            &offered_contract,
+            &wallet,
+            &blockchain,
+        )
+        .expect("Not to fail");
+    }
+}

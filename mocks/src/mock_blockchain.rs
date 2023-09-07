@@ -1,12 +1,31 @@
+use std::sync::Mutex;
+
 use bitcoin::{Block, Transaction, Txid};
 use dlc_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::FeeEstimator;
 use simple_wallet::WalletBlockchainProvider;
 
-pub struct MockBlockchain {}
+pub struct MockBlockchain {
+    transactions: Mutex<Vec<Transaction>>,
+}
+
+impl MockBlockchain {
+    pub fn new() -> Self {
+        Self {
+            transactions: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl Default for MockBlockchain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Blockchain for MockBlockchain {
-    fn send_transaction(&self, _transaction: &Transaction) -> Result<(), Error> {
+    fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error> {
+        self.transactions.lock().unwrap().push(transaction.clone());
         Ok(())
     }
     fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error> {
@@ -18,8 +37,15 @@ impl Blockchain for MockBlockchain {
     fn get_block_at_height(&self, _height: u64) -> Result<Block, Error> {
         unimplemented!();
     }
-    fn get_transaction(&self, _tx_id: &Txid) -> Result<Transaction, Error> {
-        unimplemented!();
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
+        Ok(self
+            .transactions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|x| &x.txid() == tx_id)
+            .unwrap()
+            .clone())
     }
     fn get_transaction_confirmations(&self, _tx_id: &Txid) -> Result<u32, Error> {
         Ok(6)

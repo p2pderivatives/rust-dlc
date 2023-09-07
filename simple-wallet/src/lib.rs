@@ -1,11 +1,16 @@
 use std::ops::Deref;
 
+use bdk::{
+    database::{BatchOperations, Database},
+    wallet::coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
+    FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
+};
 use bitcoin::{
-    Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    hashes::Hash, Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut,
+    Txid, Witness,
 };
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
-use rust_bitcoin_coin_selection::select_coins;
 use secp256k1_zkp::{rand::thread_rng, All, PublicKey, Secp256k1, SecretKey};
 
 type Result<T> = core::result::Result<T, Error>;
@@ -223,28 +228,56 @@ where
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        _: Option<u64>,
+        fee_rate: Option<u64>,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>> {
-        let mut utxos = self
-            .storage
-            .get_utxos()?
-            .into_iter()
+        let org_utxos = self.storage.get_utxos()?;
+        let utxos = org_utxos
+            .iter()
             .filter(|x| !x.reserved)
-            .map(|x| UtxoWrap { utxo: x })
+            .map(|x| WeightedUtxo {
+                utxo: BdkUtxo::Local(LocalUtxo {
+                    outpoint: x.outpoint,
+                    txout: x.tx_out.clone(),
+                    keychain: KeychainKind::External,
+                    is_spent: false,
+                }),
+                satisfaction_weight: 107,
+            })
             .collect::<Vec<_>>();
-        let selection = select_coins(amount, 20, &mut utxos)
-            .ok_or_else(|| Error::InvalidState("Not enough fund in utxos".to_string()))?;
-        if lock_utxos {
-            for utxo in selection.clone() {
+        let coin_selection = BranchAndBoundCoinSelection::default();
+        let dummy_pubkey: PublicKey =
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                .parse()
+                .unwrap();
+        let dummy_drain =
+            Script::new_v0_p2wpkh(&bitcoin::WPubkeyHash::hash(&dummy_pubkey.serialize()));
+        let fee_rate = FeeRate::from_sat_per_vb(fee_rate.unwrap() as f32);
+        let selection = coin_selection
+            .coin_select(self, Vec::new(), utxos, fee_rate, amount, &dummy_drain)
+            .map_err(|e| Error::WalletError(Box::new(e)))?;
+        let mut res = Vec::new();
+        for utxo in selection.selected {
+            let local_utxo = if let BdkUtxo::Local(l) = utxo {
+                l
+            } else {
+                panic!();
+            };
+            let org = org_utxos
+                .iter()
+                .find(|x| x.tx_out == local_utxo.txout && x.outpoint == local_utxo.outpoint)
+                .unwrap();
+            if lock_utxos {
                 let updated = Utxo {
                     reserved: true,
-                    ..utxo.utxo
+                    ..org.clone()
                 };
                 self.storage.upsert_utxo(&updated)?;
             }
+            res.push(org.clone());
+            
         }
-        Ok(selection.into_iter().map(|x| x.utxo).collect::<Vec<_>>())
+        Ok(res)
     }
 
     fn import_address(&self, _: &Address) -> Result<()> {
@@ -252,14 +285,171 @@ where
     }
 }
 
-#[derive(Clone)]
-struct UtxoWrap {
-    utxo: Utxo,
+impl<B: Deref, W: Deref> BatchOperations for SimpleWallet<B, W>
+where
+    B::Target: WalletBlockchainProvider,
+    W::Target: WalletStorage,
+{
+    fn set_script_pubkey(
+        &mut self,
+        _: &Script,
+        _: bdk::KeychainKind,
+        _: u32,
+    ) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn set_utxo(&mut self, _: &bdk::LocalUtxo) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn set_raw_tx(&mut self, _: &Transaction) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn set_tx(&mut self, _: &bdk::TransactionDetails) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn set_last_index(
+        &mut self,
+        _: bdk::KeychainKind,
+        _: u32,
+    ) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn set_sync_time(&mut self, _: bdk::database::SyncTime) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn del_script_pubkey_from_path(
+        &mut self,
+        _: bdk::KeychainKind,
+        _: u32,
+    ) -> std::result::Result<Option<Script>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn del_path_from_script_pubkey(
+        &mut self,
+        _: &Script,
+    ) -> std::result::Result<Option<(bdk::KeychainKind, u32)>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn del_utxo(
+        &mut self,
+        _: &bitcoin::OutPoint,
+    ) -> std::result::Result<Option<bdk::LocalUtxo>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn del_raw_tx(&mut self, _: &Txid) -> std::result::Result<Option<Transaction>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn del_tx(
+        &mut self,
+        _: &Txid,
+        _: bool,
+    ) -> std::result::Result<Option<bdk::TransactionDetails>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn del_last_index(
+        &mut self,
+        _: bdk::KeychainKind,
+    ) -> std::result::Result<Option<u32>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn del_sync_time(
+        &mut self,
+    ) -> std::result::Result<Option<bdk::database::SyncTime>, bdk::Error> {
+        Ok(None)
+    }
 }
 
-impl rust_bitcoin_coin_selection::Utxo for UtxoWrap {
-    fn get_value(&self) -> u64 {
-        self.utxo.tx_out.value
+impl<B: Deref, W: Deref> Database for SimpleWallet<B, W>
+where
+    B::Target: WalletBlockchainProvider,
+    W::Target: WalletStorage,
+{
+    fn check_descriptor_checksum<BY: AsRef<[u8]>>(
+        &mut self,
+        _: bdk::KeychainKind,
+        _: BY,
+    ) -> std::result::Result<(), bdk::Error> {
+        Ok(())
+    }
+
+    fn iter_script_pubkeys(
+        &self,
+        _: Option<bdk::KeychainKind>,
+    ) -> std::result::Result<Vec<Script>, bdk::Error> {
+        Ok(Vec::new())
+    }
+
+    fn iter_utxos(&self) -> std::result::Result<Vec<bdk::LocalUtxo>, bdk::Error> {
+        Ok(Vec::new())
+    }
+
+    fn iter_raw_txs(&self) -> std::result::Result<Vec<Transaction>, bdk::Error> {
+        Ok(Vec::new())
+    }
+
+    fn iter_txs(&self, _: bool) -> std::result::Result<Vec<bdk::TransactionDetails>, bdk::Error> {
+        Ok(Vec::new())
+    }
+
+    fn get_script_pubkey_from_path(
+        &self,
+        _: bdk::KeychainKind,
+        _: u32,
+    ) -> std::result::Result<Option<Script>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn get_path_from_script_pubkey(
+        &self,
+        _: &Script,
+    ) -> std::result::Result<Option<(bdk::KeychainKind, u32)>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn get_utxo(
+        &self,
+        _: &bitcoin::OutPoint,
+    ) -> std::result::Result<Option<bdk::LocalUtxo>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn get_raw_tx(&self, _: &Txid) -> std::result::Result<Option<Transaction>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn get_tx(
+        &self,
+        _: &Txid,
+        _: bool,
+    ) -> std::result::Result<Option<bdk::TransactionDetails>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn get_last_index(&self, _: bdk::KeychainKind) -> std::result::Result<Option<u32>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn get_sync_time(&self) -> std::result::Result<Option<bdk::database::SyncTime>, bdk::Error> {
+        Ok(None)
+    }
+
+    fn increment_last_index(
+        &mut self,
+        _: bdk::KeychainKind,
+    ) -> std::result::Result<u32, bdk::Error> {
+        Ok(0)
     }
 }
 
@@ -273,7 +463,7 @@ mod tests {
     use secp256k1_zkp::{PublicKey, SECP256K1};
 
     fn get_wallet() -> SimpleWallet<Rc<MockBlockchain>, Rc<MemoryStorage>> {
-        let blockchain = Rc::new(MockBlockchain {});
+        let blockchain = Rc::new(MockBlockchain::new());
         let storage = Rc::new(MemoryStorage::new());
         SimpleWallet::new(blockchain, storage, bitcoin::Network::Regtest)
     }
