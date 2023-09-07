@@ -209,7 +209,7 @@ pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
 /// Sorts the given inputs in following the order of the ids.
 pub(crate) fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &[u64]) -> Vec<T> {
     debug_assert!(inputs.len() == ids.len());
-    let mut combined: Vec<(&u64, T)> = ids.iter().zip(inputs.into_iter()).collect();
+    let mut combined: Vec<(&u64, T)> = ids.iter().zip(inputs).collect();
     combined.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
     combined.into_iter().map(|x| x.1).collect()
 }
