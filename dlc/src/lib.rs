@@ -287,10 +287,8 @@ impl PartyParams {
         }
     
         let mut inputs_weight: usize = 0;
-    
         for w in &self.inputs {
-            let script_weight = util
-                ::redeem_script_to_script_sig(&w.redeem_script)
+            let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
                 .len()
                 .checked_mul(4)
                 .ok_or(Error::InvalidArgument(format!("[get_change_output_and_fees] error: failed to transform a redeem script for a p2sh-p2w* output to a script signature")))?;
@@ -305,17 +303,16 @@ impl PartyParams {
         // Value size + script length var_int + ouput script pubkey size
         let change_size = self.change_script_pubkey.len();
         // Change size is scaled by 4 from vBytes to weight units
-        let change_weight =
-            change_size
+        let change_weight = change_size
                 .checked_mul(4)
                 .ok_or(Error::InvalidArgument(format!(
                     "[get_change_output_and_fees] error: failed to calculate change weight"
                 )))?;
-    
+
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
         let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT;
-    
+
         let total_fund_weight = checked_add!(
             this_party_fund_base_weight,
             inputs_weight,
@@ -323,32 +320,32 @@ impl PartyParams {
             36
         )?;
         let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
-    
+
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
         let this_party_cet_base_weight = CET_BASE_WEIGHT;
-    
+
         // size of the payout script pubkey scaled by 4 from vBytes to weight units
         let output_spk_weight =
             self.payout_script_pubkey
                 .len()
                 .checked_mul(4)
                 .ok_or(Error::InvalidArgument(format!(
-                    "[get_change_output_and_fees] error: failed to calculate payout script pubkey weight"
-                )))?;
+            "[get_change_output_and_fees] error: failed to calculate payout script pubkey weight"
+        )))?;
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
         let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
         let required_input_funds =
             checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
-    
         if self.input_amount < required_input_funds {
             return Err(Error::InvalidArgument(format!("[get_change_output_and_fees] error: input amount is lower than the sum of the collateral plus the required fees => input_amount: {}, collateral: {}, fund fee: {}, cet_or_refund_fee: {}, extra_fee: {}", self.input_amount, self.collateral, fund_fee, cet_or_refund_fee, extra_fee)));
         }
-    
+
         let change_output = TxOut {
             value: self.input_amount - required_input_funds,
             script_pubkey: self.change_script_pubkey.clone(),
         };
+
         Ok((change_output, fund_fee, cet_or_refund_fee))
     }
 
