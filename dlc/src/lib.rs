@@ -299,15 +299,15 @@ impl PartyParams {
                 w.max_witness_len
             )?;
         }
-    
+
         // Value size + script length var_int + ouput script pubkey size
         let change_size = self.change_script_pubkey.len();
         // Change size is scaled by 4 from vBytes to weight units
         let change_weight = change_size
-                .checked_mul(4)
-                .ok_or(Error::InvalidArgument(format!(
-                    "[get_change_output_and_fees] error: failed to calculate change weight"
-                )))?;
+            .checked_mul(4)
+            .ok_or(Error::InvalidArgument(format!(
+                 "[get_change_output_and_fees] error: failed to calculate change weight"
+            )))?;
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
