@@ -306,7 +306,7 @@ impl PartyParams {
         let change_weight = change_size
             .checked_mul(4)
             .ok_or(Error::InvalidArgument(format!(
-                 "[get_change_output_and_fees] error: failed to calculate change weight"
+                "[get_change_output_and_fees] error: failed to calculate change weight"
             )))?;
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
