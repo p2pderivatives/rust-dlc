@@ -2,7 +2,7 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
-use dlc::{PartyParams, TxInputInfo};
+use dlc::{util::get_common_fee, PartyParams, TxInputInfo};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,
@@ -80,10 +80,17 @@ where
     let change_spk = change_addr.script_pubkey();
     let change_serial_id = get_new_serial_id();
 
-    // Add base cost of fund tx + CET / 2 and a CET output to the collateral.
-    let appr_required_amount =
-        own_collateral + get_half_common_fee(fee_rate)? + dlc::util::weight_to_fee(124, fee_rate)?;
-    let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+    let (appr_required_amount, utxos) = match own_collateral {
+        0 => (0, Vec::new()),
+        _ => {
+            let common_fee = get_common_fee(fee_rate)?;
+            let total_fee = common_fee + own_collateral;
+            let appr_required_amount =
+                own_collateral + total_fee + dlc::util::weight_to_fee(124, fee_rate)?;
+            let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+            (appr_required_amount, utxos)
+        }
+    };
 
     let mut funding_inputs_info: Vec<FundingInputInfo> = Vec::new();
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
@@ -139,11 +146,6 @@ where
         publish_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
         revocation_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
     })
-}
-
-pub(crate) fn get_half_common_fee(fee_rate: u64) -> Result<u64, Error> {
-    let common_fee = dlc::util::get_common_fee(fee_rate)?;
-    Ok((common_fee as f64 / 2_f64).ceil() as u64)
 }
 
 pub(crate) fn get_range_info_and_oracle_sigs(

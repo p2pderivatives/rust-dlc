@@ -275,8 +275,18 @@ impl PartyParams {
         fee_rate_per_vb: u64,
         extra_fee: u64,
     ) -> Result<(TxOut, u64, u64), Error> {
+        if self.collateral == 0 {
+            return Ok((
+                TxOut {
+                    value: self.input_amount,
+                    script_pubkey: self.change_script_pubkey.clone(),
+                },
+                0,
+                0,
+            ));
+        }
+    
         let mut inputs_weight: usize = 0;
-
         for w in &self.inputs {
             let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
                 .len()
@@ -301,7 +311,7 @@ impl PartyParams {
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
-        let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT / 2;
+        let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT;
 
         let total_fund_weight = checked_add!(
             this_party_fund_base_weight,
@@ -313,7 +323,7 @@ impl PartyParams {
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
-        let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
+        let this_party_cet_base_weight = CET_BASE_WEIGHT;
 
         // size of the payout script pubkey scaled by 4 from vBytes to weight units
         let output_spk_weight =
