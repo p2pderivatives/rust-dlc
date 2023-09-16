@@ -159,6 +159,8 @@ impl LnDlcParty {
         ];
 
         self.esplora_sync.sync(confirmables).unwrap();
+        self.dlc_manager.periodic_chain_monitor().unwrap();
+
         self.sub_channel_manager.periodic_check();
         self.dlc_manager.periodic_check().unwrap();
     }
