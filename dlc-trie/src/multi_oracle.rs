@@ -70,7 +70,7 @@ fn compute_min_support_covering_prefix(
 
     left_bound
         .into_iter()
-        .zip(right_bound.into_iter())
+        .zip(right_bound)
         .take_while(|(x, y)| x == y)
         .map(|(x, _)| x)
         .collect()
@@ -800,7 +800,7 @@ mod tests {
     }
 
     fn variable_len_test_cases() -> Vec<VariableLengthTestCase> {
-        let black_list = vec![5, 7];
+        let black_list = [5, 7];
         let mut test_cases = test_cases()
             .into_iter()
             .enumerate()

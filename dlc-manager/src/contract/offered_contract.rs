@@ -96,7 +96,7 @@ impl OfferedContract {
         let contract_info = contract
             .contract_infos
             .iter()
-            .zip(oracle_announcements.into_iter())
+            .zip(oracle_announcements)
             .map(|(x, y)| ContractInfo {
                 contract_descriptor: x.contract_descriptor.clone(),
                 oracle_announcements: y,

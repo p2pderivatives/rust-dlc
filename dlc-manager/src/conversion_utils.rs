@@ -218,7 +218,7 @@ impl From<&OfferedContract> for SerContractInfo {
         let mut contract_infos: Vec<ContractInfoInner> = offered_contract
             .contract_info
             .iter()
-            .zip(oracle_infos.into_iter())
+            .zip(oracle_infos)
             .map(|(c, o)| ContractInfoInner {
                 contract_descriptor: (&c.contract_descriptor).into(),
                 oracle_info: o,

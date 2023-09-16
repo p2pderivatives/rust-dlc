@@ -3286,7 +3286,7 @@ fn go_to_established_target_state(
         (&test_params.bob_node, &test_params.alice_node)
     };
 
-    let offer = generate_offer(&test_params.test_params, &offerer, &test_params.channel_id);
+    let offer = generate_offer(&test_params.test_params, offerer, &test_params.channel_id);
 
     accepter
         .sub_channel_manager
