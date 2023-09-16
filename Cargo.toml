@@ -1,5 +1,4 @@
 [workspace]
-
 members = [
   "bitcoin-test-utils",
   "bitcoin-rpc-provider",
@@ -14,6 +13,7 @@ members = [
   "dlc-sled-storage-provider",
   "electrs-blockchain-provider",
 ]
+resolver = "2"
 
 [patch.crates-io]
 lightning = { git = "https://github.com/p2pderivatives/rust-lightning/", rev = "47c8479" }
