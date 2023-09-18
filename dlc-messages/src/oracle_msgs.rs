@@ -7,7 +7,8 @@ use crate::ser_impls::{
 use dlc::{Error, OracleInfo as DlcOracleInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
-use lightning::util::ser::{Readable, Writeable, Writer};
+use lightning::util::ser::{Readable, Writer};
+pub use lightning::util::ser::Writeable;
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{schnorr::Signature, Message, Secp256k1, XOnlyPublicKey};
 #[cfg(feature = "serde")]
