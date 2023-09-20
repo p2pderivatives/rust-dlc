@@ -129,7 +129,10 @@ macro_rules! check_for_timed_out_channels {
                 let is_timed_out = timeout < $manager.time.unix_time_now();
                 if is_timed_out {
                     let sub_channel = if channel.is_sub_channel() {
-                        unimplemented!();
+                        error!("Force-closing subchannels is not supported; skipping closure.");
+                        continue;
+
+                        // TODO: Implement subchannel force closing
                         // let s = get_sub_channel_in_state!(
                         //     $manager,
                         //     channel.channel_id,
