@@ -2,7 +2,10 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
-use dlc::{PartyParams, TxInputInfo};
+use dlc::{
+    util::{get_change_weight, get_inputs_weight, weight_to_fee},
+    PartyParams, TxInputInfo,
+};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,
@@ -80,10 +83,32 @@ where
     let change_spk = change_addr.script_pubkey();
     let change_serial_id = get_new_serial_id();
 
-    // Add base cost of fund tx + CET / 2 and a CET output to the collateral.
-    let appr_required_amount =
-        own_collateral + get_half_common_fee(fee_rate)? + dlc::util::weight_to_fee(124, fee_rate)?;
-    let utxos = wallet.get_utxos_for_amount(appr_required_amount, fee_rate, true)?;
+    // Add base cost of fund tx + CET / 2 and a CET output to the collateral + minimum amount to
+    // have a change output.
+    let min_change_value = change_addr.script_pubkey().dust_value().to_sat();
+    let change_weight = get_change_weight(&change_spk)?;
+    let change_fee = weight_to_fee(change_weight, fee_rate)?;
+    let appr_required_amount = own_collateral
+        + get_half_common_fee(fee_rate)?
+        + dlc::util::weight_to_fee(124, fee_rate)?
+        + min_change_value
+        + change_fee;
+    let utxos = wallet.get_utxos_for_amount(appr_required_amount, fee_rate, true, &change_spk)?;
+    let total_value: u64 = utxos.iter().map(|x| x.tx_out.value).sum();
+    let inputs_weight = get_inputs_weight(
+        &utxos
+            .iter()
+            .map(|x| (x.tx_out.script_pubkey.as_ref(), 107))
+            .collect::<Vec<_>>(),
+    )?;
+    let inputs_fee = weight_to_fee(inputs_weight, fee_rate)?;
+
+    if total_value < appr_required_amount + inputs_fee {
+        return Err(Error::InvalidParameters(format!(
+            "Coin selection didn't return a high enough value. Requested: {appr_required_amount} Got: {total_value}."
+    )
+        ));
+    }
 
     let mut funding_inputs: Vec<FundingInput> = Vec::new();
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();

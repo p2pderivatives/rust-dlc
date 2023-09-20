@@ -1,18 +1,18 @@
-use std::rc::Rc;
+use std::sync::Mutex;
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{absolute::LockTime, Address, OutPoint, ScriptBuf, Transaction, TxOut};
+use bitcoin::{absolute::LockTime, Address, OutPoint, Script, ScriptBuf, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
-use secp256k1_zkp::{rand::seq::SliceRandom, PublicKey, SecretKey};
+use secp256k1_zkp::{PublicKey, SecretKey};
 
 use crate::mock_blockchain::MockBlockchain;
 
 pub struct MockWallet {
-    utxos: Vec<Utxo>,
+    pub utxos: Mutex<Vec<Utxo>>,
 }
 
 impl MockWallet {
-    pub fn new(blockchain: &Rc<MockBlockchain>, utxo_values: &[u64]) -> Self {
+    pub fn new(blockchain: &MockBlockchain, utxo_values: &[u64]) -> Self {
         let mut utxos = Vec::with_capacity(utxo_values.len());
 
         for utxo_value in utxo_values {
@@ -41,7 +41,9 @@ impl MockWallet {
             utxos.push(utxo);
         }
 
-        Self { utxos }
+        Self {
+            utxos: Mutex::new(utxos),
+        }
     }
 }
 
@@ -77,34 +79,22 @@ impl Wallet for MockWallet {
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        _fee_rate: u64,
-        _lock_utxos: bool,
+        fee_rate: u64,
+        lock_utxos: bool,
+        change_spk: &Script,
     ) -> Result<Vec<dlc_manager::Utxo>, Error> {
-        let mut utxo_pool = self.utxos.clone();
-        let seed = 1;
-        utxo_pool.shuffle(&mut secp256k1_zkp::rand::rngs::mock::StepRng::new(
-            seed, seed,
-        ));
-
-        let mut sum = 0;
-
-        let res = utxo_pool
-            .iter()
-            .take_while(|x| {
-                if sum >= amount {
-                    return false;
-                }
-                sum += x.tx_out.value;
-                true
-            })
-            .cloned()
-            .collect();
-
-        if sum >= amount {
-            return Ok(res);
+        let mut utxos = self.utxos.lock().unwrap();
+        let res = simple_wallet::select_coins(&utxos, fee_rate, amount, change_spk)?;
+        if lock_utxos {
+            for s in &res {
+                utxos
+                    .iter_mut()
+                    .find(|x| x.tx_out == s.tx_out && x.outpoint == s.outpoint)
+                    .unwrap()
+                    .reserved = true;
+            }
         }
-
-        Err(Error::InvalidParameters("Not enought UTXOs".to_string()))
+        Ok(res)
     }
 
     fn import_address(&self, _address: &Address) -> Result<(), dlc_manager::error::Error> {
@@ -115,7 +105,11 @@ impl Wallet for MockWallet {
         Ok(())
     }
 
-    fn unreserve_utxos(&self, _outpoints: &[OutPoint]) -> Result<(), Error> {
+    fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error> {
+        let mut pool = self.utxos.lock().unwrap();
+        for s in outpoints {
+            pool.iter_mut().find(|x| &x.outpoint == s).unwrap().reserved = false;
+        }
         Ok(())
     }
 }
