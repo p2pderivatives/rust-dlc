@@ -1,6 +1,17 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
+use bitcoin::{Script, Transaction};
+use dlc::OracleInfo;
+use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
+use secp256k1_zkp::{
+    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
+};
+
+use crate::error::Error;
+
+use super::contract_info::OracleIndexAndPrefixLength;
+
 pub(crate) fn get_majority_combination(
     outcomes: &[(usize, &Vec<String>)],
 ) -> Option<(Vec<String>, Vec<usize>)> {
@@ -37,6 +48,155 @@ pub(super) fn unordered_equal<T: Eq + Hash>(a: &[T], b: &[T]) -> bool {
     }
 
     count(a) == count(b)
+}
+
+/// Returns the `RangeInfo` that matches the given set of outcomes if any.
+pub(crate) fn get_range_info_for_enum_outcome(
+    nb_oracles: usize,
+    threshold: usize,
+    outcomes: &[(usize, &Vec<String>)],
+    payout_outcomes: &[String],
+    adaptor_sig_start: usize,
+) -> Option<(OracleIndexAndPrefixLength, RangeInfo)> {
+    if outcomes.len() < threshold {
+        return None;
+    }
+
+    let filtered_outcomes: Vec<(usize, &Vec<String>)> = outcomes
+        .iter()
+        .filter(|x| x.1.len() == 1)
+        .cloned()
+        .collect();
+    let (mut outcome, mut actual_combination) = get_majority_combination(&filtered_outcomes)?;
+    let outcome = outcome.remove(0);
+
+    if actual_combination.len() < threshold {
+        return None;
+    }
+
+    actual_combination.truncate(threshold);
+
+    let pos = payout_outcomes.iter().position(|x| x == &outcome)?;
+
+    let combinator = CombinationIterator::new(nb_oracles, threshold);
+    let mut comb_pos = 0;
+    let mut comb_count = 0;
+
+    for (i, combination) in combinator.enumerate() {
+        if combination == actual_combination {
+            comb_pos = i;
+        }
+        comb_count += 1;
+    }
+
+    let range_info = RangeInfo {
+        cet_index: pos,
+        adaptor_index: comb_count * pos + comb_pos + adaptor_sig_start,
+    };
+
+    Some((
+        actual_combination.iter().map(|x| (*x, 1)).collect(),
+        range_info,
+    ))
+}
+
+/// Verify the given set adaptor signatures.
+pub fn verify_adaptor_info(
+    secp: &Secp256k1<All>,
+    messages: &[Vec<Vec<Message>>],
+    oracle_infos: &[OracleInfo],
+    threshold: usize,
+    fund_pubkey: &PublicKey,
+    funding_script_pubkey: &Script,
+    fund_output_value: u64,
+    cets: &[Transaction],
+    adaptor_sigs: &[EcdsaAdaptorSignature],
+    adaptor_sig_start: usize,
+) -> Result<usize, dlc::Error> {
+    let mut adaptor_sig_index = adaptor_sig_start;
+    let mut callback = |adaptor_point: &PublicKey, cet_index: usize| -> Result<(), dlc::Error> {
+        let sig = adaptor_sigs[adaptor_sig_index];
+        adaptor_sig_index += 1;
+        dlc::verify_cet_adaptor_sig_from_point(
+            secp,
+            &sig,
+            &cets[cet_index],
+            adaptor_point,
+            fund_pubkey,
+            funding_script_pubkey,
+            fund_output_value,
+        )?;
+        Ok(())
+    };
+
+    iter_outcomes(secp, messages, oracle_infos, threshold, &mut callback)?;
+
+    Ok(adaptor_sig_index)
+}
+
+/// Generate the set of adaptor signatures.
+pub fn get_enum_adaptor_signatures(
+    secp: &Secp256k1<All>,
+    messages: &[Vec<Vec<Message>>],
+    oracle_infos: &[OracleInfo],
+    threshold: usize,
+    cets: &[Transaction],
+    fund_privkey: &SecretKey,
+    funding_script_pubkey: &Script,
+    fund_output_value: u64,
+) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+    let mut adaptor_sigs = Vec::new();
+    let mut callback = |adaptor_point: &PublicKey, cet_index: usize| -> Result<(), dlc::Error> {
+        let sig = dlc::create_cet_adaptor_sig_from_point(
+            secp,
+            &cets[cet_index],
+            adaptor_point,
+            fund_privkey,
+            funding_script_pubkey,
+            fund_output_value,
+        )?;
+        adaptor_sigs.push(sig);
+        Ok(())
+    };
+
+    iter_outcomes(secp, messages, oracle_infos, threshold, &mut callback)?;
+
+    Ok(adaptor_sigs)
+}
+
+pub(crate) fn iter_outcomes<C: Verification, F>(
+    secp: &Secp256k1<C>,
+    messages: &[Vec<Vec<Message>>],
+    oracle_infos: &[OracleInfo],
+    threshold: usize,
+    callback: &mut F,
+) -> Result<(), dlc::Error>
+where
+    F: FnMut(&PublicKey, usize) -> Result<(), dlc::Error>,
+{
+    let combination_iter = CombinationIterator::new(oracle_infos.len(), threshold);
+    let combinations: Vec<Vec<usize>> = combination_iter.collect();
+
+    for (i, outcome_messages) in messages.iter().enumerate() {
+        for selector in &combinations {
+            let cur_oracle_infos: Vec<_> = oracle_infos
+                .iter()
+                .enumerate()
+                .filter_map(|(i, x)| {
+                    if selector.contains(&i) {
+                        Some(x.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let adaptor_point =
+                dlc::get_adaptor_point_from_oracle_info(secp, &cur_oracle_infos, outcome_messages)?;
+            callback(&adaptor_point, i)?;
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

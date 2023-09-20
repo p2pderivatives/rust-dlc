@@ -1,8 +1,12 @@
 //! Structure containing information about contract details.
 
+use bitcoin::Transaction;
+use dlc::ord::SatPoint;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use oracle_msgs::OracleInfo;
+
+use crate::ser_impls::sat_point;
 
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
@@ -33,10 +37,12 @@ pub enum ContractInfo {
     SingleContractInfo(SingleContractInfo),
     /// A contract that is based on multiple events.
     DisjointContractInfo(DisjointContractInfo),
+    /// A contract which has an ordinal as part of the collateral.
+    OrdContractInfo(OrdContractInfo),
 }
 
 impl_dlc_writeable_enum!(ContractInfo,
-    (0, SingleContractInfo), (1, DisjointContractInfo);;;
+    (0, SingleContractInfo), (1, DisjointContractInfo), (2, OrdContractInfo);;;
 );
 
 impl ContractInfo {
@@ -45,6 +51,7 @@ impl ContractInfo {
         match self {
             ContractInfo::SingleContractInfo(v0) => v0.total_collateral,
             ContractInfo::DisjointContractInfo(v1) => v1.total_collateral,
+            ContractInfo::OrdContractInfo(v2) => v2.total_collateral,
         }
     }
 
@@ -61,6 +68,7 @@ impl ContractInfo {
                 .map(|x| x.oracle_info.get_closest_maturity_date())
                 .min()
                 .expect("to have at least one element"),
+            ContractInfo::OrdContractInfo(o) => o.oracle_info.get_closest_maturity_date(),
         }
     }
 }
@@ -97,6 +105,87 @@ pub struct DisjointContractInfo {
 }
 
 impl_dlc_writeable!(DisjointContractInfo, { (total_collateral, writeable), (contract_infos, vec)});
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// Information for a contract based on a multiple events.
+pub struct OrdContractInfo {
+    /// The total collateral locked in the contract, excluding the ordinal output.
+    pub total_collateral: u64,
+    /// The descriptor for the event on which the contract is based.
+    pub contract_descriptor: OrdContractDescriptor,
+    /// The current location of the ordinal.
+    pub ordinal_sat_point: SatPoint,
+    /// The transaction that includes the outpoint in which the ordinal is currently located.
+    pub ordinal_tx: Transaction,
+    /// Whether the offer party should receive the ordinal in case of a contract time out.
+    pub refund_offer: bool,
+    /// Oracle information for the contract.
+    pub oracle_info: OracleInfo,
+}
+
+impl_dlc_writeable!(OrdContractInfo, {
+    (total_collateral, writeable),
+    (contract_descriptor, writeable),
+    (ordinal_sat_point, {cb_writeable, sat_point::write, sat_point::read}),
+    (ordinal_tx, writeable),
+    (refund_offer, writeable),
+    (oracle_info, writeable)
+});
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// Contains information about the event on which an ordinal contract is based.
+pub enum OrdContractDescriptor {
+    /// For enumerated events.
+    Enum(OrdEnumContractDescriptor),
+    /// For numerical events.
+    Numerical(OrdNumericalContractDescriptor),
+}
+
+impl_dlc_writeable_enum!(OrdContractDescriptor, (0, Enum), (1, Numerical);;;);
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// Contains information about the payouts and ordinal assignment for a contract based on an
+/// enumerated event.
+pub struct OrdEnumContractDescriptor {
+    /// The outcomes for which the ordinal is given to the offer party.
+    pub ord_payouts: Vec<bool>,
+    /// The description of the outcomes and associated payouts.
+    pub descriptor: EnumeratedContractDescriptor,
+}
+
+impl_dlc_writeable!(OrdEnumContractDescriptor, { (ord_payouts, vec), (descriptor, writeable) });
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// Contains information about the payouts and ordinal assignment for a contract based on a
+/// numerical event.
+pub struct OrdNumericalContractDescriptor {
+    /// The ranges within which the ordinal is given to the offer party.
+    pub to_offer_payouts: Vec<(u64, u64)>,
+    /// The description of the outcomes and associated payouts.
+    pub descriptor: NumericOutcomeContractDescriptor,
+}
+
+impl_dlc_writeable!(OrdNumericalContractDescriptor, { (to_offer_payouts, vec), (descriptor, writeable) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
