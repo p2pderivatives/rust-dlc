@@ -274,18 +274,7 @@ impl PartyParams {
         &self,
         fee_rate_per_vb: u64,
         extra_fee: u64,
-    ) -> Result<(TxOut, u64, u64), Error> {
-        if self.collateral == 0 {
-            return Ok((
-                TxOut {
-                    value: self.input_amount,
-                    script_pubkey: self.change_script_pubkey.clone(),
-                },
-                0,
-                0,
-            ));
-        }
-    
+    ) -> Result<(TxOut, u64, u64), Error> {   
         let mut inputs_weight: usize = 0;
         for w in &self.inputs {
             let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
@@ -421,8 +410,13 @@ pub(crate) fn create_fund_transaction_with_fees(
 ) -> Result<(Transaction, Script), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
-    let (offer_change_output, offer_fund_fee, offer_cet_fee) =
-        offer_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
+    let offer_change_output = TxOut {
+        value: 0,
+        script_pubkey: offer_params.change_script_pubkey.clone(),
+    };
+    let offer_fund_fee = 0;
+    let offer_cet_fee = 0;
+    
     let (accept_change_output, accept_fund_fee, accept_cet_fee) =
         accept_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
 
