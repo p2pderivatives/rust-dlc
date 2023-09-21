@@ -266,7 +266,7 @@ impl LnDlcChannelSigner for CustomSigner {
     ) -> Result<secp256k1_zkp::ecdsa::Signature, Error> {
         dlc::util::get_raw_sig_for_tx_input(
             secp,
-            &split_tx,
+            split_tx,
             0,
             original_funding_redeemscript,
             original_channel_value_satoshis,
@@ -285,7 +285,7 @@ impl LnDlcChannelSigner for CustomSigner {
     ) -> Result<secp256k1_zkp::EcdsaAdaptorSignature, Error> {
         dlc::channel::get_tx_adaptor_signature(
             secp,
-            &split_tx,
+            split_tx,
             original_channel_value_satoshis,
             original_funding_redeemscript,
             &self.in_memory_signer.lock().unwrap().funding_key,

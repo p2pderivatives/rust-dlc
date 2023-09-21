@@ -69,6 +69,16 @@ fn alter_adaptor_sig(input: &EcdsaAdaptorSignature) -> EcdsaAdaptorSignature {
     EcdsaAdaptorSignature::from_slice(&copy).expect("to be able to create an adaptor signature")
 }
 
+/// We wrap updating the state of the chain monitor and calling the
+/// `Manager::periodic_check` because the latter will only be aware of
+/// newly confirmed transactions if the former processes new blocks.
+fn periodic_check(dlc_party: DlcParty) {
+    let dlc_manager = dlc_party.lock().unwrap();
+
+    dlc_manager.periodic_chain_monitor().unwrap();
+    dlc_manager.periodic_check().unwrap();
+}
+
 #[derive(Eq, PartialEq, Clone)]
 enum TestPath {
     Close,
@@ -513,17 +523,9 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
             mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
-            alice_manager_send
-                .lock()
-                .unwrap()
-                .periodic_check()
-                .expect("to be able to do the periodic check");
+            periodic_check(alice_manager_send.clone());
 
-            bob_manager_send
-                .lock()
-                .unwrap()
-                .periodic_check()
-                .expect("to be able to do the periodic check");
+            periodic_check(bob_manager_send.clone());
 
             assert_contract_state!(alice_manager_send, contract_id, Confirmed);
             assert_contract_state!(bob_manager_send, contract_id, Confirmed);
@@ -785,40 +787,24 @@ fn close_established_channel<F>(
 
     let contract_id = get_established_channel_contract_id(&first, &channel_id);
 
-    first
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("to be able to do the periodic check");
+    periodic_check(first.clone());
 
     let wait = dlc_manager::manager::CET_NSEQUENCE;
 
     generate_blocks(10);
 
-    second
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("to be able to do the periodic check");
+    periodic_check(second.clone());
 
     assert_channel_state!(second, channel_id, Signed, Closing);
 
-    first
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("to be able to do the periodic check");
+    periodic_check(first.clone());
 
     // Should not have changed state before the CET is spendable.
     assert_channel_state!(first, channel_id, Signed, Closing);
 
     generate_blocks(wait as u64 - 9);
 
-    first
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("to be able to do the periodic check");
+    periodic_check(first.clone());
 
     assert_channel_state!(first, channel_id, Closed);
 
@@ -826,19 +812,15 @@ fn close_established_channel<F>(
 
     generate_blocks(1);
 
-    second
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("to be able to do the periodic check");
+    periodic_check(second.clone());
 
     assert_channel_state!(second, channel_id, CounterClosed);
     assert_contract_state!(second, contract_id, PreClosed);
 
     generate_blocks(5);
 
-    first.lock().unwrap().periodic_check().unwrap();
-    second.lock().unwrap().periodic_check().unwrap();
+    periodic_check(first.clone());
+    periodic_check(second.clone());
 
     assert_contract_state!(first, contract_id, Closed);
     assert_contract_state!(second, contract_id, Closed);
@@ -869,11 +851,7 @@ fn cheat_punish<F: Fn(u64)>(
 
     generate_blocks(2);
 
-    second
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("the check to succeed");
+    periodic_check(second.clone());
 
     assert_channel_state!(second, channel_id, ClosedPunished);
 }
@@ -1232,11 +1210,7 @@ fn collaborative_close<F: Fn(u64)>(
 
     generate_blocks(2);
 
-    first
-        .lock()
-        .unwrap()
-        .periodic_check()
-        .expect("the check to succeed");
+    periodic_check(first.clone());
 
     assert_channel_state!(first, channel_id, CollaborativelyClosed);
     assert_contract_state!(first, contract_id, Closed);
@@ -1273,11 +1247,7 @@ fn renew_timeout<F: Fn(u64)>(
             mocks::mock_time::set_time(
                 (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
             );
-            first
-                .lock()
-                .unwrap()
-                .periodic_check()
-                .expect("not to error");
+            periodic_check(first.clone());
 
             assert_channel_state!(first, channel_id, Closed);
         } else {
@@ -1300,11 +1270,7 @@ fn renew_timeout<F: Fn(u64)>(
                 mocks::mock_time::set_time(
                     (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
                 );
-                second
-                    .lock()
-                    .unwrap()
-                    .periodic_check()
-                    .expect("not to error");
+                periodic_check(second.clone());
 
                 assert_channel_state!(second, channel_id, Closed);
             } else if let TestPath::RenewConfirmTimeout = path {
@@ -1313,11 +1279,7 @@ fn renew_timeout<F: Fn(u64)>(
                 mocks::mock_time::set_time(
                     (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
                 );
-                first
-                    .lock()
-                    .unwrap()
-                    .periodic_check()
-                    .expect("not to error");
+                periodic_check(first.clone());
 
                 assert_channel_state!(first, channel_id, Closed);
             } else if let TestPath::RenewFinalizeTimeout = path {
@@ -1328,17 +1290,9 @@ fn renew_timeout<F: Fn(u64)>(
                 mocks::mock_time::set_time(
                     (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
                 );
-                second
-                    .lock()
-                    .unwrap()
-                    .periodic_check()
-                    .expect("not to error");
+                periodic_check(second.clone());
                 generate_blocks(289);
-                second
-                    .lock()
-                    .unwrap()
-                    .periodic_check()
-                    .expect("not to error");
+                periodic_check(second.clone());
 
                 assert_channel_state!(second, channel_id, Closed);
             }
@@ -1374,11 +1328,7 @@ fn settle_timeout(
         mocks::mock_time::set_time(
             (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
         );
-        first
-            .lock()
-            .unwrap()
-            .periodic_check()
-            .expect("not to error");
+        periodic_check(first.clone());
 
         assert_channel_state!(first, channel_id, Signed, Closing);
     } else {
@@ -1401,11 +1351,7 @@ fn settle_timeout(
             mocks::mock_time::set_time(
                 (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
             );
-            second
-                .lock()
-                .unwrap()
-                .periodic_check()
-                .expect("not to error");
+            periodic_check(second.clone());
 
             second
                 .lock()
@@ -1420,11 +1366,7 @@ fn settle_timeout(
             mocks::mock_time::set_time(
                 (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
             );
-            first
-                .lock()
-                .unwrap()
-                .periodic_check()
-                .expect("not to error");
+            periodic_check(first.clone());
 
             assert_channel_state!(first, channel_id, Signed, Closing);
         }

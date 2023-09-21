@@ -824,6 +824,7 @@ mod tests {
                 let path = format!("{}{}", "test_files/sleddb/", std::stringify!($name));
                 {
                     let storage = SledStorageProvider::new(&path).expect("Error opening sled DB");
+                    #[allow(clippy::redundant_closure_call)]
                     $body(storage);
                 }
                 std::fs::remove_dir_all(path).unwrap();

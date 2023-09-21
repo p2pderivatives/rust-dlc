@@ -159,6 +159,8 @@ impl LnDlcParty {
         ];
 
         self.esplora_sync.sync(confirmables).unwrap();
+        self.dlc_manager.periodic_chain_monitor().unwrap();
+
         self.sub_channel_manager.periodic_check();
         self.dlc_manager.periodic_check().unwrap();
     }
@@ -3284,7 +3286,7 @@ fn go_to_established_target_state(
         (&test_params.bob_node, &test_params.alice_node)
     };
 
-    let offer = generate_offer(&test_params.test_params, &offerer, &test_params.channel_id);
+    let offer = generate_offer(&test_params.test_params, offerer, &test_params.channel_id);
 
     accepter
         .sub_channel_manager

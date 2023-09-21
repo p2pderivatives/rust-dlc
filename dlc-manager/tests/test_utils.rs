@@ -65,6 +65,7 @@ macro_rules! receive_loop {
                                 Some(msg) => {
                                     let msg_opt = $rcv_callback(msg);
                                     if let Some(msg) = msg_opt {
+                                        #[allow(clippy::redundant_closure_call)]
                                         $msg_callback(&msg);
                                         (&$send).send(Some(msg)).expect("Error sending");
                                     }
@@ -675,10 +676,7 @@ pub fn get_enum_and_numerical_test_params(
     };
 
     TestParams {
-        oracles: enum_oracles
-            .into_iter()
-            .chain(numerical_oracles.into_iter())
-            .collect(),
+        oracles: enum_oracles.into_iter().chain(numerical_oracles).collect(),
         contract_input,
     }
 }
