@@ -24,7 +24,7 @@ dlc-trie = { version = "0.4.0", default-features = false, path = "../dlc-trie" }
 lightning = { version = "0.0.116", default-features = false, features = ["grind_signatures"] }
 log = "0.4.14"
 rand_chacha = {version = "0.3.1", optional = true}
-secp256k1-zkp = {version = "0.7.0", features = ["bitcoin_hashes", "rand"]}
+secp256k1-zkp = {version = "0.7.0"}
 serde = {version = "1.0", optional = true}
 
 [dev-dependencies]
