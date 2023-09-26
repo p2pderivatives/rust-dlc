@@ -12,6 +12,19 @@ jobs:
         run: rustup component add clippy
       - name: Run clippy
         run: cargo clippy -- -D warnings
+  no-std:
+    name: no-std lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: install clippy
+        run: rustup component add clippy
+      - name: Run clippy dlc
+        run: cargo clippy --no-default-features --features no-std -p dlc -- -D warnings
+      - name: Run clippy dlc-messages
+        run: cargo clippy --no-default-features --features no-std -p dlc-messages -- -D warnings
+      - name: Run clippy dlc-trie
+        run: cargo clippy --no-default-features --features no-std -p dlc-trie -- -D warnings
   unit-tests:
     name: unit-tests
     runs-on: ubuntu-latest

@@ -1,6 +1,13 @@
 //! Module for working with DLC channels
 
+#[cfg(all(feature = "no-std", not(feature = "std")))]
+extern crate hashbrown;
+
+#[cfg(any(feature = "std", not(feature = "no-std")))]
 use std::collections::HashMap;
+
+#[cfg(all(feature = "no-std", not(feature = "std")))]
+use self::hashbrown::HashMap;
 
 use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, PartyParams, Payout};
 
@@ -14,6 +21,7 @@ use secp256k1_zkp::{
     schnorr::Signature as SchnorrSignature, EcdsaAdaptorSignature, PublicKey as SecpPublicKey,
     Secp256k1, SecretKey, Signing, Verification,
 };
+use std::iter::FromIterator;
 
 /**
  * Weight of the buffer transaction:
@@ -135,12 +143,14 @@ pub fn get_tx_adaptor_signature<C: Signing>(
 ) -> Result<EcdsaAdaptorSignature, Error> {
     let sighash = get_sig_hash_msg(tx, 0, script_pubkey, input_value)?;
 
-    Ok(EcdsaAdaptorSignature::encrypt(
-        secp,
-        &sighash,
-        own_fund_sk,
-        other_publish_key,
-    ))
+    #[cfg(feature = "std")]
+    let res = EcdsaAdaptorSignature::encrypt(secp, &sighash, own_fund_sk, other_publish_key);
+
+    #[cfg(not(feature = "std"))]
+    let res =
+        EcdsaAdaptorSignature::encrypt_no_aux_rand(secp, &sighash, own_fund_sk, other_publish_key);
+
+    Ok(res)
 }
 
 /// Verify that the given adaptor signature is valid with respect to the given
@@ -357,7 +367,7 @@ pub fn sign_cet<C: Signing>(
     )?;
     let own_pk = SecpPublicKey::from_secret_key(secp, own_sk);
 
-    let sigs = HashMap::from([
+    let sigs = HashMap::from_iter([
         (
             PublicKey {
                 inner: own_pk,
