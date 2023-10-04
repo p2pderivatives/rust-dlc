@@ -12,34 +12,27 @@ use bitcoin_test_utils::tx_to_string;
 use dlc_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning_block_sync::{BlockData, BlockHeaderData, BlockSource, BlockSourceError};
+use log::error;
 use reqwest::blocking::Response;
 use serde::Deserialize;
 use serde::Serialize;
 
 const MIN_FEERATE: u32 = 253;
 
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub enum Target {
-    Minimum = 1008,
-    Background = 144,
-    Normal = 18,
-    HighPriority = 6,
-}
-
 pub struct ElectrsBlockchainProvider {
     host: String,
     client: reqwest::blocking::Client,
     async_client: reqwest::Client,
     network: Network,
-    fees: Arc<HashMap<Target, AtomicU32>>,
+    fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
 }
 
 impl ElectrsBlockchainProvider {
     pub fn new(host: String, network: Network) -> Self {
-        let mut fees: HashMap<Target, AtomicU32> = HashMap::new();
-        fees.insert(Target::Background, AtomicU32::new(MIN_FEERATE));
-        fees.insert(Target::Normal, AtomicU32::new(2000));
-        fees.insert(Target::HighPriority, AtomicU32::new(5000));
+        let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
+        fees.insert(ConfirmationTarget::Background, AtomicU32::new(MIN_FEERATE));
+        fees.insert(ConfirmationTarget::Normal, AtomicU32::new(2000));
+        fees.insert(ConfirmationTarget::HighPriority, AtomicU32::new(5000));
         let fees = Arc::new(fees);
         poll_for_fee_estimates(fees.clone(), &host);
         Self {
@@ -205,22 +198,22 @@ impl FeeEstimator for ElectrsBlockchainProvider {
         let est = match confirmation_target {
             ConfirmationTarget::MempoolMinimum => self
                 .fees
-                .get(&Target::Minimum)
+                .get(&ConfirmationTarget::MempoolMinimum)
                 .unwrap()
                 .load(Ordering::Acquire),
             ConfirmationTarget::Background => self
                 .fees
-                .get(&Target::Background)
+                .get(&ConfirmationTarget::Background)
                 .unwrap()
                 .load(Ordering::Acquire),
             ConfirmationTarget::Normal => self
                 .fees
-                .get(&Target::Normal)
+                .get(&ConfirmationTarget::Normal)
                 .unwrap()
                 .load(Ordering::Acquire),
             ConfirmationTarget::HighPriority => self
                 .fees
-                .get(&Target::HighPriority)
+                .get(&ConfirmationTarget::HighPriority)
                 .unwrap()
                 .load(Ordering::Acquire),
         };
@@ -320,11 +313,13 @@ impl BroadcasterInterface for ElectrsBlockchainProvider {
         std::thread::spawn(move || {
             for body in bodies {
                 match client.post(format!("{host}tx")).body(body).send() {
-                    Err(_) => {}
+                    Err(e) => {
+                        error!("Error broadcasting transaction: {}", e);
+                    }
                     Ok(res) => {
                         if res.error_for_status_ref().is_err() {
-                            // let body = res.text().unwrap_or_default();
-                            // TODO(tibo): log
+                            let body = res.text().unwrap_or_default();
+                            error!("Error broadcasting transaction: {}", body);
                         }
                     }
                 };
@@ -370,25 +365,24 @@ struct SpentResp {
 type FeeEstimates = std::collections::HashMap<u16, f32>;
 
 fn store_estimate_for_target(
-    fees: &Arc<HashMap<Target, AtomicU32>>,
+    fees: &Arc<HashMap<ConfirmationTarget, AtomicU32>>,
     fee_estimates: &FeeEstimates,
-    target: Target,
+    target: ConfirmationTarget,
 ) {
-    #[allow(clippy::redundant_clone)]
-    let val = get_estimate_for_target(fee_estimates, &(target.clone() as u16));
+    let val = get_estimate_for_target(fee_estimates, &(target as u16));
     fees.get(&target)
         .unwrap()
         .store(val, std::sync::atomic::Ordering::Relaxed);
 }
 
-fn poll_for_fee_estimates(fees: Arc<HashMap<Target, AtomicU32>>, host: &str) {
+fn poll_for_fee_estimates(fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>, host: &str) {
     let host = host.to_owned();
     std::thread::spawn(move || loop {
         if let Ok(res) = reqwest::blocking::get(format!("{host}fee-estimates")) {
             if let Ok(fee_estimates) = res.json::<FeeEstimates>() {
-                store_estimate_for_target(&fees, &fee_estimates, Target::Background);
-                store_estimate_for_target(&fees, &fee_estimates, Target::HighPriority);
-                store_estimate_for_target(&fees, &fee_estimates, Target::Normal);
+                store_estimate_for_target(&fees, &fee_estimates, ConfirmationTarget::Background);
+                store_estimate_for_target(&fees, &fee_estimates, ConfirmationTarget::HighPriority);
+                store_estimate_for_target(&fees, &fee_estimates, ConfirmationTarget::Normal);
             }
         }
 
