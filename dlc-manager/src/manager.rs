@@ -28,9 +28,7 @@ use dlc_messages::channel::{
     SettleOffer, SignChannel,
 };
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
-use dlc_messages::{
-    AcceptDlc, ChannelMessage, Message as DlcMessage, OfferDlc, OnChainMessage, SignDlc,
-};
+use dlc_messages::{AcceptDlc, ChannelMessage, Message as DlcMessage, OfferDlc, OnChainMessage, SignDlc};
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
@@ -129,8 +127,10 @@ macro_rules! check_for_timed_out_channels {
                 let is_timed_out = timeout < $manager.time.unix_time_now();
                 if is_timed_out {
                     let sub_channel = if channel.is_sub_channel() {
-                        error!("Force-closing subchannels is not supported; skipping closure.");
+                        warn!("Force-closing a sub channel with a timed out channel is not supported; skipping closure.");
                         continue;
+
+
 
                         // TODO: Implement subchannel force closing
                         // let s = get_sub_channel_in_state!(
@@ -357,13 +357,12 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
-    pub fn periodic_check(&self) -> Result<(), Error> {
+    pub fn periodic_check(&self) -> Result<Option<(ChannelMessage, PublicKey)>, Error> {
         self.check_signed_contracts()?;
         self.check_confirmed_contracts()?;
         self.check_preclosed_contracts()?;
-        self.channel_checks()?;
 
-        Ok(())
+        self.channel_checks()
     }
 
     fn on_offer_message(
@@ -1900,7 +1899,7 @@ where
         Ok(())
     }
 
-    fn channel_checks(&self) -> Result<(), Error> {
+    fn channel_checks(&self) -> Result<Option<(ChannelMessage, PublicKey)>, Error> {
         let established_closing_channels = self
             .store
             .get_signed_channels(Some(SignedChannelStateType::Closing))?;
@@ -1914,7 +1913,103 @@ where
         if let Err(e) = self.check_for_timed_out_channels() {
             error!("Error checking timed out channels {}", e);
         }
-        self.check_for_watched_tx()
+
+        self.check_for_watched_tx()?;
+
+        self.check_for_intermediate_channels()
+    }
+
+    fn check_for_intermediate_channels(&self) -> Result<Option<(ChannelMessage, PublicKey)>, Error> {
+        let mut channels = self.get_store().get_signed_channels(Some(SignedChannelStateType::RenewConfirmed))?;
+        if let Some(signed_channel) = channels.first_mut() {
+
+            let contract_id = signed_channel.get_contract_id().unwrap();
+            let peer_id = signed_channel.counter_party;
+
+            let signed_contract =
+                get_contract_in_state!(self, &contract_id, Confirmed, Some(peer_id))?;
+
+            let cet_adaptor_signatures = signed_contract.accepted_contract.adaptor_signatures.unwrap();
+
+            let own_buffer_adaptor_sk = if let Some(sub_channel_id) =
+                signed_channel.sub_channel_id.as_ref()
+            {
+                let (signed_sub_channel, state) =
+                    get_sub_channel_in_state!(self, *sub_channel_id, Signed, None::<PublicKey>)?;
+                let own_base_secret_key = self
+                    .wallet
+                    .get_secret_key_for_pubkey(&signed_sub_channel.own_base_points.own_basepoint)?;
+                let own_secret_key =
+                    derive_private_key(&self.secp, &state.own_per_split_point, &own_base_secret_key);
+
+                Some(own_secret_key)
+            } else {
+                None
+            }.unwrap();
+
+
+            let accept_per_update_point = match signed_channel.clone().state {
+                SignedChannelState::RenewConfirmed { accept_per_update_point, .. } => {
+                    Some(accept_per_update_point)
+                },
+                _ => None
+            }.unwrap();
+
+            signed_channel.state = signed_channel.clone().roll_back_state.unwrap();
+
+            let renew_accept = RenewAccept{
+                channel_id: signed_channel.channel_id,
+                next_per_update_point: accept_per_update_point,
+                cet_adaptor_signatures: (&cet_adaptor_signatures as &[_]).into(),
+                refund_signature: signed_contract.accepted_contract.accept_refund_signature,
+            };
+
+
+            let (_, renew_confirm) = crate::channel_updater::verify_renew_accept_and_confirm_internal(
+                &self.secp,
+                &renew_accept,
+                signed_channel,
+                &signed_contract.accepted_contract.offered_contract,
+                CET_NSEQUENCE,
+                PEER_TIMEOUT,
+                &self.wallet,
+                &self.time,
+                Some(own_buffer_adaptor_sk))?;
+
+            // let buffer_input_value = if signed_channel.is_sub_channel() {
+            //     signed_channel.fund_tx.output[1].value
+            // } else {
+            //     signed_channel.fund_tx.output[signed_channel.fund_output_index].value
+            // };
+            //
+            //
+            //
+            //
+            // let accept_revoke_params = signed_channel.counter_points.get_revokable_params(
+            //     &self.secp,
+            //     &signed_channel.own_points.revocation_basepoint,
+            //     &accept_per_update_point,
+            // );
+            //
+            // let own_buffer_adaptor_signature = dlc::channel::get_tx_adaptor_signature(
+            //     &self.secp,
+            //     &buffer_transaction,
+            //     buffer_input_value,
+            //     &signed_channel.fund_script_pubkey,
+            //     &own_buffer_adaptor_sk,
+            //     &accept_revoke_params.publish_pk.inner,
+            // )?;
+            //
+            // let renew_confirm = RenewConfirm {
+            //     channel_id: signed_channel.channel_id,
+            //     buffer_adaptor_signature: own_buffer_adaptor_signature,
+            //     cet_adaptor_signatures: (&cet_adaptor_signatures as &[_]).into(),
+            //     refund_signature: signed_contract.offer_refund_signature,
+            // };
+
+            return Ok(Some((ChannelMessage::RenewConfirm(renew_confirm), signed_channel.counter_party)));
+        }
+        Ok(None)
     }
 
     fn check_for_timed_out_channels(&self) -> Result<(), Error> {

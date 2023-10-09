@@ -8,7 +8,7 @@ repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/p2pd-oracle
 version = "0.1.0"
 
 [dependencies]
-chrono = {version = "0.4.19", features = ["serde"]}
+chrono = {version = "0.4.27", features = ["serde"]}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {path = "../dlc-messages", features = ["use-serde"]}
 reqwest = {version = "0.11", features = ["blocking", "json"]}

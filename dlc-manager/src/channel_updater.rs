@@ -41,6 +41,7 @@ use dlc_messages::{
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, CounterpartyCommitmentSecrets,
 };
+use log::info;
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing};
 
 const INITIAL_UPDATE_NUMBER: u64 = (1 << 48) - 1;
@@ -1712,24 +1713,30 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
+    info!("----------------_> verify renew accept and confirm internal - 1");
     let own_fund_sk = signer.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
 
+    info!("----------------_> verify renew accept and confirm internal - 2");
     let own_base_secret_key =
         signer.get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
 
+    info!("----------------_> verify renew accept and confirm internal - 3");
     let offer_per_update_point =
         get_signed_channel_state!(signed_channel, RenewOffered, offer_next_per_update_point)?;
 
+    info!("----------------_> verify renew accept and confirm internal - 4");
     let offer_revoke_params = signed_channel.own_points.get_revokable_params(
         secp,
         &signed_channel.counter_points.revocation_basepoint,
         offer_per_update_point,
     );
+    info!("----------------_> verify renew accept and confirm internal - 5");
     let accept_revoke_params = signed_channel.counter_points.get_revokable_params(
         secp,
         &signed_channel.own_points.revocation_basepoint,
         &renew_accept.next_per_update_point,
     );
+    info!("----------------_> verify renew accept and confirm internal - 6");
 
     let total_collateral = offered_contract.total_collateral;
 
@@ -1740,6 +1747,7 @@ where
     } else {
         (None, None)
     };
+    info!("----------------_> verify renew accept and confirm internal - 7");
 
     let DlcChannelTransactions {
         buffer_transaction,
@@ -1761,6 +1769,8 @@ where
         buffer_nsequence,
     )?;
 
+    info!("----------------_> verify renew accept and confirm internal - 8");
+
     let offer_own_sk = derive_private_key(secp, offer_per_update_point, &own_base_secret_key);
     let cet_adaptor_signatures: Vec<_> = (&renew_accept.cet_adaptor_signatures).into();
 
@@ -1779,6 +1789,8 @@ where
         &dlc_transactions,
         Some(signed_channel.channel_id),
     )?;
+
+    info!("----------------_> verify renew accept and confirm internal - 9");
 
     let buffer_input_value = if signed_channel.is_sub_channel() {
         signed_channel.fund_tx.output[1].value
@@ -1816,6 +1828,8 @@ where
         cet_adaptor_signatures: (&cet_adaptor_signatures as &[_]).into(),
         refund_signature: signed_contract.offer_refund_signature,
     };
+
+    info!("----------------_> verify renew accept and confirm internal - 10");
 
     Ok((signed_contract, renew_confirm))
 }

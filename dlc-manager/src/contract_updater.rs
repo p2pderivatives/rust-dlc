@@ -3,6 +3,7 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
+use log::info;
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
@@ -318,6 +319,7 @@ where
     let input_script_pubkey = input_script_pubkey.unwrap_or_else(|| funding_script_pubkey.clone());
     let counter_adaptor_pk = counter_adaptor_pk.unwrap_or(accept_params.fund_pubkey);
 
+    info!("----------------_> verify_accepted_and_sign_contract_internal - 1");
     dlc::verify_tx_input_sig(
         secp,
         refund_signature,
@@ -327,6 +329,7 @@ where
         input_value,
         &counter_adaptor_pk,
     )?;
+    info!("----------------_> verify_accepted_and_sign_contract_internal - 2");
 
     let (adaptor_info, mut adaptor_index) = offered_contract.contract_info[0]
         .verify_and_get_adaptor_info(
@@ -369,6 +372,7 @@ where
             cet_adaptor_signatures,
             adaptor_index,
         )?;
+        info!("----------------_> verify_accepted_and_sign_contract_internal - 3");
 
         adaptor_index = tmp_adaptor_index;
 
@@ -428,12 +432,16 @@ where
                 Error::InvalidParameters(format!("Previous tx output not found at index {vout}"))
             })?;
 
+            info!("----------------_> verify_accepted_and_sign_contract_internal - 4");
+
             // pass wallet instead of privkeys
             signer.sign_tx_input(&mut fund, input_index, tx_out, None)?;
 
             Ok(fund.input[input_index].witness.clone())
         })
         .collect::<Result<Vec<_>, Error>>()?;
+
+    info!("----------------_> verify_accepted_and_sign_contract_internal - 5");
 
     let funding_signatures: Vec<FundingSignature> = witnesses
         .into_iter()
@@ -448,6 +456,8 @@ where
         })
         .collect::<Result<Vec<_>, Error>>()?;
 
+    info!("----------------_> verify_accepted_and_sign_contract_internal - 6");
+
     input_serial_ids.sort_unstable();
 
     let offer_refund_signature = dlc::util::get_raw_sig_for_tx_input(
@@ -458,6 +468,8 @@ where
         input_value,
         adaptor_secret,
     )?;
+
+    info!("----------------_> verify_accepted_and_sign_contract_internal - 7");
 
     let dlc_transactions = DlcTransactions {
         fund,

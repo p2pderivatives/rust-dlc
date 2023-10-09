@@ -8,16 +8,11 @@ use dlc::{
     channel::{get_tx_adaptor_signature, sub_channel::LN_GLUE_TX_WEIGHT},
     PartyParams,
 };
-use dlc_messages::{
-    channel::{AcceptChannel, OfferChannel},
-    oracle_msgs::OracleAnnouncement,
-    sub_channel::{
-        Reject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
-        SubChannelCloseFinalize, SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize,
-        SubChannelOffer, SubChannelRevoke,
-    },
-    FundingSignatures, SubChannelMessage,
-};
+use dlc_messages::{channel::{AcceptChannel, OfferChannel}, oracle_msgs::OracleAnnouncement, sub_channel::{
+    Reject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
+    SubChannelCloseFinalize, SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize,
+    SubChannelOffer, SubChannelRevoke,
+}, FundingSignatures, SubChannelMessage, Message};
 use lightning::{
     chain::{chaininterface::FeeEstimator, keysinterface::ChannelSigner},
     ln::{
@@ -2698,12 +2693,12 @@ where
     /// Checks for watched transactions, process pending actions and tries to finalize the closing
     /// of sub channel whose closing has been initiated by the local or remote party. The returned
     /// messages should be sent to the peer with the associated public key.
-    pub fn periodic_check(&self) -> Vec<(SubChannelMessage, PublicKey)> {
+    pub fn periodic_check(&self) -> Vec<(Message, PublicKey)> {
         if let Err(e) = self.check_for_watched_tx() {
             error!("Error checking for watched transactions: {}", e);
         }
 
-        let msgs = self.process_actions();
+        let mut msgs: Vec<(Message, PublicKey)> = self.process_actions().into_iter().map(|m| (Message::SubChannel(m.0), m.1)).collect();
 
         if let Ok(sub_channels) = self.dlc_channel_manager.get_store().get_sub_channels() {
             let closing_sub_channels = sub_channels.iter().filter(|x| {
@@ -2724,12 +2719,22 @@ where
             }
         }
 
-        if let Err(e) = self.dlc_channel_manager.periodic_check() {
-            error!(
+        let msg = match self.dlc_channel_manager.periodic_check() {
+            Ok(msg) => {
+                msg
+            },
+            Err(e) => {
+                error!(
                 "Error performing periodic check of the channel manager: {}",
                 e
             );
-        }
+                None
+            }
+        };
+
+        if let Some(msg) = msg {
+            msgs.push((Message::Channel(msg.0), msg.1));
+        };
 
         msgs
     }
@@ -3026,6 +3031,7 @@ where
         channel_id: [u8; 32],
         peer_state: Option<u8>,
     ) -> Result<(), Error> {
+
         if let Some(mut channel) = self
             .dlc_channel_manager
             .get_store()

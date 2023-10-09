@@ -1002,8 +1002,11 @@ fn ln_dlc_offer_after_offchain_close_disconnect() {
     let msgs = test_params.bob_node.sub_channel_manager.periodic_check();
 
     let (close_finalize, offer) = match msgs.as_slice() {
-        [(c @ SubChannelMessage::CloseFinalize(_), _), (o @ SubChannelMessage::Offer(_), _)] => {
-            (c, o)
+        [(c @ Message::SubChannel(SubChannelMessage::CloseFinalize(_)), _), (o @ Message::SubChannel(SubChannelMessage::Offer(_)), _)] => {
+            match (c, o) {
+                (Message::SubChannel(c), Message::SubChannel(o)) => (c,o),
+                _ => panic!("unexpected messages: {:?}", msgs),
+            }
         }
         msgs => panic!("Unexpected messages: {:?}", msgs),
     };
@@ -2082,7 +2085,7 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
         // Alice should resend the offer message to bob as he has not received it yet.
         let mut msgs = test_params.alice_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        if let (SubChannelMessage::Offer(o), p) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::Offer(o)), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.bob_node.channel_manager.get_our_node_id());
             assert_eq!(o, offer);
         } else {
@@ -2157,7 +2160,7 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
         // Bob should re-send the accept message
         let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::Accept(a)), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.alice_node.channel_manager.get_our_node_id());
             assert_eq_accept(&a, &accept);
             accept = a;
@@ -2215,7 +2218,7 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
                 .periodic_check()
                 .len()
         );
-        if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::Accept(a)), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.alice_node.channel_manager.get_our_node_id());
             confirm = test_params
                 .alice_node
@@ -2279,7 +2282,7 @@ fn offer_sub_channel_internal(test_params: &LnDlcTestParams, do_reconnect: bool)
                 .periodic_check()
                 .len()
         );
-        if let (SubChannelMessage::Accept(a), p) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::Accept(a)), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.alice_node.channel_manager.get_our_node_id());
             let confirm = test_params
                 .alice_node
@@ -2527,7 +2530,7 @@ fn off_chain_close_offer(test_params: &LnDlcTestParams, do_reconnect: bool) {
         );
         let mut msgs = test_params.alice_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        if let (SubChannelMessage::CloseOffer(c), p) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::CloseOffer(c)), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.bob_node_id);
             assert_eq!(c, close_offer);
         } else {
@@ -2611,7 +2614,7 @@ fn off_chain_close_finalize(test_params: &LnDlcTestParams, do_reconnect: bool) {
         );
         let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        if let (SubChannelMessage::CloseAccept(c), p) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::CloseAccept(c)), p) = msgs.pop().unwrap() {
             assert_eq!(p, test_params.alice_node_id);
             close_accept = c;
         } else {
@@ -2653,7 +2656,7 @@ fn off_chain_close_finalize(test_params: &LnDlcTestParams, do_reconnect: bool) {
         );
         let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        if let (SubChannelMessage::CloseAccept(c), _) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::CloseAccept(c)), _) = msgs.pop().unwrap() {
             let close_confirm2 = test_params
                 .alice_node
                 .sub_channel_manager
@@ -2692,7 +2695,7 @@ fn off_chain_close_finalize(test_params: &LnDlcTestParams, do_reconnect: bool) {
         );
         let mut msgs = test_params.bob_node.sub_channel_manager.periodic_check();
         assert_eq!(1, msgs.len());
-        if let (SubChannelMessage::CloseFinalize(c), _) = msgs.pop().unwrap() {
+        if let (Message::SubChannel(SubChannelMessage::CloseFinalize(c)), _) = msgs.pop().unwrap() {
             close_finalize = SubChannelMessage::CloseFinalize(c);
         } else {
             panic!("Expected a close finalize message");
