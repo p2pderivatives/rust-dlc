@@ -34,23 +34,20 @@ use electrs_blockchain_provider::{ElectrsBlockchainProvider, OutSpendResp};
 use lightning::{
     chain::{
         chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
-        keysinterface::{EntropySource, KeysManager},
         BestBlock, Confirm,
     },
+    events::{Event, EventHandler, EventsProvider, PaymentPurpose},
     ln::{
-        channelmanager::{ChainParameters, PaymentId},
+        channelmanager::{ChainParameters, PaymentId, RecipientOnionFields},
         peer_handler::{IgnoringMessageHandler, MessageHandler},
     },
     routing::{
         gossip::{NetworkGraph, NodeId},
-        router::{DefaultRouter, RouteHop, RouteParameters},
+        router::{DefaultRouter, Path, RouteParameters},
         scoring::{ChannelUsage, Score},
     },
-    util::{
-        config::UserConfig,
-        events::{Event, EventHandler, EventsProvider, PaymentPurpose},
-        ser::Writeable,
-    },
+    sign::{EntropySource, KeysManager},
+    util::{config::UserConfig, ser::Writeable},
 };
 use lightning_persister::FilesystemPersister;
 use lightning_transaction_sync::EsploraSyncClient;
@@ -89,6 +86,8 @@ pub(crate) type ChannelManager = lightning::ln::channelmanager::ChannelManager<
             Arc<NetworkGraph<Arc<ConsoleLogger>>>,
             Arc<ConsoleLogger>,
             Arc<Mutex<TestScorer>>,
+            (),
+            TestScorer,
         >,
     >,
     Arc<ConsoleLogger>,
@@ -261,21 +260,29 @@ impl TestScorer {
 }
 
 impl Score for TestScorer {
-    fn channel_penalty_msat(&self, _: u64, _: &NodeId, _: &NodeId, _: ChannelUsage) -> u64 {
+    type ScoreParams = ();
+    fn channel_penalty_msat(
+        &self,
+        _short_channel_id: u64,
+        _source: &NodeId,
+        _target: &NodeId,
+        _usage: ChannelUsage,
+        _score_params: &Self::ScoreParams,
+    ) -> u64 {
         self.penalty_msat
     }
 
-    fn payment_path_failed(&mut self, _path: &[&RouteHop], _short_channel_id: u64) {}
+    fn payment_path_failed(&mut self, _actual_path: &Path, _actual_short_channel_id: u64) {}
 
-    fn payment_path_successful(&mut self, _path: &[&RouteHop]) {}
+    fn payment_path_successful(&mut self, _actual_path: &Path) {}
 
-    fn probe_failed(&mut self, _path: &[&RouteHop], _short_channel_id: u64) {}
+    fn probe_failed(&mut self, _actual_path: &Path, _: u64) {}
 
-    fn probe_successful(&mut self, _path: &[&RouteHop]) {}
+    fn probe_successful(&mut self, _actual_path: &Path) {}
 }
 
 impl EventHandler for LnDlcParty {
-    fn handle_event(&self, event: lightning::util::events::Event) {
+    fn handle_event(&self, event: lightning::events::Event) {
         match event {
             Event::FundingGenerationReady {
                 temporary_channel_id,
@@ -370,7 +377,7 @@ impl EventHandler for LnDlcParty {
                         &Secp256k1::new(),
                     )
                     .unwrap();
-                self.blockchain.broadcast_transaction(&spending_tx);
+                self.blockchain.broadcast_transactions(&[&spending_tx]);
             }
             Event::ChannelClosed {
                 channel_id, reason, ..
@@ -442,6 +449,7 @@ fn create_ln_node(
         logger.clone(),
         keys_manager.get_secure_random_bytes(),
         scorer,
+        (),
     ));
 
     let channel_manager = {
@@ -464,6 +472,10 @@ fn create_ln_node(
             consistent_keys_manager.clone(),
             user_config,
             chain_params,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as u32,
         ))
     };
 
@@ -519,13 +531,13 @@ fn create_ln_node(
         chan_handler: sub_channel_manager.clone(),
         route_handler: Arc::new(IgnoringMessageHandler {}),
         onion_message_handler: Arc::new(IgnoringMessageHandler {}),
+        custom_message_handler: Arc::new(IgnoringMessageHandler {}),
     };
     let peer_manager = PeerManager::new(
         lightning_msg_handler,
         current_time.try_into().unwrap(),
         &ephemeral_bytes,
         logger.clone(),
-        Arc::new(IgnoringMessageHandler {}),
         consistent_keys_manager.clone(),
     );
 
@@ -2145,6 +2157,7 @@ fn make_ln_payment(alice_node: &LnDlcParty, bob_node: &LnDlcParty, final_value_m
         ),
         alice_node.logger.clone(),
         &scorer,
+        &(),
         &random_seed_bytes,
     )
     .unwrap();
@@ -2157,7 +2170,12 @@ fn make_ln_payment(alice_node: &LnDlcParty, bob_node: &LnDlcParty, final_value_m
 
     alice_node
         .channel_manager
-        .send_spontaneous_payment(&route, Some(payment_preimage), payment_id)
+        .send_spontaneous_payment(
+            &route,
+            Some(payment_preimage),
+            RecipientOnionFields::spontaneous_empty(),
+            payment_id,
+        )
         .unwrap();
 
     bob_node.process_events();
@@ -2289,7 +2307,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &ChannelId) {
 }
 
 fn cheat_with_revoked_tx(cheat_tx: &Transaction, test_params: &mut LnDlcTestParams) {
-    test_params.electrs.broadcast_transaction(cheat_tx);
+    test_params.electrs.broadcast_transactions(&[cheat_tx]);
 
     // wait for cheat tx to be confirmed
     test_params.generate_blocks(6);

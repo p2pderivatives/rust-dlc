@@ -13,7 +13,7 @@ use-serde = ["serde", "secp256k1-zkp/use-serde"]
 [dependencies]
 bitcoin = {version = "0.29.2"}
 dlc = {version = "0.4.0", path = "../dlc"}
-lightning = {version = "0.0.114"}
+lightning = {version = "0.0.116"}
 secp256k1-zkp = {version = "0.7.0", features = ["bitcoin_hashes", "rand", "rand-std"]}
 serde = {version = "1.0", features = ["derive"], optional = true}
 log = "0.4.14"
