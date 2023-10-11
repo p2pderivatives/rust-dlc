@@ -48,37 +48,6 @@ impl lightning::events::OnionMessageProvider for MessageHandler {
     }
 }
 
-impl lightning::ln::msgs::OnionMessageHandler for MessageHandler {
-    fn handle_onion_message(
-        &self,
-        _their_node_id: &PublicKey,
-        _msg: &lightning::ln::msgs::OnionMessage,
-    ) {
-    }
-    fn peer_connected(
-        &self,
-        _their_node_id: &PublicKey,
-        _init: &lightning::ln::msgs::Init,
-        _inbound: bool,
-    ) -> Result<(), ()> {
-        Ok(())
-    }
-
-    fn peer_disconnected(&self, their_node_id: &PublicKey) {
-        self.clear_pending_messages_sent_by_node(their_node_id);
-    }
-
-    fn provided_node_features(&self) -> lightning::ln::features::NodeFeatures {
-        lightning::ln::features::NodeFeatures::empty()
-    }
-    fn provided_init_features(
-        &self,
-        _their_node_id: &PublicKey,
-    ) -> lightning::ln::features::InitFeatures {
-        lightning::ln::features::InitFeatures::empty()
-    }
-}
-
 impl MessageHandler {
     /// Creates a new instance of a [`MessageHandler`]
     pub fn new() -> Self {
@@ -100,38 +69,6 @@ impl MessageHandler {
         let mut ret = Vec::new();
         std::mem::swap(&mut *self.msg_received.lock().unwrap(), &mut ret);
         ret
-    }
-
-    /// Drops certain pending messages sent by the remote node.
-    pub fn clear_pending_messages_sent_by_node(&self, disconnected_node_id: &PublicKey) {
-        let messages = &mut *self.msg_received.lock().unwrap();
-
-        messages.retain(|(node_id, message)| {
-            match message {
-                Message::SubChannel(SubChannelMessage::Confirm(message))
-                    if node_id == disconnected_node_id =>
-                {
-                    log::warn!(
-                        "Dropping SubChannelConfirm message for channel {:?} \
-                         after peer {node_id} disconnected",
-                        message.channel_id
-                    );
-                    false
-                }
-                Message::SubChannel(SubChannelMessage::CloseConfirm(message))
-                    if node_id == disconnected_node_id =>
-                {
-                    log::warn!(
-                        "Dropping SubChannelCloseConfirm message for channel {:?} \
-                         after peer {node_id} disconnected",
-                        message.channel_id
-                    );
-                    false
-                }
-                // Keep any other message
-                _ => true,
-            }
-        });
     }
 
     /// Send a message to the peer with given node id. Not that the message is not
