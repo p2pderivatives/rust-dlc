@@ -594,6 +594,70 @@ fn ln_dlc_renewed_close() {
 
 #[test]
 #[ignore]
+fn ln_dlc_open_disconnect_renewed_close() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    offer_sub_channel_with_reconnect(&test_params);
+    let sub_channel = test_params
+        .alice_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(test_params.channel_id)
+        .unwrap()
+        .unwrap();
+    let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
+    let contract_id = assert_channel_contract_state!(
+        test_params.alice_node.dlc_manager,
+        dlc_channel_id,
+        Confirmed
+    );
+
+    renew(&test_params, &dlc_channel_id);
+
+    assert_contract_state_unlocked!(test_params.alice_node.dlc_manager, contract_id, Closed);
+    assert_contract_state_unlocked!(test_params.bob_node.dlc_manager, contract_id, Closed);
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    force_close_stable(&mut test_params);
+}
+
+#[test]
+#[ignore]
+fn ln_dlc_open_disconnect_settled_close() {
+    let mut test_params = test_init();
+
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    offer_sub_channel_with_reconnect(&test_params);
+    let sub_channel = test_params
+        .alice_node
+        .dlc_manager
+        .get_store()
+        .get_sub_channel(test_params.channel_id)
+        .unwrap()
+        .unwrap();
+    let dlc_channel_id = sub_channel.get_dlc_channel_id(0).unwrap();
+    let contract_id = assert_channel_contract_state!(
+        test_params.alice_node.dlc_manager,
+        dlc_channel_id,
+        Confirmed
+    );
+
+    settle(&test_params, &dlc_channel_id);
+
+    assert_contract_state_unlocked!(test_params.alice_node.dlc_manager, contract_id, Closed);
+    assert_contract_state_unlocked!(test_params.bob_node.dlc_manager, contract_id, Closed);
+
+    mocks::mock_time::set_time(EVENT_MATURITY as u64);
+
+    force_close_stable(&mut test_params);
+}
+
+#[test]
+#[ignore]
 fn ln_dlc_settled_close() {
     let mut test_params = test_init();
 
@@ -2187,7 +2251,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &ChannelId) {
         )
         .unwrap();
 
-    let (accept, bob_key) = test_params
+    let (accept, _) = test_params
         .bob_node
         .dlc_manager
         .accept_renew_offer(dlc_channel_id)
@@ -2198,7 +2262,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &ChannelId) {
         .dlc_manager
         .on_dlc_message(
             &Message::Channel(ChannelMessage::RenewAccept(accept)),
-            test_params.bob_node.channel_manager.get_our_node_id(),
+            test_params.bob_node_id,
         )
         .unwrap()
         .unwrap();
@@ -2206,14 +2270,21 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &ChannelId) {
     let msg = test_params
         .bob_node
         .dlc_manager
-        .on_dlc_message(&msg, bob_key)
+        .on_dlc_message(&msg, test_params.alice_node_id)
+        .unwrap()
+        .unwrap();
+
+    let msg = test_params
+        .alice_node
+        .dlc_manager
+        .on_dlc_message(&msg, test_params.bob_node_id)
         .unwrap()
         .unwrap();
 
     test_params
-        .alice_node
+        .bob_node
         .dlc_manager
-        .on_dlc_message(&msg, test_params.bob_node.channel_manager.get_our_node_id())
+        .on_dlc_message(&msg, test_params.alice_node_id)
         .unwrap();
 }
 

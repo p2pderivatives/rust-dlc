@@ -2472,6 +2472,17 @@ where
                     .dlc_channel_manager
                     .get_closed_sub_dlc_channel(dlc_channel_id, state.own_balance)?;
 
+                if PublicKey::from_secret_key(
+                    self.dlc_channel_manager.get_secp(),
+                    &confirm.split_revocation_secret,
+                ) != state.signed_subchannel.counter_per_split_point
+                {
+                    return Err(Error::InvalidParameters(
+                        "Invalid per update secret in subchannel close confirm".to_string(),
+                    )
+                    .into());
+                }
+
                 sub_channel
                     .counter_party_secrets
                     .provide_secret(
@@ -2481,14 +2492,6 @@ where
                     .map_err(|_| {
                         Error::InvalidParameters("Invalid split revocation secret".to_string())
                     })?;
-
-                debug_assert_eq!(
-                    PublicKey::from_secret_key(
-                        self.dlc_channel_manager.get_secp(),
-                        &confirm.split_revocation_secret
-                    ),
-                    state.signed_subchannel.counter_per_split_point
-                );
 
                 let raa = RevokeAndACK {
                     channel_id: confirm.channel_id,
@@ -2587,6 +2590,17 @@ where
                     CloseConfirmed,
                     Some(*counter_party)
                 )?;
+
+                if PublicKey::from_secret_key(
+                    self.dlc_channel_manager.get_secp(),
+                    &finalize.split_revocation_secret,
+                ) != state.signed_subchannel.counter_per_split_point
+                {
+                    return Err(Error::InvalidParameters(
+                        "Invalid per update secret in subchannel close finalize".to_string(),
+                    )
+                    .into());
+                }
 
                 sub_channel
                     .counter_party_secrets
@@ -3136,7 +3150,7 @@ where
                         None => true,
                         Some(state) if state == ReestablishFlag::OffChainClosed as u8 => true,
                         Some(state) if state == ReestablishFlag::CloseConfirmed as u8 => {
-                            let finalize = self.get_reconnect_close_finalize(&channel)?;
+                            let finalize = self.get_reconnect_close_finalize(&channel, true)?;
 
                             self.actions
                                 .lock()
@@ -3280,7 +3294,7 @@ where
                                 temporary_channel_id: dlc_channel.temporary_channel_id,
                                 party_points: dlc_channel.own_points,
                                 per_update_point: dlc_channel.own_per_update_point,
-                                offer_per_update_seed: channel.per_split_seed,
+                                offer_per_update_seed: Some(dlc_channel.own_per_update_seed),
                                 is_offer_party: true,
                                 counter_party: dlc_channel.counter_party,
                                 // TODO(tibo): use value from original offer
@@ -3471,7 +3485,7 @@ where
                 }
                 SubChannelState::OffChainClosed => {
                     if let Some(counter_state) = peer_state {
-                        let finalize = self.get_reconnect_close_finalize(&channel)?;
+                        let finalize = self.get_reconnect_close_finalize(&channel, false)?;
                         if counter_state == ReestablishFlag::CloseConfirmed as u8 {
                             self.actions
                                 .lock()
@@ -3508,6 +3522,9 @@ where
     fn get_reconnect_close_finalize(
         &self,
         channel: &SubChannel,
+        // when the channel has been offered again already, the offer party will have decreased its
+        // update index, so we need to restore it to provide a proper split secret.
+        restore_index: bool,
     ) -> Result<SubChannelCloseFinalize, Error> {
         let per_split_seed = self
             .dlc_channel_manager
@@ -3516,9 +3533,14 @@ where
                 &channel.per_split_seed.expect("to have a per split seed"),
             )?;
 
+        let update_index = if restore_index {
+            channel.update_idx + 1
+        } else {
+            channel.update_idx
+        };
         let per_split_secret = SecretKey::from_slice(&build_commitment_secret(
             per_split_seed.as_ref(),
-            channel.update_idx,
+            update_index,
         ))
         .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
 
