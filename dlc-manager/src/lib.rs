@@ -177,7 +177,7 @@ pub trait Oracle {
 }
 
 /// Represents a UTXO.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Utxo {
     /// The TxOut containing the value and script pubkey of the referenced output.
     pub tx_out: TxOut,
