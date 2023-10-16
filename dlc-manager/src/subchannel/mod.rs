@@ -131,6 +131,8 @@ pub enum SubChannelState {
     Offered(OfferedSubChannel),
     /// The sub channel was accepted.
     Accepted(AcceptedSubChannel),
+    /// An offer to establish a sub channel was rejected.
+    Rejected,
     /// The sub channel was confirmed.
     Confirmed(ConfirmedSubChannel),
     /// The sub channel transactions have been signed, awaiting revocation of the previous
@@ -139,12 +141,7 @@ pub enum SubChannelState {
     /// The sub channel transactions have been signed and the previous commitment transaction
     /// revoked.
     Signed(SignedSubChannel),
-    /// The sub channel is closing.
-    Closing(ClosingSubChannel),
-    /// The sub channel has been closed on chain by the local party.
-    OnChainClosed,
-    /// The sub channel has been closed on chain by the remote party.
-    CounterOnChainClosed,
+
     /// An offer to collaboratively close the sub channel has been made.
     CloseOffered(CloseOfferedSubChannel),
     /// An offer to collaboratively close the sub channel was accepted.
@@ -153,10 +150,15 @@ pub enum SubChannelState {
     CloseConfirmed(CloseConfirmedSubChannel),
     /// The sub channel was closed off chain (reverted to a regular LN channel).
     OffChainClosed,
+
+    /// The sub channel is closing.
+    Closing(ClosingSubChannel),
+    /// The sub channel has been closed on chain by the local party.
+    OnChainClosed,
+    /// The sub channel has been closed on chain by the remote party.
+    CounterOnChainClosed,
     /// The sub channel was closed by broadcasting a punishment transaction.
     ClosedPunished(Txid),
-    /// An offer to establish a sub channel was rejected.
-    Rejected,
 }
 
 impl Display for SubChannelState {
