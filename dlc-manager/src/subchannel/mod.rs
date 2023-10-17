@@ -142,6 +142,41 @@ pub enum SubChannelState {
     /// revoked.
     Signed(SignedSubChannel),
 
+    /// The subchannel renewal was offered by us.
+    ///
+    /// We transition to this state by sending a [`SubChannelRenewOffer`].
+    ///
+    /// [`SubChannelRenewOffer`]: dlc_messages::sub_channel::SubChannelRenewOffer
+    RenewOffered(RenewOffered),
+    /// The subchannel renewal was offered to us.
+    ///
+    /// We transition to this state by receiving a [`SubChannelRenewOffer`].
+    ///
+    /// [`SubChannelRenewOffer`]: dlc_messages::sub_channel::SubChannelRenewOffer
+    RenewOfferReceived(RenewOfferReceived),
+    /// The subchannel renewal was accepted by us.
+    ///
+    /// We transition to this state by sending a [`SubChannelRenewAccept`].
+    ///
+    /// [`SubChannelRenewAccept`]: dlc_messages::sub_channel::SubChannelRenewAccept
+    RenewAccepted(RenewAccepted),
+    /// The subchannel renewal was confirmed by us.
+    ///
+    /// We transition to this state by receiving a [`SubChannelRenewAccept`] and sending a
+    /// [`SubChannelRenewConfirm`].
+    ///
+    /// [`SubChannelRenewAccept`]: dlc_messages::sub_channel::SubChannelRenewAccept
+    /// [`SubChannelRenewConfirm`]: dlc_messages::sub_channel::SubChannelRenewConfirm
+    RenewConfirmed(RenewConfirmed),
+    /// The subchannel renewal was finalized by us.
+    ///
+    /// We transition to this state by receiving a [`SubChannelRenewConfirm`] and sending a
+    /// [`SubChannelRenewFinalize`].
+    ///
+    /// [`SubChannelRenewConfirm`]: dlc_messages::sub_channel::SubChannelRenewConfirm
+    /// [`SubChannelRenewFinalize`]: dlc_messages::sub_channel::SubChannelRenewFinalize
+    RenewFinalized(RenewFinalized),
+
     /// An offer to collaboratively close the sub channel has been made.
     CloseOffered(CloseOfferedSubChannel),
     /// An offer to collaboratively close the sub channel was accepted.
@@ -178,6 +213,11 @@ impl Display for SubChannelState {
             SubChannelState::OffChainClosed => write!(f, "OffChainClosed"),
             SubChannelState::ClosedPunished(_) => write!(f, "ClosedPunished"),
             SubChannelState::Rejected => write!(f, "Rejected"),
+            SubChannelState::RenewOffered(_) => write!(f, "RenewOffered"),
+            SubChannelState::RenewOfferReceived(_) => write!(f, "RenewOfferReceived"),
+            SubChannelState::RenewAccepted(_) => write!(f, "RenewAccepted"),
+            SubChannelState::RenewConfirmed(_) => write!(f, "RenewConfirmed"),
+            SubChannelState::RenewFinalized(_) => write!(f, "RenewFinalized"),
         }
     }
 }
@@ -394,6 +434,121 @@ pub struct ClosingSubChannel {
     /// properly force close, like when we are force closing during establishment or off chain
     /// closing of a split channel.
     pub commitment_transactions: Option<Vec<Transaction>>,
+}
+
+/// A state in which a renewal of the subchannel has been offered by us.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewOffered {
+    /// The signed subchannel for which the renewal offer was made.
+    pub signed_subchannel: SignedSubChannel,
+    /// The per split point of the offer party for the renewed subchannel.
+    pub offer_per_split_point: PublicKey,
+}
+
+/// A state in which a renewal of the subchannel has been offered to us.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewOfferReceived {
+    /// The signed subchannel for which the renewal offer was received.
+    pub signed_subchannel: SignedSubChannel,
+    /// The per split point of the offer party for the renewed subchannel.
+    pub offer_per_split_point: PublicKey,
+}
+
+/// A state in which a renewal of the subchannel has been accepted by us.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewAccepted {
+    /// The signed subchannel for which the renewal offer was received.
+    pub signed_subchannel: SignedSubChannel,
+    /// The per split point of the offer party for the renewed subchannel.
+    pub offer_per_split_point: PublicKey,
+    /// The per split point of the accept party for the renewed subchannel.
+    pub accept_per_split_point: PublicKey,
+    /// Rollback information about the split channel
+    ///
+    /// TODO(lucas): Not sure if needed.
+    pub ln_rollback: LnRollBackInfo,
+}
+
+/// A state in which a renewal of the subchannel has been confirmed by us.
+///
+/// In this state we cannot yet commit to the new split channel state on-chain. Instead, we remain
+/// ready to commit to the old split channel state in case our counterparty stops responding.
+///
+/// On the other hand, the counterparty should now be able to commit to the new split channel state
+/// on-chain, but we are also able to claim all of our outputs after they publish the latest split
+/// transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewConfirmed {
+    /// The signed subchannel for which the renewal offer was received.
+    pub signed_subchannel: SignedSubChannel,
+    /// The per split point of the local party for the renewed subchannel.
+    pub own_per_split_point: PublicKey,
+    /// The per split point of the remote party for the renewed subchannel.
+    pub counter_per_split_point: PublicKey,
+    /// Adaptor signature of the local party for the split transaction.
+    pub own_split_adaptor_signature: EcdsaAdaptorSignature,
+    /// Information about the split transaction for the subchannel.
+    pub split_tx: SplitTx,
+    /// Glue transaction that bridges the split transaction to the Lightning subchannel.
+    pub ln_glue_transaction: Transaction,
+    /// Signature of the remote party for the glue transaction.
+    pub counter_glue_signature: Signature,
+    /// The secret to revoke the previous commitment transaction of the LN channel.
+    ///
+    /// Kept around to be sent once the local party has enough signatures to commit to the new split
+    /// channel on-chain.
+    pub prev_commitment_secret: SecretKey,
+    /// The image of the next commitment point to be used to build a commitment transaction.
+    ///
+    /// Generated early together with the `prev_commitment_secret`. It will be sent at the end of
+    /// the renew protocol to prime the counterparty for a future update to the Lightning channel,
+    /// as the Lightning protocol mandates.
+    pub next_per_commitment_point: PublicKey,
+    /// Commitment transactions of the Lightning channel in the previous split state to use in order
+    /// to force-close the Lightning channel. We need this because we cannot yet commit to the new
+    /// split channel state, as we are still missing the `counter_split_adaptor_signature`.
+    pub commitment_transactions: Vec<Transaction>,
+    /// Rollback information about the split channel
+    ///
+    /// TODO(lucas): Not sure if needed.
+    pub ln_rollback: LnRollBackInfo,
+}
+
+/// A state in which a renewal of the subchannel has been finalized by us.
+///
+/// In this state we can no longer commit to the old split channel state on-chain, because we have
+/// revoked the corresponding split transaction by sending the [`SubChannelRenewFinalize`] message.
+/// Instead, we are ready to commit to the new split channel state.
+///
+/// On the other hand, the counterparty is still able to commit to the old split channel state
+/// on-chain, as well as being able to commit to the new one with the information that we sent in
+/// [`SubChannelRenewFinalize`].
+///
+/// [`SubChannelRenewFinalize`]: dlc_messages::sub_channel::SubChannelRenewFinalize
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewFinalized {
+    /// The signed subchannel for which the renewal offer was received.
+    ///
+    /// TODO(lucas): Do we even need this?
+    pub signed_subchannel: SignedSubChannel,
+    /// The per split point of the local party for the renewed subchannel.
+    pub own_per_split_point: PublicKey,
+    /// The per split point of the remote party for the renewed subchannel.
+    pub counter_per_split_point: PublicKey,
+    /// Adaptor signature of the local party for the split transaction.
+    pub own_split_adaptor_signature: EcdsaAdaptorSignature,
+    /// Adaptor signature of the remote party for the split transaction.
+    pub counter_split_adaptor_signature: EcdsaAdaptorSignature,
+    /// Information about the split transaction for the subchannel.
+    pub split_tx: SplitTx,
+    /// Glue transaction that bridges the split transaction to the Lightning subchannel.
+    pub ln_glue_transaction: Transaction,
+    /// Signature of the remote party for the glue transaction.
+    pub counter_glue_signature: Signature,
+    /// Rollback information about the split channel
+    ///
+    /// TODO(lucas): Not sure if needed.
+    pub ln_rollback: LnRollBackInfo,
 }
 
 /// Provides the ability to access and update Lightning Network channels.

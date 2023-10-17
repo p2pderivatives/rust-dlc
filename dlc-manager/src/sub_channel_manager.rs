@@ -795,6 +795,11 @@ where
             SubChannelState::CloseConfirmed(_) => {
                 self.force_close_with_ldk(sub_channel)?;
             }
+            SubChannelState::RenewOffered(_)
+            | SubChannelState::RenewOfferReceived(_)
+            | SubChannelState::RenewAccepted(_)
+            | SubChannelState::RenewConfirmed(_)
+            | SubChannelState::RenewFinalized(_) => todo!(),
             // In these states, either the channel is already closed, or it should be force closed
             // through LDK directly.
             SubChannelState::OnChainClosed
@@ -1133,6 +1138,11 @@ where
                     sub_channel.state = SubChannelState::CounterOnChainClosed;
                     (None, None)
                 }
+                SubChannelState::RenewOffered(_)
+                | SubChannelState::RenewOfferReceived(_)
+                | SubChannelState::RenewAccepted(_)
+                | SubChannelState::RenewConfirmed(_)
+                | SubChannelState::RenewFinalized(_) => todo!(),
             },
             ClosureReason::HolderForceClosed | ClosureReason::ProcessingError { .. } => {
                 match sub_channel.state {

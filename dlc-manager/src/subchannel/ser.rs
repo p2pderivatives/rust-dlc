@@ -6,8 +6,9 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 
 use super::{
     AcceptedSubChannel, CloseAcceptedSubChannel, CloseConfirmedSubChannel, CloseOfferedSubChannel,
-    ClosingSubChannel, ConfirmedSubChannel, LnRollBackInfo, OfferedSubChannel, SignedSubChannel,
-    SubChannel, SubChannelState,
+    ClosingSubChannel, ConfirmedSubChannel, LnRollBackInfo, OfferedSubChannel, RenewAccepted,
+    RenewConfirmed, RenewFinalized, RenewOfferReceived, RenewOffered, SignedSubChannel, SubChannel,
+    SubChannelState,
 };
 
 impl_dlc_writeable!(SubChannel, {
@@ -38,7 +39,12 @@ impl_dlc_writeable_enum!(SubChannelState,
     (5, CloseOffered),
     (6, CloseAccepted),
     (7, CloseConfirmed),
-    (8, ClosedPunished)
+    (8, ClosedPunished),
+    (14, RenewOffered),
+    (15, RenewOfferReceived),
+    (16, RenewAccepted),
+    (17, RenewConfirmed),
+    (18, RenewFinalized)
     ;;;
     (9, OnChainClosed),
     (10, CounterOnChainClosed),
@@ -97,3 +103,46 @@ impl_dlc_writeable!(CloseAcceptedSubChannel, { (signed_subchannel, writeable), (
 impl_dlc_writeable!(CloseConfirmedSubChannel, { (signed_subchannel, writeable), (own_balance, writeable), (counter_balance, writeable), (ln_rollback, writeable), (check_ln_secret, writeable), (commitment_transactions, vec) });
 
 impl_dlc_writeable!(ClosingSubChannel, { (signed_sub_channel, writeable), (is_initiator, writeable), (commitment_transactions, {option_cb, dlc_messages::ser_impls::write_vec, dlc_messages::ser_impls::read_vec}) });
+
+impl_dlc_writeable!(RenewOffered, {
+    (signed_subchannel, writeable),
+    (offer_per_split_point, writeable)
+});
+
+impl_dlc_writeable!(RenewOfferReceived, {
+    (signed_subchannel, writeable),
+    (offer_per_split_point, writeable)
+});
+
+impl_dlc_writeable!(RenewAccepted, {
+    (signed_subchannel, writeable),
+    (offer_per_split_point, writeable),
+    (accept_per_split_point, writeable),
+    (ln_rollback, writeable)
+});
+
+impl_dlc_writeable!(RenewConfirmed, {
+    (signed_subchannel, writeable),
+    (own_per_split_point, writeable),
+    (counter_per_split_point, writeable),
+    (own_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
+    (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
+    (ln_glue_transaction, writeable),
+    (counter_glue_signature, writeable),
+    (prev_commitment_secret, writeable),
+    (next_per_commitment_point, writeable),
+    (commitment_transactions, {cb_writeable, dlc_messages::ser_impls::write_vec, dlc_messages::ser_impls::read_vec}),
+    (ln_rollback, writeable)
+});
+
+impl_dlc_writeable!(RenewFinalized, {
+    (signed_subchannel, writeable),
+    (own_per_split_point, writeable),
+    (counter_per_split_point, writeable),
+    (own_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
+    (counter_split_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
+    (split_tx, {cb_writeable, split_tx::write, split_tx::read}),
+    (ln_glue_transaction, writeable),
+    (counter_glue_signature, writeable),
+    (ln_rollback, writeable)
+});
