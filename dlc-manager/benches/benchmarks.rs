@@ -112,7 +112,7 @@ fn create_contract_descriptor() -> ContractDescriptor {
                 ])
                 .unwrap(),
             ),
-        ])
+        ], None)
         .unwrap(),
         rounding_intervals: RoundingIntervals {
             intervals: vec![RoundingInterval {

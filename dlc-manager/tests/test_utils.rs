@@ -477,7 +477,7 @@ pub fn get_numerical_contract_descriptor(
     difference_params: Option<DifferenceParams>,
 ) -> ContractDescriptor {
     ContractDescriptor::Numerical(NumericalDescriptor {
-        payout_function: PayoutFunction::new(function_pieces).unwrap(),
+        payout_function: PayoutFunction::new(function_pieces, None).unwrap(),
         rounding_intervals: RoundingIntervals {
             intervals: vec![RoundingInterval {
                 begin_interval: 0,

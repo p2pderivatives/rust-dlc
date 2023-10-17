@@ -63,7 +63,7 @@ impl_dlc_writeable_enum!(
     (1, HyperbolaPayoutCurvePiece);;;
 );
 impl_dlc_writeable!(RoundingInterval, { (begin_interval, writeable), (rounding_mod, writeable) });
-impl_dlc_writeable!(PayoutFunction, { (payout_function_pieces, vec) });
+impl_dlc_writeable!(PayoutFunction, { (payout_function_pieces, vec), (fee, option) });
 impl_dlc_writeable!(NumericalDescriptor, { (payout_function, writeable), (rounding_intervals, writeable), (difference_params, option), (oracle_numeric_infos, {cb_writeable, oracle_params::write, oracle_params::read}) });
 impl_dlc_writeable!(PolynomialPayoutCurvePiece, { (payout_points, vec) });
 impl_dlc_writeable!(RoundingIntervals, { (intervals, vec) });
