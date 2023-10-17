@@ -319,6 +319,7 @@ impl From<&ContractDescriptor> for SerContractDescriptor {
 impl From<&PayoutFunction> for SerPayoutFunction {
     fn from(payout_function: &PayoutFunction) -> SerPayoutFunction {
         SerPayoutFunction {
+            fee: payout_function.fee,
             payout_function_pieces: payout_function
                 .payout_function_pieces
                 .iter()
@@ -367,6 +368,7 @@ impl From<&PayoutFunction> for SerPayoutFunction {
 impl From<&SerPayoutFunction> for PayoutFunction {
     fn from(payout_function: &SerPayoutFunction) -> PayoutFunction {
         PayoutFunction {
+            fee: payout_function.fee,
             payout_function_pieces: payout_function
                 .payout_function_pieces
                 .iter()
@@ -552,6 +554,7 @@ mod tests {
     #[test]
     fn payout_function_round_trip() {
         let payout_function = PayoutFunction {
+            fee: None,
             payout_function_pieces: vec![
                 PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
                     payout_points: vec![

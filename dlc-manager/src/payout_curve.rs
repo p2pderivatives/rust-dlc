@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 pub struct PayoutFunction {
     /// The pieces making up the function.
     pub(crate) payout_function_pieces: Vec<PayoutFunctionPiece>,
+    /// An optional fee deducted by the offering party in the payouts.
+    pub(crate) fee: Option<u64>
 }
 
 fn is_continuous(function_pieces: &[PayoutFunctionPiece]) -> bool {
@@ -28,10 +30,11 @@ fn is_continuous(function_pieces: &[PayoutFunctionPiece]) -> bool {
 
 impl PayoutFunction {
     /// Create a new payout function
-    pub fn new(function_pieces: Vec<PayoutFunctionPiece>) -> Result<PayoutFunction, Error> {
+    pub fn new(function_pieces: Vec<PayoutFunctionPiece>, fee: Option<u64>) -> Result<PayoutFunction, Error> {
         if !function_pieces.is_empty() && is_continuous(&function_pieces) {
             Ok(PayoutFunction {
                 payout_function_pieces: function_pieces,
+                fee
             })
         } else {
             Err(Error::InvalidParameters(
@@ -103,7 +106,7 @@ impl PayoutFunction {
     ) -> Result<Vec<RangePayout>, Error> {
         let mut range_payouts = Vec::new();
         for piece in &self.payout_function_pieces {
-            piece.to_range_payouts(total_collateral, rounding_intervals, &mut range_payouts)?;
+            piece.to_range_payouts(total_collateral, rounding_intervals, &mut range_payouts, self.fee)?;
         }
         Ok(range_payouts)
     }
@@ -130,13 +133,14 @@ impl PayoutFunctionPiece {
         total_collateral: u64,
         rounding_intervals: &RoundingIntervals,
         range_payouts: &mut Vec<RangePayout>,
+        fee: Option<u64>
     ) -> Result<(), Error> {
         match self {
             PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => {
-                p.to_range_payouts(rounding_intervals, total_collateral, range_payouts)
+                p.to_range_payouts(rounding_intervals, total_collateral, range_payouts, fee)
             }
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
-                h.to_range_payouts(rounding_intervals, total_collateral, range_payouts)
+                h.to_range_payouts(rounding_intervals, total_collateral, range_payouts, fee)
             }
         }
     }
@@ -164,6 +168,7 @@ trait Evaluable {
         outcome: u64,
         rounding_intervals: &RoundingIntervals,
         total_collateral: u64,
+        fee: Option<u64>
     ) -> Result<u64, Error> {
         let payout_double = self.evaluate(outcome);
         if payout_double.is_sign_negative() || (payout_double != 0.0 && !payout_double.is_normal())
@@ -182,7 +187,7 @@ trait Evaluable {
 
         // Ensure that we never round over the total collateral.
         Ok(u64::min(
-            rounding_intervals.round(outcome, payout_double),
+            rounding_intervals.round(outcome, payout_double) + fee.unwrap_or(0),
             total_collateral,
         ))
     }
@@ -196,13 +201,14 @@ trait Evaluable {
         range_payouts: &mut Vec<RangePayout>,
         total_collateral: u64,
         rounding_intervals: &RoundingIntervals,
+        fee: Option<u64>
     ) -> Result<RangePayout, Error> {
         let res = match range_payouts.pop() {
             Some(cur) => cur,
             None => {
                 let first_outcome = self.get_first_outcome();
                 let first_payout =
-                    self.get_rounded_payout(first_outcome, rounding_intervals, total_collateral)?;
+                    self.get_rounded_payout(first_outcome, rounding_intervals, total_collateral, fee)?;
                 RangePayout {
                     start: first_outcome as usize,
                     count: 1,
@@ -221,8 +227,9 @@ trait Evaluable {
         rounding_intervals: &RoundingIntervals,
         total_collateral: u64,
         range_payouts: &mut Vec<RangePayout>,
+        fee: Option<u64>
     ) -> Result<(), Error> {
-        compute_range_payouts(self, rounding_intervals, total_collateral, range_payouts)
+        compute_range_payouts(self, rounding_intervals, total_collateral, range_payouts, fee)
     }
 }
 
@@ -231,13 +238,14 @@ fn compute_range_payouts<E: Deref>(
     rounding_intervals: &RoundingIntervals,
     total_collateral: u64,
     range_payouts: &mut Vec<RangePayout>,
+    fee: Option<u64>
 ) -> Result<(), Error>
 where
     E::Target: Evaluable,
 {
     let first_outcome = function.get_first_outcome();
     let mut cur_range =
-        function.get_cur_range(range_payouts, total_collateral, rounding_intervals)?;
+        function.get_cur_range(range_payouts, total_collateral, rounding_intervals, fee)?;
 
     let range_end = function
         .get_last_outcome()
@@ -245,7 +253,7 @@ where
         .unwrap_or(u64::MAX);
 
     for outcome in (first_outcome + 1)..range_end {
-        let payout = function.get_rounded_payout(outcome, rounding_intervals, total_collateral)?;
+        let payout = function.get_rounded_payout(outcome, rounding_intervals, total_collateral, fee)?;
         if payout > total_collateral {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral.".to_string(),
@@ -354,19 +362,20 @@ impl Evaluable for PolynomialPayoutCurvePiece {
         rounding_intervals: &RoundingIntervals,
         total_collateral: u64,
         range_payouts: &mut Vec<RangePayout>,
+        fee: Option<u64>
     ) -> Result<(), Error> {
         if self.payout_points.len() == 2
             && self.payout_points[0].outcome_payout == self.payout_points[1].outcome_payout
         {
             let mut cur_range =
-                self.get_cur_range(range_payouts, total_collateral, rounding_intervals)?;
+                self.get_cur_range(range_payouts, total_collateral, rounding_intervals, fee)?;
             cur_range.count += (self.payout_points[1].event_outcome
                 - self.payout_points[0].event_outcome) as usize;
             range_payouts.push(cur_range);
             return Ok(());
         }
 
-        compute_range_payouts(self, rounding_intervals, total_collateral, range_payouts)
+        compute_range_payouts(self, rounding_intervals, total_collateral, range_payouts, fee)
     }
 }
 
@@ -690,6 +699,7 @@ mod test {
                     &rounding_intervals,
                     test_case.total_collateral,
                     &mut range_payouts,
+                    None
                 )
                 .expect("to be able to compute the range payouts");
             let first = range_payouts.first().unwrap();
@@ -768,6 +778,7 @@ mod test {
                 },
                 200000000,
                 &mut Vec::new(),
+                None,
             )
             .expect_err("Should not tolerate negative payout");
     }
@@ -804,6 +815,7 @@ mod test {
                 },
                 200000000,
                 &mut Vec::new(),
+                None
             )
             .expect("to be able to compute the range payouts");
     }
@@ -830,6 +842,115 @@ mod test {
             4.0,
         )
         .expect_err("Should return error when a*d == b*c");
+    }
+
+
+    #[test]
+    fn payout_function_to_range_with_fee_outcome_test() {
+        let payout_function = PayoutFunction::new(vec![
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 0,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: 10,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                ])
+                    .unwrap(),
+            ),
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 10,
+                        outcome_payout: 0,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: 14,
+                        outcome_payout: 10,
+                        extra_precision: 0,
+                    },
+                ])
+                    .unwrap(),
+            ),
+            PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+                PolynomialPayoutCurvePiece::new(vec![
+                    PayoutPoint {
+                        event_outcome: 14,
+                        outcome_payout: 10,
+                        extra_precision: 0,
+                    },
+                    PayoutPoint {
+                        event_outcome: u64::MAX,
+                        outcome_payout: 10,
+                        extra_precision: 0,
+                    },
+                ])
+                    .unwrap(),
+            ),
+        ], Some(1))
+            .unwrap();
+        let expected_ranges = vec![
+            RangePayout {
+                start: 0,
+                count: 11,
+                payout: Payout {
+                    offer: 1,
+                    accept: 9,
+                },
+            },
+            RangePayout {
+                start: 11,
+                count: 1,
+                payout: Payout {
+                    offer: 4,
+                    accept: 6,
+                },
+            },
+            RangePayout {
+                start: 12,
+                count: 1,
+                payout: Payout {
+                    offer: 6,
+                    accept: 4,
+                },
+            },
+            RangePayout {
+                start: 13,
+                count: 1,
+                payout: Payout {
+                    offer: 9,
+                    accept: 1,
+                },
+            },
+            RangePayout {
+                start: 14,
+                count: (u64::MAX - 13) as usize,
+                payout: Payout {
+                    offer: 10,
+                    accept: 0,
+                },
+            },
+        ];
+        assert_eq!(
+            expected_ranges,
+            payout_function
+                .to_range_payouts(
+                    10,
+                    &RoundingIntervals {
+                        intervals: vec![RoundingInterval {
+                            begin_interval: 0,
+                            rounding_mod: 1
+                        }]
+                    }
+                )
+                .expect("to be able to compute the range payouts.")
+        );
     }
 
     #[test]
@@ -910,7 +1031,7 @@ mod test {
                 ])
                 .unwrap(),
             ),
-        ])
+        ], None)
         .unwrap();
         let expected_ranges = vec![
             RangePayout {
@@ -1094,7 +1215,7 @@ mod test {
         ];
 
         for pieces in invalid {
-            PayoutFunction::new(pieces).expect_err("Invalid pieces should error");
+            PayoutFunction::new(pieces, None).expect_err("Invalid pieces should error");
         }
     }
 
@@ -1179,6 +1300,7 @@ mod test {
         };
 
         let payout_function = PayoutFunction {
+            fee: None,
             payout_function_pieces: vec![
                 PayoutFunctionPiece::PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece {
                     payout_points: vec![
@@ -1232,7 +1354,7 @@ mod test {
                 },
             ])
             .unwrap(),
-        )])
+        )], None)
         .unwrap();
 
         let rounding_mod = 1;

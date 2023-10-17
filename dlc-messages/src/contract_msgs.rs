@@ -178,9 +178,11 @@ pub struct PayoutFunction {
     pub payout_function_pieces: Vec<PayoutFunctionPiece>,
     /// The right most point of the function.
     pub last_endpoint: PayoutPoint,
+    /// An optional fee deducted by the offering party in the payouts.
+    pub fee: Option<u64>,
 }
 
-impl_dlc_writeable!(PayoutFunction, {(payout_function_pieces, vec), (last_endpoint, writeable)});
+impl_dlc_writeable!(PayoutFunction, {(payout_function_pieces, vec), (last_endpoint, writeable), (fee, option) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
