@@ -275,7 +275,6 @@ where
                 self.storage.upsert_utxo(&updated)?;
             }
             res.push(org.clone());
-            
         }
         Ok(res)
     }

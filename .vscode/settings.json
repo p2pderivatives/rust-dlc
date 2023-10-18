@@ -1,0 +1,5 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./dlc-core/Cargo.toml"
+    ]
+}

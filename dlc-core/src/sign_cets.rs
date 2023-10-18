@@ -37,7 +37,7 @@ pub struct SignedAndAdaptor {
     pub refund_sig: Signature,
 }
 
-pub fn create_signed_CETs(input: DlcInputs) -> Result<SignedAndAdaptor> {
+pub fn sign_cets(input: DlcInputs) -> Result<SignedAndAdaptor> {
     let offer_params = input.offer_params;
     let accept_params = input.accept_params;
     let contract_input = input.contract_input;
@@ -89,7 +89,7 @@ pub fn create_signed_CETs(input: DlcInputs) -> Result<SignedAndAdaptor> {
             (accept_params, offer_params)
         };
 
-    let sign_res = sign_cets(
+    let sign_res = sign(
         &secp,
         &dlc_transactions,
         &contract_info,
@@ -105,7 +105,7 @@ pub fn create_signed_CETs(input: DlcInputs) -> Result<SignedAndAdaptor> {
     })
 }
 
-fn sign_cets(
+fn sign(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     contract_info: &[ContractInfo],
