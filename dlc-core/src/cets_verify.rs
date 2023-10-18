@@ -12,35 +12,24 @@ use secp256k1_zkp::{
 
 use crate::{cets_sign::PartyInfos, error::*};
 
-#[derive(Clone)]
-pub struct DlcParams {
-    pub offered_contract: OfferedContract,
-    pub accept_params: PartyInfos,
-}
+pub fn check_signed_dlc(
+    offered_contract: OfferedContract,
+    accept_params: PartyInfos,
+    adaptor_sig: Vec<EcdsaAdaptorSignature>,
+    refund_sig: Signature,
+) -> Result<bool> {
+    let dlc_transactions = get_dlc_transactions(&offered_contract, &accept_params.party_params)?;
 
-#[derive(Clone)]
-pub struct DlcSignatures {
-    pub adaptor_sig: Vec<EcdsaAdaptorSignature>,
-    pub refund_sig: Signature,
-}
-
-pub fn check_signed_dlc(dlc_params: DlcParams, dlc_sigs: DlcSignatures) -> Result<bool> {
-    // Rust Type of return value: (String, Vec<(usize, TxOut)>, Vec<AdaptorInfo>)
-    let offered_contract = &dlc_params.offered_contract;
-    let accept_params = &dlc_params.accept_params;
-
-    let dlc_transactions = get_dlc_transactions(offered_contract, &accept_params.party_params)?;
-
-    let cet_adaptor_signatures = &dlc_sigs.adaptor_sig;
+    let cet_adaptor_signatures = &adaptor_sig;
 
     let secp = Secp256k1::new();
 
     let mut is_offer = false;
 
-    let adaptor_infos = check_a_side(
+    let _ = check_a_side(
         &secp,
         &dlc_transactions,
-        &dlc_sigs.refund_sig,
+        &refund_sig,
         &cet_adaptor_signatures,
         &offered_contract.contract_info,
         &offered_contract.offer_params,
@@ -51,7 +40,7 @@ pub fn check_signed_dlc(dlc_params: DlcParams, dlc_sigs: DlcSignatures) -> Resul
         check_a_side(
             &secp,
             &dlc_transactions,
-            &dlc_sigs.refund_sig,
+            &refund_sig,
             &cet_adaptor_signatures,
             &offered_contract.contract_info,
             &accept_params.party_params,
@@ -62,7 +51,7 @@ pub fn check_signed_dlc(dlc_params: DlcParams, dlc_sigs: DlcSignatures) -> Resul
     Ok(is_offer)
 }
 
-pub(crate) fn check_a_side(
+fn check_a_side(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     refund_signature: &Signature,
@@ -146,7 +135,7 @@ pub(crate) fn check_a_side(
     Ok(adaptor_infos)
 }
 
-pub(crate) fn get_dlc_transactions(
+fn get_dlc_transactions(
     offered_contract: &OfferedContract,
     accept_params: &PartyParams,
 ) -> Result<DlcTransactions> {

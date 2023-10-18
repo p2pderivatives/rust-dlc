@@ -9,43 +9,24 @@ use dlc_messages::{oracle_msgs::OracleAnnouncement, OfferDlc};
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::error::*;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct PartyInfos {
     pub party_params: PartyParams,
     pub funding_input_infos: Vec<FundingInputInfo>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct DlcInputs {
-    pub offer_params: PartyInfos,
-    pub accept_params: PartyInfos,
-    pub contract_input: ContractInput,
-    pub refund_delay: u32,
-    pub date_ref: u32,
-    pub oracle_announcements: Vec<Vec<OracleAnnouncement>>,
-    pub fund_secret_key: SecretKey,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SignedAndAdaptor {
-    pub offered_contract: OfferedContract,
-    pub adaptor_sig: Vec<EcdsaAdaptorSignature>,
-    pub refund_sig: Signature,
-}
-
-pub fn create_signed_CETs(input: DlcInputs) -> Result<SignedAndAdaptor> {
-    let offer_params = input.offer_params;
-    let accept_params = input.accept_params;
-    let contract_input = input.contract_input;
-    let refund_delay = input.refund_delay;
-    let date_ref = input.date_ref;
-    let oracle_announcements = input.oracle_announcements;
-    let fund_secret_key = input.fund_secret_key;
-
+pub fn create_signed_CETs(
+    offer_params: PartyInfos,
+    accept_params: PartyInfos,
+    contract_input: ContractInput,
+    refund_delay: u32,
+    date_ref: u32,
+    oracle_announcements: Vec<Vec<OracleAnnouncement>>,
+    fund_secret_key: SecretKey,
+) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
     let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
 
     let offered_contract: OfferedContract = OfferedContract::new(
@@ -98,11 +79,7 @@ pub fn create_signed_CETs(input: DlcInputs) -> Result<SignedAndAdaptor> {
         &counterparty_params.party_params,
     )?;
 
-    Ok(SignedAndAdaptor {
-        offered_contract: offered_contract,
-        adaptor_sig: sign_res.1,
-        refund_sig: sign_res.2,
-    })
+    Ok((sign_res.1, sign_res.2))
 }
 
 fn sign_cets(
