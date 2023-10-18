@@ -10,7 +10,7 @@ use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
 
-use crate::{adaptor_sign::PartyInfos, error::*};
+use crate::{cets_sign::PartyInfos, error::*};
 
 #[derive(Clone)]
 pub struct DlcParams {

@@ -1,5 +1,5 @@
-mod adaptor_sign;
-mod adaptor_verify;
+mod cets_sign;
+mod cets_verify;
 mod error;
 mod settlement;
 mod verify_contract;
