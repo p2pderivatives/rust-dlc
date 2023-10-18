@@ -18,7 +18,7 @@ pub struct PartyInfos {
     pub funding_input_infos: Vec<FundingInputInfo>,
 }
 
-pub fn create_signed_CETs(
+pub fn sign_cets(
     offer_params: PartyInfos,
     accept_params: PartyInfos,
     contract_input: ContractInput,
@@ -70,7 +70,7 @@ pub fn create_signed_CETs(
             (accept_params, offer_params)
         };
 
-    let sign_res = sign_cets(
+    let sign_res = sign(
         &secp,
         &dlc_transactions,
         &contract_info,
@@ -82,7 +82,7 @@ pub fn create_signed_CETs(
     Ok((sign_res.1, sign_res.2))
 }
 
-fn sign_cets(
+fn sign(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     contract_info: &[ContractInfo],

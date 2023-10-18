@@ -10,7 +10,7 @@ use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
 
-use crate::{cets_sign::PartyInfos, error::*};
+use crate::{error::*, sign_cets::PartyInfos};
 
 pub fn check_signed_dlc(
     offered_contract: OfferedContract,
