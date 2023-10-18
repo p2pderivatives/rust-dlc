@@ -53,7 +53,7 @@ pub fn create_signed_CETs(input: DlcInputs) -> Result<SignedAndAdaptor> {
         oracle_announcements,
         &offer_params.party_params,
         offer_params.funding_input_infos.as_ref(),
-        &PublicKey::from_str("24653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
+        &PublicKey::from_str("0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
             .expect("is valid"),
         refund_delay,
         date_ref,
