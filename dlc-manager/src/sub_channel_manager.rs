@@ -3685,7 +3685,8 @@ where
         Ok((closed_channel, closed_contract))
     }
 
-    fn get_holder_split_tx_signature(
+    /// Creates a signature for spending from the initial funding transaction
+    pub fn get_holder_split_tx_signature(
         &self,
         sub_channel: &SubChannel,
         split_tx: &Transaction,
