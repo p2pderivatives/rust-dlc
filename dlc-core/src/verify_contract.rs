@@ -15,12 +15,6 @@ pub struct IndexToSign {
     pub script_pub_key: Vec<u8>,
 }
 
-#[derive(Deserialize)]
-pub struct SignedPrepareSignInput {
-    pub accepted_contract: Vec<u8>,
-    pub sign_msg: SignDlc,
-}
-
 #[derive(Debug, Serialize)]
 pub struct ToSignAndContractInfos {
     pub raw_tx: Vec<u8>,
@@ -54,7 +48,7 @@ pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
 
     let adaptor_infos = contract.accepted_contract.adaptor_infos;
 
-    check_other_side(
+    validate_presigned_with_infos(
         &secp,
         &dlc_transactions,
         &accept_refund_signature,
@@ -65,7 +59,7 @@ pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
         &accept_params,
     )?;
 
-    check_other_side(
+    validate_presigned_with_infos(
         &secp,
         &dlc_transactions,
         &offer_refund_signature,
@@ -79,7 +73,7 @@ pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
     Ok(Serializable::serialize(&dlc_transactions.fund).unwrap())
 }
 
-pub(crate) fn check_other_side(
+fn validate_presigned_with_infos(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     refund_signature: &Signature,

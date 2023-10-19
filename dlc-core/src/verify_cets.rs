@@ -26,7 +26,7 @@ pub fn check_signed_dlc(
 
     let mut is_offer = false;
 
-    let _ = check_a_side(
+    validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
         &refund_sig,
@@ -37,7 +37,7 @@ pub fn check_signed_dlc(
     )
     .or_else(|e| {
         is_offer = true;
-        check_a_side(
+        validate_presigned_without_infos(
             &secp,
             &dlc_transactions,
             &refund_sig,
@@ -51,7 +51,7 @@ pub fn check_signed_dlc(
     Ok(is_offer)
 }
 
-fn check_a_side(
+fn validate_presigned_without_infos(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     refund_signature: &Signature,
@@ -59,7 +59,7 @@ fn check_a_side(
     contract_info: &[ContractInfo],
     own_params: &PartyParams,
     checked_params: &PartyParams,
-) -> Result<Vec<AdaptorInfo>> {
+) -> Result<()> {
     let DlcTransactions {
         fund,
         mut cets,
@@ -132,7 +132,7 @@ fn check_a_side(
 
         adaptor_infos.push(adaptor_info);
     }
-    Ok(adaptor_infos)
+    Ok(())
 }
 
 fn get_dlc_transactions(
