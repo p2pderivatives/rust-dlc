@@ -29,37 +29,56 @@ pub fn sign_cets(
 ) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
     let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
 
-    let offered_contract: OfferedContract = OfferedContract::new(
-        &contract_input,
-        oracle_announcements,
-        &offer_params.party_params,
-        offer_params.funding_input_infos.as_ref(),
-        &PublicKey::from_str("0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
-            .expect("is valid"),
-        refund_delay,
-        date_ref,
-    );
+    let total_collateral = contract_input.offer_collateral + contract_input.accept_collateral;
 
-    let offer_msg: OfferDlc = (&offered_contract).into();
+    (contract_input.contract_infos.len() == oracle_announcements.len())
+        .then_some(())
+        .ok_or(Err(FromDlcError::InvalidState(
+            "Number of contracts and Oracle Announcement set must match",
+        )));
 
-    let total_collateral = offered_contract.total_collateral;
+    let latest_maturity = get_latest_maturity_date(&oracle_announcements)?;
+
+    let contract_info = contract_input
+        .contract_infos
+        .iter()
+        .zip(oracle_announcements.into_iter())
+        .map(|(x, y)| ContractInfo {
+            contract_descriptor: x.contract_descriptor.clone(),
+            oracle_announcements: y,
+            threshold: x.oracles.threshold as usize,
+        })
+        .collect::<Vec<ContractInfo>>();
+
     let fund_output_serial_id = u64::MAX / 2;
-    let contract_info = offered_contract.contract_info.clone();
     let dlc_transactions = dlc::create_dlc_transactions(
         &offer_params.party_params,
         &accept_params.party_params,
         &contract_info[0]
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?,
-        offer_msg.refund_locktime,
-        offer_msg.fee_rate_per_vb,
+        latest_maturity + refund_delay,
+        contract_input.fee_rate,
         0,
-        offer_msg.cet_locktime,
+        date_ref,
         fund_output_serial_id,
     )
     .map_err(FromDlcError::Dlc)?;
 
     let secp = Secp256k1::new();
+
+    match contract_info {
+        ContractInfo::SingleContractInfo(s) => s.contract_info.oracle_info.validate(secp)?,
+        ContractInfo::DisjointContractInfo(d) => {
+            if d.contract_infos.len() < 2 {
+                return Err(Error::InvalidArgument);
+            }
+
+            for c in &d.contract_infos {
+                c.oracle_info.validate(secp)?;
+            }
+        }
+    }
 
     let fund_public_key = PublicKey::from_secret_key(&secp, &fund_secret_key);
 
@@ -168,4 +187,13 @@ fn sign(
     .map_err(FromDlcError::Dlc)?;
 
     Ok((adaptor_infos, adaptor_sigs, refund_signature))
+}
+
+fn get_latest_maturity_date(announcements: &[Vec<OracleAnnouncement>]) -> Result<u32> {
+    announcements
+        .iter()
+        .flatten()
+        .map(|x| x.oracle_event.event_maturity_epoch)
+        .max()
+        .ok_or_else(|| FromDlcError::InvalidState("Could not find maximum event maturity."))
 }

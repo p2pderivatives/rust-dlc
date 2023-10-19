@@ -15,7 +15,7 @@ pub enum FromDlcError {
     // #[error("{0}")]
     BitcoinEncoding(bitcoin::consensus::encode::Error),
     // #[error("{0}")]
-    InvalidState(String),
+    InvalidState(&'static str),
 }
 
 impl Display for FromDlcError {

@@ -30,20 +30,15 @@ pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
     let dlc_transactions = contract.accepted_contract.dlc_transactions;
     let contract_info = contract.accepted_contract.offered_contract.contract_info;
     let accept_refund_signature = contract.accepted_contract.accept_refund_signature;
-    let accept_cet_signatures =
-        contract
-            .accepted_contract
-            .adaptor_signatures
-            .ok_or(FromDlcError::InvalidState(
-                "No adaptor signature found !".to_owned(),
-            ))?;
+    let accept_cet_signatures = contract
+        .accepted_contract
+        .adaptor_signatures
+        .ok_or(FromDlcError::InvalidState("No adaptor signature found !"))?;
     let accept_params = contract.accepted_contract.accept_params;
     let offer_refund_signature = contract.offer_refund_signature;
     let offer_cet_signatures = contract
         .adaptor_signatures
-        .ok_or(FromDlcError::InvalidState(
-            "No adaptor signature found !".to_owned(),
-        ))?;
+        .ok_or(FromDlcError::InvalidState("No adaptor signature found !"))?;
     let offer_params = contract.accepted_contract.offered_contract.offer_params;
 
     let adaptor_infos = contract.accepted_contract.adaptor_infos;
