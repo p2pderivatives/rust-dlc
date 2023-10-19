@@ -96,6 +96,8 @@ pub(crate) use get_contract_in_state;
 
 macro_rules! get_channel_in_state {
     ($manager: expr, $channel_id: expr, $state: ident, $peer_id: expr) => {{
+        use crate::Channel;
+
         get_object_in_state!(
             $manager,
             $channel_id,
@@ -471,7 +473,7 @@ where
         Ok(())
     }
 
-    fn get_oracle_announcements(
+    pub(crate) fn get_oracle_announcements(
         &self,
         oracle_inputs: &OracleInput,
     ) -> Result<Vec<OracleAnnouncement>, Error> {

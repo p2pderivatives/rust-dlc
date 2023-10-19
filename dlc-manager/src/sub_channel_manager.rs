@@ -59,6 +59,8 @@ use crate::{
     Blockchain, ChannelId, ContractId, Oracle, Signer, Storage, Time, Wallet,
 };
 
+mod renew;
+
 const INITIAL_SPLIT_NUMBER: u64 = (1 << 48) - 1;
 
 /// Returns the sub channel with given id if found and in the expected state. If a peer id is
@@ -377,6 +379,7 @@ where
         )?;
 
         // TODO(tibo): refactor properly.
+        // TODO(lucas): I need to be able to update some of this for the renew protocol (to point to the new split transaction).
         offered_contract.offer_params.inputs = Vec::new();
         offered_contract.funding_inputs_info = Vec::new();
 
