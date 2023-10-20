@@ -5,7 +5,9 @@ use dlc_manager::contract::{
     contract_info::ContractInfo, contract_input::ContractInput, offered_contract::OfferedContract,
     AdaptorInfo, FundingInputInfo,
 };
-use dlc_messages::{oracle_msgs::OracleAnnouncement, OfferDlc};
+use dlc_messages::{
+    contract_msgs::ContractInfo as MessageContractInfo, oracle_msgs::OracleAnnouncement, OfferDlc,
+};
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
@@ -33,9 +35,9 @@ pub fn sign_cets(
 
     (contract_input.contract_infos.len() == oracle_announcements.len())
         .then_some(())
-        .ok_or(Err(FromDlcError::InvalidState(
+        .ok_or(FromDlcError::InvalidState(
             "Number of contracts and Oracle Announcement set must match",
-        )));
+        ))?;
 
     let latest_maturity = get_latest_maturity_date(&oracle_announcements)?;
 
@@ -67,18 +69,15 @@ pub fn sign_cets(
 
     let secp = Secp256k1::new();
 
-    match contract_info {
-        ContractInfo::SingleContractInfo(s) => s.contract_info.oracle_info.validate(secp)?,
-        ContractInfo::DisjointContractInfo(d) => {
-            if d.contract_infos.len() < 2 {
-                return Err(Error::InvalidArgument);
-            }
-
-            for c in &d.contract_infos {
-                c.oracle_info.validate(secp)?;
-            }
+    for c in &contract_info {
+        for o in &c.oracle_announcements {
+            o.validate(&secp).map_err(|e| FromDlcError::Dlc(e))?
         }
     }
+
+    // Missing check on locktime for refund and contract maturity compared to oracle maturity, cf OfferMsg validate method
+
+    // Maybe some check in validate method of offeredContract too
 
     let fund_public_key = PublicKey::from_secret_key(&secp, &fund_secret_key);
 
