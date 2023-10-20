@@ -2,7 +2,6 @@ use dlc_manager::contract::{ser::Serializable, signed_contract::SignedContract};
 use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_trie::RangeInfo;
 use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
-use serde::Deserialize;
 
 use bitcoin::{EcdsaSighashType, Script, Transaction, Witness};
 use dlc::secp_utils;

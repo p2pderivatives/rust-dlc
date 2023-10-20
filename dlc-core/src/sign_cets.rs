@@ -1,13 +1,8 @@
-use std::str::FromStr;
-
 use dlc::{DlcTransactions, PartyParams};
 use dlc_manager::contract::{
-    contract_info::ContractInfo, contract_input::ContractInput, offered_contract::OfferedContract,
-    AdaptorInfo, FundingInputInfo,
+    contract_info::ContractInfo, contract_input::ContractInput, AdaptorInfo, FundingInputInfo,
 };
-use dlc_messages::{
-    contract_msgs::ContractInfo as MessageContractInfo, oracle_msgs::OracleAnnouncement, OfferDlc,
-};
+use dlc_messages::oracle_msgs::OracleAnnouncement;
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
@@ -135,7 +130,7 @@ fn sign(
     let mut adaptor_sigs = adaptor_sig;
 
     let DlcTransactions {
-        fund,
+        fund: _,
         cets,
         refund,
         funding_script_pubkey: _,

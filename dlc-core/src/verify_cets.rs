@@ -1,14 +1,6 @@
-use bitcoin::{consensus::Decodable, Transaction};
 use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{
-    contract_info::ContractInfo,
-    offered_contract::{self, OfferedContract},
-    ser::Serializable,
-    AdaptorInfo, FundingInputInfo,
-};
-use secp256k1_zkp::{
-    ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
-};
+use dlc_manager::contract::{contract_info::ContractInfo, offered_contract::OfferedContract};
+use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
 use crate::{error::*, sign_cets::PartyInfos};
 
@@ -35,7 +27,7 @@ pub fn check_signed_dlc(
         &offered_contract.offer_params,
         &accept_params.party_params,
     )
-    .or_else(|e| {
+    .or_else(|_| {
         is_offer = true;
         validate_presigned_without_infos(
             &secp,
@@ -61,7 +53,7 @@ fn validate_presigned_without_infos(
     checked_params: &PartyParams,
 ) -> Result<()> {
     let DlcTransactions {
-        fund,
+        fund: _,
         mut cets,
         refund,
         funding_script_pubkey,

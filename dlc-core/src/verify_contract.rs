@@ -2,9 +2,9 @@ use dlc::{DlcTransactions, PartyParams};
 use dlc_manager::contract::{
     contract_info::ContractInfo, ser::Serializable, signed_contract::SignedContract, AdaptorInfo,
 };
-use dlc_messages::SignDlc;
+
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::error::*;
 
@@ -50,7 +50,7 @@ pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
         &accept_cet_signatures,
         &contract_info,
         &adaptor_infos,
-        &offer_params,
+        // &offer_params,
         &accept_params,
     )?;
 
@@ -61,7 +61,7 @@ pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
         &offer_cet_signatures,
         &contract_info,
         &adaptor_infos,
-        &accept_params,
+        // &accept_params,
         &offer_params,
     )?;
 
@@ -75,19 +75,18 @@ fn validate_presigned_with_infos(
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     contract_info: &[ContractInfo],
     adaptor_infos: &[AdaptorInfo],
-    own_params: &PartyParams,
+    // own_params: &PartyParams,
     checked_params: &PartyParams,
 ) -> Result<()> {
     let DlcTransactions {
         fund: _,
-        mut cets,
+        cets: _,
         refund,
         funding_script_pubkey,
     } = dlc_transactions.clone();
 
     let fund_output_value = dlc_transactions.get_fund_output().value;
-    let total_collateral = own_params.collateral + checked_params.collateral;
-    let input_value = dlc_transactions.get_fund_output().value;
+    // let total_collateral = own_params.collateral + checked_params.collateral;
 
     dlc::verify_tx_input_sig(
         secp,
@@ -108,7 +107,7 @@ fn validate_presigned_with_infos(
                 secp,
                 &checked_params.fund_pubkey,
                 &funding_script_pubkey,
-                input_value,
+                fund_output_value,
                 &dlc_transactions.cets,
                 &cet_adaptor_signatures,
                 adaptor_sig_start,
