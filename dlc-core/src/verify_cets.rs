@@ -1,5 +1,7 @@
 use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{contract_info::ContractInfo, offered_contract::OfferedContract};
+use dlc_manager::contract::{
+    contract_info::ContractInfo, offered_contract::OfferedContract, AdaptorInfo,
+};
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
 use crate::error::*;
@@ -13,7 +15,7 @@ pub fn check_signed_dlc(
     cet_locktime: u32,
     adaptor_sig: &[EcdsaAdaptorSignature],
     refund_sig: &Signature,
-) -> Result<bool> {
+) -> Result<(Vec<AdaptorInfo>, bool)> {
     let total_collateral = offer_params.collateral + accept_params.collateral;
     let dlc_transactions = dlc::create_dlc_transactions(
         &offer_params,
@@ -35,7 +37,7 @@ pub fn check_signed_dlc(
 
     let mut is_offer = false;
 
-    validate_presigned_without_infos(
+    let adaptor_infos = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
         &refund_sig,
@@ -57,10 +59,10 @@ pub fn check_signed_dlc(
         )
     })?;
 
-    Ok(is_offer)
+    Ok((adaptor_infos, is_offer))
 }
 
-fn validate_presigned_without_infos(
+pub(crate) fn validate_presigned_without_infos(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     refund_signature: &Signature,
@@ -68,7 +70,7 @@ fn validate_presigned_without_infos(
     contract_info: &[ContractInfo],
     own_params: &PartyParams,
     checked_params: &PartyParams,
-) -> Result<()> {
+) -> Result<Vec<AdaptorInfo>> {
     let DlcTransactions {
         fund: _,
         mut cets,
@@ -141,7 +143,7 @@ fn validate_presigned_without_infos(
 
         adaptor_infos.push(adaptor_info);
     }
-    Ok(())
+    Ok(adaptor_infos)
 }
 
 fn get_dlc_transactions(

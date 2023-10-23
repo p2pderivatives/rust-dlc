@@ -6,7 +6,7 @@ use dlc_manager::contract::{
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 use serde::Serialize;
 
-use crate::error::*;
+use crate::{error::*, verify_cets::validate_presigned_without_infos};
 
 #[derive(Debug, Serialize)]
 pub struct IndexToSign {
@@ -22,47 +22,55 @@ pub struct ToSignAndContractInfos {
     pub contract_state: Vec<u8>,
 }
 
-pub fn validate_all_cet(contract: Vec<u8>) -> Result<Vec<u8>> {
-    let contract = SignedContract::deserialize(&mut contract.as_slice()).unwrap();
+pub struct SideSign {
+    party_params: PartyParams,
+    adaptor_sig: Vec<EcdsaAdaptorSignature>,
+    refund_sig: Signature,
+}
+
+pub fn check_all_signed_dlc(
+    contract_info: &[ContractInfo],
+    offer_side: &SideSign,
+    accept_side: &SideSign,
+    refund_locktime: u32,
+    fee_rate_per_vb: u64,
+    cet_locktime: u32,
+) -> Result<Vec<u8>> {
+    let total_collateral = offer_side.party_params.collateral + accept_side.party_params.collateral;
+    let dlc_transactions = dlc::create_dlc_transactions(
+        &offer_side.party_params,
+        &accept_side.party_params,
+        &contract_info[0]
+            .get_payouts(total_collateral)
+            .map_err(FromDlcError::Manager)?,
+        refund_locktime,
+        fee_rate_per_vb,
+        0,
+        cet_locktime,
+        u64::MAX / 2,
+    )
+    .map_err(FromDlcError::Dlc)?;
 
     let secp = Secp256k1::new();
 
-    let dlc_transactions = contract.accepted_contract.dlc_transactions;
-    let contract_info = contract.accepted_contract.offered_contract.contract_info;
-    let accept_refund_signature = contract.accepted_contract.accept_refund_signature;
-    let accept_cet_signatures = contract
-        .accepted_contract
-        .adaptor_signatures
-        .ok_or(FromDlcError::InvalidState("No adaptor signature found !"))?;
-    let accept_params = contract.accepted_contract.accept_params;
-    let offer_refund_signature = contract.offer_refund_signature;
-    let offer_cet_signatures = contract
-        .adaptor_signatures
-        .ok_or(FromDlcError::InvalidState("No adaptor signature found !"))?;
-    let offer_params = contract.accepted_contract.offered_contract.offer_params;
-
-    let adaptor_infos = contract.accepted_contract.adaptor_infos;
-
-    validate_presigned_with_infos(
+    let adaptor_infos = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
-        &accept_refund_signature,
-        &accept_cet_signatures,
-        &contract_info,
-        &adaptor_infos,
-        // &offer_params,
-        &accept_params,
+        &accept_side.refund_sig,
+        &accept_side.adaptor_sig,
+        contract_info,
+        &offer_side.party_params,
+        &accept_side.party_params,
     )?;
 
     validate_presigned_with_infos(
         &secp,
         &dlc_transactions,
-        &offer_refund_signature,
-        &offer_cet_signatures,
-        &contract_info,
+        &offer_side.refund_sig,
+        &offer_side.adaptor_sig,
+        contract_info,
         &adaptor_infos,
-        // &accept_params,
-        &offer_params,
+        &offer_side.party_params,
     )?;
 
     Ok(Serializable::serialize(&dlc_transactions.fund).unwrap())
