@@ -2,15 +2,32 @@ use dlc::{DlcTransactions, PartyParams};
 use dlc_manager::contract::{contract_info::ContractInfo, offered_contract::OfferedContract};
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
-use crate::{error::*, sign_cets::PartyInfos};
+use crate::error::*;
 
 pub fn check_signed_dlc(
-    offered_contract: OfferedContract,
-    accept_params: PartyInfos,
-    adaptor_sig: Vec<EcdsaAdaptorSignature>,
-    refund_sig: Signature,
+    contract_info: &[ContractInfo],
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    refund_locktime: u32,
+    fee_rate_per_vb: u64,
+    cet_locktime: u32,
+    adaptor_sig: &[EcdsaAdaptorSignature],
+    refund_sig: &Signature,
 ) -> Result<bool> {
-    let dlc_transactions = get_dlc_transactions(&offered_contract, &accept_params.party_params)?;
+    let total_collateral = offer_params.collateral + accept_params.collateral;
+    let dlc_transactions = dlc::create_dlc_transactions(
+        &offer_params,
+        &accept_params,
+        &contract_info[0]
+            .get_payouts(total_collateral)
+            .map_err(FromDlcError::Manager)?,
+        refund_locktime,
+        fee_rate_per_vb,
+        0,
+        cet_locktime,
+        u64::MAX / 2,
+    )
+    .map_err(FromDlcError::Dlc)?;
 
     let cet_adaptor_signatures = &adaptor_sig;
 
@@ -23,9 +40,9 @@ pub fn check_signed_dlc(
         &dlc_transactions,
         &refund_sig,
         &cet_adaptor_signatures,
-        &offered_contract.contract_info,
-        &offered_contract.offer_params,
-        &accept_params.party_params,
+        contract_info,
+        &offer_params,
+        &accept_params,
     )
     .or_else(|_| {
         is_offer = true;
@@ -34,9 +51,9 @@ pub fn check_signed_dlc(
             &dlc_transactions,
             &refund_sig,
             &cet_adaptor_signatures,
-            &offered_contract.contract_info,
-            &accept_params.party_params,
-            &offered_contract.offer_params,
+            contract_info,
+            &accept_params,
+            &offer_params,
         )
     })?;
 

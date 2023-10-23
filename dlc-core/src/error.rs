@@ -3,17 +3,18 @@ use std::fmt::{self, Display};
 pub use dlc::Error as dlcError;
 pub use dlc_manager::error::Error as managerError;
 pub use secp256k1_zkp::Error as secpError;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum FromDlcError {
     // #[error("{0}")]
     Dlc(dlcError),
     // #[error("{0}")]
-    Secp(secpError),
+    Secp(#[from] secpError),
     // #[error("{0}")]
     Manager(managerError),
     // #[error("{0}")]
-    BitcoinEncoding(bitcoin::consensus::encode::Error),
+    BitcoinEncoding(#[from] bitcoin::consensus::encode::Error),
     // #[error("{0}")]
     InvalidState(&'static str),
 }
