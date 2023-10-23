@@ -22,10 +22,10 @@ pub struct ToSignAndContractInfos {
     pub contract_state: Vec<u8>,
 }
 
-pub struct SideSign {
-    party_params: PartyParams,
-    adaptor_sig: Vec<EcdsaAdaptorSignature>,
-    refund_sig: Signature,
+pub struct SideSign<'a> {
+    pub party_params: &'a PartyParams,
+    pub adaptor_sig: &'a [EcdsaAdaptorSignature],
+    pub refund_sig: &'a Signature,
 }
 
 pub fn check_all_signed_dlc(
