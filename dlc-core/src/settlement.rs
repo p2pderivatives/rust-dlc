@@ -75,8 +75,8 @@ pub fn get_signed_cet(
     );
 
     let (adaptor_sigs_accept, fund_pubkey_accept) = (
-        offer_side.adaptor_sig.as_ref(),
-        &offer_side.party_params.fund_pubkey,
+        accept_side.adaptor_sig.as_ref(),
+        &accept_side.party_params.fund_pubkey,
     );
 
     let adaptor_secret = signatures_to_secret(sigs.as_slice())?;
