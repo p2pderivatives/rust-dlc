@@ -1,14 +1,14 @@
 use dlc_manager::contract::{ser::Serializable, signed_contract::SignedContract};
 use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_trie::RangeInfo;
-use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
+use secp256k1_zkp::{schnorr::Signature as SchnorrSignature, Secp256k1};
 
 use bitcoin::{EcdsaSighashType, Script, Transaction, Witness};
 use dlc::secp_utils;
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
-use crate::error::*;
+use crate::{error::*, verify_cets::validate_presigned_without_infos, verify_contract::SideSign};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationData {
@@ -21,44 +21,62 @@ pub struct ContractSettlement {
     pub attestations: Vec<AttestationData>,
 }
 
-pub fn get_signed_cet(input: ContractSettlement) -> Result<Vec<u8>> {
-    let contract: Vec<u8> = input.contract;
-    let contract: SignedContract =
-        Serializable::deserialize::<&[u8]>(&mut contract.as_ref()).unwrap();
-    let attestations: Vec<AttestationData> = input.attestations;
-
+pub fn get_signed_cet(
+    contract_info: &[ContractInfo],
+    offer_side: &SideSign,
+    accept_side: &SideSign,
+    refund_locktime: u32,
+    fee_rate_per_vb: u64,
+    cet_locktime: u32,
+    attestations: Vec<AttestationData>,
+) -> Result<Vec<u8>> {
     let attestations: Vec<(usize, OracleAttestation)> = attestations
         .into_iter()
         .map(|x| (x.index as usize, x.attestation.into()))
         .collect();
 
-    let contract_info = contract
-        .accepted_contract
-        .offered_contract
-        .contract_info
-        .get(0)
-        .unwrap();
-    let adaptor_info = contract.accepted_contract.adaptor_infos.get(0).unwrap();
+    let total_collateral = offer_side.party_params.collateral + accept_side.party_params.collateral;
+    let dlc_transactions = dlc::create_dlc_transactions(
+        &offer_side.party_params,
+        &accept_side.party_params,
+        &contract_info[0]
+            .get_payouts(total_collateral)
+            .map_err(FromDlcError::Manager)?,
+        refund_locktime,
+        fee_rate_per_vb,
+        0,
+        cet_locktime,
+        u64::MAX / 2,
+    )
+    .map_err(FromDlcError::Dlc)?;
 
+    let secp = Secp256k1::new();
+
+    let adaptor_infos = validate_presigned_without_infos(
+        &secp,
+        &dlc_transactions,
+        &accept_side.refund_sig,
+        &accept_side.adaptor_sig,
+        contract_info,
+        &offer_side.party_params,
+        &accept_side.party_params,
+    )?;
     let (range_info, sigs): (RangeInfo, Vec<Vec<SchnorrSignature>>) =
-        get_range_info_and_oracle_sigs(contract_info, adaptor_info, &attestations)?;
-    let mut cet = contract.accepted_contract.dlc_transactions.cets[range_info.cet_index].clone();
-    let offered_contract = &contract.accepted_contract.offered_contract;
+        get_range_info_and_oracle_sigs(
+            contract_info.get(0).unwrap(),
+            adaptor_infos.get(0).unwrap(),
+            &attestations,
+        )?;
+    let mut cet = dlc_transactions.cets[range_info.cet_index].clone();
 
-    let (adaptor_sigs_offer, fund_pubkey_offer, _other_pubkey_offer) = (
-        contract.adaptor_signatures.as_ref().unwrap(),
-        &offered_contract.offer_params.fund_pubkey,
-        &contract.accepted_contract.accept_params.fund_pubkey,
+    let (adaptor_sigs_offer, fund_pubkey_offer) = (
+        offer_side.adaptor_sig.as_ref(),
+        &offer_side.party_params.fund_pubkey,
     );
 
-    let (adaptor_sigs_recv, fund_pubkey_recv, _other_pubkey_recv) = (
-        contract
-            .accepted_contract
-            .adaptor_signatures
-            .as_ref()
-            .unwrap(),
-        &contract.accepted_contract.accept_params.fund_pubkey,
-        &offered_contract.offer_params.fund_pubkey,
+    let (adaptor_sigs_accept, fund_pubkey_accept) = (
+        offer_side.adaptor_sig.as_ref(),
+        &offer_side.party_params.fund_pubkey,
     );
 
     let adaptor_secret = signatures_to_secret(sigs.as_slice())?;
@@ -72,15 +90,12 @@ pub fn get_signed_cet(input: ContractSettlement) -> Result<Vec<u8>> {
             fund_pubkey_offer,
         ),
         (
-            &adaptor_sigs_recv[range_info.adaptor_index]
+            &adaptor_sigs_accept[range_info.adaptor_index]
                 .decrypt(&adaptor_secret)
                 .map_err(FromDlcError::Secp)?,
-            fund_pubkey_recv,
+            fund_pubkey_accept,
         ),
-        &contract
-            .accepted_contract
-            .dlc_transactions
-            .funding_script_pubkey,
+        &dlc_transactions.funding_script_pubkey,
     );
 
     Ok(Serializable::serialize(&cet).unwrap())
