@@ -15,13 +15,13 @@ pub struct PartyInfos {
     pub funding_input_infos: Vec<FundingInputInfo>,
 }
 
-pub fn sign_cets(
+pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     offer_params: &PartyInfos,
     accept_params: &PartyInfos,
     contract_input: &ContractInput,
     refund_delay: u32,
     date_ref: u32,
-    oracle_announcements: &[&[OracleAnnouncement]],
+    oracle_announcements: &[O],
     fund_secret_key: &SecretKey,
 ) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
     let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
@@ -42,7 +42,7 @@ pub fn sign_cets(
         .zip(oracle_announcements.into_iter())
         .map(|(x, y)| ContractInfo {
             contract_descriptor: x.contract_descriptor.clone(),
-            oracle_announcements: y.to_vec(),
+            oracle_announcements: y.as_ref().to_vec(),
             threshold: x.oracles.threshold as usize,
         })
         .collect::<Vec<ContractInfo>>();
@@ -183,10 +183,10 @@ fn sign(
     Ok((adaptor_infos, adaptor_sigs, refund_signature))
 }
 
-fn get_latest_maturity_date(announcements: &[&[OracleAnnouncement]]) -> Result<u32> {
+fn get_latest_maturity_date<O: AsRef<[OracleAnnouncement]>>(announcements: &[O]) -> Result<u32> {
     announcements
         .into_iter()
-        .flat_map(|o| *o)
+        .flat_map(|o| o.as_ref())
         .map(|x| x.oracle_event.event_maturity_epoch)
         .max()
         .ok_or_else(|| FromDlcError::InvalidState("Could not find maximum event maturity."))
