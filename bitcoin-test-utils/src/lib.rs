@@ -42,8 +42,7 @@ pub fn from_hex(hex: &str, target: &mut [u8]) -> Result<usize, ()> {
 /// Transforms an hex string to a Vec<u8>.
 /// Panics if the string is not valid hex.
 pub fn str_to_hex(hex_str: &str) -> Vec<u8> {
-    let mut hex = Vec::<u8>::new();
-    hex.resize(hex_str.len() / 2, 0);
+    let mut hex = vec![0; hex_str.len() / 2];
     from_hex(hex_str, &mut hex).unwrap();
     hex
 }

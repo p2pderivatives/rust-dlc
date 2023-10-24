@@ -188,9 +188,7 @@ impl CustomMessageHandler for MessageHandler {
         org: &PublicKey,
     ) -> Result<(), LightningError> {
         let mut segment_readers = self.segment_readers.lock().unwrap();
-        let segment_reader = segment_readers
-            .entry(*org)
-            .or_insert_with(SegmentReader::new);
+        let segment_reader = segment_readers.entry(*org).or_default();
 
         if segment_reader.expecting_chunk() {
             match msg {
