@@ -168,9 +168,10 @@ impl MultiOracleTrie {
     /// Creates a new MultiOracleTrie
     pub fn new(oracle_numeric_infos: &OracleNumericInfo, threshold: usize) -> Result<Self, Error> {
         if oracle_numeric_infos.nb_digits.is_empty() {
-            return Err(Error::InvalidArgument(format!(
+            return Err(Error::InvalidArgument(
                 "[MultiOracleTrie::new] error: oracle_numeric_infos.nb_digits must not be empty"
-            )));
+                    .to_string(),
+            ));
         }
         let digit_trie = DigitTrie::new(oracle_numeric_infos.base);
         let extra_cover_trie = if oracle_numeric_infos.has_diff_nb_digits() {

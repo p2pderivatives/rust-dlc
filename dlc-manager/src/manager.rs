@@ -500,10 +500,10 @@ where
                     c.accepted_contract
                         .offered_contract
                         .contract_info
-                        .get(0)
+                        .first()
                         .unwrap()
                         .oracle_announcements
-                        .get(0)
+                        .first()
                         .unwrap()
                         .oracle_event
                         .event_id
@@ -541,10 +541,10 @@ where
                     c.accepted_contract
                         .offered_contract
                         .contract_info
-                        .get(0)
+                        .first()
                         .unwrap()
                         .oracle_announcements
-                        .get(0)
+                        .first()
                         .unwrap()
                         .oracle_event
                         .event_id
@@ -639,10 +639,10 @@ where
                         .accepted_contract
                         .offered_contract
                         .contract_info
-                        .get(0)
+                        .first()
                         .unwrap()
                         .oracle_announcements
-                        .get(0)
+                        .first()
                         .unwrap()
                         .oracle_event
                         .event_id

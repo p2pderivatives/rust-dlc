@@ -97,7 +97,7 @@ pub struct RevokeParams {
     /// Key used to restrict the transaction output path.
     pub own_pk: PublicKey,
     /// Key used to restrict the transaction output path and for generating
-    /// an adaptor signature, that gets revealed when using the transaction.  
+    /// an adaptor signature, that gets revealed when using the transaction.
     pub publish_pk: PublicKey,
     /// Key used to revoke the transaction.
     pub revoke_pk: PublicKey,
@@ -380,7 +380,7 @@ pub fn sign_cet<C: Signing>(
 
     descriptor
         .satisfy(&mut cet.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument(format!("[sign_cet] error: couldn't sign CET")))?;
+        .map_err(|_| Error::InvalidArgument("[sign_cet] error: couldn't sign CET".to_string()))?;
 
     Ok(())
 }
@@ -455,9 +455,10 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
     }
 
     descriptor.satisfy(&mut tx.input[0], sigs).map_err(|_| {
-        Error::InvalidArgument(format!(
+        Error::InvalidArgument(
             "[create_and_sign_punish_buffer_transaction] error: couldn't sign buffer transaction"
-        ))
+                .to_string(),
+        )
     })?;
 
     Ok(tx)
@@ -538,7 +539,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     descriptor
         .satisfy(&mut tx.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument(format!("[create_and_sign_punish_settle_transaction] error: couldn't sign revoked settle transaction")))?;
+        .map_err(|_| Error::InvalidArgument("[create_and_sign_punish_settle_transaction] error: couldn't sign revoked settle transaction".to_string()))?;
 
     Ok(tx)
 }

@@ -98,9 +98,9 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
 pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
     (f64::ceil((weight as f64) / 4.0) as u64)
         .checked_mul(fee_rate)
-        .ok_or(Error::InvalidArgument(format!(
-            "[weight_to_fee] error: could not calculate fee"
-        )))
+        .ok_or(Error::InvalidArgument(
+            "[weight_to_fee] error: could not calculate fee".to_string(),
+        ))
 }
 
 /// Return the common base fee for a DLC for the given fee rate.
