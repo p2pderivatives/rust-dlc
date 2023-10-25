@@ -11,7 +11,12 @@ pub mod verify_contract;
 
 use crate::error::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct SideSign<'a> {
     pub party_params: &'a PartyParams,
     pub adaptor_sig: &'a [EcdsaAdaptorSignature],
@@ -19,6 +24,11 @@ pub struct SideSign<'a> {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct ContractParams {
     pub contract_info: Vec<ContractInfo>,
     pub refund_locktime: u32,

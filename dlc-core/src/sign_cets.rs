@@ -8,8 +8,12 @@ use secp256k1_zkp::{
 };
 
 use crate::{error::*, get_dlc_transactions, ContractParams};
-
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PartyInfos {
     pub party_params: PartyParams,
     pub funding_input_infos: Vec<FundingInputInfo>,
