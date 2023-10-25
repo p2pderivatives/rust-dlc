@@ -1,5 +1,3 @@
-use log::{error, trace, warn};
-use std::any::type_name;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -22,6 +20,7 @@ const MIN_FEERATE: u32 = 253;
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Target {
+    Minimum = 1008,
     Background = 144,
     Normal = 18,
     HighPriority = 6,
@@ -57,8 +56,8 @@ impl ElectrsBlockchainProvider {
             .get(format!("{}{}", self.host, sub_url))
             .send()
             .map_err(|x| {
-                dlc_manager::error::Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                    lightning::io::ErrorKind::Other,
                     x,
                 ))
             })
@@ -72,39 +71,18 @@ impl ElectrsBlockchainProvider {
     }
 
     fn get_text(&self, sub_url: &str) -> Result<String, Error> {
-        match self.get(sub_url)?.text() {
-            Ok(text) => {
-                trace!(
-                    "Got text response from blockchain: {:?} from requested url: {}",
-                    text,
-                    sub_url
-                );
-                Ok(text)
-            }
-            Err(e) => {
-                warn!("Error getting url: {}, and error: {}", sub_url, e);
-                Err(dlc_manager::error::Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )))
-            }
-        }
+        self.get(sub_url)?.text().map_err(|x| {
+            dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                lightning::io::ErrorKind::Other,
+                x,
+            ))
+        })
     }
 
     fn get_u64(&self, sub_url: &str) -> Result<u64, Error> {
-        match self.get_text(sub_url) {
-            Ok(text) => Ok(text.parse().map_err(|e: std::num::ParseIntError| {
-                error!("Error parsing u64 from request to url: {}", e);
-                Error::BlockchainError(e.to_string())
-            })?),
-            Err(e) => {
-                warn!("Error getting url: {}, and error: {}", sub_url, e);
-                Err(dlc_manager::error::Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )))
-            }
-        }
+        self.get_text(sub_url)?
+            .parse()
+            .map_err(|e: std::num::ParseIntError| Error::BlockchainError(e.to_string()))
     }
 
     fn get_bytes(&self, sub_url: &str) -> Result<Vec<u8>, Error> {
@@ -119,9 +97,9 @@ impl ElectrsBlockchainProvider {
     where
         T: serde::de::DeserializeOwned,
     {
-        let json_as_string = self.get_text(sub_url)?;
-        trace!("Converting text to JSON for type {}", type_name::<T>());
-        serde_json::from_str(&json_as_string).map_err(|e| Error::BlockchainError(e.to_string()))
+        self.get(sub_url)?
+            .json::<T>()
+            .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
     pub fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
@@ -137,8 +115,8 @@ impl Blockchain for ElectrsBlockchainProvider {
             .body(tx_to_string(transaction))
             .send()
             .map_err(|x| {
-                dlc_manager::error::Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                    lightning::io::ErrorKind::Other,
                     x,
                 ))
             })?;
@@ -228,6 +206,11 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
 impl FeeEstimator for ElectrsBlockchainProvider {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
         let est = match confirmation_target {
+            ConfirmationTarget::MempoolMinimum => self
+                .fees
+                .get(&Target::Minimum)
+                .unwrap()
+                .load(Ordering::Acquire),
             ConfirmationTarget::Background => self
                 .fees
                 .get(&Target::Background)
@@ -330,20 +313,25 @@ impl BlockSource for ElectrsBlockchainProvider {
 }
 
 impl BroadcasterInterface for ElectrsBlockchainProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) {
+    fn broadcast_transactions(&self, txs: &[&Transaction]) {
         let client = self.client.clone();
         let host = self.host.clone();
-        let body = bitcoin_test_utils::tx_to_string(tx);
+        let bodies = txs
+            .iter()
+            .map(|tx| bitcoin_test_utils::tx_to_string(tx))
+            .collect::<Vec<_>>();
         std::thread::spawn(move || {
-            match client.post(format!("{host}tx")).body(body).send() {
-                Err(_) => {}
-                Ok(res) => {
-                    if res.error_for_status_ref().is_err() {
-                        // let body = res.text().unwrap_or_default();
-                        // TODO(tibo): log
+            for body in bodies {
+                match client.post(format!("{host}tx")).body(body).send() {
+                    Err(_) => {}
+                    Ok(res) => {
+                        if res.error_for_status_ref().is_err() {
+                            // let body = res.text().unwrap_or_default();
+                            // TODO(tibo): log
+                        }
                     }
-                }
-            };
+                };
+            }
         });
     }
 }

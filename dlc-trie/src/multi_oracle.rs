@@ -70,7 +70,7 @@ fn compute_min_support_covering_prefix(
 
     left_bound
         .into_iter()
-        .zip(right_bound.into_iter())
+        .zip(right_bound)
         .take_while(|(x, y)| x == y)
         .map(|(x, _)| x)
         .collect()

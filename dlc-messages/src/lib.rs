@@ -18,8 +18,6 @@ extern crate secp256k1_zkp;
 pub mod ser_macros;
 pub mod ser_impls;
 
-#[cfg(test)]
-extern crate bitcoin_test_utils;
 #[cfg(any(test, feature = "serde"))]
 extern crate serde;
 
@@ -538,7 +536,7 @@ macro_rules! impl_type_writeable_for_enum {
        }
 
        impl Writeable for $type_name {
-            fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::std::io::Error> {
+            fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ::lightning::io::Error> {
                 match self {
                    $($type_name::$variant_name(v) => v.write(writer),)*
                 }

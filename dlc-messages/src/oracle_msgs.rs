@@ -435,7 +435,7 @@ mod tests {
         let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
         let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
         let mut sig_hex = *sig.as_ref();
-        sig_hex[10] += 1;
+        sig_hex[10] = sig_hex[10].checked_add(1).unwrap_or(0);
         let sig = SchnorrSignature::from_slice(&sig_hex).unwrap();
         let invalid_announcement = OracleAnnouncement {
             announcement_signature: sig,

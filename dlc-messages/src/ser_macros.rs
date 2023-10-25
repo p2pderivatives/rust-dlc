@@ -82,7 +82,7 @@ macro_rules! field_read {
 macro_rules! impl_dlc_writeable {
     ($st:ident, {$(($field: ident, $fieldty: tt)), *} ) => {
         impl Writeable for $st {
-			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::std::io::Error> {
+			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::lightning::io::Error> {
 				$(
                     field_write!(w, self.$field, $fieldty);
                 )*
@@ -91,7 +91,7 @@ macro_rules! impl_dlc_writeable {
         }
 
         impl Readable for $st {
-			fn read<R: std::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
+			fn read<R: lightning::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
                 Ok(Self {
                     $(
                         $field: field_read!(r, $fieldty),
@@ -113,7 +113,7 @@ macro_rules! impl_dlc_writeable_external {
             use lightning::ln::msgs::DecodeError;
             use lightning::util::ser::Writer;
             /// Function to write $name
-            pub fn write<W: Writer>($name: &$st<$($gen$(<$gen2>)?)?>, w: &mut W) -> Result<(), ::std::io::Error> {
+            pub fn write<W: Writer>($name: &$st<$($gen$(<$gen2>)?)?>, w: &mut W) -> Result<(), ::lightning::io::Error> {
                 $(
                     field_write!(w, $name.$field, $fieldty);
                 )*
@@ -121,7 +121,7 @@ macro_rules! impl_dlc_writeable_external {
             }
 
             /// Function to read $name
-            pub fn read<R: std::io::Read>(r: &mut R) -> Result<$st<$($gen$(<$gen2>)?)?>, DecodeError> {
+            pub fn read<R: lightning::io::Read>(r: &mut R) -> Result<$st<$($gen$(<$gen2>)?)?>, DecodeError> {
                 Ok($st {
                     $(
                         $field: field_read!(r, $fieldty),
@@ -140,7 +140,7 @@ macro_rules! impl_dlc_writeable_external_enum {
         mod $name {
             use super::*;
 
-			pub fn write<W: Writer>($name: &$st$(<$gen>)?, w: &mut W) -> Result<(), ::std::io::Error> {
+			pub fn write<W: Writer>($name: &$st$(<$gen>)?, w: &mut W) -> Result<(), ::lightning::io::Error> {
                 match $name {
                     $($st::$variant_name(ref field) => {
                         let id : u8 = $variant_id;
@@ -151,7 +151,7 @@ macro_rules! impl_dlc_writeable_external_enum {
 				Ok(())
             }
 
-			pub fn read<R: std::io::Read>(r: &mut R) -> Result<$st$(<$gen>)?, DecodeError> {
+			pub fn read<R: lightning::io::Read>(r: &mut R) -> Result<$st$(<$gen>)?, DecodeError> {
                 let id: u8 = Readable::read(r)?;
                 match id {
                     $($variant_id => {
@@ -171,7 +171,7 @@ macro_rules! impl_dlc_writeable_external_enum {
 macro_rules! impl_dlc_writeable_enum_as_tlv {
     ($st:ident, $(($variant_id: expr, $variant_name: ident)), *;) => {
         impl Writeable for $st {
-			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::std::io::Error> {
+			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::lightning::io::Error> {
                 match self {
                     $($st::$variant_name(ref field) => {
                         $crate::ser_impls::BigSize($variant_id as u64).write(w)?;
@@ -184,7 +184,7 @@ macro_rules! impl_dlc_writeable_enum_as_tlv {
         }
 
         impl Readable for $st {
-			fn read<R: std::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
+			fn read<R: lightning::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
                 let id: $crate::ser_impls::BigSize = Readable::read(r)?;
                 match id.0 {
                     $($variant_id => {
@@ -208,7 +208,7 @@ macro_rules! impl_dlc_writeable_enum {
     $(($external_variant_id: expr, $external_variant_name: ident, $write_cb: expr, $read_cb: expr)), *;
     $(($simple_variant_id: expr, $simple_variant_name: ident)), *) => {
         impl Writeable for $st {
-			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::std::io::Error> {
+			fn write<W: Writer>(&self, w: &mut W) -> Result<(), ::lightning::io::Error> {
                 match self {
                     $($st::$tuple_variant_name(ref field) => {
                         let id : u8 = $tuple_variant_id;
@@ -237,7 +237,7 @@ macro_rules! impl_dlc_writeable_enum {
         }
 
         impl Readable for $st {
-			fn read<R: std::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
+			fn read<R: lightning::io::Read>(r: &mut R) -> Result<Self, DecodeError> {
                 let id: u8 = Readable::read(r)?;
                 match id {
                     $($tuple_variant_id => {

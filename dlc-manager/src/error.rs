@@ -8,7 +8,7 @@ pub enum Error {
     /// representation.
     Conversion(crate::conversion_utils::Error),
     /// An IO error.
-    IOError(std::io::Error),
+    IOError(lightning::io::Error),
     /// Some invalid parameters were provided.
     InvalidParameters(String),
     /// An invalid state was encounter, likely to indicate a bug.
@@ -44,8 +44,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
+impl From<lightning::io::Error> for Error {
+    fn from(e: lightning::io::Error) -> Error {
         Error::IOError(e)
     }
 }
@@ -74,6 +74,7 @@ impl From<secp256k1_zkp::UpstreamError> for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
