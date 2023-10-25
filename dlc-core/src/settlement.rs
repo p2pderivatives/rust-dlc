@@ -184,5 +184,22 @@ pub fn get_refund(
         &accept_side.party_params,
     )?;
 
-    Ok(dlc_transactions.refund.serialize().unwrap())
+    let (refund_sigs_offer, fund_pubkey_offer) =
+        (offer_side.refund_sig, &offer_side.party_params.fund_pubkey);
+
+    let (refund_sigs_accept, fund_pubkey_accept) = (
+        accept_side.refund_sig,
+        &accept_side.party_params.fund_pubkey,
+    );
+
+    let mut refund = dlc_transactions.refund;
+
+    sign_multisig_input(
+        &mut refund,
+        (&refund_sigs_offer, fund_pubkey_offer),
+        (&refund_sigs_accept, fund_pubkey_accept),
+        &dlc_transactions.funding_script_pubkey,
+    );
+
+    Ok(refund.serialize().unwrap())
 }
