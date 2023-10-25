@@ -1,10 +1,7 @@
 use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{
-    contract_info::ContractInfo, ser::Serializable, signed_contract::SignedContract, AdaptorInfo,
-};
+use dlc_manager::contract::{contract_info::ContractInfo, ser::Serializable, AdaptorInfo};
 
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
-use serde::Serialize;
 
 use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, SideSign};
 

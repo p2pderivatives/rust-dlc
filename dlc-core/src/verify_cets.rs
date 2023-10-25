@@ -1,7 +1,5 @@
-use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{
-    contract_info::ContractInfo, offered_contract::OfferedContract, AdaptorInfo,
-};
+use dlc::PartyParams;
+use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, Secp256k1};
 
 use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos};
