@@ -7,7 +7,7 @@ use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
 
-use crate::error::*;
+use crate::{error::*, get_dlc_transactions};
 
 #[derive(Clone, Debug)]
 pub struct PartyInfos {
@@ -26,8 +26,6 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
 ) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
     let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
 
-    let total_collateral = contract_input.offer_collateral + contract_input.accept_collateral;
-
     (contract_input.contract_infos.len() == oracle_announcements.len())
         .then_some(())
         .ok_or(FromDlcError::InvalidState(
@@ -45,20 +43,14 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         })
         .collect::<Vec<ContractInfo>>();
 
-    let fund_output_serial_id = u64::MAX / 2;
-    let dlc_transactions = dlc::create_dlc_transactions(
+    let dlc_transactions = get_dlc_transactions(
+        &contract_info,
         &offer_params.party_params,
         &accept_params.party_params,
-        &contract_info[0]
-            .get_payouts(total_collateral)
-            .map_err(FromDlcError::Manager)?,
         refund_locktime,
         contract_input.fee_rate,
-        0,
         cet_locktime,
-        fund_output_serial_id,
-    )
-    .map_err(FromDlcError::Dlc)?;
+    )?;
 
     let secp = Secp256k1::new();
 
@@ -108,31 +100,30 @@ fn sign(
     };
     let total_collateral = own_params.collateral + other_params.collateral;
 
-    let input_script_pubkey = dlc_transactions.funding_script_pubkey.clone();
+    let DlcTransactions {
+        fund: _,
+        cets,
+        refund,
+        funding_script_pubkey,
+    } = dlc_transactions;
+
     let input_value = dlc_transactions.get_fund_output().value;
 
-    let cet_input = dlc_transactions.cets[0].input[0].clone();
+    let cet_input = cets[0].input[0].clone();
 
     let (adaptor_info, adaptor_sig) = contract_info[0]
         .get_adaptor_info(
             secp,
             total_collateral,
             adaptor_secret_key,
-            &input_script_pubkey,
+            funding_script_pubkey,
             input_value,
-            &dlc_transactions.cets,
+            cets,
             0,
         )
         .map_err(FromDlcError::Manager)?;
     let mut adaptor_infos = vec![adaptor_info];
     let mut adaptor_sigs = adaptor_sig;
-
-    let DlcTransactions {
-        fund: _,
-        cets,
-        refund,
-        funding_script_pubkey: _,
-    } = dlc_transactions;
 
     let mut cets = cets.clone();
 
@@ -155,7 +146,7 @@ fn sign(
                 secp,
                 total_collateral,
                 &adaptor_secret_key,
-                &input_script_pubkey,
+                &funding_script_pubkey,
                 input_value,
                 &tmp_cets,
                 adaptor_sigs.len(),
@@ -172,20 +163,11 @@ fn sign(
         secp,
         refund,
         0,
-        &input_script_pubkey,
+        &funding_script_pubkey,
         input_value,
         &adaptor_secret_key,
     )
     .map_err(FromDlcError::Dlc)?;
 
     Ok((adaptor_infos, adaptor_sigs, refund_signature))
-}
-
-fn get_latest_maturity_date<O: AsRef<[OracleAnnouncement]>>(announcements: &[O]) -> Result<u32> {
-    announcements
-        .into_iter()
-        .flat_map(|o| o.as_ref())
-        .map(|x| x.oracle_event.event_maturity_epoch)
-        .max()
-        .ok_or_else(|| FromDlcError::InvalidState("Could not find maximum event maturity."))
 }

@@ -6,27 +6,7 @@ use dlc_manager::contract::{
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 use serde::Serialize;
 
-use crate::{error::*, verify_cets::validate_presigned_without_infos};
-
-#[derive(Debug, Serialize)]
-pub struct IndexToSign {
-    pub index: u32,
-    pub amount: u64,
-    pub script_pub_key: Vec<u8>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ToSignAndContractInfos {
-    pub raw_tx: Vec<u8>,
-    pub to_sign_input_infos: Vec<IndexToSign>,
-    pub contract_state: Vec<u8>,
-}
-
-pub struct SideSign<'a> {
-    pub party_params: &'a PartyParams,
-    pub adaptor_sig: &'a [EcdsaAdaptorSignature],
-    pub refund_sig: &'a Signature,
-}
+use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, SideSign};
 
 pub fn check_all_signed_dlc(
     contract_info: &[ContractInfo],
@@ -36,20 +16,14 @@ pub fn check_all_signed_dlc(
     fee_rate_per_vb: u64,
     cet_locktime: u32,
 ) -> Result<Vec<u8>> {
-    let total_collateral = offer_side.party_params.collateral + accept_side.party_params.collateral;
-    let dlc_transactions = dlc::create_dlc_transactions(
-        &offer_side.party_params,
-        &accept_side.party_params,
-        &contract_info[0]
-            .get_payouts(total_collateral)
-            .map_err(FromDlcError::Manager)?,
+    let dlc_transactions = get_dlc_transactions(
+        contract_info,
+        offer_side.party_params,
+        accept_side.party_params,
         refund_locktime,
         fee_rate_per_vb,
-        0,
         cet_locktime,
-        u64::MAX / 2,
-    )
-    .map_err(FromDlcError::Dlc)?;
+    )?;
 
     let secp = Secp256k1::new();
 
@@ -86,20 +60,13 @@ fn validate_presigned_with_infos(
     // own_params: &PartyParams,
     checked_params: &PartyParams,
 ) -> Result<()> {
-    let DlcTransactions {
-        fund: _,
-        cets: _,
-        refund,
-        funding_script_pubkey,
-    } = dlc_transactions.clone();
-
     let fund_output_value = dlc_transactions.get_fund_output().value;
     // let total_collateral = own_params.collateral + checked_params.collateral;
 
     dlc::verify_tx_input_sig(
         secp,
         refund_signature,
-        &refund,
+        &dlc_transactions.refund,
         0,
         &dlc_transactions.funding_script_pubkey,
         dlc_transactions.get_fund_output().value,
@@ -114,7 +81,7 @@ fn validate_presigned_with_infos(
             .verify_adaptor_info(
                 secp,
                 &checked_params.fund_pubkey,
-                &funding_script_pubkey,
+                &dlc_transactions.funding_script_pubkey,
                 fund_output_value,
                 &dlc_transactions.cets,
                 &cet_adaptor_signatures,

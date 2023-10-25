@@ -1,4 +1,4 @@
-use dlc_manager::contract::{ser::Serializable, signed_contract::SignedContract};
+use dlc_manager::contract::ser::Serializable;
 use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_trie::RangeInfo;
 use secp256k1_zkp::{schnorr::Signature as SchnorrSignature, Secp256k1};
@@ -8,7 +8,7 @@ use dlc::secp_utils;
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
-use crate::{error::*, verify_cets::validate_presigned_without_infos, verify_contract::SideSign};
+use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, SideSign};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationData {
@@ -35,21 +35,14 @@ pub fn get_signed_cet(
         .map(|x| (x.index as usize, x.attestation.into()))
         .collect();
 
-    let total_collateral = offer_side.party_params.collateral + accept_side.party_params.collateral;
-    let dlc_transactions = dlc::create_dlc_transactions(
+    let dlc_transactions = get_dlc_transactions(
+        contract_info,
         &offer_side.party_params,
         &accept_side.party_params,
-        &contract_info[0]
-            .get_payouts(total_collateral)
-            .map_err(FromDlcError::Manager)?,
         refund_locktime,
         fee_rate_per_vb,
-        0,
         cet_locktime,
-        u64::MAX / 2,
-    )
-    .map_err(FromDlcError::Dlc)?;
-
+    )?;
     let secp = Secp256k1::new();
 
     let adaptor_infos = validate_presigned_without_infos(
