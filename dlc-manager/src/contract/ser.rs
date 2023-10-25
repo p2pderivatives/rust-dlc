@@ -18,7 +18,7 @@ use crate::payout_curve::{
 };
 use dlc::DlcTransactions;
 use dlc_messages::ser_impls::{
-    read_ecdsa_adaptor_signatures, read_option_cb, read_usize, read_vec, read_vec_cb,
+    read_ecdsa_adaptor_signatures, read_option_cb, read_usize, read_vec, read_vec_cb, sat_point,
     write_ecdsa_adaptor_signatures, write_option_cb, write_usize, write_vec, write_vec_cb,
 };
 use dlc_trie::digit_trie::{DigitNodeData, DigitTrieDump};
@@ -29,6 +29,10 @@ use dlc_trie::{OracleNumericInfo, RangeInfo};
 use lightning::io::Read;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
+
+use super::ord_descriptor::{
+    OrdDescriptor, OrdEnumDescriptor, OrdNumericalDescriptor, OrdOutcomeDescriptor,
+};
 
 /// Trait used to de/serialize an object to/from a vector of bytes.
 pub trait Serializable
@@ -79,7 +83,19 @@ impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
     (c, float),
     (d, float)
 });
-impl_dlc_writeable_enum!(ContractDescriptor, (0, Enum), (1, Numerical);;;);
+impl_dlc_writeable!(
+    OrdDescriptor,
+    {
+        (outcome_descriptor, writeable),
+        (ordinal_sat_point, {cb_writeable, sat_point::write, sat_point::read}),
+        (ordinal_tx, writeable),
+        (refund_offer, writeable)
+    }
+);
+impl_dlc_writeable_enum!(OrdOutcomeDescriptor, (0, Enum), (1, Numerical);;;);
+impl_dlc_writeable!(OrdEnumDescriptor, { (descriptor, writeable), (to_offer_payouts, vec) });
+impl_dlc_writeable!(OrdNumericalDescriptor, {(descriptor, writeable), (to_offer_ranges, vec)});
+impl_dlc_writeable_enum!(ContractDescriptor, (0, Enum), (1, Numerical), (2, Ord);;;);
 impl_dlc_writeable!(ContractInfo, { (contract_descriptor, writeable), (oracle_announcements, vec), (threshold, usize)});
 impl_dlc_writeable!(FundingInputInfo, { (funding_input, writeable), (address, {option_cb, dlc_messages::ser_impls::write_address, dlc_messages::ser_impls::read_address}) });
 impl_dlc_writeable!(EnumDescriptor, {

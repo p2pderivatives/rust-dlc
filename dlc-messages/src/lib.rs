@@ -349,6 +349,7 @@ impl OfferDlc {
         match &self.contract_info {
             ContractInfo::SingleContractInfo(single) => single.total_collateral,
             ContractInfo::DisjointContractInfo(disjoint) => disjoint.total_collateral,
+            ContractInfo::OrdContractInfo(o) => o.total_collateral,
         }
     }
 
@@ -371,6 +372,8 @@ impl OfferDlc {
                     c.oracle_info.validate(secp)?;
                 }
             }
+            //todo(tibo): validate properly
+            ContractInfo::OrdContractInfo(o) => o.oracle_info.validate(secp)?,
         }
 
         let closest_maturity_date = self.contract_info.get_closest_maturity_date();

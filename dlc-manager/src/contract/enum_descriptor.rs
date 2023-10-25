@@ -1,17 +1,15 @@
 //! #EnumDescriptor
 
 use super::contract_info::OracleIndexAndPrefixLength;
-use super::utils::{get_majority_combination, unordered_equal};
+use super::utils::unordered_equal;
 use super::AdaptorInfo;
 use crate::error::Error;
 use bitcoin::{Script, Transaction};
-use dlc::OracleInfo;
+use dlc::{DlcTransactions, OracleInfo, PartyParams};
 use dlc::{EnumerationPayout, Payout};
 use dlc_messages::oracle_msgs::EnumEventDescriptor;
-use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
-use secp256k1_zkp::{
-    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
-};
+use dlc_trie::RangeInfo;
+use secp256k1_zkp::{All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -30,10 +28,7 @@ pub struct EnumDescriptor {
 impl EnumDescriptor {
     /// Returns the set of payouts.
     pub fn get_payouts(&self) -> Vec<Payout> {
-        self.outcome_payouts
-            .iter()
-            .map(|x| x.payout.clone())
-            .collect()
+        self.outcome_payouts.iter().map(|x| x.payout).collect()
     }
 
     /// Validate that the descriptor covers all possible outcomes of the given
@@ -63,49 +58,19 @@ impl EnumDescriptor {
         outcomes: &[(usize, &Vec<String>)],
         adaptor_sig_start: usize,
     ) -> Option<(OracleIndexAndPrefixLength, RangeInfo)> {
-        if outcomes.len() < threshold {
-            return None;
-        }
-
-        let filtered_outcomes: Vec<(usize, &Vec<String>)> = outcomes
-            .iter()
-            .filter(|x| x.1.len() == 1)
-            .cloned()
-            .collect();
-        let (mut outcome, mut actual_combination) = get_majority_combination(&filtered_outcomes)?;
-        let outcome = outcome.remove(0);
-
-        if actual_combination.len() < threshold {
-            return None;
-        }
-
-        actual_combination.truncate(threshold);
-
-        let pos = self
+        let payout_outcomes = self
             .outcome_payouts
             .iter()
-            .position(|x| x.outcome == outcome)?;
-
-        let combinator = CombinationIterator::new(nb_oracles, threshold);
-        let mut comb_pos = 0;
-        let mut comb_count = 0;
-
-        for (i, combination) in combinator.enumerate() {
-            if combination == actual_combination {
-                comb_pos = i;
-            }
-            comb_count += 1;
-        }
-
-        let range_info = RangeInfo {
-            cet_index: pos,
-            adaptor_index: comb_count * pos + comb_pos + adaptor_sig_start,
-        };
-
-        Some((
-            actual_combination.iter().map(|x| (*x, 1)).collect(),
-            range_info,
-        ))
+            .map(|x| &x.outcome)
+            .cloned()
+            .collect::<Vec<_>>();
+        super::utils::get_range_info_for_enum_outcome(
+            nb_oracles,
+            threshold,
+            outcomes,
+            &payout_outcomes,
+            adaptor_sig_start,
+        )
     }
 
     /// Verify the given set adaptor signatures.
@@ -121,26 +86,19 @@ impl EnumDescriptor {
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
     ) -> Result<usize, dlc::Error> {
-        let mut adaptor_sig_index = adaptor_sig_start;
-        let mut callback =
-            |adaptor_point: &PublicKey, cet_index: usize| -> Result<(), dlc::Error> {
-                let sig = adaptor_sigs[adaptor_sig_index];
-                adaptor_sig_index += 1;
-                dlc::verify_cet_adaptor_sig_from_point(
-                    secp,
-                    &sig,
-                    &cets[cet_index],
-                    adaptor_point,
-                    fund_pubkey,
-                    funding_script_pubkey,
-                    fund_output_value,
-                )?;
-                Ok(())
-            };
-
-        self.iter_outcomes(secp, oracle_infos, threshold, &mut callback)?;
-
-        Ok(adaptor_sig_index)
+        let messages = self.get_outcome_messages(threshold);
+        super::utils::verify_adaptor_info(
+            secp,
+            &messages,
+            oracle_infos,
+            threshold,
+            fund_pubkey,
+            funding_script_pubkey,
+            fund_output_value,
+            cets,
+            adaptor_sigs,
+            adaptor_sig_start,
+        )
     }
 
     /// Verify the given set of adaptor signature and generates the adaptor info.
@@ -206,38 +164,21 @@ impl EnumDescriptor {
         funding_script_pubkey: &Script,
         fund_output_value: u64,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
-        let mut adaptor_sigs = Vec::new();
-        let mut callback =
-            |adaptor_point: &PublicKey, cet_index: usize| -> Result<(), dlc::Error> {
-                let sig = dlc::create_cet_adaptor_sig_from_point(
-                    secp,
-                    &cets[cet_index],
-                    adaptor_point,
-                    fund_privkey,
-                    funding_script_pubkey,
-                    fund_output_value,
-                )?;
-                adaptor_sigs.push(sig);
-                Ok(())
-            };
-
-        self.iter_outcomes(secp, oracle_infos, threshold, &mut callback)?;
-
-        Ok(adaptor_sigs)
+        let messages = self.get_outcome_messages(threshold);
+        super::utils::get_enum_adaptor_signatures(
+            secp,
+            &messages,
+            oracle_infos,
+            threshold,
+            cets,
+            fund_privkey,
+            funding_script_pubkey,
+            fund_output_value,
+        )
     }
 
-    fn iter_outcomes<C: Verification, F>(
-        &self,
-        secp: &Secp256k1<C>,
-        oracle_infos: &[OracleInfo],
-        threshold: usize,
-        callback: &mut F,
-    ) -> Result<(), dlc::Error>
-    where
-        F: FnMut(&PublicKey, usize) -> Result<(), dlc::Error>,
-    {
-        let messages: Vec<Vec<Vec<Message>>> = self
-            .outcome_payouts
+    fn get_outcome_messages(&self, threshold: usize) -> Vec<Vec<Vec<Message>>> {
+        self.outcome_payouts
             .iter()
             .map(|x| {
                 let message = vec![Message::from_hashed_data::<
@@ -245,32 +186,28 @@ impl EnumDescriptor {
                 >(x.outcome.as_bytes())];
                 std::iter::repeat(message).take(threshold).collect()
             })
-            .collect();
-        let combination_iter = CombinationIterator::new(oracle_infos.len(), threshold);
-        let combinations: Vec<Vec<usize>> = combination_iter.collect();
+            .collect()
+    }
 
-        for (i, outcome_messages) in messages.iter().enumerate() {
-            for selector in &combinations {
-                let cur_oracle_infos: Vec<_> = oracle_infos
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, x)| {
-                        if selector.contains(&i) {
-                            Some(x.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                let adaptor_point = dlc::get_adaptor_point_from_oracle_info(
-                    secp,
-                    &cur_oracle_infos,
-                    outcome_messages,
-                )?;
-                callback(&adaptor_point, i)?;
-            }
-        }
-
-        Ok(())
+    pub(crate) fn create_dlc_transactions(
+        &self,
+        offer_params: &PartyParams,
+        accept_params: &PartyParams,
+        refund_locktime: u32,
+        fee_rate_per_vb: u64,
+        fund_locktime: u32,
+        cet_locktime: u32,
+        fund_output_serial_id: u64,
+    ) -> Result<DlcTransactions, Error> {
+        crate::utils::create_dlc_transactions_from_payouts(
+            offer_params,
+            accept_params,
+            &self.get_payouts(),
+            refund_locktime,
+            fee_rate_per_vb,
+            fund_locktime,
+            cet_locktime,
+            fund_output_serial_id,
+        )
     }
 }

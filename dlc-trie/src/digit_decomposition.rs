@@ -77,7 +77,7 @@ pub fn pad_range_payouts(
 fn take_prefix(start: &mut Vec<usize>, end: &mut Vec<usize>) -> Vec<usize> {
     if start == end {
         end.clear();
-        return core::mem::take(start);
+        return std::mem::take(start);
     }
     let mut i = 0;
     while start[i] == end[i] {

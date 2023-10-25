@@ -255,11 +255,15 @@ pub fn get_enum_oracle() -> MockOracle {
 }
 
 pub fn get_enum_oracles(nb_oracles: usize, threshold: usize) -> Vec<MockOracle> {
+    get_enum_oracles_with_outcome(nb_oracles, threshold, (thread_rng().next_u32() as usize) % 4)
+}
+
+pub fn get_enum_oracles_with_outcome(nb_oracles: usize, threshold: usize, outcome_pos: usize) -> Vec<MockOracle> {
     let mut oracles: Vec<_> = (0..nb_oracles).map(|_| get_enum_oracle()).collect();
 
     let active_oracles = select_active_oracles(nb_oracles, threshold);
     let outcomes = enum_outcomes();
-    let outcome = outcomes[(thread_rng().next_u32() as usize) % outcomes.len()].clone();
+    let outcome = outcomes[outcome_pos].clone();
     for index in active_oracles {
         oracles
             .get_mut(index)

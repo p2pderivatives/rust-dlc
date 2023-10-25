@@ -4,7 +4,7 @@ use super::AdaptorInfo;
 use crate::error::Error;
 use crate::payout_curve::{PayoutFunction, RoundingIntervals};
 use bitcoin::{Script, Transaction};
-use dlc::{Payout, RangePayout};
+use dlc::{DlcTransactions, PartyParams, Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::{DlcTrie, OracleNumericInfo};
@@ -73,7 +73,7 @@ impl NumericalDescriptor {
         Ok(self
             .get_range_payouts(total_collateral)?
             .iter()
-            .map(|x| x.payout.clone())
+            .map(|x| x.payout)
             .collect())
     }
 
@@ -82,6 +82,33 @@ impl NumericalDescriptor {
         &self,
         secp: &Secp256k1<All>,
         total_collateral: u64,
+        fund_pubkey: &PublicKey,
+        funding_script_pubkey: &Script,
+        fund_output_value: u64,
+        threshold: usize,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
+        cets: &[Transaction],
+        adaptor_pairs: &[EcdsaAdaptorSignature],
+        adaptor_index_start: usize,
+    ) -> Result<(AdaptorInfo, usize), Error> {
+        self.verify_and_get_adaptor_info_internal(
+            secp,
+            &self.get_range_payouts(total_collateral)?,
+            fund_pubkey,
+            funding_script_pubkey,
+            fund_output_value,
+            threshold,
+            precomputed_points,
+            cets,
+            adaptor_pairs,
+            adaptor_index_start,
+        )
+    }
+
+    pub(crate) fn verify_and_get_adaptor_info_internal(
+        &self,
+        secp: &Secp256k1<All>,
+        range_payouts: &[RangePayout],
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
@@ -104,7 +131,7 @@ impl NumericalDescriptor {
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral)?,
+                    range_payouts,
                     cets,
                     precomputed_points,
                     adaptor_pairs,
@@ -119,7 +146,7 @@ impl NumericalDescriptor {
                     fund_pubkey,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral)?,
+                    range_payouts,
                     cets,
                     precomputed_points,
                     adaptor_pairs,
@@ -143,6 +170,31 @@ impl NumericalDescriptor {
         cets: &[Transaction],
         adaptor_index_start: usize,
     ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
+        self.get_adaptor_info_internal(
+            secp,
+            &self.get_range_payouts(total_collateral)?,
+            fund_priv_key,
+            funding_script_pubkey,
+            fund_output_value,
+            threshold,
+            precomputed_points,
+            cets,
+            adaptor_index_start,
+        )
+    }
+
+    pub(crate) fn get_adaptor_info_internal(
+        &self,
+        secp: &Secp256k1<All>,
+        range_payouts: &[RangePayout],
+        fund_priv_key: &SecretKey,
+        funding_script_pubkey: &Script,
+        fund_output_value: u64,
+        threshold: usize,
+        precomputed_points: &[Vec<Vec<PublicKey>>],
+        cets: &[Transaction],
+        adaptor_index_start: usize,
+    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
@@ -156,7 +208,7 @@ impl NumericalDescriptor {
                     fund_priv_key,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral)?,
+                    range_payouts,
                     cets,
                     precomputed_points,
                     adaptor_index_start,
@@ -174,7 +226,7 @@ impl NumericalDescriptor {
                     fund_priv_key,
                     funding_script_pubkey,
                     fund_output_value,
-                    &self.get_range_payouts(total_collateral)?,
+                    range_payouts,
                     cets,
                     precomputed_points,
                     adaptor_index_start,
@@ -182,5 +234,27 @@ impl NumericalDescriptor {
                 Ok((AdaptorInfo::Numerical(trie), sigs))
             }
         }
+    }
+
+    pub(crate) fn create_dlc_transactions(
+        &self,
+        offer_params: &PartyParams,
+        accept_params: &PartyParams,
+        refund_locktime: u32,
+        fee_rate_per_vb: u64,
+        fund_locktime: u32,
+        cet_locktime: u32,
+        fund_output_serial_id: u64,
+    ) -> Result<DlcTransactions, Error> {
+        crate::utils::create_dlc_transactions_from_payouts(
+            offer_params,
+            accept_params,
+            &self.get_payouts(offer_params.collateral + accept_params.collateral)?,
+            refund_locktime,
+            fee_rate_per_vb,
+            fund_locktime,
+            cet_locktime,
+            fund_output_serial_id,
+        )
     }
 }

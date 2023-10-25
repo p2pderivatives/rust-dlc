@@ -235,9 +235,9 @@ pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
 
 pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
     if lock_time == 0 {
-        DISABLE_LOCKTIME
+        Sequence::MAX
     } else {
-        ENABLE_LOCKTIME
+        Sequence::ENABLE_LOCKTIME_NO_RBF
     }
 }
 

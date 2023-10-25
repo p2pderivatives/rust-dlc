@@ -2,8 +2,8 @@
 
 use bitcoin::network::constants::Network;
 use bitcoin::Address;
-use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
-use lightning::io::Read;
+use dlc::ord::{OrdinalUtxo, SatPoint};
+use dlc::{ord::OrdPayout, EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
@@ -638,3 +638,7 @@ impl_dlc_writeable_external!(PartyParams, party_params, {
     (input_amount, writeable),
     (collateral, writeable)
 });
+
+impl_dlc_writeable_external!(OrdPayout, ord_payout, { (to_offer, writeable), (offer, writeable), (accept, writeable) });
+impl_dlc_writeable_external!(SatPoint, sat_point, { (outpoint, writeable), (offset, writeable) });
+impl_dlc_writeable_external!(OrdinalUtxo, ordinal_utxo, { (sat_point, {cb_writeable, sat_point::write, sat_point::read}), (value, writeable) });

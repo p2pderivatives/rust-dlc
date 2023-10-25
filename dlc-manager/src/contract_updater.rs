@@ -1,12 +1,13 @@
 //! # This module contains static functions to update the state of a DLC.
 
-use std::ops::Deref;
+use std::{io::Cursor, ops::Deref};
 
-use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
-use dlc::{DlcTransactions, PartyParams};
+use bitcoin::{consensus::Decodable, Script, Sequence, Transaction, Witness};
+use dlc::{ord::OrdinalUtxo, DlcTransactions, PartyParams};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
-    AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
+    AcceptDlc, FundingInput, FundingSignature, FundingSignatures, OfferDlc, SignDlc,
+    WitnessElement,
 };
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
@@ -16,7 +17,7 @@ use crate::{
     contract::{
         accepted_contract::AcceptedContract, contract_info::ContractInfo,
         contract_input::ContractInput, offered_contract::OfferedContract,
-        signed_contract::SignedContract, AdaptorInfo, FundingInputInfo,
+        signed_contract::SignedContract, AdaptorInfo, ContractDescriptor, FundingInputInfo,
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
@@ -87,17 +88,7 @@ where
         blockchain,
     )?;
 
-    let dlc_transactions = dlc::create_dlc_transactions(
-        &offered_contract.offer_params,
-        &accept_params,
-        &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.refund_locktime,
-        offered_contract.fee_rate_per_vb,
-        0,
-        offered_contract.cet_locktime,
-        offered_contract.fund_output_serial_id,
-    )?;
-
+    let dlc_transactions = create_dlc_transactions(offered_contract, &accept_params)?;
     let fund_output_value = dlc_transactions.get_fund_output().value;
 
     let (accepted_contract, adaptor_sigs) = accept_contract_internal(
@@ -133,7 +124,15 @@ pub(crate) fn accept_contract_internal(
 
     let cet_input = dlc_transactions.cets[0].input[0].clone();
 
-    let (adaptor_info, adaptor_sig) = offered_contract.contract_info[0].get_adaptor_info(
+    let first_contract = &offered_contract.contract_info[0];
+
+    let is_ord = if let ContractDescriptor::Ord(_) = &first_contract.contract_descriptor {
+        true
+    } else {
+        false
+    };
+
+    let (adaptor_info, adaptor_sig) = first_contract.get_adaptor_info(
         secp,
         offered_contract.total_collateral,
         adaptor_secret_key,
@@ -155,18 +154,14 @@ pub(crate) fn accept_contract_internal(
     let mut cets = cets.clone();
 
     for contract_info in offered_contract.contract_info.iter().skip(1) {
-        let payouts = contract_info.get_payouts(total_collateral)?;
-
-        let tmp_cets = dlc::create_cets(
+        let tmp_cets = create_cets(
+            contract_info,
+            &offered_contract.offer_params,
+            accept_params,
             &cet_input,
-            &offered_contract.offer_params.payout_script_pubkey,
-            offered_contract.offer_params.payout_serial_id,
-            &accept_params.payout_script_pubkey,
-            accept_params.payout_serial_id,
-            &payouts,
-            0,
-        );
-
+            total_collateral,
+            is_ord,
+        )?;
         let (adaptor_info, adaptor_sig) = contract_info.get_adaptor_info(
             secp,
             offered_contract.total_collateral,
@@ -244,18 +239,7 @@ where
         .map(|x| x.signature)
         .collect::<Vec<_>>();
 
-    let total_collateral = offered_contract.total_collateral;
-
-    let dlc_transactions = dlc::create_dlc_transactions(
-        &offered_contract.offer_params,
-        &accept_params,
-        &offered_contract.contract_info[0].get_payouts(total_collateral)?,
-        offered_contract.refund_locktime,
-        offered_contract.fee_rate_per_vb,
-        0,
-        offered_contract.cet_locktime,
-        offered_contract.fund_output_serial_id,
-    )?;
+    let dlc_transactions = create_dlc_transactions(offered_contract, &accept_params)?;
     let fund_output_value = dlc_transactions.get_fund_output().value;
     let fund_privkey =
         signer.get_secret_key_for_pubkey(&offered_contract.offer_params.fund_pubkey)?;
@@ -339,23 +323,44 @@ where
 
     let mut adaptor_infos = vec![adaptor_info];
 
+    let mut own_funding_inputs_info = offered_contract.funding_inputs_info.clone();
+
+    let is_ord = if let ContractDescriptor::Ord(o) =
+        &offered_contract.contract_info[0].contract_descriptor
+    {
+        own_funding_inputs_info.insert(
+            0,
+            FundingInputInfo {
+                funding_input: FundingInput {
+                    input_serial_id: 0,
+                    prev_tx: bitcoin::consensus::encode::serialize(&o.ordinal_tx),
+                    prev_tx_vout: o.ordinal_sat_point.outpoint.vout,
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME.into(),
+                    max_witness_len: 107,
+                    redeem_script: Script::default(),
+                },
+                address: None,
+            },
+        );
+
+        true
+    } else {
+        false
+    };
+
     let cet_input = cets[0].input[0].clone();
 
     let total_collateral = offered_contract.offer_params.collateral + accept_params.collateral;
 
     for contract_info in offered_contract.contract_info.iter().skip(1) {
-        let payouts = contract_info.get_payouts(total_collateral)?;
-
-        let tmp_cets = dlc::create_cets(
+        let tmp_cets = create_cets(
+            contract_info,
+            &offered_contract.offer_params,
+            accept_params,
             &cet_input,
-            &offered_contract.offer_params.payout_script_pubkey,
-            offered_contract.offer_params.payout_serial_id,
-            &accept_params.payout_script_pubkey,
-            accept_params.payout_serial_id,
-            &payouts,
-            0,
-        );
-
+            total_collateral,
+            is_ord,
+        )?;
         let (adaptor_info, tmp_adaptor_index) = contract_info.verify_and_get_adaptor_info(
             secp,
             offered_contract.total_collateral,
@@ -392,34 +397,26 @@ where
         own_signatures.extend(sigs);
     }
 
-    let mut input_serial_ids: Vec<_> = offered_contract
-        .funding_inputs_info
-        .iter()
-        .map(|x| x.funding_input.input_serial_id)
-        .chain(accept_params.inputs.iter().map(|x| x.serial_id))
-        .collect();
-    input_serial_ids.sort_unstable();
-
     // Vec<Witness>
-    let witnesses: Vec<Witness> = offered_contract
-        .funding_inputs_info
+    let witnesses: Vec<Witness> = own_funding_inputs_info
         .iter()
         .map(|x| {
-            let input_index = input_serial_ids
-                .iter()
-                .position(|y| y == &x.funding_input.input_serial_id)
-                .ok_or_else(|| {
-                    Error::InvalidState(format!(
-                        "Could not find input for serial id {}",
-                        x.funding_input.input_serial_id
-                    ))
-                })?;
             let tx = Transaction::consensus_decode(&mut x.funding_input.prev_tx.as_slice())
                 .map_err(|_| {
                     Error::InvalidParameters(
                         "Could not decode funding input previous tx parameter".to_string(),
                     )
                 })?;
+            let input_index = fund
+                .input
+                .iter()
+                .position(|y| {
+                    y.previous_output.txid == tx.txid()
+                        && y.previous_output.vout == x.funding_input.prev_tx_vout
+                })
+                .ok_or(Error::InvalidParameters(
+                    "Could not find matching input in fund transaction".to_string(),
+                ))?;
             let vout = x.funding_input.prev_tx_vout;
             let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
                 Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
@@ -444,8 +441,6 @@ where
             Ok(FundingSignature { witness_elements })
         })
         .collect::<Result<Vec<_>, Error>>()?;
-
-    input_serial_ids.sort_unstable();
 
     let offer_refund_signature = dlc::util::get_raw_sig_for_tx_input(
         secp,
@@ -565,30 +560,47 @@ where
         )?;
     }
 
-    let mut input_serials: Vec<_> = offered_contract
-        .funding_inputs_info
-        .iter()
-        .chain(accepted_contract.funding_inputs.iter())
-        .map(|x| x.funding_input.input_serial_id)
-        .collect();
-    input_serials.sort_unstable();
-
     let mut fund_tx = accepted_contract.dlc_transactions.fund.clone();
 
-    for (funding_input, funding_signatures) in offered_contract
-        .funding_inputs_info
+    let mut funding_inputs_info = offered_contract.funding_inputs_info.clone();
+
+    if let ContractDescriptor::Ord(o) = &offered_contract.contract_info[0].contract_descriptor {
+        funding_inputs_info.insert(
+            0,
+            FundingInputInfo {
+                funding_input: FundingInput {
+                    input_serial_id: 0,
+                    prev_tx: bitcoin::consensus::encode::serialize(&o.ordinal_tx),
+                    prev_tx_vout: o.ordinal_sat_point.outpoint.vout,
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME.into(),
+                    max_witness_len: 107,
+                    redeem_script: Script::default(),
+                },
+                address: None,
+            },
+        );
+    }
+
+    for (funding_input, funding_signatures) in funding_inputs_info
         .iter()
         .zip(funding_signatures.funding_signatures.iter())
     {
-        let input_index = input_serials
+        let txid =
+            Transaction::consensus_decode(&mut Cursor::new(&funding_input.funding_input.prev_tx))
+                .map_err(|e| {
+                    Error::InvalidParameters(format!("Error decoding transaction: {}", e))
+                })?
+                .txid();
+        let input_index = fund_tx
+            .input
             .iter()
-            .position(|x| x == &funding_input.funding_input.input_serial_id)
-            .ok_or_else(|| {
-                Error::InvalidState(format!(
-                    "Could not find input for serial id {}",
-                    funding_input.funding_input.input_serial_id
-                ))
-            })?;
+            .position(|y| {
+                y.previous_output.txid == txid
+                    && y.previous_output.vout == funding_input.funding_input.prev_tx_vout
+            })
+            .ok_or(Error::InvalidParameters(
+                "Could not find matching input in fund transaction".to_string(),
+            ))?;
 
         fund_tx.input[input_index].witness = Witness::from_vec(
             funding_signatures
@@ -600,15 +612,6 @@ where
     }
 
     for funding_input_info in &accepted_contract.funding_inputs {
-        let input_index = input_serials
-            .iter()
-            .position(|x| x == &funding_input_info.funding_input.input_serial_id)
-            .ok_or_else(|| {
-                Error::InvalidState(format!(
-                    "Could not find input for serial id {}",
-                    funding_input_info.funding_input.input_serial_id,
-                ))
-            })?;
         let tx =
             Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
                 .map_err(|_| {
@@ -620,6 +623,16 @@ where
         let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
             Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
         })?;
+        let input_index = fund_tx
+            .input
+            .iter()
+            .position(|y| {
+                y.previous_output.txid == tx.txid()
+                    && y.previous_output.vout == funding_input_info.funding_input.prev_tx_vout
+            })
+            .ok_or(Error::InvalidParameters(
+                "Could not find matching input in fund transaction".to_string(),
+            ))?;
 
         signer.sign_tx_input(&mut fund_tx, input_index, tx_out, None)?;
     }
@@ -733,6 +746,106 @@ where
         0,
     )?;
     Ok(refund)
+}
+
+fn create_dlc_transactions(
+    offered_contract: &OfferedContract,
+    accept_params: &PartyParams,
+) -> Result<DlcTransactions, Error> {
+    match &offered_contract.contract_info[0].contract_descriptor {
+        crate::contract::ContractDescriptor::Enum(e) => Ok(e.create_dlc_transactions(
+            &offered_contract.offer_params,
+            accept_params,
+            offered_contract.refund_locktime,
+            offered_contract.fee_rate_per_vb,
+            0,
+            offered_contract.cet_locktime,
+            offered_contract.fund_output_serial_id,
+        )?),
+        crate::contract::ContractDescriptor::Numerical(n) => Ok(n.create_dlc_transactions(
+            &offered_contract.offer_params,
+            accept_params,
+            offered_contract.refund_locktime,
+            offered_contract.fee_rate_per_vb,
+            0,
+            offered_contract.cet_locktime,
+            offered_contract.fund_output_serial_id,
+        )?),
+        crate::contract::ContractDescriptor::Ord(o) => {
+            let ordinal_utxo = OrdinalUtxo {
+                sat_point: o.ordinal_sat_point,
+                value: o.ordinal_tx.output[o.ordinal_sat_point.outpoint.vout as usize].value,
+            };
+
+            Ok(dlc::ord::create_dlc_transactions(
+                &offered_contract.offer_params,
+                accept_params,
+                &o.get_ord_payouts(offered_contract.total_collateral)?,
+                &ordinal_utxo,
+                offered_contract.refund_locktime,
+                offered_contract.fee_rate_per_vb,
+                0,
+                offered_contract.cet_locktime,
+                o.refund_offer,
+                0,
+            )?)
+        }
+    }
+}
+
+fn create_cets(
+    contract_info: &ContractInfo,
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    cet_input: &bitcoin::TxIn,
+    total_collateral: u64,
+    is_ord: bool,
+) -> Result<Vec<Transaction>, Error> {
+    match &contract_info.contract_descriptor {
+        ContractDescriptor::Ord(_) if !is_ord => Err(Error::InvalidParameters(
+            "OrdDescriptor cannot be combined with other descripto".to_string(),
+        )),
+        ContractDescriptor::Enum(_) | ContractDescriptor::Numerical(_) if is_ord => {
+            Err(Error::InvalidParameters(
+                "OrdDescriptor cannot be combined with other descripto".to_string(),
+            ))
+        }
+        ContractDescriptor::Ord(o) => {
+            let payouts = o.get_ord_payouts(total_collateral)?;
+            Ok(dlc::ord::create_cets(
+                &offer_params.payout_script_pubkey,
+                &accept_params.payout_script_pubkey,
+                &payouts,
+                o.get_postage(),
+                cet_input,
+                0,
+            ))
+        }
+        ContractDescriptor::Numerical(n) => {
+            let payouts = n.get_payouts(total_collateral)?;
+            Ok(dlc::create_cets(
+                cet_input,
+                &offer_params.payout_script_pubkey,
+                offer_params.payout_serial_id,
+                &accept_params.payout_script_pubkey,
+                accept_params.payout_serial_id,
+                &payouts,
+                0,
+            ))
+        }
+        ContractDescriptor::Enum(e) => {
+            let payouts = e.get_payouts();
+            Ok(dlc::create_cets(
+                cet_input,
+                &offer_params.payout_script_pubkey,
+                offer_params.payout_serial_id,
+                &accept_params.payout_script_pubkey,
+                accept_params.payout_serial_id,
+                &payouts,
+                0,
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
