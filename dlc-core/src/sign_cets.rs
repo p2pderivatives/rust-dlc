@@ -7,7 +7,7 @@ use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
 
-use crate::{error::*, get_dlc_transactions};
+use crate::{error::*, get_dlc_transactions, ContractParams};
 
 #[derive(Clone, Debug)]
 pub struct PartyInfos {
@@ -43,13 +43,17 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         })
         .collect::<Vec<ContractInfo>>();
 
+    let contract_params = ContractParams {
+        contract_info: &contract_info[..],
+        refund_locktime,
+        cet_locktime,
+        fee_rate_per_vb: contract_input.fee_rate,
+    };
+
     let dlc_transactions = get_dlc_transactions(
-        &contract_info,
+        &contract_params,
         &offer_params.party_params,
         &accept_params.party_params,
-        refund_locktime,
-        contract_input.fee_rate,
-        cet_locktime,
     )?;
 
     let secp = Secp256k1::new();

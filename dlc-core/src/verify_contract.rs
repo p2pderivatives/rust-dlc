@@ -3,23 +3,19 @@ use dlc_manager::contract::{contract_info::ContractInfo, ser::Serializable, Adap
 
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
-use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, SideSign};
+use crate::{
+    error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams, SideSign,
+};
 
 pub fn check_all_signed_dlc(
-    contract_info: &[ContractInfo],
+    contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-    refund_locktime: u32,
-    fee_rate_per_vb: u64,
-    cet_locktime: u32,
 ) -> Result<Vec<u8>> {
     let dlc_transactions = get_dlc_transactions(
-        contract_info,
+        &contract_params,
         offer_side.party_params,
         accept_side.party_params,
-        refund_locktime,
-        fee_rate_per_vb,
-        cet_locktime,
     )?;
 
     let secp = Secp256k1::new();
@@ -29,7 +25,7 @@ pub fn check_all_signed_dlc(
         &dlc_transactions,
         &accept_side.refund_sig,
         &accept_side.adaptor_sig,
-        contract_info,
+        &contract_params.contract_info,
         &offer_side.party_params,
         &accept_side.party_params,
     )?;
@@ -39,7 +35,7 @@ pub fn check_all_signed_dlc(
         &dlc_transactions,
         &offer_side.refund_sig,
         &offer_side.adaptor_sig,
-        contract_info,
+        &contract_params.contract_info,
         &adaptor_infos,
         &offer_side.party_params,
     )?;

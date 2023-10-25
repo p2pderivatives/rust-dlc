@@ -1,27 +1,17 @@
 use dlc::PartyParams;
-use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
+use dlc_manager::contract::AdaptorInfo;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, Secp256k1};
 
-use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos};
+use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams};
 
 pub fn check_signed_dlc(
-    contract_info: &[ContractInfo],
+    contract_params: ContractParams,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
-    refund_locktime: u32,
-    fee_rate_per_vb: u64,
-    cet_locktime: u32,
     adaptor_sig: &[EcdsaAdaptorSignature],
     refund_sig: &Signature,
 ) -> Result<(Vec<AdaptorInfo>, bool)> {
-    let dlc_transactions = get_dlc_transactions(
-        contract_info,
-        offer_params,
-        accept_params,
-        refund_locktime,
-        fee_rate_per_vb,
-        cet_locktime,
-    )?;
+    let dlc_transactions = get_dlc_transactions(&contract_params, offer_params, accept_params)?;
 
     let cet_adaptor_signatures = &adaptor_sig;
 
@@ -34,7 +24,7 @@ pub fn check_signed_dlc(
         &dlc_transactions,
         &refund_sig,
         &cet_adaptor_signatures,
-        contract_info,
+        &contract_params.contract_info,
         &offer_params,
         &accept_params,
     )
@@ -45,7 +35,7 @@ pub fn check_signed_dlc(
             &dlc_transactions,
             &refund_sig,
             &cet_adaptor_signatures,
-            contract_info,
+            &contract_params.contract_info,
             &accept_params,
             &offer_params,
         )

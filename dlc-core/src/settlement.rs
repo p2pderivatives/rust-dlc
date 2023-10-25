@@ -8,7 +8,9 @@ use dlc::secp_utils;
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
-use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, SideSign};
+use crate::{
+    error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams, SideSign,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationData {
@@ -22,12 +24,9 @@ pub struct ContractSettlement {
 }
 
 pub fn get_signed_cet(
-    contract_info: &[ContractInfo],
+    contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-    refund_locktime: u32,
-    fee_rate_per_vb: u64,
-    cet_locktime: u32,
     attestations: Vec<AttestationData>,
 ) -> Result<Vec<u8>> {
     let attestations: Vec<(usize, OracleAttestation)> = attestations
@@ -36,12 +35,9 @@ pub fn get_signed_cet(
         .collect();
 
     let dlc_transactions = get_dlc_transactions(
-        contract_info,
+        &contract_params,
         &offer_side.party_params,
         &accept_side.party_params,
-        refund_locktime,
-        fee_rate_per_vb,
-        cet_locktime,
     )?;
     let secp = Secp256k1::new();
 
@@ -50,13 +46,13 @@ pub fn get_signed_cet(
         &dlc_transactions,
         &accept_side.refund_sig,
         &accept_side.adaptor_sig,
-        contract_info,
+        &contract_params.contract_info,
         &offer_side.party_params,
         &accept_side.party_params,
     )?;
     let (range_info, sigs): (RangeInfo, Vec<Vec<SchnorrSignature>>) =
         get_range_info_and_oracle_sigs(
-            contract_info.get(0).unwrap(),
+            &contract_params.contract_info.get(0).unwrap(),
             adaptor_infos.get(0).unwrap(),
             &attestations,
         )?;
@@ -178,20 +174,14 @@ fn sign_multisig_input(
 }
 
 pub fn get_refund(
-    contract_info: &[ContractInfo],
+    contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-    refund_locktime: u32,
-    fee_rate_per_vb: u64,
-    cet_locktime: u32,
 ) -> Result<Vec<u8>> {
     let dlc_transactions = get_dlc_transactions(
-        contract_info,
+        &contract_params,
         &offer_side.party_params,
         &accept_side.party_params,
-        refund_locktime,
-        fee_rate_per_vb,
-        cet_locktime,
     )?;
 
     Ok(dlc_transactions.refund.serialize().unwrap())

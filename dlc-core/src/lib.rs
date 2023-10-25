@@ -1,5 +1,6 @@
 use dlc::{DlcTransactions, PartyParams};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
+
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
 pub mod error;
@@ -16,14 +17,25 @@ pub struct SideSign<'a> {
     pub refund_sig: &'a Signature,
 }
 
+pub struct ContractParams<'a> {
+    pub contract_info: &'a [ContractInfo],
+    pub refund_locktime: u32,
+    pub cet_locktime: u32,
+    pub fee_rate_per_vb: u64,
+}
+
 fn get_dlc_transactions(
-    contract_info: &[ContractInfo],
+    contract_params: &ContractParams,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
-    refund_locktime: u32,
-    fee_rate_per_vb: u64,
-    cet_locktime: u32,
 ) -> Result<DlcTransactions> {
+    let ContractParams {
+        contract_info,
+        refund_locktime,
+        cet_locktime,
+        fee_rate_per_vb,
+    } = contract_params;
+
     let total_collateral = offer_params.collateral + accept_params.collateral;
     Ok(dlc::create_dlc_transactions(
         &offer_params,
@@ -31,10 +43,10 @@ fn get_dlc_transactions(
         &contract_info[0]
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?,
-        refund_locktime,
-        fee_rate_per_vb,
+        *refund_locktime,
+        *fee_rate_per_vb,
         0,
-        cet_locktime,
+        *cet_locktime,
         u64::MAX / 2,
     )
     .map_err(FromDlcError::Dlc)?)
