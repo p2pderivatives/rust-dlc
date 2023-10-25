@@ -176,3 +176,23 @@ fn sign_multisig_input(
         ])
     };
 }
+
+pub fn get_refund(
+    contract_info: &[ContractInfo],
+    offer_side: &SideSign,
+    accept_side: &SideSign,
+    refund_locktime: u32,
+    fee_rate_per_vb: u64,
+    cet_locktime: u32,
+) -> Result<Vec<u8>> {
+    let dlc_transactions = get_dlc_transactions(
+        contract_info,
+        &offer_side.party_params,
+        &accept_side.party_params,
+        refund_locktime,
+        fee_rate_per_vb,
+        cet_locktime,
+    )?;
+
+    Ok(dlc_transactions.refund.serialize().unwrap())
+}
