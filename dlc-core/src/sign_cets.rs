@@ -19,8 +19,8 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     offer_params: &PartyInfos,
     accept_params: &PartyInfos,
     contract_input: &ContractInput,
-    refund_delay: u32,
-    date_ref: u32,
+    refund_locktime: u32,
+    cet_locktime: u32,
     oracle_announcements: &[O],
     fund_secret_key: &SecretKey,
 ) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
@@ -33,8 +33,6 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         .ok_or(FromDlcError::InvalidState(
             "Number of contracts and Oracle Announcement set must match",
         ))?;
-
-    let latest_maturity = get_latest_maturity_date(oracle_announcements)?;
 
     let contract_info = contract_input
         .contract_infos
@@ -54,10 +52,10 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         &contract_info[0]
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?,
-        latest_maturity + refund_delay,
+        refund_locktime,
         contract_input.fee_rate,
         0,
-        date_ref,
+        cet_locktime,
         fund_output_serial_id,
     )
     .map_err(FromDlcError::Dlc)?;
