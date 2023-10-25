@@ -12,15 +12,41 @@ use crate::{
     error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams, SideSign,
 };
 
+pub fn get_refund(
+    contract_params: ContractParams,
+    offer_side: &SideSign,
+    accept_side: &SideSign,
+) -> Result<Vec<u8>> {
+    let dlc_transactions = get_dlc_transactions(
+        &contract_params,
+        &offer_side.party_params,
+        &accept_side.party_params,
+    )?;
+
+    let (refund_sigs_offer, fund_pubkey_offer) =
+        (offer_side.refund_sig, &offer_side.party_params.fund_pubkey);
+
+    let (refund_sigs_accept, fund_pubkey_accept) = (
+        accept_side.refund_sig,
+        &accept_side.party_params.fund_pubkey,
+    );
+
+    let mut refund = dlc_transactions.refund;
+
+    sign_multisig_input(
+        &mut refund,
+        (&refund_sigs_offer, fund_pubkey_offer),
+        (&refund_sigs_accept, fund_pubkey_accept),
+        &dlc_transactions.funding_script_pubkey,
+    );
+
+    Ok(refund.serialize().unwrap())
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttestationData {
     pub index: u32,
     pub attestation: OracleAttestation,
-}
-
-pub struct ContractSettlement {
-    pub contract: Vec<u8>,
-    pub attestations: Vec<AttestationData>,
 }
 
 pub fn get_signed_cet(
@@ -171,35 +197,4 @@ fn sign_multisig_input(
             script_pubkey.to_bytes(),
         ])
     };
-}
-
-pub fn get_refund(
-    contract_params: ContractParams,
-    offer_side: &SideSign,
-    accept_side: &SideSign,
-) -> Result<Vec<u8>> {
-    let dlc_transactions = get_dlc_transactions(
-        &contract_params,
-        &offer_side.party_params,
-        &accept_side.party_params,
-    )?;
-
-    let (refund_sigs_offer, fund_pubkey_offer) =
-        (offer_side.refund_sig, &offer_side.party_params.fund_pubkey);
-
-    let (refund_sigs_accept, fund_pubkey_accept) = (
-        accept_side.refund_sig,
-        &accept_side.party_params.fund_pubkey,
-    );
-
-    let mut refund = dlc_transactions.refund;
-
-    sign_multisig_input(
-        &mut refund,
-        (&refund_sigs_offer, fund_pubkey_offer),
-        (&refund_sigs_accept, fund_pubkey_accept),
-        &dlc_transactions.funding_script_pubkey,
-    );
-
-    Ok(refund.serialize().unwrap())
 }

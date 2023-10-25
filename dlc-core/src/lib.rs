@@ -11,14 +11,16 @@ pub mod verify_contract;
 
 use crate::error::*;
 
+#[derive(Clone, Copy, Debug)]
 pub struct SideSign<'a> {
     pub party_params: &'a PartyParams,
     pub adaptor_sig: &'a [EcdsaAdaptorSignature],
     pub refund_sig: &'a Signature,
 }
 
-pub struct ContractParams<'a> {
-    pub contract_info: &'a [ContractInfo],
+#[derive(Clone, Debug)]
+pub struct ContractParams {
+    pub contract_info: Vec<ContractInfo>,
     pub refund_locktime: u32,
     pub cet_locktime: u32,
     pub fee_rate_per_vb: u64,

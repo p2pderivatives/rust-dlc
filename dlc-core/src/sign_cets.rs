@@ -15,6 +15,39 @@ pub struct PartyInfos {
     pub funding_input_infos: Vec<FundingInputInfo>,
 }
 
+pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
+    contract_input: &ContractInput,
+    refund_locktime: u32,
+    cet_locktime: u32,
+    oracle_announcements: &[O],
+) -> Result<ContractParams> {
+    let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
+
+    (contract_input.contract_infos.len() == oracle_announcements.len())
+        .then_some(())
+        .ok_or(FromDlcError::InvalidState(
+            "Number of contracts and Oracle Announcement set must match",
+        ))?;
+
+    let contract_info = contract_input
+        .contract_infos
+        .iter()
+        .zip(oracle_announcements.into_iter())
+        .map(|(x, y)| ContractInfo {
+            contract_descriptor: x.contract_descriptor.clone(),
+            oracle_announcements: y.as_ref().to_vec(),
+            threshold: x.oracles.threshold as usize,
+        })
+        .collect::<Vec<ContractInfo>>();
+
+    Ok(ContractParams {
+        contract_info: contract_info,
+        refund_locktime,
+        cet_locktime,
+        fee_rate_per_vb: contract_input.fee_rate,
+    })
+}
+
 pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     offer_params: &PartyInfos,
     accept_params: &PartyInfos,
@@ -43,12 +76,12 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         })
         .collect::<Vec<ContractInfo>>();
 
-    let contract_params = ContractParams {
-        contract_info: &contract_info[..],
+    let contract_params = verify_and_get_contract_params(
+        contract_input,
         refund_locktime,
         cet_locktime,
-        fee_rate_per_vb: contract_input.fee_rate,
-    };
+        oracle_announcements,
+    )?;
 
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
