@@ -20,6 +20,7 @@ pub struct PartyInfos {
 }
 
 pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
+    secp: &Secp256k1<All>,
     contract_input: &ContractInput,
     refund_locktime: u32,
     cet_locktime: u32,
@@ -44,6 +45,16 @@ pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
         })
         .collect::<Vec<ContractInfo>>();
 
+    // Missing check on locktime for refund and contract maturity compared to oracle maturity, cf OfferMsg validate method
+
+    // Maybe some check in validate method of offeredContract too
+
+    for c in &contract_info {
+        for o in &c.oracle_announcements {
+            o.validate(secp).map_err(|e| FromDlcError::Dlc(e))?
+        }
+    }
+
     Ok(ContractParams {
         contract_info: contract_info,
         refund_locktime,
@@ -53,38 +64,17 @@ pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
 }
 
 pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
+    secp: &Secp256k1<All>,
     offer_params: &PartyInfos,
     accept_params: &PartyInfos,
-    contract_input: &ContractInput,
-    refund_locktime: u32,
-    cet_locktime: u32,
-    oracle_announcements: &[O],
+    contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
 ) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
-    let contract_params = verify_and_get_contract_params(
-        contract_input,
-        refund_locktime,
-        cet_locktime,
-        oracle_announcements,
-    )?;
-
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         &offer_params.party_params,
         &accept_params.party_params,
     )?;
-
-    let secp = Secp256k1::new();
-
-    for c in &contract_params.contract_info {
-        for o in &c.oracle_announcements {
-            o.validate(&secp).map_err(|e| FromDlcError::Dlc(e))?
-        }
-    }
-
-    // Missing check on locktime for refund and contract maturity compared to oracle maturity, cf OfferMsg validate method
-
-    // Maybe some check in validate method of offeredContract too
 
     let fund_public_key = PublicKey::from_secret_key(&secp, &fund_secret_key);
 
