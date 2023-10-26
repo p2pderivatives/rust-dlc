@@ -61,25 +61,6 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     oracle_announcements: &[O],
     fund_secret_key: &SecretKey,
 ) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
-    let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
-
-    (contract_input.contract_infos.len() == oracle_announcements.len())
-        .then_some(())
-        .ok_or(FromDlcError::InvalidState(
-            "Number of contracts and Oracle Announcement set must match",
-        ))?;
-
-    let contract_info = contract_input
-        .contract_infos
-        .iter()
-        .zip(oracle_announcements.into_iter())
-        .map(|(x, y)| ContractInfo {
-            contract_descriptor: x.contract_descriptor.clone(),
-            oracle_announcements: y.as_ref().to_vec(),
-            threshold: x.oracles.threshold as usize,
-        })
-        .collect::<Vec<ContractInfo>>();
-
     let contract_params = verify_and_get_contract_params(
         contract_input,
         refund_locktime,
@@ -95,7 +76,7 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
 
     let secp = Secp256k1::new();
 
-    for c in &contract_info {
+    for c in &contract_params.contract_info {
         for o in &c.oracle_announcements {
             o.validate(&secp).map_err(|e| FromDlcError::Dlc(e))?
         }
@@ -117,7 +98,7 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     let sign_res = sign(
         &secp,
         &dlc_transactions,
-        &contract_info,
+        &contract_params.contract_info,
         &fund_secret_key,
         &my_party_params.party_params,
         &counterparty_params.party_params,
