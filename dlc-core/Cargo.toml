@@ -7,16 +7,17 @@ edition = "2021"
 use-serde = [
     "serde",
     "dlc/use-serde",
+    "dlc-manager/serde",
     "dlc-messages/serde",
     "dlc-trie/use-serde",
 ]
 
 [dependencies]
 bitcoin = { version = "0.29.2", features = ["serde"] }
-dlc = { version = "0.4.0", features = ["serde"] }
-dlc-manager = { version = "0.4.0", features = ["serde"] }
-dlc-messages = { version = "0.4.0", features = ["serde"] }
-dlc-trie = { version = "0.4.0", features = ["use-serde"] }
+dlc = { version = "0.4.0", path = "../dlc" }
+dlc-manager = { version = "0.4.0", path = "../dlc-manager" }
+dlc-messages = { version = "0.4.0", path = "../dlc-messages" }
+dlc-trie = { version = "0.4.0", path = "../dlc-trie" }
 hex = "0.4.3"
 log = "0.4.14"
 rand_chacha = { version = "0.3.1", optional = true }

@@ -1,25 +1,11 @@
 use dlc::{DlcTransactions, PartyParams};
 use dlc_manager::contract::{
-    contract_info::ContractInfo, contract_input::ContractInput, AdaptorInfo, FundingInputInfo,
+    contract_info::ContractInfo, contract_input::ContractInput, AdaptorInfo,
 };
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{error::*, get_dlc_transactions, CetSignatures, ContractParams};
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
-pub struct PartyInfos {
-    pub party_params: PartyParams,
-    pub funding_input_infos: Box<[FundingInputInfo]>,
-}
 
 pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
     secp: &Secp256k1<All>,
@@ -67,33 +53,28 @@ pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
 
 pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     secp: &Secp256k1<All>,
-    offer_params: &PartyInfos,
-    accept_params: &PartyInfos,
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
     contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
 ) -> Result<CetSignatures> {
-    let dlc_transactions = get_dlc_transactions(
-        contract_params,
-        &offer_params.party_params,
-        &accept_params.party_params,
-    )?;
+    let dlc_transactions = get_dlc_transactions(contract_params, offer_params, accept_params)?;
 
     let fund_public_key = PublicKey::from_secret_key(secp, fund_secret_key);
 
-    let (my_party_params, counterparty_params) =
-        if offer_params.party_params.fund_pubkey == fund_public_key {
-            (offer_params, accept_params)
-        } else {
-            (accept_params, offer_params)
-        };
+    let (my_party_params, counterparty_params) = if offer_params.fund_pubkey == fund_public_key {
+        (offer_params, accept_params)
+    } else {
+        (accept_params, offer_params)
+    };
 
     let sign_res = sign(
         secp,
         &dlc_transactions,
         &contract_params.contract_info,
         fund_secret_key,
-        &my_party_params.party_params,
-        &counterparty_params.party_params,
+        my_party_params,
+        counterparty_params,
     )?;
 
     Ok(sign_res.1)
