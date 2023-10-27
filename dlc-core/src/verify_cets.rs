@@ -5,13 +5,13 @@ use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, Secp256k1};
 use crate::{error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams};
 
 pub fn check_signed_dlc(
-    contract_params: ContractParams,
+    contract_params: &ContractParams,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     adaptor_sig: &[EcdsaAdaptorSignature],
     refund_sig: &Signature,
 ) -> Result<(Box<[AdaptorInfo]>, bool)> {
-    let dlc_transactions = get_dlc_transactions(&contract_params, offer_params, accept_params)?;
+    let dlc_transactions = get_dlc_transactions(contract_params, offer_params, accept_params)?;
 
     let cet_adaptor_signatures = &adaptor_sig;
 

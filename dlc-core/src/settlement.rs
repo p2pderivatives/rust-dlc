@@ -19,7 +19,7 @@ use crate::{
 use serde::Serialize;
 
 pub fn get_refund(
-    contract_params: ContractParams,
+    contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
 ) -> Result<Box<[u8]>> {
@@ -57,7 +57,7 @@ pub struct AttestationData<'o> {
 }
 
 pub fn get_signed_cet(
-    contract_params: ContractParams,
+    contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
     attestations: &[AttestationData],

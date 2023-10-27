@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn check_all_signed_dlc(
-    contract_params: ContractParams,
+    contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
 ) -> Result<Box<[u8]>> {
