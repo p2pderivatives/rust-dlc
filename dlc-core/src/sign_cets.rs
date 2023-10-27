@@ -3,12 +3,12 @@ use dlc_manager::contract::{
     contract_info::ContractInfo, contract_input::ContractInput, AdaptorInfo,
 };
 use dlc_messages::oracle_msgs::OracleAnnouncement;
-use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey, Verification};
 
 use crate::{error::*, get_dlc_transactions, CetSignatures, ContractParams};
 
-pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
-    secp: &Secp256k1<All>,
+pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncement]>>(
+    secp: &Secp256k1<C>,
     contract_input: &ContractInput,
     refund_locktime: u32,
     cet_locktime: u32,
