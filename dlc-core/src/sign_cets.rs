@@ -51,7 +51,7 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
     })
 }
 
-pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
+pub fn sign_cets(
     secp: &Secp256k1<All>,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
