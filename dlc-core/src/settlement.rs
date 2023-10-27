@@ -43,7 +43,7 @@ pub fn get_refund(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(refund.serialize().unwrap().into_boxed_slice())
+    Ok(refund.serialize()?.into_boxed_slice())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -81,8 +81,13 @@ pub fn get_signed_cet(
     )?;
     let (range_info, sigs): (RangeInfo, Box<[Vec<SchnorrSignature>]>) =
         get_range_info_and_oracle_sigs(
-            &contract_params.contract_info.get(0).unwrap(),
-            adaptor_infos.get(0).unwrap(),
+            contract_params
+                .contract_info
+                .get(0)
+                .ok_or(FromDlcError::InvalidState("Contract Params malformed"))?,
+            adaptor_infos
+                .get(0)
+                .ok_or(FromDlcError::InvalidState("Contract Params malformed"))?,
             &attestations,
         )?;
     let mut cet = dlc_transactions.cets[range_info.cet_index].clone();
@@ -116,7 +121,7 @@ pub fn get_signed_cet(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(Serializable::serialize(&cet).unwrap().into_boxed_slice())
+    Ok(Serializable::serialize(&cet)?.into_boxed_slice())
 }
 
 fn get_range_info_and_oracle_sigs(
@@ -157,12 +162,16 @@ fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKe
     let secret = SecretKey::from_slice(s_values[0])
         .map_err(|e| FromDlcError::Secp(secp256k1_zkp::Error::Upstream(e)))?;
 
-    let result = s_values.iter().skip(1).fold(secret, |accum, s| {
-        let sec = SecretKey::from_slice(s).unwrap();
-        accum.add_tweak(&Scalar::from(sec)).unwrap()
-    });
-
-    Ok(result)
+    s_values
+        .iter()
+        .skip(1)
+        .try_fold(secret, |accum, s| -> Result<SecretKey> {
+            let sec = SecretKey::from_slice(s)
+                .map_err(|e| FromDlcError::Secp(secp256k1_zkp::Error::Upstream(e)))?;
+            accum
+                .add_tweak(&Scalar::from(sec))
+                .map_err(|e| FromDlcError::Secp(secp256k1_zkp::Error::Upstream(e)))
+        })
 }
 
 fn finalize_sig(sig: &Signature, sig_hash_type: EcdsaSighashType) -> Vec<u8> {

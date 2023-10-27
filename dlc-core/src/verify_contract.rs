@@ -40,9 +40,7 @@ pub fn check_all_signed_dlc(
         &offer_side.party_params,
     )?;
 
-    Ok(Serializable::serialize(&dlc_transactions.fund)
-        .unwrap()
-        .into_boxed_slice())
+    Ok(Serializable::serialize(&dlc_transactions.fund)?.into_boxed_slice())
 }
 
 fn validate_presigned_with_infos(
