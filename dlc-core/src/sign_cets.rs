@@ -6,6 +6,10 @@ use dlc_messages::oracle_msgs::OracleAnnouncement;
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{error::*, get_dlc_transactions, CetSignatures, ContractParams};
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",

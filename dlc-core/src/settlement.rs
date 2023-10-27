@@ -15,6 +15,9 @@ use crate::{
     error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams, SideSign,
 };
 
+#[cfg(feature = "serde")]
+use serde::Serialize;
+
 pub fn get_refund(
     contract_params: ContractParams,
     offer_side: &SideSign,
@@ -43,10 +46,11 @@ pub fn get_refund(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(refund.serialize()?.into_boxed_slice())
+    Ok(Serializable::serialize(&refund)?.into_boxed_slice())
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
 pub struct AttestationData<'o> {
     pub index: u32,
     pub attestation: &'o OracleAttestation,

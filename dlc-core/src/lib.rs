@@ -10,6 +10,8 @@ pub mod verify_cets;
 pub mod verify_contract;
 
 use crate::error::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(
@@ -23,11 +25,7 @@ pub struct CetSignatures {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
 pub struct SideSign<'a> {
     pub party_params: &'a PartyParams,
     pub adaptor_sig: &'a [EcdsaAdaptorSignature],
