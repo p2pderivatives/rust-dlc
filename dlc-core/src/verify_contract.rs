@@ -23,21 +23,21 @@ pub fn check_all_signed_dlc(
     let adaptor_infos = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
-        &accept_side.refund_sig,
-        &accept_side.adaptor_sig,
+        accept_side.refund_sig,
+        accept_side.adaptor_sig,
         &contract_params.contract_info,
-        &offer_side.party_params,
-        &accept_side.party_params,
+        offer_side.party_params,
+        accept_side.party_params,
     )?;
 
     validate_presigned_with_infos(
         &secp,
         &dlc_transactions,
-        &offer_side.refund_sig,
-        &offer_side.adaptor_sig,
+        offer_side.refund_sig,
+        offer_side.adaptor_sig,
         &contract_params.contract_info,
         &adaptor_infos,
-        &offer_side.party_params,
+        offer_side.party_params,
     )?;
 
     Ok(Serializable::serialize(&dlc_transactions.fund)?.into_boxed_slice())
@@ -77,7 +77,7 @@ fn validate_presigned_with_infos(
                 &dlc_transactions.funding_script_pubkey,
                 fund_output_value,
                 &dlc_transactions.cets,
-                &cet_adaptor_signatures,
+                cet_adaptor_signatures,
                 adaptor_sig_start,
                 adaptor_info,
             )

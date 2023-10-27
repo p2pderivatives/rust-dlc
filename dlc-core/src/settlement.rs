@@ -22,8 +22,8 @@ pub fn get_refund(
 ) -> Result<Box<[u8]>> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
-        &offer_side.party_params,
-        &accept_side.party_params,
+        offer_side.party_params,
+        accept_side.party_params,
     )?;
 
     let (refund_sigs_offer, fund_pubkey_offer) =
@@ -38,8 +38,8 @@ pub fn get_refund(
 
     sign_multisig_input(
         &mut refund,
-        (&refund_sigs_offer, fund_pubkey_offer),
-        (&refund_sigs_accept, fund_pubkey_accept),
+        (refund_sigs_offer, fund_pubkey_offer),
+        (refund_sigs_accept, fund_pubkey_accept),
         &dlc_transactions.funding_script_pubkey,
     );
 
@@ -56,7 +56,7 @@ pub fn get_signed_cet(
     contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-    attestations: Box<[AttestationData]>,
+    attestations: &[AttestationData],
 ) -> Result<Box<[u8]>> {
     let attestations: Box<[(usize, &OracleAttestation)]> = attestations
         .iter()
@@ -65,19 +65,19 @@ pub fn get_signed_cet(
 
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
-        &offer_side.party_params,
-        &accept_side.party_params,
+        offer_side.party_params,
+        accept_side.party_params,
     )?;
     let secp = Secp256k1::new();
 
     let adaptor_infos = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
-        &accept_side.refund_sig,
-        &accept_side.adaptor_sig,
+        accept_side.refund_sig,
+        accept_side.adaptor_sig,
         &contract_params.contract_info,
-        &offer_side.party_params,
-        &accept_side.party_params,
+        offer_side.party_params,
+        accept_side.party_params,
     )?;
     let (range_info, sigs): (RangeInfo, Box<[Vec<SchnorrSignature>]>) =
         get_range_info_and_oracle_sigs(
@@ -92,13 +92,11 @@ pub fn get_signed_cet(
         )?;
     let mut cet = dlc_transactions.cets[range_info.cet_index].clone();
 
-    let (adaptor_sigs_offer, fund_pubkey_offer) = (
-        offer_side.adaptor_sig.as_ref(),
-        &offer_side.party_params.fund_pubkey,
-    );
+    let (adaptor_sigs_offer, fund_pubkey_offer) =
+        (offer_side.adaptor_sig, &offer_side.party_params.fund_pubkey);
 
     let (adaptor_sigs_accept, fund_pubkey_accept) = (
-        accept_side.adaptor_sig.as_ref(),
+        accept_side.adaptor_sig,
         &accept_side.party_params.fund_pubkey,
     );
 

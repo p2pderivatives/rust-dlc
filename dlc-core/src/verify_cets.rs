@@ -22,22 +22,22 @@ pub fn check_signed_dlc(
     let adaptor_infos = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
-        &refund_sig,
-        &cet_adaptor_signatures,
+        refund_sig,
+        cet_adaptor_signatures,
         &contract_params.contract_info,
-        &offer_params,
-        &accept_params,
+        offer_params,
+        accept_params,
     )
     .or_else(|_| {
         is_offer = true;
         validate_presigned_without_infos(
             &secp,
             &dlc_transactions,
-            &refund_sig,
-            &cet_adaptor_signatures,
+            refund_sig,
+            cet_adaptor_signatures,
             &contract_params.contract_info,
-            &accept_params,
-            &offer_params,
+            accept_params,
+            offer_params,
         )
     })?;
 

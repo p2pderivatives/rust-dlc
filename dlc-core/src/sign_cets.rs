@@ -3,11 +3,9 @@ use dlc_manager::contract::{
     contract_info::ContractInfo, contract_input::ContractInput, AdaptorInfo, FundingInputInfo,
 };
 use dlc_messages::oracle_msgs::OracleAnnouncement;
-use secp256k1_zkp::{
-    ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
-};
+use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
-use crate::{error::*, get_dlc_transactions, ContractParams, Signatures};
+use crate::{error::*, get_dlc_transactions, CetSignatures, ContractParams};
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -37,7 +35,7 @@ pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
     let contract_info = contract_input
         .contract_infos
         .iter()
-        .zip(oracle_announcements.into_iter())
+        .zip(oracle_announcements.iter())
         .map(|(x, y)| ContractInfo {
             contract_descriptor: x.contract_descriptor.clone(),
             oracle_announcements: y.as_ref().to_vec(),
@@ -51,12 +49,12 @@ pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
 
     for c in contract_info.iter() {
         for o in &c.oracle_announcements {
-            o.validate(secp).map_err(|e| FromDlcError::Dlc(e))?
+            o.validate(secp).map_err(FromDlcError::Dlc)?
         }
     }
 
     Ok(ContractParams {
-        contract_info: contract_info,
+        contract_info,
         refund_locktime,
         cet_locktime,
         fee_rate_per_vb: contract_input.fee_rate,
@@ -69,14 +67,14 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     accept_params: &PartyInfos,
     contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
-) -> Result<Signatures> {
+) -> Result<CetSignatures> {
     let dlc_transactions = get_dlc_transactions(
-        &contract_params,
+        contract_params,
         &offer_params.party_params,
         &accept_params.party_params,
     )?;
 
-    let fund_public_key = PublicKey::from_secret_key(&secp, &fund_secret_key);
+    let fund_public_key = PublicKey::from_secret_key(secp, fund_secret_key);
 
     let (my_party_params, counterparty_params) =
         if offer_params.party_params.fund_pubkey == fund_public_key {
@@ -86,18 +84,15 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         };
 
     let sign_res = sign(
-        &secp,
+        secp,
         &dlc_transactions,
         &contract_params.contract_info,
-        &fund_secret_key,
+        fund_secret_key,
         &my_party_params.party_params,
         &counterparty_params.party_params,
     )?;
 
-    Ok(Signatures {
-        refund_sig: sign_res.2,
-        adaptor_sig: sign_res.1,
-    })
+    Ok(sign_res.1)
 }
 
 fn sign(
@@ -107,8 +102,8 @@ fn sign(
     adaptor_secret_key: &SecretKey,
     own_params: &PartyParams,
     other_params: &PartyParams,
-) -> Result<(Box<[AdaptorInfo]>, Box<[EcdsaAdaptorSignature]>, Signature)> {
-    if PublicKey::from_secret_key(&secp, &adaptor_secret_key) != own_params.fund_pubkey {
+) -> Result<(Box<[AdaptorInfo]>, CetSignatures)> {
+    if PublicKey::from_secret_key(secp, adaptor_secret_key) != own_params.fund_pubkey {
         return Err(FromDlcError::Secp(secp256k1_zkp::Error::Upstream(
             secp256k1_zkp::UpstreamError::InvalidPublicKey,
         )));
@@ -160,8 +155,8 @@ fn sign(
             .get_adaptor_info(
                 secp,
                 total_collateral,
-                &adaptor_secret_key,
-                &funding_script_pubkey,
+                adaptor_secret_key,
+                funding_script_pubkey,
                 input_value,
                 &tmp_cets,
                 adaptor_sigs.len(),
@@ -178,15 +173,17 @@ fn sign(
         secp,
         refund,
         0,
-        &funding_script_pubkey,
+        funding_script_pubkey,
         input_value,
-        &adaptor_secret_key,
+        adaptor_secret_key,
     )
     .map_err(FromDlcError::Dlc)?;
 
     Ok((
         adaptor_infos.into_boxed_slice(),
-        adaptor_sigs.into_boxed_slice(),
-        refund_signature,
+        CetSignatures {
+            refund_sig: refund_signature,
+            adaptor_sig: adaptor_sigs.into_boxed_slice(),
+        },
     ))
 }

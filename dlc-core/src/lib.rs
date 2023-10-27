@@ -17,7 +17,7 @@ use crate::error::*;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct Signatures {
+pub struct CetSignatures {
     pub refund_sig: Signature,
     pub adaptor_sig: Box<[EcdsaAdaptorSignature]>,
 }
@@ -60,9 +60,9 @@ fn get_dlc_transactions(
     } = contract_params;
 
     let total_collateral = offer_params.collateral + accept_params.collateral;
-    Ok(dlc::create_dlc_transactions(
-        &offer_params,
-        &accept_params,
+    dlc::create_dlc_transactions(
+        offer_params,
+        accept_params,
         &contract_info[0]
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?,
@@ -72,7 +72,7 @@ fn get_dlc_transactions(
         *cet_locktime,
         u64::MAX / 2,
     )
-    .map_err(FromDlcError::Dlc)?)
+    .map_err(FromDlcError::Dlc)
 }
 
 fn validate_presigned_without_infos(
@@ -107,13 +107,13 @@ fn validate_presigned_without_infos(
 
     let (adaptor_info, mut adaptor_index) = contract_info[0]
         .verify_and_get_adaptor_info(
-            &secp,
+            secp,
             total_collateral,
             &checked_params.fund_pubkey,
             &funding_script_pubkey,
             fund_output_value,
             &cets,
-            &cet_adaptor_signatures,
+            cet_adaptor_signatures,
             0,
         )
         .map_err(FromDlcError::Manager)?;
@@ -140,13 +140,13 @@ fn validate_presigned_without_infos(
 
         let (adaptor_info, tmp_adaptor_index) = contract_info
             .verify_and_get_adaptor_info(
-                &secp,
+                secp,
                 total_collateral,
                 &checked_params.fund_pubkey,
                 &funding_script_pubkey,
                 fund_output_value,
                 &tmp_cets,
-                &cet_adaptor_signatures,
+                cet_adaptor_signatures,
                 adaptor_index,
             )
             .map_err(FromDlcError::Manager)?;
