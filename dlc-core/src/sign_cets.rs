@@ -7,7 +7,7 @@ use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey,
 };
 
-use crate::{error::*, get_dlc_transactions, ContractParams};
+use crate::{error::*, get_dlc_transactions, ContractParams, Signatures};
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -16,7 +16,7 @@ use crate::{error::*, get_dlc_transactions, ContractParams};
 )]
 pub struct PartyInfos {
     pub party_params: PartyParams,
-    pub funding_input_infos: Vec<FundingInputInfo>,
+    pub funding_input_infos: Box<[FundingInputInfo]>,
 }
 
 pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
@@ -43,13 +43,13 @@ pub fn verify_and_get_contract_params<O: AsRef<[OracleAnnouncement]>>(
             oracle_announcements: y.as_ref().to_vec(),
             threshold: x.oracles.threshold as usize,
         })
-        .collect::<Vec<ContractInfo>>();
+        .collect::<Box<[ContractInfo]>>();
 
     // Missing check on locktime for refund and contract maturity compared to oracle maturity, cf OfferMsg validate method
 
     // Maybe some check in validate method of offeredContract too
 
-    for c in &contract_info {
+    for c in contract_info.iter() {
         for o in &c.oracle_announcements {
             o.validate(secp).map_err(|e| FromDlcError::Dlc(e))?
         }
@@ -69,7 +69,7 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
     accept_params: &PartyInfos,
     contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
-) -> Result<(Vec<EcdsaAdaptorSignature>, Signature)> {
+) -> Result<Signatures> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         &offer_params.party_params,
@@ -94,7 +94,10 @@ pub fn sign_cets<O: AsRef<[OracleAnnouncement]>>(
         &counterparty_params.party_params,
     )?;
 
-    Ok((sign_res.1, sign_res.2))
+    Ok(Signatures {
+        refund_sig: sign_res.2,
+        adaptor_sig: sign_res.1,
+    })
 }
 
 fn sign(
@@ -104,7 +107,7 @@ fn sign(
     adaptor_secret_key: &SecretKey,
     own_params: &PartyParams,
     other_params: &PartyParams,
-) -> Result<(Vec<AdaptorInfo>, Vec<EcdsaAdaptorSignature>, Signature)> {
+) -> Result<(Box<[AdaptorInfo]>, Box<[EcdsaAdaptorSignature]>, Signature)> {
     if PublicKey::from_secret_key(&secp, &adaptor_secret_key) != own_params.fund_pubkey {
         return Err(FromDlcError::Secp(secp256k1_zkp::Error::Upstream(
             secp256k1_zkp::UpstreamError::InvalidPublicKey,
@@ -181,5 +184,9 @@ fn sign(
     )
     .map_err(FromDlcError::Dlc)?;
 
-    Ok((adaptor_infos, adaptor_sigs, refund_signature))
+    Ok((
+        adaptor_infos.into_boxed_slice(),
+        adaptor_sigs.into_boxed_slice(),
+        refund_signature,
+    ))
 }

@@ -1,7 +1,10 @@
 use dlc_manager::contract::ser::Serializable;
 use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_trie::RangeInfo;
-use secp256k1_zkp::{schnorr::Signature as SchnorrSignature, Secp256k1};
+use secp256k1_zkp::{
+    schnorr::{self, Signature as SchnorrSignature},
+    Secp256k1,
+};
 
 use bitcoin::{EcdsaSighashType, Script, Transaction, Witness};
 use dlc::secp_utils;
@@ -16,7 +19,7 @@ pub fn get_refund(
     contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-) -> Result<Vec<u8>> {
+) -> Result<Box<[u8]>> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         &offer_side.party_params,
@@ -40,24 +43,24 @@ pub fn get_refund(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(refund.serialize().unwrap())
+    Ok(refund.serialize().unwrap().into_boxed_slice())
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct AttestationData {
+pub struct AttestationData<'o> {
     pub index: u32,
-    pub attestation: OracleAttestation,
+    pub attestation: &'o OracleAttestation,
 }
 
 pub fn get_signed_cet(
     contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-    attestations: Vec<AttestationData>,
-) -> Result<Vec<u8>> {
-    let attestations: Vec<(usize, OracleAttestation)> = attestations
-        .into_iter()
-        .map(|x| (x.index as usize, x.attestation.into()))
+    attestations: Box<[AttestationData]>,
+) -> Result<Box<[u8]>> {
+    let attestations: Box<[(usize, &OracleAttestation)]> = attestations
+        .iter()
+        .map(|x| (x.index as usize, x.attestation))
         .collect();
 
     let dlc_transactions = get_dlc_transactions(
@@ -76,7 +79,7 @@ pub fn get_signed_cet(
         &offer_side.party_params,
         &accept_side.party_params,
     )?;
-    let (range_info, sigs): (RangeInfo, Vec<Vec<SchnorrSignature>>) =
+    let (range_info, sigs): (RangeInfo, Box<[Vec<SchnorrSignature>]>) =
         get_range_info_and_oracle_sigs(
             &contract_params.contract_info.get(0).unwrap(),
             adaptor_infos.get(0).unwrap(),
@@ -94,7 +97,7 @@ pub fn get_signed_cet(
         &accept_side.party_params.fund_pubkey,
     );
 
-    let adaptor_secret = signatures_to_secret(sigs.as_slice())?;
+    let adaptor_secret = signatures_to_secret(&sigs)?;
 
     sign_multisig_input(
         &mut cet,
@@ -113,21 +116,21 @@ pub fn get_signed_cet(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(Serializable::serialize(&cet).unwrap())
+    Ok(Serializable::serialize(&cet).unwrap().into_boxed_slice())
 }
 
 fn get_range_info_and_oracle_sigs(
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
-    attestations: &[(usize, OracleAttestation)],
-) -> Result<(RangeInfo, Vec<Vec<secp256k1_zkp::schnorr::Signature>>)> {
+    attestations: &[(usize, &OracleAttestation)],
+) -> Result<(RangeInfo, Box<[Vec<schnorr::Signature>]>)> {
     let outcomes = attestations
         .iter()
         .map(|(i, x)| (*i, &x.outcomes))
         .collect::<Vec<(usize, &Vec<String>)>>();
     let info_opt = contract_info.get_range_info_for_outcome(adaptor_info, &outcomes, 0);
     if let Some((sig_infos, range_info)) = info_opt {
-        let sigs: Vec<Vec<_>> = attestations
+        let sigs: Box<[Vec<_>]> = attestations
             .iter()
             .filter_map(|(i, a)| {
                 let sig_info = sig_infos.iter().find(|x| x.0 == *i)?;
@@ -150,7 +153,7 @@ fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKe
             Ok(v) => Ok(v.1),
             Err(err) => Err(FromDlcError::Dlc(err)),
         })
-        .collect::<Result<Vec<&[u8]>>>()?;
+        .collect::<Result<Box<[&[u8]]>>>()?;
     let secret = SecretKey::from_slice(s_values[0])
         .map_err(|e| FromDlcError::Secp(secp256k1_zkp::Error::Upstream(e)))?;
 

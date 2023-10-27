@@ -1,4 +1,4 @@
-use dlc::{DlcTransactions, PartyParams};
+use dlc::{DlcTransactions, PartyParams, Payout};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
@@ -10,6 +10,17 @@ pub mod verify_cets;
 pub mod verify_contract;
 
 use crate::error::*;
+
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct Signatures {
+    pub refund_sig: Signature,
+    pub adaptor_sig: Box<[EcdsaAdaptorSignature]>,
+}
 
 #[derive(Clone, Debug)]
 #[cfg_attr(
@@ -30,7 +41,7 @@ pub struct SideSign<'a> {
     serde(rename_all = "camelCase")
 )]
 pub struct ContractParams {
-    pub contract_info: Vec<ContractInfo>,
+    pub contract_info: Box<[ContractInfo]>,
     pub refund_locktime: u32,
     pub cet_locktime: u32,
     pub fee_rate_per_vb: u64,
@@ -72,7 +83,7 @@ fn validate_presigned_without_infos(
     contract_info: &[ContractInfo],
     own_params: &PartyParams,
     checked_params: &PartyParams,
-) -> Result<Vec<AdaptorInfo>> {
+) -> Result<Box<[AdaptorInfo]>> {
     let DlcTransactions {
         fund: _,
         mut cets,
@@ -112,9 +123,10 @@ fn validate_presigned_without_infos(
     let cet_input = cets[0].input[0].clone();
 
     for contract_info in contract_info.iter().skip(1) {
-        let payouts: Vec<dlc::Payout> = contract_info
+        let payouts: Box<[Payout]> = contract_info
             .get_payouts(total_collateral)
-            .map_err(FromDlcError::Manager)?;
+            .map_err(FromDlcError::Manager)?
+            .into_boxed_slice();
 
         let tmp_cets = dlc::create_cets(
             &cet_input,
@@ -145,5 +157,5 @@ fn validate_presigned_without_infos(
 
         adaptor_infos.push(adaptor_info);
     }
-    Ok(adaptor_infos)
+    Ok(adaptor_infos.into_boxed_slice())
 }

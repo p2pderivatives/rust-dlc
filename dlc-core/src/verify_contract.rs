@@ -11,7 +11,7 @@ pub fn check_all_signed_dlc(
     contract_params: ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-) -> Result<Vec<u8>> {
+) -> Result<Box<[u8]>> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         offer_side.party_params,
@@ -40,7 +40,9 @@ pub fn check_all_signed_dlc(
         &offer_side.party_params,
     )?;
 
-    Ok(Serializable::serialize(&dlc_transactions.fund).unwrap())
+    Ok(Serializable::serialize(&dlc_transactions.fund)
+        .unwrap()
+        .into_boxed_slice())
 }
 
 fn validate_presigned_with_infos(

@@ -10,7 +10,7 @@ pub fn check_signed_dlc(
     accept_params: &PartyParams,
     adaptor_sig: &[EcdsaAdaptorSignature],
     refund_sig: &Signature,
-) -> Result<(Vec<AdaptorInfo>, bool)> {
+) -> Result<(Box<[AdaptorInfo]>, bool)> {
     let dlc_transactions = get_dlc_transactions(&contract_params, offer_params, accept_params)?;
 
     let cet_adaptor_signatures = &adaptor_sig;
