@@ -175,9 +175,10 @@ trait Evaluable {
         }
 
         if payout_double > total_collateral as f64 {
-            return Err(Error::InvalidParameters(
-                "Computed payout is greater than total collateral".to_string(),
-            ));
+            return Err(Error::InvalidParameters(format!(
+                "Computed payout is greater than total collateral, got {} at outcome {} for total collateral {}",
+                payout_double, outcome, total_collateral
+            )));
         }
 
         // Ensure that we never round over the total collateral.
@@ -311,9 +312,9 @@ impl Evaluable for PolynomialPayoutCurvePiece {
             return if left_point.outcome_payout == right_point.outcome_payout {
                 right_point.outcome_payout as f64
             } else {
-                let slope = (right_point.outcome_payout - left_point.outcome_payout) as f64
-                    / (right_point.event_outcome - left_point.event_outcome) as f64;
-                (outcome - left_point.event_outcome) as f64 * slope
+                let slope = (right_point.outcome_payout as f64 - left_point.outcome_payout as f64)
+                    / (right_point.event_outcome as f64 - left_point.event_outcome as f64);
+                (outcome as f64 - left_point.event_outcome as f64) * slope
                     + left_point.outcome_payout as f64
             };
         }
