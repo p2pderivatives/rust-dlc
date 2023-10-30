@@ -13,8 +13,8 @@ use bitcoin::{
     Txid,
 };
 use bitcoin::{Address, OutPoint, TxOut};
+use bitcoincore_rpc::jsonrpc::serde_json::{self};
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
-use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
 use dlc_manager::{Blockchain, Signer, Utxo, Wallet};
 use json::EstimateMode;
@@ -30,6 +30,8 @@ pub struct BitcoinCoreProvider {
     // Used to implement the FeeEstimator interface, heavily inspired by
     // https://github.com/lightningdevkit/ldk-sample/blob/main/src/bitcoind_client.rs#L26
     fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
+    /// Indicates whether the wallet is descriptor based or not.
+    is_descriptor: bool,
 }
 
 #[derive(Debug)]
@@ -95,10 +97,10 @@ impl BitcoinCoreProvider {
             rpc_base
         };
         let auth = Auth::UserPass(rpc_user, rpc_password);
-        Ok(Self::new_from_rpc_client(Client::new(&rpc_url, auth)?))
+        Self::new_from_rpc_client(Client::new(&rpc_url, auth)?)
     }
 
-    pub fn new_from_rpc_client(rpc_client: Client) -> Self {
+    pub fn new_from_rpc_client(rpc_client: Client) -> Result<Self, Error> {
         let client = Arc::new(Mutex::new(rpc_client));
         let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
         fees.insert(ConfirmationTarget::Background, AtomicU32::new(MIN_FEERATE));
@@ -106,7 +108,22 @@ impl BitcoinCoreProvider {
         fees.insert(ConfirmationTarget::HighPriority, AtomicU32::new(5000));
         let fees = Arc::new(fees);
         poll_for_fee_estimates(client.clone(), fees.clone());
-        BitcoinCoreProvider { client, fees }
+
+        #[derive(serde::Deserialize)]
+        struct Descriptor {
+            descriptors: bool,
+        }
+
+        let is_descriptor = client
+            .lock()
+            .unwrap()
+            .call::<Descriptor>("getwalletinfo", &[])?
+            .descriptors;
+        Ok(BitcoinCoreProvider {
+            client,
+            fees,
+            is_descriptor,
+        })
     }
 }
 
@@ -144,22 +161,46 @@ fn enc_err_to_manager_err(_e: EncodeError) -> ManagerError {
     Error::BitcoinError.into()
 }
 
+#[derive(serde::Deserialize, Debug)]
+struct DescriptorInfo {
+    desc: String,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct DescriptorListResponse {
+    descriptors: Vec<DescriptorInfo>,
+}
+
 impl Signer for BitcoinCoreProvider {
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
-        let b_pubkey = bitcoin::PublicKey {
-            compressed: true,
-            inner: *pubkey,
-        };
-        let address =
-            Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
+        if self.is_descriptor {
+            let client = self.client.lock().unwrap();
+            let DescriptorListResponse { descriptors } = client
+                .call::<DescriptorListResponse>("listdescriptors", &[serde_json::Value::Bool(true)])
+                .map_err(rpc_err_to_manager_err)?;
+            descriptors
+                .iter()
+                .filter_map(|x| descriptor_to_secret_key(&x.desc))
+                .find(|x| x.public_key(secp256k1_zkp::SECP256K1) == *pubkey)
+                .ok_or(ManagerError::InvalidState(
+                    "Expected a descriptor at this position".to_string(),
+                ))
+        } else {
+            let b_pubkey = bitcoin::PublicKey {
+                compressed: true,
+                inner: *pubkey,
+            };
+            let address =
+                Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
 
-        let pk = self
-            .client
-            .lock()
-            .unwrap()
-            .dump_private_key(&address)
-            .map_err(rpc_err_to_manager_err)?;
-        Ok(pk.inner)
+            let pk = self
+                .client
+                .lock()
+                .unwrap()
+                .dump_private_key(&address)
+                .map_err(rpc_err_to_manager_err)?;
+            Ok(pk.inner)
+        }
     }
 
     fn sign_tx_input(
@@ -200,27 +241,34 @@ impl Wallet for BitcoinCoreProvider {
         self.client
             .lock()
             .unwrap()
-            .get_new_address(None, Some(AddressType::Bech32))
+            .call(
+                "getnewaddress",
+                &[
+                    serde_json::Value::Null,
+                    serde_json::Value::String("bech32m".to_string()),
+                ],
+            )
             .map_err(rpc_err_to_manager_err)
     }
 
     fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
         let sk = SecretKey::new(&mut thread_rng());
         let network = self.get_network()?;
-        self.client
-            .lock()
-            .unwrap()
-            .import_private_key(
-                &PrivateKey {
-                    compressed: true,
-                    network,
-                    inner: sk,
-                },
-                None,
-                Some(false),
-            )
-            .map_err(rpc_err_to_manager_err)?;
-
+        let client = self.client.lock().unwrap();
+        let pk = PrivateKey {
+            compressed: true,
+            network,
+            inner: sk,
+        };
+        if self.is_descriptor {
+            let wif = pk.to_wif();
+            let desc = format!("rawtr({wif})");
+            import_descriptor(&client, &desc)?;
+        } else {
+            client
+                .import_private_key(&pk, None, Some(false))
+                .map_err(rpc_err_to_manager_err)?;
+        }
         Ok(sk)
     }
 
@@ -234,9 +282,18 @@ impl Wallet for BitcoinCoreProvider {
         let utxo_res = client
             .list_unspent(None, None, None, Some(false), None)
             .map_err(rpc_err_to_manager_err)?;
+        let locked = client
+            .call::<Vec<serde_json::Value>>("listlockunspent", &[])
+            .map_err(rpc_err_to_manager_err)?
+            .iter()
+            .map(|x| OutPoint {
+                txid: x["txid"].as_str().unwrap().parse().unwrap(),
+                vout: x["vout"].as_u64().unwrap() as u32,
+            })
+            .collect::<Vec<_>>();
         let mut utxo_pool: Vec<UtxoWrap> = utxo_res
             .iter()
-            .filter(|x| x.spendable)
+            .filter(|x| x.spendable && locked.iter().all(|y| y.txid != x.txid || y.vout != x.vout))
             .map(|x| {
                 Ok(UtxoWrap(Utxo {
                     tx_out: TxOut {
@@ -267,11 +324,16 @@ impl Wallet for BitcoinCoreProvider {
     }
 
     fn import_address(&self, address: &Address) -> Result<(), ManagerError> {
-        self.client
-            .lock()
-            .unwrap()
-            .import_address(address, None, Some(false))
-            .map_err(rpc_err_to_manager_err)
+        if self.is_descriptor {
+            let desc = format!("addr({address})");
+            import_descriptor(&self.client.lock().unwrap(), &desc)
+        } else {
+            self.client
+                .lock()
+                .unwrap()
+                .import_address(address, None, Some(false))
+                .map_err(rpc_err_to_manager_err)
+        }
     }
 }
 
@@ -411,4 +473,28 @@ fn poll_for_fee_estimates(
 
         std::thread::sleep(Duration::from_secs(60));
     });
+}
+
+fn import_descriptor(client: &Client, desc: &str) -> Result<(), ManagerError> {
+    let info = client
+        .get_descriptor_info(desc)
+        .map_err(rpc_err_to_manager_err)?;
+    let checksum = info.checksum;
+    let args: serde_json::Value = serde_json::from_str(&format!(
+        "[{{ \"desc\": \"{desc}#{checksum}\", \"timestamp\": \"now\" }}]"
+    ))
+    .unwrap();
+    client
+        .call::<Vec<serde_json::Value>>("importdescriptors", &[args])
+        .map_err(rpc_err_to_manager_err)?;
+    Ok(())
+}
+
+fn descriptor_to_secret_key(desc: &str) -> Option<SecretKey> {
+    if !desc.starts_with("rawtr") {
+        return None;
+    }
+    let wif = desc.split_once('(')?.1.split_once(')')?.0;
+    let priv_key = PrivateKey::from_wif(wif).ok()?;
+    Some(priv_key.inner)
 }

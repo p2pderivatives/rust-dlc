@@ -2,7 +2,7 @@ version: "3.4"
 services:
   ### BITCOIND
   bitcoind:
-    image: ruimarinho/bitcoin-core:0.20.0
+    image: ruimarinho/bitcoin-core:24.0.1
     container_name: bitcoin-node
     command: |
       -conf=/config/default.conf

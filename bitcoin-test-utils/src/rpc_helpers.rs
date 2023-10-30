@@ -1,5 +1,4 @@
 use bitcoincore_rpc::{Auth, Client, RpcApi};
-use bitcoincore_rpc_json::AddressType;
 use std::env;
 
 pub const OFFER_PARTY: &str = "alice";
@@ -64,13 +63,13 @@ pub fn init_clients() -> (Client, Client, Client) {
     let sink_rpc = get_new_wallet_rpc(&rpc, SINK, auth).unwrap();
 
     let offer_address = offer_rpc
-        .get_new_address(None, Some(AddressType::Bech32))
+        .call("getnewaddress", &["".into(), "bech32m".into()])
         .unwrap();
     let accept_address = accept_rpc
-        .get_new_address(None, Some(AddressType::Bech32))
+        .call("getnewaddress", &["".into(), "bech32m".into()])
         .unwrap();
     let sink_address = sink_rpc
-        .get_new_address(None, Some(AddressType::Bech32))
+        .call("getnewaddress", &["".into(), "bech32m".into()])
         .unwrap();
 
     sink_rpc.generate_to_address(1, &offer_address).unwrap();
