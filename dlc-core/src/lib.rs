@@ -40,6 +40,8 @@ pub struct SideSign<'a> {
 )]
 pub struct ContractParams {
     pub contract_info: Box<[ContractInfo]>,
+    pub offer_collateral: u64,
+    pub accept_collateral: u64,
     pub refund_locktime: u32,
     pub cet_locktime: u32,
     pub fee_rate_per_vb: u64,
@@ -52,10 +54,23 @@ fn get_dlc_transactions(
 ) -> Result<DlcTransactions> {
     let ContractParams {
         contract_info,
+        offer_collateral,
+        accept_collateral,
         refund_locktime,
         cet_locktime,
         fee_rate_per_vb,
     } = contract_params;
+
+    (*offer_collateral == offer_params.collateral)
+        .then(|| {})
+        .ok_or(FromDlcError::InvalidState(
+            "Offering party collateral does not match the contract input",
+        ))?;
+    (*accept_collateral == accept_params.collateral)
+        .then(|| {})
+        .ok_or(FromDlcError::InvalidState(
+            "Accepting party collateral does not match the contract input",
+        ))?;
 
     let total_collateral = offer_params.collateral + accept_params.collateral;
     dlc::create_dlc_transactions(

@@ -45,6 +45,8 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
 
     Ok(ContractParams {
         contract_info,
+        offer_collateral: contract_input.offer_collateral,
+        accept_collateral: contract_input.accept_collateral,
         refund_locktime,
         cet_locktime,
         fee_rate_per_vb: contract_input.fee_rate,
