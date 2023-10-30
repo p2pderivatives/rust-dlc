@@ -12,4 +12,6 @@ dlc-manager = {path = "../dlc-manager"}
 lightning = { version = "0.0.118" }
 log = "0.4.14"
 rust-bitcoin-coin-selection = { version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", rev = "405451929568422f7df809e35d6ad8f36fccce90", features = ["rand"] }
+serde = "1.0"
 simple-wallet = {path = "../simple-wallet"}
+secp256k1-zkp = {version = "0.7.0", default-features=false, features = ["global-context"]}
