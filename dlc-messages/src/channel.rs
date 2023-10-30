@@ -134,6 +134,7 @@ impl OfferChannel {
                     c.oracle_info.validate(secp)?;
                 }
             }
+            ContractInfo::OrdContractInfo(_) => return Err(Error::InvalidArgument),
         }
 
         Ok(())

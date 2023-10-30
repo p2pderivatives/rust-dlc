@@ -1,5 +1,6 @@
 //! #ContractInfo
 
+use super::ord_descriptor::OrdOutcomeDescriptor;
 use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
@@ -37,6 +38,9 @@ impl ContractInfo {
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.get_payouts()),
             ContractDescriptor::Numerical(n) => n.get_payouts(total_collateral),
+            ContractDescriptor::Ord(_) => Err(Error::InvalidState(
+                "Should not call this method for Ord contracts".to_string(),
+            )),
         }
     }
 
@@ -81,7 +85,21 @@ impl ContractInfo {
                     funding_script_pubkey,
                     fund_output_value,
                 ),
-                _ => unreachable!(),
+                ContractDescriptor::Ord(o) => match &o.outcome_descriptor {
+                    super::ord_descriptor::OrdOutcomeDescriptor::Enum(e) => {
+                        e.descriptor.get_adaptor_signatures(
+                            secp,
+                            &self.get_oracle_infos(),
+                            self.threshold,
+                            cets,
+                            fund_privkey,
+                            funding_script_pubkey,
+                            fund_output_value,
+                        )
+                    }
+                    super::ord_descriptor::OrdOutcomeDescriptor::Numerical(_) => unreachable!(),
+                },
+                ContractDescriptor::Numerical(_) => unreachable!(),
             },
             AdaptorInfo::Numerical(trie) => Ok(trie.sign(
                 secp,
@@ -140,6 +158,33 @@ impl ContractInfo {
                 adaptor_sigs,
                 adaptor_sig_start,
             )?),
+            ContractDescriptor::Ord(o) => match &o.outcome_descriptor {
+                OrdOutcomeDescriptor::Enum(e) => Ok(e.descriptor.verify_and_get_adaptor_info(
+                    secp,
+                    &oracle_infos,
+                    self.threshold,
+                    fund_pubkey,
+                    funding_script_pubkey,
+                    fund_output_value,
+                    cets,
+                    adaptor_sigs,
+                    adaptor_sig_start,
+                )?),
+                OrdOutcomeDescriptor::Numerical(n) => {
+                    Ok(n.descriptor.verify_and_get_adaptor_info_internal(
+                        secp,
+                        &n.get_range_payouts(total_collateral)?,
+                        fund_pubkey,
+                        funding_script_pubkey,
+                        fund_output_value,
+                        self.threshold,
+                        &self.precompute_points(secp)?,
+                        cets,
+                        adaptor_sigs,
+                        adaptor_sig_start,
+                    )?)
+                }
+            },
         }
     }
 
@@ -158,6 +203,15 @@ impl ContractInfo {
                     outcomes,
                     adaptor_sig_start,
                 ),
+                ContractDescriptor::Ord(o) => match &o.outcome_descriptor {
+                    OrdOutcomeDescriptor::Enum(e) => e.descriptor.get_range_info_for_outcome(
+                        self.oracle_announcements.len(),
+                        self.threshold,
+                        outcomes,
+                        adaptor_sig_start,
+                    ),
+                    OrdOutcomeDescriptor::Numerical(_) => unreachable!(),
+                },
                 _ => unreachable!(),
             },
             AdaptorInfo::Numerical(n) => {
@@ -204,7 +258,26 @@ impl ContractInfo {
                 adaptor_sigs,
                 adaptor_sig_start,
             )?),
-            ContractDescriptor::Numerical(_) => match adaptor_info {
+            ContractDescriptor::Ord(o)
+                if matches!(&o.outcome_descriptor, OrdOutcomeDescriptor::Enum(_)) =>
+            {
+                if let OrdOutcomeDescriptor::Enum(e) = &o.outcome_descriptor {
+                    Ok(e.descriptor.verify_adaptor_info(
+                        secp,
+                        &oracle_infos,
+                        self.threshold,
+                        fund_pubkey,
+                        funding_script_pubkey,
+                        fund_output_value,
+                        cets,
+                        adaptor_sigs,
+                        adaptor_sig_start,
+                    )?)
+                } else {
+                    unreachable!()
+                }
+            }
+            _ => match adaptor_info {
                 AdaptorInfo::Enum => unreachable!(),
                 AdaptorInfo::Numerical(trie) => Ok(trie.verify(
                     secp,
@@ -263,6 +336,28 @@ impl ContractInfo {
                 cets,
                 adaptor_index_start,
             )?),
+            ContractDescriptor::Ord(o) => match &o.outcome_descriptor {
+                OrdOutcomeDescriptor::Enum(e) => Ok(e.descriptor.get_adaptor_info(
+                    secp,
+                    &self.get_oracle_infos(),
+                    self.threshold,
+                    fund_priv_key,
+                    funding_script_pubkey,
+                    fund_output_value,
+                    cets,
+                )?),
+                OrdOutcomeDescriptor::Numerical(n) => Ok(n.descriptor.get_adaptor_info_internal(
+                    secp,
+                    &n.get_range_payouts(total_collateral)?,
+                    fund_priv_key,
+                    funding_script_pubkey,
+                    fund_output_value,
+                    self.threshold,
+                    &self.precompute_points(secp)?,
+                    cets,
+                    adaptor_index_start,
+                )?),
+            },
         }
     }
 

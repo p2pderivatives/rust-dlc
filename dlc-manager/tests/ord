@@ -1,0 +1,3 @@
+#!/bin/sh
+
+docker run --net="host" ghcr.io/p2pderivatives/ord:0.10 "$@"

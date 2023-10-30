@@ -3,10 +3,12 @@
 use crate::conversion_utils::{
     get_contract_info_and_announcements, get_tx_input_infos, BITCOIN_CHAINHASH, PROTOCOL_VERSION,
 };
+use crate::error::Error;
 use crate::utils::get_new_serial_id;
 
 use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
+use super::ord_descriptor::OrdOutcomeDescriptor;
 use super::{ContractDescriptor, FundingInputInfo};
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
@@ -49,7 +51,7 @@ pub struct OfferedContract {
 impl OfferedContract {
     /// Validate that the contract info covers all the possible outcomes that
     /// can be attested by the oracle(s).
-    pub fn validate(&self) -> Result<(), crate::error::Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         dlc::util::validate_fee_rate(self.fee_rate_per_vb).map_err(|_| {
             crate::error::Error::InvalidParameters("Fee rate is too high".to_string())
         })?;
@@ -59,6 +61,12 @@ impl OfferedContract {
             let payouts = match &info.contract_descriptor {
                 ContractDescriptor::Enum(e) => e.get_payouts(),
                 ContractDescriptor::Numerical(e) => e.get_payouts(self.total_collateral)?,
+                ContractDescriptor::Ord(o) => match &o.outcome_descriptor {
+                    OrdOutcomeDescriptor::Enum(e) => e.descriptor.get_payouts(),
+                    OrdOutcomeDescriptor::Numerical(n) => {
+                        n.descriptor.get_payouts(self.total_collateral)?
+                    }
+                },
             };
             let valid = payouts
                 .iter()
@@ -246,6 +254,34 @@ mod tests {
     fn offer_numerical_empty_rounding_interval() {
         validate_offer_test_common(include_str!(
             "../../test_inputs/offer_numerical_empty_rounding_interval.json"
+        ));
+    }
+
+    #[test]
+    fn offer_ord_overlapping_to_offer_ranges() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_ord_overlapping_to_offer.json"
+        ));
+    }
+
+    #[test]
+    fn offer_ord_invalid_interval_to_offer_ranges() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_ord_invalid_interval_to_offer.json"
+        ));
+    }
+
+    #[test]
+    fn offer_ord_out_of_bound_to_offer_ranges() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_ord_out_of_bound_to_offer_ranges.json"
+        ));
+    }
+
+    #[test]
+    fn offer_ord_invalid_enum_to_offer_count() {
+        validate_offer_test_common(include_str!(
+            "../../test_inputs/offer_ord_invalid_enum_to_offer_count.json"
         ));
     }
 }

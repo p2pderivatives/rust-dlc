@@ -5,7 +5,7 @@ use super::utils::{get_majority_combination, unordered_equal};
 use super::AdaptorInfo;
 use crate::error::Error;
 use bitcoin::{Script, Transaction};
-use dlc::OracleInfo;
+use dlc::{DlcTransactions, OracleInfo, PartyParams};
 use dlc::{EnumerationPayout, Payout};
 use dlc_messages::oracle_msgs::EnumEventDescriptor;
 use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
@@ -30,10 +30,7 @@ pub struct EnumDescriptor {
 impl EnumDescriptor {
     /// Returns the set of payouts.
     pub fn get_payouts(&self) -> Vec<Payout> {
-        self.outcome_payouts
-            .iter()
-            .map(|x| x.payout.clone())
-            .collect()
+        self.outcome_payouts.iter().map(|x| x.payout).collect()
     }
 
     /// Validate that the descriptor covers all possible outcomes of the given
@@ -272,5 +269,27 @@ impl EnumDescriptor {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn create_dlc_transactions(
+        &self,
+        offer_params: &PartyParams,
+        accept_params: &PartyParams,
+        refund_locktime: u32,
+        fee_rate_per_vb: u64,
+        fund_locktime: u32,
+        cet_locktime: u32,
+        fund_output_serial_id: u64,
+    ) -> Result<DlcTransactions, Error> {
+        crate::utils::create_dlc_transactions_from_payouts(
+            offer_params,
+            accept_params,
+            &self.get_payouts(),
+            refund_locktime,
+            fee_rate_per_vb,
+            fund_locktime,
+            cet_locktime,
+            fund_output_serial_id,
+        )
     }
 }
