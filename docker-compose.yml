@@ -8,6 +8,7 @@ services:
       -conf=/config/default.conf
       -printtoconsole
       -regtest
+      -txindex
     ports:
       # regtest ports
       - 18443:18443
