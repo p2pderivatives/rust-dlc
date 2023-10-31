@@ -149,7 +149,8 @@ where
         let weight = (tx.weight() + tx.input.len() * (74 + 33)) as u64;
         let fee_rate = self
             .blockchain
-            .get_est_sat_per_1000_weight(ConfirmationTarget::Normal) as u64;
+            .get_est_sat_per_1000_weight(ConfirmationTarget::NonAnchorChannelFee)
+            as u64;
         let fee = (weight * fee_rate) / 1000;
         tx.output[0].value -= fee;
 
@@ -275,7 +276,6 @@ where
                 self.storage.upsert_utxo(&updated)?;
             }
             res.push(org.clone());
-            
         }
         Ok(res)
     }

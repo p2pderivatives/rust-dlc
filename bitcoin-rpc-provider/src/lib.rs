@@ -1,5 +1,6 @@
 //! # Bitcoin rpc provider
 
+use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -101,9 +102,31 @@ impl BitcoinCoreProvider {
     pub fn new_from_rpc_client(rpc_client: Client) -> Self {
         let client = Arc::new(Mutex::new(rpc_client));
         let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
-        fees.insert(ConfirmationTarget::Background, AtomicU32::new(MIN_FEERATE));
-        fees.insert(ConfirmationTarget::Normal, AtomicU32::new(2000));
-        fees.insert(ConfirmationTarget::HighPriority, AtomicU32::new(5000));
+        fees.insert(ConfirmationTarget::OnChainSweep, AtomicU32::new(5000));
+        fees.insert(
+            ConfirmationTarget::MaxAllowedNonAnchorChannelRemoteFee,
+            AtomicU32::new(25 * 250),
+        );
+        fees.insert(
+            ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
+            AtomicU32::new(MIN_FEERATE),
+        );
+        fees.insert(
+            ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee,
+            AtomicU32::new(MIN_FEERATE),
+        );
+        fees.insert(
+            ConfirmationTarget::AnchorChannelFee,
+            AtomicU32::new(MIN_FEERATE),
+        );
+        fees.insert(
+            ConfirmationTarget::NonAnchorChannelFee,
+            AtomicU32::new(2000),
+        );
+        fees.insert(
+            ConfirmationTarget::ChannelCloseMinimum,
+            AtomicU32::new(MIN_FEERATE),
+        );
         let fees = Arc::new(fees);
         poll_for_fee_estimates(client.clone(), fees.clone());
         BitcoinCoreProvider { client, fees }
@@ -378,9 +401,9 @@ fn poll_for_fee_estimates(
     fees: Arc<HashMap<ConfirmationTarget, AtomicU32>>,
 ) {
     std::thread::spawn(move || loop {
-        match query_fee_estimate(&client, 144, EstimateMode::Economical) {
+        match query_fee_estimate(&client, 1008, EstimateMode::Economical) {
             Ok(fee_rate) => {
-                fees.get(&ConfirmationTarget::Background)
+                fees.get(&ConfirmationTarget::MinAllowedAnchorChannelRemoteFee)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
             }
@@ -388,9 +411,25 @@ fn poll_for_fee_estimates(
                 error!("Error querying fee estimate: {}", e);
             }
         };
+        match query_fee_estimate(&client, 144, EstimateMode::Economical) {
+            Ok(fee_rate) => {
+                fees.get(&ConfirmationTarget::AnchorChannelFee)
+                    .unwrap()
+                    .store(fee_rate, Ordering::Release);
+                fees.get(&ConfirmationTarget::ChannelCloseMinimum)
+                    .unwrap()
+                    .store(fee_rate, Ordering::Release);
+                fees.get(&ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee)
+                    .unwrap()
+                    .store(fee_rate - 250, Ordering::Release);
+            }
+            Err(e) => {
+                error!("Error querying fee estimate: {}", e);
+            }
+        };
         match query_fee_estimate(&client, 18, EstimateMode::Conservative) {
             Ok(fee_rate) => {
-                fees.get(&ConfirmationTarget::Normal)
+                fees.get(&ConfirmationTarget::NonAnchorChannelFee)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
             }
@@ -400,9 +439,12 @@ fn poll_for_fee_estimates(
         };
         match query_fee_estimate(&client, 6, EstimateMode::Conservative) {
             Ok(fee_rate) => {
-                fees.get(&ConfirmationTarget::HighPriority)
+                fees.get(&ConfirmationTarget::OnChainSweep)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
+                fees.get(&ConfirmationTarget::MaxAllowedNonAnchorChannelRemoteFee)
+                    .unwrap()
+                    .store(max(25 * 250, fee_rate * 10), Ordering::Release);
             }
             Err(e) => {
                 error!("Error querying fee estimate: {}", e);
