@@ -343,6 +343,11 @@ where
                     SubChannelState::OffChainClosed => {
                         s.is_offer = true;
                         s.update_idx -= 1;
+
+                        // We do this to give older channels a chance to upgrade to the new version which
+                        // expects this field to be set to `Some`.
+                        s.channel_keys_id = Some(channel_details.channel_keys_id);
+
                         Some(s)
                     }
                     _ => return Err(Error::InvalidState(
@@ -437,7 +442,7 @@ where
                     counter_fund_pk: channel_details.counter_funding_pubkey.ok_or_else(|| {
                         Error::InvalidState("Counter funding PK is missing".to_string())
                     })?,
-                    channel_keys_id: channel_details.channel_keys_id,
+                    channel_keys_id: Some(channel_details.channel_keys_id),
                 }
             }
         };
@@ -1611,6 +1616,11 @@ where
         let sub_channel = match sub_channel {
             Some(mut s) => {
                 s.state = SubChannelState::Offered(offered_sub_channel);
+
+                // We do this to give older channels a chance to upgrade to the new version which
+                // expects this field to be set to `Some`.
+                s.channel_keys_id = Some(channel_details.channel_keys_id);
+
                 s
             }
             None => SubChannel {
@@ -1637,7 +1647,7 @@ where
                 counter_fund_pk: channel_details.counter_funding_pubkey.ok_or_else(|| {
                     Error::InvalidState("Counter funding PK is missing".to_string())
                 })?,
-                channel_keys_id: channel_details.channel_keys_id,
+                channel_keys_id: Some(channel_details.channel_keys_id),
             },
         };
 
@@ -3724,11 +3734,24 @@ where
         split_tx: &Transaction,
     ) -> Result<Signature, Error> {
         let mut signers = self.ln_channel_signers.lock().unwrap();
+
+        let channel_keys_id = match sub_channel.channel_keys_id {
+            Some(channel_keys_id) => channel_keys_id,
+            None => {
+                let channel_id = sub_channel.channel_id;
+                let channel_details = self
+                    .ln_channel_manager
+                    .get_channel_details(&channel_id)
+                    .ok_or_else(|| {
+                        Error::InvalidParameters(format!("Unknown LN channel {channel_id:02x?}"))
+                    })?;
+                channel_details.channel_keys_id
+            }
+        };
+
         let signer = signers.entry(sub_channel.channel_id).or_insert(
-            self.signer_provider.derive_ln_dlc_channel_signer(
-                sub_channel.fund_value_satoshis,
-                sub_channel.channel_keys_id,
-            ),
+            self.signer_provider
+                .derive_ln_dlc_channel_signer(sub_channel.fund_value_satoshis, channel_keys_id),
         );
         signer.get_holder_split_tx_signature(
             self.dlc_channel_manager.get_secp(),

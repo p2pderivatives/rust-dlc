@@ -60,7 +60,10 @@ pub struct SubChannel {
     /// The revocation secrets from the remote party for already revoked split transactions.
     pub counter_party_secrets: CounterpartyCommitmentSecrets,
     /// The id used to derive the keys for the Lightning channel.
-    pub channel_keys_id: [u8; 32],
+    ///
+    /// This is an [`Option`] to maintain backwards compatibility with versions of this struct which
+    /// were persisted without this field.
+    pub channel_keys_id: Option<[u8; 32]>,
 }
 
 impl std::fmt::Debug for SubChannel {

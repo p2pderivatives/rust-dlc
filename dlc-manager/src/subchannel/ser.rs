@@ -25,7 +25,7 @@ impl_dlc_writeable!(SubChannel, {
     (own_fund_pk, writeable),
     (counter_fund_pk, writeable),
     (counter_party_secrets, writeable),
-    (channel_keys_id, writeable)
+    (channel_keys_id, option)
 });
 
 impl_dlc_writeable_enum!(SubChannelState,
