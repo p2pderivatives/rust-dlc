@@ -311,7 +311,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
             return if left_point.outcome_payout == right_point.outcome_payout {
                 right_point.outcome_payout as f64
             } else {
-                let slope = (right_point.outcome_payout - left_point.outcome_payout) as f64
+                let slope = (right_point.outcome_payout as f64 - left_point.outcome_payout as f64)
                     / (right_point.event_outcome - left_point.event_outcome) as f64;
                 (outcome - left_point.event_outcome) as f64 * slope
                     + left_point.outcome_payout as f64
@@ -1247,5 +1247,47 @@ mod test {
         function
             .to_range_payouts(87455, &rounding_intervals)
             .expect("Not to fail");
+    }
+
+    #[test]
+    fn monotonic_increasing_payout_curve_is_valid() {
+        let polynomial = PolynomialPayoutCurvePiece {
+            payout_points: vec![
+                PayoutPoint {
+                    event_outcome: 0,
+                    outcome_payout: 1,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 2,
+                    outcome_payout: 5,
+                    extra_precision: 0,
+                },
+            ],
+        };
+
+        assert_eq!(polynomial.evaluate(0), 1.0);
+        assert_eq!(polynomial.evaluate(2), 5.0);
+    }
+
+    #[test]
+    fn monotonic_decreasing_payout_curve_is_valid() {
+        let polynomial = PolynomialPayoutCurvePiece {
+            payout_points: vec![
+                PayoutPoint {
+                    event_outcome: 0,
+                    outcome_payout: 10,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 1,
+                    outcome_payout: 8,
+                    extra_precision: 0,
+                },
+            ],
+        };
+
+        assert_eq!(polynomial.evaluate(0), 10.0);
+        assert_eq!(polynomial.evaluate(1), 8.0);
     }
 }
