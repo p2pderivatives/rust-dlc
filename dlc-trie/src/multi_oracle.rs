@@ -800,7 +800,7 @@ mod tests {
     }
 
     fn variable_len_test_cases() -> Vec<VariableLengthTestCase> {
-        let black_list = vec![5, 7];
+        let black_list = [5, 7];
         let mut test_cases = test_cases()
             .into_iter()
             .enumerate()

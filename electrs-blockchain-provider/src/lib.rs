@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -206,26 +207,41 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
 impl FeeEstimator for ElectrsBlockchainProvider {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
         let est = match confirmation_target {
-            ConfirmationTarget::MempoolMinimum => self
+            ConfirmationTarget::MinAllowedAnchorChannelRemoteFee => self
                 .fees
                 .get(&Target::Minimum)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::Background => self
+            ConfirmationTarget::AnchorChannelFee | ConfirmationTarget::ChannelCloseMinimum => self
                 .fees
                 .get(&Target::Background)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::Normal => self
+            ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee => {
+                self.fees
+                    .get(&Target::Background)
+                    .unwrap()
+                    .load(Ordering::Acquire)
+                    - 250
+            }
+            ConfirmationTarget::NonAnchorChannelFee => self
                 .fees
                 .get(&Target::Normal)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::HighPriority => self
+            ConfirmationTarget::OnChainSweep => self
                 .fees
                 .get(&Target::HighPriority)
                 .unwrap()
                 .load(Ordering::Acquire),
+            ConfirmationTarget::MaxAllowedNonAnchorChannelRemoteFee => {
+                let high = self
+                    .fees
+                    .get(&Target::HighPriority)
+                    .unwrap()
+                    .load(Ordering::Acquire);
+                max(25 * 250, high * 10)
+            }
         };
         u32::max(est, MIN_FEERATE)
     }

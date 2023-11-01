@@ -547,10 +547,7 @@ pub fn get_enum_and_numerical_test_params(
     };
 
     TestParams {
-        oracles: enum_oracles
-            .into_iter()
-            .chain(numerical_oracles.into_iter())
-            .collect(),
+        oracles: enum_oracles.into_iter().chain(numerical_oracles).collect(),
         contract_input,
     }
 }

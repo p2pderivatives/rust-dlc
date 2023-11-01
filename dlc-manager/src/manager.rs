@@ -1991,7 +1991,7 @@ where
                     };
 
                     let fee_rate_per_vb: u64 = (self.fee_estimator.get_est_sat_per_1000_weight(
-                        lightning::chain::chaininterface::ConfirmationTarget::HighPriority,
+                        lightning::chain::chaininterface::ConfirmationTarget::OnChainSweep,
                     ) / 250)
                         .into();
 
