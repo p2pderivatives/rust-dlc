@@ -453,7 +453,14 @@ pub fn read_option_cb<R: ::std::io::Read, T, F>(
 where
     F: Fn(&mut R) -> Result<T, DecodeError>,
 {
-    let prefix: u8 = Readable::read(reader)?;
+    let prefix: u8 = match Readable::read(reader) {
+        Ok(prefix) => prefix,
+        // If there is nothing else to read, the optional field could just be missing, which is
+        // valid.
+        Err(DecodeError::ShortRead) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+
     let res = match prefix {
         0 => None,
         1 => Some(cb(reader)?),
