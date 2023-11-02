@@ -177,6 +177,10 @@ where
         fee_estimator: F,
     ) -> Result<Self, Error> {
         let init_height = blockchain.get_blockchain_height()?;
+        let chain_monitor = store
+            .get_chain_monitor()?
+            .unwrap_or(ChainMonitor::new(init_height));
+
         Ok(Manager {
             secp: secp256k1_zkp::Secp256k1::new(),
             wallet,
@@ -185,7 +189,7 @@ where
             oracles,
             time,
             fee_estimator,
-            chain_monitor: ChainMonitor::new(init_height),
+            chain_monitor,
         })
     }
 
