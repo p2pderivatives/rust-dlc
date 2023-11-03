@@ -46,6 +46,7 @@ use contract_msgs::ContractInfo;
 use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
+use lightning::onion_message::OnionMessageContents;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
@@ -525,6 +526,14 @@ macro_rules! impl_type_writeable_for_enum {
            fn type_id(&self) -> u16 {
                match self {
                    $($type_name::$variant_name(v) => v.type_id(),)*
+               }
+           }
+       }
+
+       impl OnionMessageContents for $type_name {
+           fn tlv_type(&self) -> u64 {
+               match self {
+                   $($type_name::$variant_name(v) => v.type_id() as u64,)*
                }
            }
        }
