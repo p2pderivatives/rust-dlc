@@ -502,6 +502,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
+            None,
         )
         .unwrap(),
     ));
@@ -517,6 +518,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             bob_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
+            None,
         )
         .unwrap(),
     ));
@@ -685,7 +687,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
                     periodic_check!(second, contract_id, Confirmed);
 
                     mocks::mock_time::set_time(
-                        ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1,
+                        ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY_MIN) as u64) + 1,
                     );
 
                     generate_blocks(10);

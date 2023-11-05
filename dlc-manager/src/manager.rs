@@ -37,15 +37,53 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
 
-/// The number of confirmations required before moving the the confirmed state.
+/// The number of btc confirmations required before moving the DLC to the confirmed state.
 pub const NB_CONFIRMATIONS: u32 = 6;
-/// The delay to set the refund value to.
-pub const REFUND_DELAY: u32 = 86400 * 7;
+/// The minimum time to trigger the refund.
+pub const REFUND_DELAY_MIN: u32 = 86400 * 7;
+/// The maximum time to trigger the refund.
+pub const REFUND_DELAY_MAX: u32 = 86400 * 7 * 2;
 /// The nSequence value used for CETs in DLC channels
 pub const CET_NSEQUENCE: u32 = 288;
 /// Timeout in seconds when waiting for a peer's reply, after which a DLC channel
 /// is forced closed.
 pub const PEER_TIMEOUT: u64 = 3600;
+
+/// The options used to configure the DLC manager.
+pub struct ManagerOptions {
+    /// The number of btc confirmations required before moving the DLC to the confirmed state.
+    pub nb_confirmations: u32,
+    /// The refund delay window to trigger the refund.
+    pub refund_delay: RefundDelayWindow,
+    /// The nSequence value used for CETs in DLC channels
+    pub cet_nsequence: u32,
+    /// Timeout in seconds when waiting for a peer's reply, after which a DLC channel
+    /// is forced closed.
+    pub peer_timeout: u64,
+}
+
+/// The min and max value in seconds until a DLC will be refunded.
+#[derive(Clone, Copy)]
+pub struct RefundDelayWindow {
+    /// The min delay in seconds to trigger the refund.
+    pub min: u32,
+    /// The max delay in seconds to trigger the refund.
+    pub max: u32,
+}
+
+impl Default for ManagerOptions {
+    fn default() -> Self {
+        Self {
+            nb_confirmations: 6,
+            refund_delay: RefundDelayWindow {
+                min: 86400 * 7,
+                max: 86400 * 14,
+            },
+            cet_nsequence: 288,
+            peer_timeout: 3600,
+        }
+    }
+}
 
 type ClosableContractInfo<'a> = Option<(
     &'a ContractInfo,
@@ -71,6 +109,7 @@ where
     chain_monitor: ChainMonitor,
     time: T,
     fee_estimator: F,
+    options: ManagerOptions,
 }
 
 macro_rules! get_object_in_state {
@@ -175,8 +214,10 @@ where
         oracles: HashMap<XOnlyPublicKey, O>,
         time: T,
         fee_estimator: F,
+        options: Option<ManagerOptions>,
     ) -> Result<Self, Error> {
         let init_height = blockchain.get_blockchain_height()?;
+        let options = options.unwrap_or_default();
         Ok(Manager {
             secp: secp256k1_zkp::Secp256k1::new(),
             wallet,
@@ -185,6 +226,7 @@ where
             oracles,
             time,
             fee_estimator,
+            options,
             chain_monitor: ChainMonitor::new(init_height),
         })
     }
@@ -284,7 +326,7 @@ where
             &self.secp,
             contract_input,
             oracle_announcements,
-            REFUND_DELAY,
+            self.options.refund_delay,
             &counter_party,
             &self.wallet,
             &self.blockchain,
@@ -344,7 +386,11 @@ where
         offered_message: &OfferDlc,
         counter_party: PublicKey,
     ) -> Result<(), Error> {
-        offered_message.validate(&self.secp, REFUND_DELAY, REFUND_DELAY * 2)?;
+        offered_message.validate(
+            &self.secp,
+            self.options.refund_delay.min,
+            self.options.refund_delay.max,
+        )?;
         let contract: OfferedContract =
             OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
         contract.validate()?;
@@ -474,7 +520,7 @@ where
         let confirmations = self.blockchain.get_transaction_confirmations(
             &contract.accepted_contract.dlc_transactions.fund.txid(),
         )?;
-        if confirmations >= NB_CONFIRMATIONS {
+        if confirmations >= self.options.nb_confirmations {
             self.store
                 .update_contract(&Contract::Confirmed(contract.clone()))?;
         }
@@ -604,7 +650,7 @@ where
         let confirmations = self
             .blockchain
             .get_transaction_confirmations(&broadcasted_txid)?;
-        if confirmations >= NB_CONFIRMATIONS {
+        if confirmations >= self.options.nb_confirmations {
             let closed_contract = ClosedContract {
                 attestations: contract.attestations.clone(),
                 signed_cet: Some(contract.signed_cet.clone()),
@@ -655,7 +701,7 @@ where
             };
 
             return Ok(Contract::PreClosed(preclosed_contract));
-        } else if confirmations < NB_CONFIRMATIONS {
+        } else if confirmations < self.options.nb_confirmations {
             let preclosed_contract = PreClosedContract {
                 signed_contract: contract.clone(),
                 attestations: Some(attestations),
@@ -733,14 +779,15 @@ where
             contract_input,
             &counter_party,
             &oracle_announcements,
-            CET_NSEQUENCE,
-            REFUND_DELAY,
+            self.options.cet_nsequence,
+            self.options.refund_delay,
             &self.wallet,
             &self.blockchain,
             &self.time,
         )?;
 
-        let msg = offered_channel.get_offer_channel_msg(&offered_contract);
+        let msg =
+            offered_channel.get_offer_channel_msg(&offered_contract, self.options.cet_nsequence);
 
         self.store.upsert_channel(
             Channel::Offered(offered_channel),
@@ -821,7 +868,7 @@ where
             &self.secp,
             &mut signed_channel,
             counter_payout,
-            PEER_TIMEOUT,
+            self.options.peer_timeout,
             &self.wallet,
             &self.time,
         )?;
@@ -846,9 +893,9 @@ where
         let msg = crate::channel_updater::settle_channel_accept(
             &self.secp,
             &mut signed_channel,
-            CET_NSEQUENCE,
+            self.options.cet_nsequence,
             0,
-            PEER_TIMEOUT,
+            self.options.peer_timeout,
             &self.wallet,
             &self.time,
         )?;
@@ -885,9 +932,9 @@ where
             contract_input,
             oracle_announcements,
             counter_payout,
-            REFUND_DELAY,
-            PEER_TIMEOUT,
-            CET_NSEQUENCE,
+            self.options.refund_delay,
+            self.options.peer_timeout,
+            self.options.cet_nsequence,
             &self.wallet,
             &self.time,
         )?;
@@ -926,8 +973,8 @@ where
             &self.secp,
             &mut signed_channel,
             &offered_contract,
-            CET_NSEQUENCE,
-            PEER_TIMEOUT,
+            self.options.cet_nsequence,
+            self.options.peer_timeout,
             &self.wallet,
             &self.time,
         )?;
@@ -1014,6 +1061,7 @@ where
             counter_payout,
             &self.wallet,
             &self.time,
+            self.options.peer_timeout,
         )?;
 
         self.chain_monitor.add_tx(
@@ -1107,7 +1155,7 @@ where
         if self
             .blockchain
             .get_transaction_confirmations(&buffer_tx.txid())?
-            > CET_NSEQUENCE
+            > self.options.cet_nsequence
         {
             let confirmed_contract =
                 get_contract_in_state!(self, &contract_id, Confirmed, None as Option<PublicKey>)?;
@@ -1131,10 +1179,10 @@ where
     ) -> Result<(), Error> {
         offer_channel.validate(
             &self.secp,
-            REFUND_DELAY,
-            REFUND_DELAY * 2,
-            CET_NSEQUENCE,
-            CET_NSEQUENCE * 2,
+            self.options.refund_delay.min,
+            self.options.refund_delay.max,
+            self.options.cet_nsequence,
+            self.options.cet_nsequence * 2,
         )?;
 
         let (channel, contract) = OfferedChannel::from_offer_channel(offer_channel, counter_party)?;
@@ -1182,7 +1230,7 @@ where
                 &offered_contract,
                 accept_channel,
                 //TODO(tibo): this should be parameterizable.
-                CET_NSEQUENCE,
+                self.options.cet_nsequence,
                 &self.wallet,
             );
 
@@ -1334,9 +1382,9 @@ where
             &self.secp,
             &mut signed_channel,
             settle_accept,
-            CET_NSEQUENCE,
+            self.options.cet_nsequence,
             0,
-            PEER_TIMEOUT,
+            self.options.peer_timeout,
             &self.wallet,
             &self.time,
         )?;
@@ -1536,8 +1584,8 @@ where
             renew_accept,
             &mut signed_channel,
             &offered_contract,
-            CET_NSEQUENCE,
-            PEER_TIMEOUT,
+            self.options.cet_nsequence,
+            self.options.peer_timeout,
             &self.wallet,
             &self.time,
         )?;
@@ -1790,7 +1838,7 @@ where
         crate::channel_updater::on_collaborative_close_offer(
             &mut signed_channel,
             close_offer,
-            PEER_TIMEOUT,
+            self.options.peer_timeout,
             &self.time,
         )?;
 
@@ -2020,7 +2068,7 @@ where
                                 &counter_revocation_sk,
                                 &tx,
                                 &self.wallet.get_new_address()?,
-                                CET_NSEQUENCE,
+                                self.options.cet_nsequence,
                                 0,
                                 fee_rate_per_vb,
                                 is_offer,
@@ -2225,7 +2273,16 @@ mod test {
 
         mocks::mock_time::set_time(0);
 
-        Manager::new(wallet, blockchain.clone(), store, oracles, time, blockchain).unwrap()
+        Manager::new(
+            wallet,
+            blockchain.clone(),
+            store.clone(),
+            oracles,
+            time,
+            blockchain.clone(),
+            None,
+        )
+        .unwrap()
     }
 
     fn pubkey() -> PublicKey {

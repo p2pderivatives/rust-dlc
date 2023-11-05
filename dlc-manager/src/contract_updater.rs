@@ -20,6 +20,7 @@ use crate::{
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
+    manager::RefundDelayWindow,
     Blockchain, ChannelId, Signer, Time, Wallet,
 };
 
@@ -29,7 +30,7 @@ pub fn offer_contract<C: Signing, W: Deref, B: Deref, T: Deref>(
     secp: &Secp256k1<C>,
     contract_input: &ContractInput,
     oracle_announcements: Vec<Vec<OracleAnnouncement>>,
-    refund_delay: u32,
+    refund_delay: RefundDelayWindow,
     counter_party: &PublicKey,
     wallet: &W,
     blockchain: &B,

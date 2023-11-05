@@ -19,6 +19,7 @@ use crate::{
         verify_signed_contract_internal,
     },
     error::Error,
+    manager::RefundDelayWindow,
     utils::get_new_temporary_id,
     Blockchain, Signer, Time, Wallet,
 };
@@ -72,7 +73,7 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     counter_party: &PublicKey,
     oracle_announcements: &[Vec<OracleAnnouncement>],
     cet_nsequence: u32,
-    refund_delay: u32,
+    refund_delay: RefundDelayWindow,
     wallet: &W,
     blockchain: &B,
     time: &T,
@@ -957,7 +958,7 @@ pub fn renew_offer<C: Signing, S: Deref, T: Deref>(
     contract_input: &ContractInput,
     oracle_announcements: Vec<Vec<OracleAnnouncement>>,
     counter_payout: u64,
-    refund_delay: u32,
+    refund_delay: RefundDelayWindow,
     peer_timeout: u64,
     cet_nsequence: u32,
     signer: &S,
@@ -1490,6 +1491,7 @@ pub fn offer_collaborative_close<C: Signing, S: Deref, T: Deref>(
     counter_payout: u64,
     signer: &S,
     time: &T,
+    peer_timeout: u64,
 ) -> Result<(CollaborativeCloseOffer, Transaction), Error>
 where
     S::Target: Signer,
@@ -1535,7 +1537,7 @@ where
         counter_payout,
         offer_signature: close_signature,
         close_tx: close_tx.clone(),
-        timeout: time.unix_time_now() + super::manager::PEER_TIMEOUT,
+        timeout: time.unix_time_now() + peer_timeout,
     };
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);

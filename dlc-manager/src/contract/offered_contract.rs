@@ -3,6 +3,7 @@
 use crate::conversion_utils::{
     get_contract_info_and_announcements, get_tx_input_infos, BITCOIN_CHAINHASH, PROTOCOL_VERSION,
 };
+use crate::manager::RefundDelayWindow;
 use crate::utils::get_new_serial_id;
 
 use super::contract_info::ContractInfo;
@@ -80,7 +81,7 @@ impl OfferedContract {
         offer_params: &PartyParams,
         funding_inputs_info: &[FundingInputInfo],
         counter_party: &PublicKey,
-        refund_delay: u32,
+        refund_delay: RefundDelayWindow,
         cet_locktime: u32,
     ) -> Self {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
@@ -111,7 +112,7 @@ impl OfferedContract {
             fund_output_serial_id,
             fee_rate_per_vb: contract.fee_rate,
             cet_locktime,
-            refund_locktime: latest_maturity + refund_delay,
+            refund_locktime: latest_maturity + refund_delay.min,
             counter_party: *counter_party,
         }
     }

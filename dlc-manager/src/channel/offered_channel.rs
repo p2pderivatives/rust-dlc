@@ -44,7 +44,11 @@ pub struct OfferedChannel {
 }
 
 impl OfferedChannel {
-    pub(crate) fn get_offer_channel_msg(&self, offered_contract: &OfferedContract) -> OfferChannel {
+    pub(crate) fn get_offer_channel_msg(
+        &self,
+        offered_contract: &OfferedContract,
+        cet_nsequence: u32,
+    ) -> OfferChannel {
         let party_points = &self.party_points;
         OfferChannel {
             protocol_version: crate::conversion_utils::PROTOCOL_VERSION,
@@ -72,7 +76,7 @@ impl OfferedChannel {
             refund_locktime: offered_contract.refund_locktime,
             fee_rate_per_vb: offered_contract.fee_rate_per_vb,
             fund_output_serial_id: offered_contract.fund_output_serial_id,
-            cet_nsequence: crate::manager::CET_NSEQUENCE,
+            cet_nsequence,
         }
     }
 

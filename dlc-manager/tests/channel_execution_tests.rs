@@ -347,6 +347,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             alice_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
+            None,
         )
         .unwrap(),
     ));
@@ -362,9 +363,12 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             bob_oracles,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
+            None,
         )
         .unwrap(),
     ));
+
+    let cet_nsequence: u32 = dlc_manager::manager::CET_NSEQUENCE;
 
     let bob_manager_loop = Arc::clone(&bob_manager);
     let bob_manager_send = Arc::clone(&bob_manager);
@@ -526,7 +530,13 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
             match path {
                 TestPath::Close => {
-                    close_established_channel(first, second, channel_id, &generate_blocks);
+                    close_established_channel(
+                        first,
+                        second,
+                        channel_id,
+                        &generate_blocks,
+                        cet_nsequence,
+                    );
                 }
                 TestPath::CollaborativeClose => {
                     collaborative_close(
@@ -549,6 +559,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         channel_id,
                         &sync_receive,
                         path,
+                        dlc_manager::manager::PEER_TIMEOUT,
                     );
                 }
                 TestPath::SettleReject => {
@@ -623,6 +634,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 &sync_receive,
                                 &test_params.contract_input,
                                 path,
+                                dlc_manager::manager::PEER_TIMEOUT,
                             );
                         }
                         TestPath::RenewReject => {
@@ -676,6 +688,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                     second,
                                     channel_id,
                                     &generate_blocks,
+                                    cet_nsequence,
                                 );
                             } else if let TestPath::SettleCheat = path {
                                 cheat_punish(first, second, channel_id, &generate_blocks, false);
@@ -721,6 +734,7 @@ fn close_established_channel<F>(
     second: DlcParty,
     channel_id: ChannelId,
     generate_blocks: &F,
+    cet_nsequence: u32,
 ) where
     F: Fn(u64),
 {
@@ -739,7 +753,7 @@ fn close_established_channel<F>(
         .periodic_check()
         .expect("to be able to do the periodic check");
 
-    let wait = dlc_manager::manager::CET_NSEQUENCE;
+    let wait = cet_nsequence;
 
     generate_blocks(10);
 
@@ -1143,6 +1157,7 @@ fn renew_timeout(
     sync_receive: &Receiver<()>,
     contract_input: &ContractInput,
     path: TestPath,
+    peer_timeout: u64,
 ) {
     {
         let (renew_offer, _) = first
@@ -1158,9 +1173,7 @@ fn renew_timeout(
         sync_receive.recv().expect("Error synchronizing");
 
         if let TestPath::RenewOfferTimeout = path {
-            mocks::mock_time::set_time(
-                (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
-            );
+            mocks::mock_time::set_time((EVENT_MATURITY as u64) + peer_timeout + 2);
             first
                 .lock()
                 .unwrap()
@@ -1183,9 +1196,7 @@ fn renew_timeout(
             sync_receive.recv().expect("Error synchronizing");
 
             if let TestPath::RenewAcceptTimeout = path {
-                mocks::mock_time::set_time(
-                    (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
-                );
+                mocks::mock_time::set_time((EVENT_MATURITY as u64) + peer_timeout + 2);
                 second
                     .lock()
                     .unwrap()
@@ -1196,9 +1207,7 @@ fn renew_timeout(
             } else if let TestPath::RenewConfirmTimeout = path {
                 // Process Confirm
                 sync_receive.recv().expect("Error synchronizing");
-                mocks::mock_time::set_time(
-                    (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
-                );
+                mocks::mock_time::set_time((EVENT_MATURITY as u64) + peer_timeout + 2);
                 first
                     .lock()
                     .unwrap()
@@ -1219,6 +1228,7 @@ fn settle_timeout(
     channel_id: ChannelId,
     sync_receive: &Receiver<()>,
     path: TestPath,
+    peer_timeout: u64,
 ) {
     let (settle_offer, _) = first
         .lock()
@@ -1233,9 +1243,7 @@ fn settle_timeout(
     sync_receive.recv().expect("Error synchronizing");
 
     if let TestPath::SettleOfferTimeout = path {
-        mocks::mock_time::set_time(
-            (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
-        );
+        mocks::mock_time::set_time((EVENT_MATURITY as u64) + peer_timeout + 2);
         first
             .lock()
             .unwrap()
@@ -1258,9 +1266,7 @@ fn settle_timeout(
         sync_receive.recv().expect("Error synchronizing");
 
         if let TestPath::SettleAcceptTimeout = path {
-            mocks::mock_time::set_time(
-                (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
-            );
+            mocks::mock_time::set_time((EVENT_MATURITY as u64) + peer_timeout + 2);
             second
                 .lock()
                 .unwrap()
@@ -1271,9 +1277,7 @@ fn settle_timeout(
         } else if let TestPath::SettleConfirmTimeout = path {
             // Process Confirm
             sync_receive.recv().expect("Error synchronizing");
-            mocks::mock_time::set_time(
-                (EVENT_MATURITY as u64) + dlc_manager::manager::PEER_TIMEOUT + 2,
-            );
+            mocks::mock_time::set_time((EVENT_MATURITY as u64) + peer_timeout + 2);
             first
                 .lock()
                 .unwrap()
