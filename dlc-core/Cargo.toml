@@ -4,50 +4,43 @@ version = "0.0.1"
 edition = "2021"
 
 [features]
+default = ["std"]
+std = [
+    "bitcoin/std",
+    "dlc/std",
+    "dlc-messages/std",
+    "dlc-trie/std",
+    "dlc-manager/std",
+]
 use-serde = [
     "serde",
+    "bitcoin/serde",
     "dlc/use-serde",
     "dlc-manager/serde",
     "dlc-messages/serde",
     "dlc-trie/use-serde",
 ]
+no-std = [
+    "bitcoin/no-std",
+    "dlc/no-std",
+    "dlc-messages/no-std",
+    "dlc-trie/no-std",
+]
 
 [dependencies]
-bitcoin = { version = "0.29.2", features = ["serde"] }
-dlc = { version = "0.4.0", path = "../dlc" }
-dlc-manager = { version = "0.4.0", path = "../dlc-manager" }
-dlc-messages = { version = "0.4.0", path = "../dlc-messages" }
-dlc-trie = { version = "0.4.0", path = "../dlc-trie" }
-hex = "0.4.3"
-log = "0.4.14"
-rand_chacha = { version = "0.3.1", optional = true }
-secp256k1-zkp = { version = "0.7.0", features = [
-    "bitcoin_hashes",
-    "rand",
-    "rand-std",
-    "use-serde",
-] }
+bitcoin = { version = "0.29.2", default-features = false }
+dlc = { version = "0.4.0", path = "../dlc", default-features = false }
+dlc-manager = { version = "0.4.0", path = "../dlc-manager", default-features = false }
+dlc-messages = { version = "0.4.0", path = "../dlc-messages", default-features = false }
+dlc-trie = { version = "0.4.0", path = "../dlc-trie", default-features = false }
 serde = { version = "1.0", features = ["derive"], optional = true }
-serde_json = { version = "1.0" }
+secp256k1-zkp = { version = "0.7.0" }
 thiserror = "1.0.44"
-serde_bytes = "0.11.12"
 
 [dev-dependencies]
+serde = { version = "1.0" }
 bitcoincore-rpc = { version = "0.16.0" }
 bitcoincore-rpc-json = { version = "0.16.0" }
 criterion = "0.4.0"
 env_logger = "0.9.1"
-secp256k1-zkp = { version = "0.7.0", features = [
-    "bitcoin_hashes",
-    "rand",
-    "rand-std",
-    "global-context",
-    "use-serde",
-] }
-serde = "1.0"
-serde_json = "1.0"
-
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
-lto = true
+secp256k1-zkp = { version = "0.7.0" }

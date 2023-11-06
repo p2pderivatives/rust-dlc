@@ -19,7 +19,7 @@ serde = { version = "1.0", default-features = false, optional = true }
 # for benchmarks
 unstable = []
 default = ["std"]
-std = ["bitcoin/std", "miniscript/std"]
+std = ["bitcoin/std", "miniscript/std", "secp256k1-zkp/rand-std"]
 no-std = ["dep:hashbrown", "miniscript/no-std", "bitcoin/no-std"]
 use-serde = ["serde", "secp256k1-zkp/use-serde"]
 
@@ -28,4 +28,9 @@ bitcoin-test-utils = { path = "../bitcoin-test-utils" }
 bitcoincore-rpc = { version = "0.16.0" }
 bitcoincore-rpc-json = { version = "0.16.0" }
 rayon = "1.5"
-secp256k1-zkp = { version = "0.7.0", features = ["bitcoin_hashes", "rand","serde", "global-context"] }
+secp256k1-zkp = { version = "0.7.0", features = [
+    "bitcoin_hashes",
+    "rand",
+    "serde",
+    "global-context",
+] }
