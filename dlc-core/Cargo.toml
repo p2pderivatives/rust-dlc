@@ -11,6 +11,7 @@ std = [
     "dlc-messages/std",
     "dlc-trie/std",
     "dlc-manager/std",
+    "secp256k1-zkp/rand-std",
 ]
 use-serde = [
     "serde",
