@@ -22,7 +22,7 @@ pub fn get_refund(
     contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-) -> Result<Box<[u8]>> {
+) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         offer_side.party_params,
@@ -46,7 +46,7 @@ pub fn get_refund(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(Serializable::serialize(&refund)?.into_boxed_slice())
+    Ok(refund)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,7 +61,7 @@ pub fn get_signed_cet(
     offer_side: &SideSign,
     accept_side: &SideSign,
     attestations: &[AttestationData],
-) -> Result<Box<[u8]>> {
+) -> Result<Transaction> {
     let attestations: Box<[(usize, &OracleAttestation)]> = attestations
         .iter()
         .map(|x| (x.index as usize, x.attestation))
@@ -123,7 +123,7 @@ pub fn get_signed_cet(
         &dlc_transactions.funding_script_pubkey,
     );
 
-    Ok(Serializable::serialize(&cet)?.into_boxed_slice())
+    Ok(cet)
 }
 
 fn get_range_info_and_oracle_sigs(

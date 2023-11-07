@@ -1,5 +1,6 @@
+use bitcoin::Transaction;
 use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{contract_info::ContractInfo, ser::Serializable, AdaptorInfo};
+use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
@@ -11,7 +12,7 @@ pub fn check_all_signed_dlc(
     contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
-) -> Result<Box<[u8]>> {
+) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         offer_side.party_params,
@@ -40,7 +41,7 @@ pub fn check_all_signed_dlc(
         offer_side.party_params,
     )?;
 
-    Ok(Serializable::serialize(&dlc_transactions.fund)?.into_boxed_slice())
+    Ok(dlc_transactions.fund)
 }
 
 fn validate_presigned_with_infos(
