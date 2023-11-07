@@ -94,7 +94,8 @@ macro_rules! handle_read_dlc_messages {
     }};
 }
 
-fn read_dlc_message<R: ::lightning::io::Read>(
+/// Parses a DLC message from a buffer.
+pub fn read_dlc_message<R: ::lightning::io::Read>(
     msg_type: u16,
     mut buffer: &mut R,
 ) -> Result<Option<WireMessage>, DecodeError> {
