@@ -13,7 +13,6 @@ pub struct RenewInfos {
     pub index_input: u32,
     pub witness_script: Script,
     pub old_funding_output: TxOut,
-    pub vout_old_dlc: u32,
 }
 
 pub fn renew(
@@ -77,7 +76,7 @@ pub fn renew(
 
     let old_funding_output = old_funding
         .output
-        .get(0)
+        .get(vout_old_dlc as usize)
         .expect("a valid bitcoin tx has at least one output");
 
     Ok(RenewInfos {
@@ -85,6 +84,5 @@ pub fn renew(
         index_input,
         witness_script: old_dlc_transactions.funding_script_pubkey,
         old_funding_output: old_funding_output.clone(),
-        vout_old_dlc,
     })
 }

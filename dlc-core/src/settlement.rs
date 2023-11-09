@@ -1,4 +1,3 @@
-use dlc_manager::contract::ser::Serializable;
 use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_trie::RangeInfo;
 use secp256k1_zkp::{

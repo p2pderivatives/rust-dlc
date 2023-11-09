@@ -1,8 +1,6 @@
 use bitcoin::Transaction;
-use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
-use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
+use secp256k1_zkp::Secp256k1;
 
 use crate::{
     error::*, get_dlc_transactions, validate_presigned_with_infos,
