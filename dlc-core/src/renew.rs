@@ -74,10 +74,13 @@ pub fn renew(
         offer_side.party_params,
     )?;
 
-    let old_funding_output = old_funding
-        .output
-        .get(vout_old_dlc as usize)
-        .expect("a valid bitcoin tx has at least one output");
+    let old_funding_output =
+        old_funding
+            .output
+            .get(vout_old_dlc as usize)
+            .ok_or(FromDlcError::InvalidState(
+                "Malformed funding transaction for old DLC",
+            ))?;
 
     Ok(RenewInfos {
         funding: new_dlc_transactions.fund,
