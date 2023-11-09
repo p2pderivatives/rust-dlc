@@ -40,6 +40,12 @@ impl OracleInput {
             ));
         }
 
+        if self.threshold == 0 {
+            return Err(Error::InvalidParameters(
+                "Threshold cannot be zero.".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
@@ -180,6 +186,15 @@ mod tests {
     fn invalid_oracle_info_threshold_oracle_input_contract_input_is_not_valid() {
         let mut input = get_base_input();
         input.contract_infos[0].oracles.threshold = 2;
+        input
+            .validate()
+            .expect_err("the contract input to be invalid.");
+    }
+
+    #[test]
+    fn invalid_oracle_info_threshold_zero() {
+        let mut input = get_base_input();
+        input.contract_infos[0].oracles.threshold = 0;
         input
             .validate()
             .expect_err("the contract input to be invalid.");
