@@ -10,12 +10,13 @@ use crate::{
 
 pub struct RenewInfos {
     pub funding: Transaction,
-    pub index_input: usize,
+    pub index_input: u32,
     pub witness_script: Script,
     pub old_funding_output: TxOut,
+    pub vout_old_dlc: u32,
 }
 
-pub fn renew<'a>(
+pub fn renew(
     old_contract_params: &ContractParams,
     old_offer_params: &PartyParams,
     old_accept_params: &PartyParams,
@@ -50,7 +51,7 @@ pub fn renew<'a>(
         })
         .ok_or(FromDlcError::InvalidState(
             "New funding is not using previous DLC",
-        ))?;
+        ))? as u32;
 
     // Checking that new contract is genuine
     let secp = Secp256k1::new();
@@ -84,5 +85,6 @@ pub fn renew<'a>(
         index_input,
         witness_script: old_dlc_transactions.funding_script_pubkey,
         old_funding_output: old_funding_output.clone(),
+        vout_old_dlc,
     })
 }
