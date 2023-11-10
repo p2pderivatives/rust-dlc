@@ -1,4 +1,4 @@
-use bitcoin::{Script, Transaction, TxOut};
+use bitcoin::{Script, Transaction};
 use dlc::PartyParams;
 
 use secp256k1_zkp::Secp256k1;
@@ -12,7 +12,7 @@ pub struct RenewInfos {
     pub funding: Transaction,
     pub index_input: u32,
     pub witness_script: Script,
-    pub old_funding_output: TxOut,
+    pub value: u64,
 }
 
 pub fn renew(
@@ -86,6 +86,6 @@ pub fn renew(
         funding: new_dlc_transactions.fund,
         index_input,
         witness_script: old_dlc_transactions.funding_script_pubkey,
-        old_funding_output: old_funding_output.clone(),
+        value: old_funding_output.value,
     })
 }
