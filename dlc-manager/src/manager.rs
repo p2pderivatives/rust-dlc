@@ -334,11 +334,14 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
-    pub fn periodic_check(&mut self) -> Result<(), Error> {
+    pub fn periodic_check(&mut self, check_channels: bool) -> Result<(), Error> {
         self.check_signed_contracts()?;
         self.check_confirmed_contracts()?;
         self.check_preclosed_contracts()?;
-        self.channel_checks()?;
+
+        if check_channels {
+            self.channel_checks()?;
+        }
 
         Ok(())
     }

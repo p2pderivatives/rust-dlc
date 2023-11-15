@@ -254,7 +254,7 @@ pub(crate) async fn poll_for_user_input(
                         manager_clone
                             .lock()
                             .unwrap()
-                            .periodic_check()
+                            .periodic_check(true)
                             .expect("Error doing periodic check.");
                         let contracts = manager_clone
                             .lock()

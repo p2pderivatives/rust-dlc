@@ -90,7 +90,7 @@ macro_rules! periodic_check {
     ($d:expr, $id:expr, $p:ident) => {
         $d.lock()
             .unwrap()
-            .periodic_check()
+            .periodic_check(true)
             .expect("Periodic check error");
 
         assert_contract_state!($d, $id, $p);
