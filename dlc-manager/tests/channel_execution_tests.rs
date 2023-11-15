@@ -505,13 +505,13 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             alice_manager_send
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("to be able to do the periodic check");
 
             bob_manager_send
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("to be able to do the periodic check");
 
             assert_contract_state!(alice_manager_send, contract_id, Confirmed);
@@ -736,7 +736,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     let wait = dlc_manager::manager::CET_NSEQUENCE;
@@ -746,7 +746,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     // Should not have changed state before the CET is spendable.
@@ -757,7 +757,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     //
@@ -768,7 +768,7 @@ fn close_established_channel<F>(
     second
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     assert_channel_state!(second, channel_id, Signed, CounterClosed);
@@ -776,8 +776,8 @@ fn close_established_channel<F>(
 
     generate_blocks(6);
 
-    first.lock().unwrap().periodic_check().unwrap();
-    second.lock().unwrap().periodic_check().unwrap();
+    first.lock().unwrap().periodic_check(true).unwrap();
+    second.lock().unwrap().periodic_check(true).unwrap();
 
     assert_contract_state!(first, contract_id, Closed);
     assert_contract_state!(second, contract_id, Closed);
@@ -811,7 +811,7 @@ fn cheat_punish<F: Fn(u64)>(
     second
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("the check to succeed");
 
     assert_channel_state!(second, channel_id, Signed, ClosedPunished);
@@ -1127,7 +1127,7 @@ fn collaborative_close<F: Fn(u64)>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("the check to succeed");
 
     assert_channel_state!(first, channel_id, Signed, CollaborativelyClosed);
@@ -1164,7 +1164,7 @@ fn renew_timeout(
             first
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("not to error");
 
             assert_channel_state!(first, channel_id, Signed, Closed);
@@ -1189,7 +1189,7 @@ fn renew_timeout(
                 second
                     .lock()
                     .unwrap()
-                    .periodic_check()
+                    .periodic_check(true)
                     .expect("not to error");
 
                 assert_channel_state!(second, channel_id, Signed, Closed);
@@ -1202,7 +1202,7 @@ fn renew_timeout(
                 first
                     .lock()
                     .unwrap()
-                    .periodic_check()
+                    .periodic_check(true)
                     .expect("not to error");
 
                 assert_channel_state!(first, channel_id, Signed, Closed);
@@ -1239,7 +1239,7 @@ fn settle_timeout(
         first
             .lock()
             .unwrap()
-            .periodic_check()
+            .periodic_check(true)
             .expect("not to error");
 
         assert_channel_state!(first, channel_id, Signed, Closing);
@@ -1264,7 +1264,7 @@ fn settle_timeout(
             second
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("not to error");
 
             assert_channel_state!(second, channel_id, Signed, Closing);
@@ -1277,7 +1277,7 @@ fn settle_timeout(
             first
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("not to error");
 
             assert_channel_state!(first, channel_id, Signed, Closing);
