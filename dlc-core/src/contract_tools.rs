@@ -84,7 +84,7 @@ pub(crate) fn create_fund_transaction_with_fees(
     let (accept_change_output, accept_fund_fee, accept_cet_fee) = accept_params
         .get_change_output_and_fees(
             fee_rate_per_vb,
-            extra_fee + ((total_extra_coordinator_fee + 2) / 2) - 1,
+            extra_fee + ((total_extra_coordinator_fee + 2_u64) / 2_u64) as u64 - 1_u64,
         )
         .map_err(FromDlcError::Dlc)?;
 
