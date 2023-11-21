@@ -89,7 +89,8 @@ pub(crate) fn create_fund_transaction_with_fees(
         - accept_change_output.value
         - offer_fund_fee
         - accept_fund_fee
-        - extra_fee;
+        - extra_fee
+        - (2 * party_coordinator_fee);
 
     assert_eq!(
         total_collateral + offer_cet_fee + accept_cet_fee + extra_fee,
@@ -104,6 +105,7 @@ pub(crate) fn create_fund_transaction_with_fees(
             + offer_fund_fee
             + accept_fund_fee
             + extra_fee
+            + (2 * party_coordinator_fee)
     );
 
     let fund_sequence = util::get_sequence(fund_lock_time);
