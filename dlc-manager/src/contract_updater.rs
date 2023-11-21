@@ -20,7 +20,7 @@ use crate::{
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
-    Blockchain, ChannelId, Signer, Time, Wallet,
+    Blockchain, DlcChannelId, Signer, Time, Wallet,
 };
 
 /// Creates an [`OfferedContract`] and [`OfferDlc`] message from the provided
@@ -300,7 +300,7 @@ pub(crate) fn verify_accepted_and_sign_contract_internal<S: Deref>(
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
     dlc_transactions: &DlcTransactions,
-    channel_id: Option<ChannelId>,
+    channel_id: Option<DlcChannelId>,
 ) -> Result<(SignedContract, Vec<EcdsaAdaptorSignature>), Error>
 where
     S::Target: Signer,
@@ -524,7 +524,7 @@ pub(crate) fn verify_signed_contract_internal<S: Deref>(
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
     signer: &S,
-    channel_id: Option<ChannelId>,
+    channel_id: Option<DlcChannelId>,
 ) -> Result<(SignedContract, Transaction), Error>
 where
     S::Target: Signer,

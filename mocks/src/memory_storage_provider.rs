@@ -11,7 +11,8 @@ use dlc_manager::contract::{
 use dlc_manager::sub_channel_manager::Action;
 use dlc_manager::subchannel::{SubChannel, SubChannelState};
 use dlc_manager::Storage;
-use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
+use dlc_manager::{error::Error as DaemonError, ContractId, DlcChannelId, Utxo};
+use lightning::ln::ChannelId;
 use secp256k1_zkp::{PublicKey, SecretKey};
 use simple_wallet::WalletStorage;
 use std::collections::HashMap;
@@ -19,10 +20,10 @@ use std::sync::{Mutex, RwLock};
 
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
-    channels: RwLock<HashMap<ChannelId, Channel>>,
+    channels: RwLock<HashMap<DlcChannelId, Channel>>,
     sub_channels: RwLock<HashMap<ChannelId, SubChannel>>,
     contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
-    channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
+    channels_saved: Mutex<Option<HashMap<DlcChannelId, Channel>>>,
     sub_channels_saved: Mutex<Option<HashMap<ChannelId, SubChannel>>>,
     addresses: RwLock<HashMap<Address, SecretKey>>,
     utxos: RwLock<HashMap<OutPoint, Utxo>>,
@@ -219,13 +220,13 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), DaemonError> {
+    fn delete_channel(&self, channel_id: &DlcChannelId) -> Result<(), DaemonError> {
         let mut map = self.channels.write().expect("Could not get write lock");
         map.remove(channel_id);
         Ok(())
     }
 
-    fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, DaemonError> {
+    fn get_channel(&self, channel_id: &DlcChannelId) -> Result<Option<Channel>, DaemonError> {
         let map = self.channels.read().expect("could not get read lock");
         Ok(map.get(channel_id).cloned())
     }
@@ -283,10 +284,7 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn get_sub_channel(
-        &self,
-        channel_id: dlc_manager::ChannelId,
-    ) -> Result<Option<SubChannel>, DaemonError> {
+    fn get_sub_channel(&self, channel_id: ChannelId) -> Result<Option<SubChannel>, DaemonError> {
         let res = self
             .sub_channels
             .read()

@@ -18,7 +18,7 @@ use crate::error::Error;
 use crate::sub_channel_manager::get_sub_channel_in_state;
 use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
-use crate::{ChannelId, ContractId, Signer};
+use crate::{ContractId, DlcChannelId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::Address;
 use bitcoin::Transaction;
@@ -812,12 +812,12 @@ where
     }
 
     /// Accept a channel that was offered. Returns the [`dlc_messages::channel::AcceptChannel`]
-    /// message to be sent, the updated [`crate::ChannelId`] and [`crate::ContractId`],
+    /// message to be sent, the updated [`DlcChannelId`] and [`crate::ContractId`],
     /// as well as the public key of the offering node.
     pub fn accept_channel(
         &self,
-        channel_id: &ChannelId,
-    ) -> Result<(AcceptChannel, ChannelId, ContractId, PublicKey), Error> {
+        channel_id: &DlcChannelId,
+    ) -> Result<(AcceptChannel, DlcChannelId, ContractId, PublicKey), Error> {
         let offered_channel =
             get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
 
@@ -860,8 +860,8 @@ where
         Ok((accept_channel, channel_id, contract_id, counter_party))
     }
 
-    /// Force close the channel with given [`crate::ChannelId`].
-    pub fn force_close_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    /// Force close the channel with given [`DlcChannelId`].
+    pub fn force_close_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
         self.force_close_channel_internal(channel, None, true)
@@ -872,7 +872,7 @@ where
     /// message to be sent and the public key of the counter party node.
     pub fn settle_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         counter_payout: u64,
     ) -> Result<(SettleOffer, PublicKey), Error> {
         let mut signed_channel =
@@ -899,7 +899,7 @@ where
     /// sent to the node with the returned [`PublicKey`] id.
     pub fn accept_settle_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
     ) -> Result<(SettleAccept, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -944,7 +944,7 @@ where
     /// channel.
     pub fn renew_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         counter_payout: u64,
         contract_input: &ContractInput,
     ) -> Result<(RenewOffer, PublicKey), Error> {
@@ -985,7 +985,7 @@ where
     /// [`PublicKey`] as node id.
     pub fn accept_renew_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
     ) -> Result<(RenewAccept, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1023,7 +1023,10 @@ where
     /// Reject an offer to renew the contract in the channel. Returns the
     /// [`Reject`] message to be sent to the peer with the returned
     /// [`PublicKey`] node id.
-    pub fn reject_renew_offer(&self, channel_id: &ChannelId) -> Result<(Reject, PublicKey), Error> {
+    pub fn reject_renew_offer(
+        &self,
+        channel_id: &DlcChannelId,
+    ) -> Result<(Reject, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
         let offered_contract_id = signed_channel.get_contract_id().ok_or_else(|| {
@@ -1056,7 +1059,7 @@ where
     /// proposed settle offer.
     pub fn reject_settle_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
     ) -> Result<(Reject, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1077,7 +1080,7 @@ where
     /// not broadcast the close transaction.
     pub fn offer_collaborative_close(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         counter_payout: u64,
     ) -> Result<CollaborativeCloseOffer, Error> {
         let mut signed_channel =
@@ -1109,7 +1112,7 @@ where
 
     /// Accept an offer to collaboratively close the channel. The close transaction
     /// will be broadcast and the state of the channel updated.
-    pub fn accept_collaborative_close(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    pub fn accept_collaborative_close(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
         let signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
@@ -2297,7 +2300,7 @@ where
 
     pub(crate) fn force_close_sub_channel(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         sub_channel: (SubChannel, &ClosingSubChannel),
     ) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -2448,7 +2451,7 @@ where
     /// collaboratively closed.
     pub(crate) fn get_closed_sub_dlc_channel(
         &self,
-        channel_id: ChannelId,
+        channel_id: DlcChannelId,
         own_balance: u64,
     ) -> Result<(Channel, Option<Contract>), Error> {
         let channel = get_channel_in_state!(self, &channel_id, Signed, None::<PublicKey>)?;

@@ -7,7 +7,7 @@ use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::contract_input::ContractInput;
 use dlc_manager::manager::Manager;
 use dlc_manager::{channel::Channel, contract::Contract, Blockchain, Oracle, Storage, Wallet};
-use dlc_manager::{ChannelId, ContractId};
+use dlc_manager::{ContractId, DlcChannelId};
 use dlc_messages::{ChannelMessage, Message};
 use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use lightning::util::ser::Writeable;
@@ -47,7 +47,10 @@ type DlcParty = Arc<
     >,
 >;
 
-fn get_established_channel_contract_id(dlc_party: &DlcParty, channel_id: &ChannelId) -> ContractId {
+fn get_established_channel_contract_id(
+    dlc_party: &DlcParty,
+    channel_id: &DlcChannelId,
+) -> ContractId {
     let channel = dlc_party
         .lock()
         .unwrap()
@@ -773,7 +776,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 fn close_established_channel<F>(
     first: DlcParty,
     second: DlcParty,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     generate_blocks: &F,
 ) where
     F: Fn(u64),
@@ -829,7 +832,7 @@ fn close_established_channel<F>(
 fn cheat_punish<F: Fn(u64)>(
     first: DlcParty,
     second: DlcParty,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     generate_blocks: &F,
     established: bool,
 ) {
@@ -863,7 +866,7 @@ fn settle_channel(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
 ) {
     let (settle_offer, _) = first
         .lock()
@@ -914,7 +917,7 @@ fn settle_reject(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
 ) {
     let (settle_offer, _) = first
         .lock()
@@ -960,7 +963,7 @@ fn settle_race(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
 ) {
     let (settle_offer, _) = first
         .lock()
@@ -1012,7 +1015,7 @@ fn renew_channel(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     contract_input: &ContractInput,
     check_prev_contract_close: bool,
 ) {
@@ -1082,7 +1085,7 @@ fn renew_reject(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     contract_input: &ContractInput,
 ) {
     let (renew_offer, _) = first
@@ -1126,7 +1129,7 @@ fn renew_race(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     contract_input: &ContractInput,
 ) {
     let (renew_offer, _) = first
@@ -1179,7 +1182,7 @@ fn collaborative_close<F: Fn(u64)>(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
     second: DlcParty,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     sync_receive: &Receiver<()>,
     generate_blocks: &F,
 ) {
@@ -1223,7 +1226,7 @@ fn renew_timeout<F: Fn(u64)>(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     contract_input: &ContractInput,
     path: TestPath,
     generate_blocks: &F,
@@ -1307,7 +1310,7 @@ fn settle_timeout(
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
     second_receive: &Receiver<()>,
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     path: TestPath,
 ) {
     let (settle_offer, _) = first

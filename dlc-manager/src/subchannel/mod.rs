@@ -15,6 +15,7 @@ use lightning::{
         chan_utils::CounterpartyCommitmentSecrets,
         channelmanager::{ChannelDetails, ChannelLock, ChannelManager},
         msgs::{ChannelMessageHandler, CommitmentSigned, RevokeAndACK},
+        ChannelId,
     },
     routing::router::Router,
     sign::{EntropySource, NodeSigner, SignerProvider, WriteableEcdsaChannelSigner},
@@ -22,7 +23,7 @@ use lightning::{
 };
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};
 
-use crate::{channel::party_points::PartyBasePoints, error::Error, ChannelId, ContractId};
+use crate::{channel::party_points::PartyBasePoints, error::Error, DlcChannelId};
 
 pub mod ser;
 
@@ -74,9 +75,9 @@ impl std::fmt::Debug for SubChannel {
 impl SubChannel {
     /// Return the channel ID of the DLC channel at given index if in a state where such a channel
     /// is supposed to exist.
-    pub fn get_dlc_channel_id(&self, index: u8) -> Option<ChannelId> {
+    pub fn get_dlc_channel_id(&self, index: u8) -> Option<DlcChannelId> {
         let temporary_channel_id =
-            generate_temporary_channel_id(self.channel_id, self.update_idx, index);
+            generate_temporary_dlc_channel_id(self.channel_id, self.update_idx, index);
         match &self.state {
             SubChannelState::Offered(_) => Some(temporary_channel_id),
             SubChannelState::Accepted(a) => Some(a.get_dlc_channel_id(temporary_channel_id, index)),
@@ -247,7 +248,11 @@ impl From<&ChannelDetails> for LnRollBackInfo {
 }
 
 impl AcceptedSubChannel {
-    fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
+    fn get_dlc_channel_id(
+        &self,
+        temporary_channel_id: DlcChannelId,
+        channel_idx: u8,
+    ) -> DlcChannelId {
         crate::utils::compute_id(
             self.split_tx.transaction.txid(),
             channel_idx as u16 + 1,
@@ -287,7 +292,11 @@ pub struct ConfirmedSubChannel {
 }
 
 impl ConfirmedSubChannel {
-    fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
+    fn get_dlc_channel_id(
+        &self,
+        temporary_channel_id: DlcChannelId,
+        channel_idx: u8,
+    ) -> DlcChannelId {
         crate::utils::compute_id(
             self.split_tx.transaction.txid(),
             channel_idx as u16 + 1,
@@ -318,7 +327,11 @@ pub struct SignedSubChannel {
 }
 
 impl SignedSubChannel {
-    fn get_dlc_channel_id(&self, temporary_channel_id: ChannelId, channel_idx: u8) -> ChannelId {
+    fn get_dlc_channel_id(
+        &self,
+        temporary_channel_id: DlcChannelId,
+        channel_idx: u8,
+    ) -> DlcChannelId {
         crate::utils::compute_id(
             self.split_tx.transaction.txid(),
             channel_idx as u16 + 1,
@@ -395,9 +408,9 @@ pub struct ClosingSubChannel {
 }
 
 /// Provides the ability to access and update Lightning Network channels.
-pub trait LNChannelManager<SP>: ChannelMessageHandler
+pub trait LNChannelManager<K: Deref>: ChannelMessageHandler
 where
-    SP: lightning::sign::ChannelSigner,
+    K::Target: SignerProvider,
 {
     /// Returns the details of the channel with given `channel_id` if found.
     fn get_channel_details(&self, channel_id: &ChannelId) -> Option<ChannelDetails>;
@@ -412,7 +425,7 @@ where
         cb: F,
     ) -> Result<T, APIError>
     where
-        F: FnOnce(&mut ChannelLock<SP>) -> Result<T, APIError>;
+        F: FnOnce(&mut ChannelLock<K>) -> Result<T, APIError>;
     /// Enable executing the provided callback while holding the lock of the channel without
     /// checking the channel state or peer connection status.
     fn with_channel_lock_no_check<F, T>(
@@ -422,12 +435,12 @@ where
         cb: F,
     ) -> Result<T, APIError>
     where
-        F: FnOnce(&mut ChannelLock<SP>) -> Result<T, APIError>;
+        F: FnOnce(&mut ChannelLock<K>) -> Result<T, APIError>;
     /// Updates the funding output for the channel and returns the [`CommitmentSigned`] message
     /// with signatures for the updated commitment transaction and HTLCs.
     fn get_updated_funding_outpoint_commitment_signed(
         &self,
-        channel_lock: &mut ChannelLock<SP>,
+        channel_lock: &mut ChannelLock<K>,
         funding_outpoint: &OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
@@ -436,7 +449,7 @@ where
     /// message.
     fn on_commitment_signed_get_raa(
         &self,
-        channel_lock: &mut ChannelLock<SP>,
+        channel_lock: &mut ChannelLock<K>,
         commitment_signature: &Signature,
         htlc_signatures: &[Signature],
     ) -> Result<RevokeAndACK, APIError>;
@@ -444,14 +457,14 @@ where
     /// Provides and verify a [`RevokeAndACK`] message.
     fn revoke_and_ack(
         &self,
-        channel_lock: &mut ChannelLock<SP>,
+        channel_lock: &mut ChannelLock<K>,
         revoke_and_ack: &RevokeAndACK,
     ) -> Result<(), APIError>;
 
     /// Force close the channel with given `channel_id` and `counter_party_node_id`.
     fn force_close_channel(
         &self,
-        channel_id: &[u8; 32],
+        channel_id: &ChannelId,
         counter_party_node_id: &PublicKey,
     ) -> Result<(), Error>;
 
@@ -459,7 +472,7 @@ where
     /// ones.
     fn set_funding_outpoint(
         &self,
-        channel_lock: &mut ChannelLock<SP>,
+        channel_lock: &mut ChannelLock<K>,
         funding_outpoint: &lightning::chain::transaction::OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
@@ -487,8 +500,7 @@ pub trait LNChainMonitor {
 }
 
 impl<M: Deref, T: Deref, ES: Deref, NS: Deref, K: Deref, F: Deref, R: Deref, L: Deref>
-    LNChannelManager<<K::Target as SignerProvider>::Signer>
-    for ChannelManager<M, T, ES, NS, K, F, R, L>
+    LNChannelManager<K> for ChannelManager<M, T, ES, NS, K, F, R, L>
 where
     M::Target: lightning::chain::Watch<<K::Target as SignerProvider>::Signer>,
     T::Target: BroadcasterInterface,
@@ -509,7 +521,7 @@ where
 
     fn get_updated_funding_outpoint_commitment_signed(
         &self,
-        channel_lock: &mut ChannelLock<<K::Target as SignerProvider>::Signer>,
+        channel_lock: &mut ChannelLock<K>,
         funding_outpoint: &OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
@@ -527,7 +539,7 @@ where
 
     fn on_commitment_signed_get_raa(
         &self,
-        channel_lock: &mut ChannelLock<<K::Target as SignerProvider>::Signer>,
+        channel_lock: &mut ChannelLock<K>,
         commitment_signature: &Signature,
         htlc_signatures: &[Signature],
     ) -> Result<RevokeAndACK, APIError> {
@@ -536,7 +548,7 @@ where
 
     fn revoke_and_ack(
         &self,
-        channel_lock: &mut ChannelLock<<K::Target as SignerProvider>::Signer>,
+        channel_lock: &mut ChannelLock<K>,
         revoke_and_ack: &RevokeAndACK,
     ) -> Result<(), APIError> {
         self.revoke_and_ack_commitment(channel_lock, revoke_and_ack)
@@ -544,7 +556,7 @@ where
 
     fn force_close_channel(
         &self,
-        channel_id: &[u8; 32],
+        channel_id: &ChannelId,
         counter_party_node_id: &PublicKey,
     ) -> Result<(), Error> {
         self.force_close_broadcasting_latest_txn(channel_id, counter_party_node_id)
@@ -553,7 +565,7 @@ where
 
     fn set_funding_outpoint(
         &self,
-        channel_lock: &mut ChannelLock<<K::Target as SignerProvider>::Signer>,
+        channel_lock: &mut ChannelLock<K>,
         funding_outpoint: &lightning::chain::transaction::OutPoint,
         channel_value_satoshis: u64,
         value_to_self_msat: u64,
@@ -574,9 +586,7 @@ where
         cb: C,
     ) -> Result<RV, APIError>
     where
-        C: FnOnce(
-            &mut ChannelLock<<<K as Deref>::Target as SignerProvider>::Signer>,
-        ) -> Result<RV, APIError>,
+        C: FnOnce(&mut ChannelLock<K>) -> Result<RV, APIError>,
     {
         self.with_useable_channel_lock(channel_id, counter_party_node_id, commit_tx_number, cb)
     }
@@ -588,9 +598,7 @@ where
         cb: C,
     ) -> Result<RV, APIError>
     where
-        C: FnOnce(
-            &mut ChannelLock<<<K as Deref>::Target as SignerProvider>::Signer>,
-        ) -> Result<RV, APIError>,
+        C: FnOnce(&mut ChannelLock<K>) -> Result<RV, APIError>,
     {
         self.with_channel_lock_no_check(channel_id, counter_party_node_id, cb)
     }
@@ -644,13 +652,13 @@ where
 
 /// Generate a temporary channel id for a DLC channel based on the LN channel id, the update index of the
 /// split transaction and the index of the DLC channel within the sub channel.
-pub fn generate_temporary_channel_id(
+pub fn generate_temporary_dlc_channel_id(
     channel_id: ChannelId,
     split_update_idx: u64,
     channel_index: u8,
-) -> ContractId {
+) -> DlcChannelId {
     let mut data = Vec::with_capacity(65);
-    data.extend_from_slice(&channel_id);
+    data.extend_from_slice(&channel_id.0);
     data.extend_from_slice(&split_update_idx.to_be_bytes());
     data.extend_from_slice(&channel_index.to_be_bytes());
     bitcoin::hashes::sha256::Hash::hash(&data).into_inner()

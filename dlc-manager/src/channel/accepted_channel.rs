@@ -4,7 +4,7 @@ use bitcoin::{Script, Transaction};
 use dlc_messages::channel::AcceptChannel;
 use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey};
 
-use crate::{contract::accepted_contract::AcceptedContract, ChannelId, ContractId};
+use crate::{contract::accepted_contract::AcceptedContract, ContractId, DlcChannelId};
 
 use super::party_points::PartyBasePoints;
 
@@ -31,9 +31,9 @@ pub struct AcceptedChannel {
     /// The script pubkey of the buffer transaction output.
     pub buffer_script_pubkey: Script,
     /// The temporary id of the channel.
-    pub temporary_channel_id: ChannelId,
+    pub temporary_channel_id: DlcChannelId,
     /// The actual id of the channel.
-    pub channel_id: ChannelId,
+    pub channel_id: DlcChannelId,
     /// The image of the per update seed used by the accept party.
     pub accept_per_update_seed: PublicKey,
     /// The accept party adaptor signature for the buffer transaction.

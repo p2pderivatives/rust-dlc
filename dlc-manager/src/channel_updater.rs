@@ -22,7 +22,7 @@ use crate::{
     },
     error::Error,
     subchannel::{ClosingSubChannel, SubChannel},
-    Blockchain, ChannelId, ContractId, Signer, Time, Wallet,
+    Blockchain, ContractId, DlcChannelId, Signer, Time, Wallet,
 };
 use bitcoin::{OutPoint, Script, Sequence, Transaction};
 use dlc::{
@@ -38,8 +38,9 @@ use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingSignatures,
 };
-use lightning::ln::chan_utils::{
-    build_commitment_secret, derive_private_key, CounterpartyCommitmentSecrets,
+use lightning::ln::{
+    chan_utils::{build_commitment_secret, derive_private_key, CounterpartyCommitmentSecrets},
+    ChannelId,
 };
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing};
 
@@ -107,7 +108,7 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     wallet: &W,
     blockchain: &B,
     time: &T,
-    temporary_channel_id: ContractId,
+    temporary_channel_id: DlcChannelId,
     is_sub_channel: bool,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where

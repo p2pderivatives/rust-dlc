@@ -1,6 +1,7 @@
 //! Module containing messages related to DLC on Lightning channels.
 
 use bitcoin::Script;
+use lightning::ln::ChannelId;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, SecretKey};
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
@@ -17,7 +18,14 @@ use lightning::util::ser::{Readable, Writeable, Writer};
 /// A message to offer the establishment of a DLC channel within a preexisting Lightning channel.
 pub struct SubChannelOffer {
     /// The id of the Lightning channel the message refers to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The base point that will be used by the offer party for revocation of the DLC channel
     /// transactions.
     pub revocation_basepoint: PublicKey,
@@ -90,7 +98,14 @@ impl_dlc_writeable!(
 )]
 pub struct SubChannelAccept {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The base point that will be used by the offer party for revocation of the split
     /// transaction.
     pub revocation_basepoint: PublicKey,
@@ -166,7 +181,14 @@ impl_dlc_writeable!(
 )]
 pub struct SubChannelConfirm {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The adaptor signature used for revocation of the split transaction.
     pub split_adaptor_signature: EcdsaAdaptorSignature,
     /// The signature for the new commitment transaction.
@@ -208,7 +230,14 @@ impl_dlc_writeable!(SubChannelConfirm, {
 )]
 pub struct SubChannelFinalize {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The pre-image of the revocation point used for the old commitment transaction.
     pub per_commitment_secret: SecretKey,
     /// The commitment point for the next Lightning commitment transaction.
@@ -233,7 +262,14 @@ impl_dlc_writeable!(SubChannelFinalize, {
 )]
 pub struct SubChannelRevoke {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The pre-image of the revocation point used for the old commitment transaction.
     pub per_commitment_secret: SecretKey,
     /// The commitment point for the next Lightning commitment transaction.
@@ -256,7 +292,14 @@ impl_dlc_writeable!(SubChannelRevoke, {
 )]
 pub struct SubChannelCloseOffer {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The balance proposed to the counter party.
     pub accept_balance: u64,
 }
@@ -276,7 +319,14 @@ impl_dlc_writeable!(SubChannelCloseOffer, {
 )]
 pub struct SubChannelCloseAccept {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The signature for the new commitment transaction The signature for the new commitment
     /// transaction.
     pub commit_signature: Signature,
@@ -303,7 +353,14 @@ impl_dlc_writeable!(SubChannelCloseAccept, {
 )]
 pub struct SubChannelCloseConfirm {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The signature for the new commitment transaction The signature for the new commitment
     /// transaction.
     pub commit_signature: Signature,
@@ -339,7 +396,14 @@ impl_dlc_writeable!(SubChannelCloseConfirm, {
 )]
 pub struct SubChannelCloseFinalize {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
     /// The pre-image of the split transaction revocation point.
     pub split_revocation_secret: SecretKey,
     /// The pre-image of the commit transaction revocation point.
@@ -365,7 +429,14 @@ impl_dlc_writeable!(SubChannelCloseFinalize, {
 )]
 pub struct Reject {
     /// The id of the Lightning channel the message relates to.
-    pub channel_id: [u8; 32],
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_channel_id",
+            deserialize_with = "crate::serde_utils::deserialize_channel_id"
+        )
+    )]
+    pub channel_id: ChannelId,
 }
 
 impl_dlc_writeable!(Reject, { (channel_id, writeable) });

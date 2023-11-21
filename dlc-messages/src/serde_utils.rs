@@ -2,6 +2,8 @@
 
 use std::fmt::Write;
 
+use lightning::ln::ChannelId;
+
 /// Serialize an hexadecimal value.
 pub fn serialize_hex<S>(hex: &[u8], s: S) -> Result<S::Ok, S::Error>
 where
@@ -71,4 +73,22 @@ fn from_hex(hex: &str, target: &mut [u8]) -> Result<usize, String> {
         idx += 1;
     }
     Ok(idx / 2)
+}
+
+/// Serialize a [`ChannelId`].
+pub fn serialize_channel_id<S>(channel_id: &ChannelId, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    s.serialize_bytes(&channel_id.0)
+}
+
+/// Deserialize a [`ChannelId`].
+pub fn deserialize_channel_id<'de, D>(deserializer: D) -> Result<ChannelId, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let bytes = serde::Deserialize::deserialize(deserializer)?;
+
+    Ok(ChannelId::from_bytes(bytes))
 }

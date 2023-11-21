@@ -8,7 +8,7 @@ use secp256k1_zkp::PublicKey;
 
 use crate::{
     contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos,
-    error::Error, ChannelId, ContractId,
+    error::Error, ContractId, DlcChannelId,
 };
 
 use super::party_points::PartyBasePoints;
@@ -25,8 +25,8 @@ pub struct OfferedChannel {
     /// The temporary [`crate::ContractId`] of the contract that was offered for
     /// channel setup.
     pub offered_contract_id: ContractId,
-    /// The temporary [`crate::ChannelId`] of the channel.
-    pub temporary_channel_id: ChannelId,
+    /// The temporary [`DlcChannelId`] of the channel.
+    pub temporary_channel_id: DlcChannelId,
     /// The set of base points that the offer party will use during the lifetime
     /// of the channel.
     pub party_points: PartyBasePoints,

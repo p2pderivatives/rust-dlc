@@ -33,7 +33,8 @@ use dlc_manager::contract::{
 use dlc_manager::subchannel::{SubChannel, SubChannelState};
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
-use dlc_manager::{error::Error, ContractId, Storage};
+use dlc_manager::{error::Error, ContractId, DlcChannelId, Storage};
+use lightning::ln::ChannelId;
 use lightning::util::ser::{Readable, Writeable};
 #[cfg(feature = "wallet")]
 use secp256k1_zkp::{PublicKey, SecretKey};
@@ -377,14 +378,14 @@ impl Storage for SledStorageProvider {
         Ok(())
     }
 
-    fn delete_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<(), Error> {
+    fn delete_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
         self.channel_tree()?
             .remove(channel_id)
             .map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<Option<Channel>, Error> {
+    fn get_channel(&self, channel_id: &DlcChannelId) -> Result<Option<Channel>, Error> {
         match self
             .channel_tree()?
             .get(channel_id)
@@ -446,20 +447,17 @@ impl Storage for SledStorageProvider {
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
         let serialized = serialize_sub_channel(subchannel)?;
         self.sub_channel_tree()?
-            .insert(subchannel.channel_id, serialized)
+            .insert(subchannel.channel_id.0, serialized)
             .map_err(to_storage_error)?;
 
         self.sub_channel_tree()?.flush().map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_sub_channel(
-        &self,
-        channel_id: dlc_manager::ChannelId,
-    ) -> Result<Option<SubChannel>, Error> {
+    fn get_sub_channel(&self, channel_id: ChannelId) -> Result<Option<SubChannel>, Error> {
         match self
             .sub_channel_tree()?
-            .get(channel_id)
+            .get(channel_id.0)
             .map_err(to_storage_error)?
         {
             Some(res) => Ok(Some(deserialize_sub_channel(&res)?)),

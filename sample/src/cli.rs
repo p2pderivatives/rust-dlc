@@ -14,7 +14,7 @@ use dlc_messages::ChannelMessage;
 use dlc_messages::Message as DlcMessage;
 use dlc_messages::OnChainMessage;
 use hex_utils::{hex_str, to_slice};
-use lightning::ln::msgs::NetAddress;
+use lightning::ln::msgs::SocketAddress;
 use serde::Deserialize;
 use serde_json::Value;
 use std::convert::TryInto;
@@ -46,7 +46,7 @@ pub struct OracleConfig {
 #[derive(Debug)]
 pub struct NetworkConfig {
     pub peer_listening_port: u16,
-    pub announced_listen_addr: Option<NetAddress>,
+    pub announced_listen_addr: Option<SocketAddress>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,11 +80,11 @@ where
             .as_str()
             .expect("Error parsing announcedListeAddr");
         match IpAddr::from_str(buf) {
-            Ok(IpAddr::V4(a)) => Some(NetAddress::IPv4 {
+            Ok(IpAddr::V4(a)) => Some(SocketAddress::TcpIpV4 {
                 addr: a.octets(),
                 port: peer_listening_port,
             }),
-            Ok(IpAddr::V6(a)) => Some(NetAddress::IPv6 {
+            Ok(IpAddr::V6(a)) => Some(SocketAddress::TcpIpV6 {
                 addr: a.octets(),
                 port: peer_listening_port,
             }),
