@@ -75,17 +75,13 @@ pub(crate) fn create_fund_transaction_with_fees(
         })
         .unwrap_or(0);
 
+    let party_coordinator_fee = total_extra_coordinator_fee / 2 + total_extra_coordinator_fee % 2;
+
     let (offer_change_output, offer_fund_fee, offer_cet_fee) = offer_params
-        .get_change_output_and_fees(
-            fee_rate_per_vb,
-            extra_fee + ((total_extra_coordinator_fee + 2_u64) / 2_u64) as u64 - 1_u64,
-        )
+        .get_change_output_and_fees(fee_rate_per_vb, extra_fee + party_coordinator_fee)
         .map_err(FromDlcError::Dlc)?;
     let (accept_change_output, accept_fund_fee, accept_cet_fee) = accept_params
-        .get_change_output_and_fees(
-            fee_rate_per_vb,
-            extra_fee + ((total_extra_coordinator_fee + 2_u64) / 2_u64) as u64 - 1_u64,
-        )
+        .get_change_output_and_fees(fee_rate_per_vb, extra_fee + party_coordinator_fee)
         .map_err(FromDlcError::Dlc)?;
 
     let fund_output_value = checked_add!(offer_params.input_amount, accept_params.input_amount)?
