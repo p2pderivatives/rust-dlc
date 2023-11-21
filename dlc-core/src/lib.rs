@@ -69,12 +69,12 @@ fn get_dlc_transactions(
     (*offer_collateral == offer_params.collateral)
         .then(|| {})
         .ok_or(FromDlcError::InvalidState(
-            "Offering party collateral does not match the contract input",
+            "Offering party collateral does not match the contract input".to_owned(),
         ))?;
     (*accept_collateral == accept_params.collateral)
         .then(|| {})
         .ok_or(FromDlcError::InvalidState(
-            "Accepting party collateral does not match the contract input",
+            "Accepting party collateral does not match the contract input".to_owned(),
         ))?;
 
     let total_collateral = offer_params.collateral + accept_params.collateral;

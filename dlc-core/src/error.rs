@@ -16,7 +16,7 @@ pub enum FromDlcError {
     // #[error("{0}")]
     BitcoinEncoding(#[from] bitcoin::consensus::encode::Error),
     // #[error("{0}")]
-    InvalidState(&'static str),
+    InvalidState(String),
     // #[error("{0}")]
     EncodingError(#[from] std::io::Error),
     // #[error("{0}")]

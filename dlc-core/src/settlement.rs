@@ -92,10 +92,12 @@ pub fn get_signed_cet(
             contract_params
                 .contract_info
                 .get(0)
-                .ok_or(FromDlcError::InvalidState("Contract Params malformed"))?,
-            adaptor_infos
-                .get(0)
-                .ok_or(FromDlcError::InvalidState("Contract Params malformed"))?,
+                .ok_or(FromDlcError::InvalidState(
+                    "Contract Params malformed".to_owned(),
+                ))?,
+            adaptor_infos.get(0).ok_or(FromDlcError::InvalidState(
+                "Contract Params malformed".to_owned(),
+            ))?,
             &attestations,
         )?;
     let mut cet = dlc_transactions.cets[range_info.cet_index].clone();

@@ -21,7 +21,7 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
     (contract_input.contract_infos.len() == oracle_announcements.len())
         .then_some(())
         .ok_or(FromDlcError::InvalidState(
-            "Number of contracts and Oracle Announcement set must match",
+            "Number of contracts and Oracle Announcement set must match".to_owned(),
         ))?;
 
     let contract_info = contract_input

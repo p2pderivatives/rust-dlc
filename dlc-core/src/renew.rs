@@ -59,9 +59,10 @@ pub fn renew(
             (&input.previous_output.txid == &old_funding.txid())
                 && (input.previous_output.vout == vout_old_dlc)
         })
-        .ok_or(FromDlcError::InvalidState(
-            "New funding is not using previous DLC",
-        ))?;
+        .ok_or(FromDlcError::InvalidState(format!(
+            "New funding is not using previous DLC output ({:?})",
+            (&old_funding.txid(), vout_old_dlc)
+        )))?;
 
     // Checking that new contract is genuine
     let secp = Secp256k1::new();
@@ -90,7 +91,7 @@ pub fn renew(
             .output
             .get(vout_old_dlc as usize)
             .ok_or(FromDlcError::InvalidState(
-                "Malformed funding transaction for old DLC",
+                "Malformed funding transaction for old DLC".to_owned(),
             ))?;
 
     Ok(RenewInfos {
