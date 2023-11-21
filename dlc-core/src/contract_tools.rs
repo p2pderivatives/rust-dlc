@@ -68,19 +68,24 @@ pub(crate) fn create_fund_transaction_with_fees(
 ) -> Result<(Transaction, Script), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
-    let extra_fee = extra_fee
-        + fee_party_params
-            .as_ref()
-            .and_then(|p| {
-                Some(p.fee_value + (fee_rate_per_vb * (9_u64 + p.fee_script_pubkey.len() as u64)))
-            })
-            .unwrap_or(0);
+    let total_extra_coordinator_fee = fee_party_params
+        .as_ref()
+        .and_then(|p| {
+            Some(p.fee_value + (fee_rate_per_vb * (9_u64 + p.fee_script_pubkey.len() as u64)))
+        })
+        .unwrap_or(0);
 
     let (offer_change_output, offer_fund_fee, offer_cet_fee) = offer_params
-        .get_change_output_and_fees(fee_rate_per_vb, extra_fee)
+        .get_change_output_and_fees(
+            fee_rate_per_vb,
+            extra_fee + ((total_extra_coordinator_fee + 2) / 2) - 1,
+        )
         .map_err(FromDlcError::Dlc)?;
     let (accept_change_output, accept_fund_fee, accept_cet_fee) = accept_params
-        .get_change_output_and_fees(fee_rate_per_vb, extra_fee)
+        .get_change_output_and_fees(
+            fee_rate_per_vb,
+            extra_fee + ((total_extra_coordinator_fee + 2) / 2) - 1,
+        )
         .map_err(FromDlcError::Dlc)?;
 
     let fund_output_value = checked_add!(offer_params.input_amount, accept_params.input_amount)?
