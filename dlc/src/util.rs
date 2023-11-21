@@ -199,7 +199,7 @@ pub fn sign_multi_sig_input<C: Signing>(
 }
 
 /// Transforms a redeem script for a p2sh-p2w* output to a script signature.
-pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
+pub fn redeem_script_to_script_sig(redeem: &Script) -> Script {
     match redeem.len() {
         0 => Script::new(),
         _ => Builder::new().push_slice(redeem.as_bytes()).into_script(),
@@ -207,7 +207,7 @@ pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
 }
 
 /// Sorts the given inputs in following the order of the ids.
-pub(crate) fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &[u64]) -> Vec<T> {
+pub fn order_by_serial_ids<T>(inputs: Vec<T>, ids: &[u64]) -> Vec<T> {
     debug_assert!(inputs.len() == ids.len());
     let mut combined: Vec<(&u64, T)> = ids.iter().zip(inputs).collect();
     combined.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
@@ -227,11 +227,12 @@ pub fn get_output_for_script_pubkey<'a>(
 }
 
 /// Filters the outputs that have a value lower than the given `dust_limit`.
-pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
+pub fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
     txs.into_iter().filter(|x| x.value >= dust_limit).collect()
 }
 
-pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
+/// nSequence enable or disable locktime
+pub fn get_sequence(lock_time: u32) -> Sequence {
     if lock_time == 0 {
         DISABLE_LOCKTIME
     } else {

@@ -1,3 +1,4 @@
+use contract_tools::{create_dlc_transactions, FeePartyParams};
 use dlc::{DlcTransactions, PartyParams, Payout};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
@@ -9,6 +10,8 @@ pub mod settlement;
 pub mod sign_cets;
 pub mod verify_cets;
 pub mod verify_contract;
+
+pub mod contract_tools;
 
 use crate::error::*;
 #[cfg(feature = "serde")]
@@ -52,6 +55,7 @@ fn get_dlc_transactions(
     contract_params: &ContractParams,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
+    fee_party_params: Option<&FeePartyParams>,
 ) -> Result<DlcTransactions> {
     let ContractParams {
         contract_info,
@@ -74,9 +78,10 @@ fn get_dlc_transactions(
         ))?;
 
     let total_collateral = offer_params.collateral + accept_params.collateral;
-    dlc::create_dlc_transactions(
+    create_dlc_transactions(
         offer_params,
         accept_params,
+        fee_party_params,
         &contract_info[0]
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?,
@@ -86,7 +91,6 @@ fn get_dlc_transactions(
         *cet_locktime,
         u64::MAX / 2,
     )
-    .map_err(FromDlcError::Dlc)
 }
 
 fn validate_presigned_without_infos(

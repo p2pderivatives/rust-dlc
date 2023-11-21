@@ -11,7 +11,8 @@ use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
 use crate::{
-    error::*, get_dlc_transactions, validate_presigned_without_infos, ContractParams, SideSign,
+    contract_tools::FeePartyParams, error::*, get_dlc_transactions,
+    validate_presigned_without_infos, ContractParams, SideSign,
 };
 
 #[cfg(feature = "serde")]
@@ -21,11 +22,13 @@ pub fn get_refund(
     contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
+    fee_party_params: Option<&FeePartyParams>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         offer_side.party_params,
         accept_side.party_params,
+        fee_party_params,
     )?;
 
     let (refund_sigs_offer, fund_pubkey_offer) =
@@ -59,6 +62,7 @@ pub fn get_signed_cet(
     contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
+    fee_party_params: Option<&FeePartyParams>,
     attestations: &[AttestationData],
 ) -> Result<Transaction> {
     let attestations: Box<[(usize, &OracleAttestation)]> = attestations
@@ -70,6 +74,7 @@ pub fn get_signed_cet(
         &contract_params,
         offer_side.party_params,
         accept_side.party_params,
+        fee_party_params,
     )?;
     let secp = Secp256k1::new();
 

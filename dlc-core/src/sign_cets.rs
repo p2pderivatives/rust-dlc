@@ -5,7 +5,9 @@ use dlc_manager::contract::{
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey, Verification};
 
-use crate::{error::*, get_dlc_transactions, CetSignatures, ContractParams};
+use crate::{
+    contract_tools::FeePartyParams, error::*, get_dlc_transactions, CetSignatures, ContractParams,
+};
 
 pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncement]>>(
     secp: &Secp256k1<C>,
@@ -57,10 +59,16 @@ pub fn sign_cets(
     secp: &Secp256k1<All>,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
+    fee_party_params: Option<&FeePartyParams>,
     contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
 ) -> Result<CetSignatures> {
-    let dlc_transactions = get_dlc_transactions(contract_params, offer_params, accept_params)?;
+    let dlc_transactions = get_dlc_transactions(
+        contract_params,
+        offer_params,
+        accept_params,
+        fee_party_params,
+    )?;
 
     let fund_public_key = PublicKey::from_secret_key(secp, fund_secret_key);
 

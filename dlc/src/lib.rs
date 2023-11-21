@@ -45,11 +45,11 @@ pub mod util;
 /// Minimum value that can be included in a transaction output. Under this value,
 /// outputs are discarded
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#change-outputs
-const DUST_LIMIT: u64 = 1000;
+pub const DUST_LIMIT: u64 = 1000;
 
 /// The transaction version
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#funding-transaction
-const TX_VERSION: i32 = 2;
+pub const TX_VERSION: i32 = 2;
 
 /// The base weight of a fund transaction
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
@@ -67,6 +67,8 @@ const TX_INPUT_BASE_WEIGHT: usize = 164;
 /// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>
 pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
+/// Safe addition without wraping arithmetic
+#[macro_export]
 macro_rules! checked_add {
     ($a: expr, $b: expr) => {
         $a.checked_add($b).ok_or(Error::InvalidArgument)
@@ -268,7 +270,7 @@ impl PartyParams {
     /// The change output value already accounts for the required fees.
     /// If input amount (sum of all input values) is lower than the sum of the collateral
     /// plus the required fees, an error is returned.
-    pub(crate) fn get_change_output_and_fees(
+    pub fn get_change_output_and_fees(
         &self,
         fee_rate_per_vb: u64,
         extra_fee: u64,
@@ -331,7 +333,11 @@ impl PartyParams {
         Ok((change_output, fund_fee, cet_or_refund_fee))
     }
 
-    fn get_unsigned_tx_inputs_and_serial_ids(&self, sequence: Sequence) -> (Vec<TxIn>, Vec<u64>) {
+    /// Compute Inputs for the party
+    pub fn get_unsigned_tx_inputs_and_serial_ids(
+        &self,
+        sequence: Sequence,
+    ) -> (Vec<TxIn>, Vec<u64>) {
         let mut tx_ins = Vec::with_capacity(self.inputs.len());
         let mut serial_ids = Vec::with_capacity(self.inputs.len());
 
@@ -457,7 +463,8 @@ pub(crate) fn create_fund_transaction_with_fees(
     Ok((fund_tx, funding_script_pubkey))
 }
 
-pub(crate) fn create_cets_and_refund_tx(
+/// Create the offchain transactions for a DLC contract based on the provided parameters
+pub fn create_cets_and_refund_tx(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     prev_outpoint: OutPoint,

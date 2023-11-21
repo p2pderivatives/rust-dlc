@@ -3,7 +3,7 @@ use bitcoin::Transaction;
 use secp256k1_zkp::Secp256k1;
 
 use crate::{
-    error::*, get_dlc_transactions, validate_presigned_with_infos,
+    contract_tools::FeePartyParams, error::*, get_dlc_transactions, validate_presigned_with_infos,
     validate_presigned_without_infos, ContractParams, SideSign,
 };
 
@@ -11,11 +11,13 @@ pub fn check_all_signed_dlc(
     contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
+    fee_party_params: Option<&FeePartyParams>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
         &contract_params,
         offer_side.party_params,
         accept_side.party_params,
+        fee_party_params,
     )?;
 
     let secp = Secp256k1::new();

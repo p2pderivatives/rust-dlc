@@ -1,8 +1,10 @@
 use bitcoin::{Script, Transaction};
 use dlc::PartyParams;
 
+use dlc::util::get_output_for_script_pubkey;
 use secp256k1_zkp::Secp256k1;
 
+use crate::contract_tools::FeePartyParams;
 use crate::{error::*, ContractParams, SideSign};
 use crate::{
     get_dlc_transactions, validate_presigned_with_infos, validate_presigned_without_infos,
@@ -10,7 +12,7 @@ use crate::{
 
 pub struct RenewInfos {
     pub funding: Transaction,
-    pub index_input: u32,
+    pub index_input: usize,
     pub witness_script: Script,
     pub value: u64,
 }
@@ -19,26 +21,35 @@ pub fn renew(
     old_contract_params: &ContractParams,
     old_offer_params: &PartyParams,
     old_accept_params: &PartyParams,
+    old_fee_party_params: Option<&FeePartyParams>,
     contract_params: &ContractParams,
     offer_side: &SideSign,
     accept_side: &SideSign,
+    fee_party_params: Option<&FeePartyParams>,
 ) -> Result<RenewInfos> {
     // Checking that contracts are chained
-    let old_dlc_transactions =
-        get_dlc_transactions(old_contract_params, old_offer_params, old_accept_params)?;
+    let old_dlc_transactions = get_dlc_transactions(
+        old_contract_params,
+        old_offer_params,
+        old_accept_params,
+        old_fee_party_params,
+    )?;
 
     let new_dlc_transactions = get_dlc_transactions(
         contract_params,
         offer_side.party_params,
         accept_side.party_params,
+        fee_party_params,
     )?;
 
     let old_funding = old_dlc_transactions.fund;
 
-    let vout_old_dlc = [old_offer_params, old_accept_params]
-        .iter()
-        .filter(|params| params.change_serial_id < u64::MAX / 2) // Recall: the DLC always has seriald id of u64::MAX/2 in our implementation
-        .count() as u32;
+    let vout_old_dlc = get_output_for_script_pubkey(
+        &old_funding,
+        &old_dlc_transactions.funding_script_pubkey.to_v0_p2wsh(),
+    )
+    .expect("to find the funding script pubkey")
+    .0 as u32;
 
     let index_input = new_dlc_transactions
         .fund
@@ -50,7 +61,7 @@ pub fn renew(
         })
         .ok_or(FromDlcError::InvalidState(
             "New funding is not using previous DLC",
-        ))? as u32;
+        ))?;
 
     // Checking that new contract is genuine
     let secp = Secp256k1::new();

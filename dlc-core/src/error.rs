@@ -19,6 +19,8 @@ pub enum FromDlcError {
     InvalidState(&'static str),
     // #[error("{0}")]
     EncodingError(#[from] std::io::Error),
+    // #[error("{0}")]
+    InvalidArgument,
 }
 
 impl Display for FromDlcError {
@@ -38,6 +40,7 @@ impl Display for FromDlcError {
             FromDlcError::EncodingError(err) => {
                 "Encoding error: ".to_owned() + err.to_string().as_str()
             }
+            FromDlcError::InvalidArgument => "Some Argument is Invalid".to_string(),
         };
 
         write!(f, "{}", str)
