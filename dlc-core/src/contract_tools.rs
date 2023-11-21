@@ -4,6 +4,9 @@ use dlc::{
     PartyParams, Payout,
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::error::FromDlcError;
 
 type Error = FromDlcError;
