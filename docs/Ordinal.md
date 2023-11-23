@@ -10,7 +10,7 @@ Either of the participants can choose to include additional satoshis as collater
 
 ## How it works
 
-In order to ensure that the ordinal does not get lost to fee, the DLC transactions for DLCs including an ordinal are created in the following way:
+In order to ensure that the ordinal gets properly assigned and not given to miners as fee, the DLC transactions for DLCs including an ordinal are created in the following way:
 
 - The ordinal input is always set as the first one in the funding transaction,
 - The funding output is always set as the first one in the funding transaction,
