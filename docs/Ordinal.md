@@ -16,7 +16,7 @@ In order to ensure that the ordinal gets properly assigned and not given to mine
 - The funding output is always set as the first one in the funding transaction,
 - The party getting the ordinal will always have its CET output in the first position.
 
-### Locking an ordinal in the DLC
+### Locking an ordinal in a DLC
 
 To lock an ordinal, an [`OrdDescriptor`](../dlc-manager/src/contract/ord_descriptor.rs) must be used. This descriptor contains information about the ordinal being included in the DLC (location in the blockchain and the transaction that includes is), as well as information about the event upon which the DLC is based.
 
