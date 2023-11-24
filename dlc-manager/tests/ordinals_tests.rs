@@ -286,7 +286,7 @@ fn ordinal_enum_test() {
 
     mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
-    alice_manager.periodic_check().unwrap();
+    alice_manager.periodic_check(false).unwrap();
 
     generate_blocks(&sink_rpc, 1);
 
@@ -336,7 +336,7 @@ fn ordinal_enum_win_both_test() {
 
     mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
-    alice_manager.periodic_check().unwrap();
+    alice_manager.periodic_check(false).unwrap();
 
     generate_blocks(&sink_rpc, 1);
 
@@ -386,7 +386,7 @@ fn ordinal_numerical_test() {
 
     mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
-    alice_manager.periodic_check().unwrap();
+    alice_manager.periodic_check(false).unwrap();
 
     generate_blocks(&sink_rpc, 1);
 
@@ -437,7 +437,7 @@ fn ordinal_enum_accept_owner_test() {
 
     mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
-    alice_manager.periodic_check().unwrap();
+    alice_manager.periodic_check(false).unwrap();
 
     generate_blocks(&sink_rpc, 1);
 
@@ -487,7 +487,7 @@ fn ordinal_enum_refund_offer_test() {
 
     mocks::mock_time::set_time(((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1);
 
-    alice_manager.periodic_check().unwrap();
+    alice_manager.periodic_check(false).unwrap();
 
     generate_blocks(&sink_rpc, 1);
 
@@ -529,7 +529,7 @@ fn ordinal_enum_refund_accept_test() {
 
     mocks::mock_time::set_time(((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1);
 
-    alice_manager.periodic_check().unwrap();
+    alice_manager.periodic_check(false).unwrap();
 
     generate_blocks(&sink_rpc, 1);
 
