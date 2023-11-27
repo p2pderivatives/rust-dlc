@@ -17,8 +17,9 @@ use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract
 use crate::error::Error;
 use crate::Signer;
 use crate::{ChannelId, ContractId};
-use bitcoin::Address;
+use bitcoin::locktime::Height;
 use bitcoin::Transaction;
+use bitcoin::{locktime, Address, LockTime};
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
@@ -604,6 +605,75 @@ where
         self.check_refund(contract)?;
 
         Ok(())
+    }
+
+    /// Manually close a contract with the oracle attestations.
+    pub fn close_confirmed_contract(
+        &mut self,
+        contract_id: &ContractId,
+        attestations: Vec<(usize, OracleAttestation)>,
+    ) -> Result<Contract, Error> {
+        let contract = get_contract_in_state!(self, &contract_id, Confirmed, None::<PublicKey>)?;
+        let contract_infos = &contract.accepted_contract.offered_contract.contract_info;
+        let adaptor_infos = &contract.accepted_contract.adaptor_infos;
+
+        // find the contract info that matches the attestations
+        if let Some((contract_info, adaptor_info)) =
+            contract_infos.iter().zip(adaptor_infos).find(|(c, _)| {
+                let matches = attestations
+                    .iter()
+                    .filter(|(i, a)| {
+                        c.oracle_announcements[*i].oracle_event.oracle_nonces == a.nonces()
+                    })
+                    .count();
+
+                matches >= c.threshold
+            })
+        {
+            let cet = crate::contract_updater::get_signed_cet(
+                &self.secp,
+                &contract,
+                contract_info,
+                adaptor_info,
+                &attestations,
+                &self.wallet,
+            )?;
+
+            // Check that the lock time has passed
+            let time = locktime::Time::from_consensus(self.time.unix_time_now() as u32)
+                .expect("Time is not in valid range. This should never happen.");
+            let height = Height::from_consensus(self.blockchain.get_blockchain_height()? as u32)
+                .expect("Height is not in valid range. This should never happen.");
+            let locktime = LockTime::from(cet.lock_time);
+
+            if !locktime.is_satisfied_by(height, time) {
+                return Err(Error::InvalidState(
+                    "CET lock time has not passed yet".to_string(),
+                ));
+            }
+
+            match self.close_contract(
+                &contract,
+                cet,
+                attestations.into_iter().map(|x| x.1).collect(),
+            ) {
+                Ok(closed_contract) => {
+                    self.store.update_contract(&closed_contract)?;
+                    Ok(closed_contract)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to close contract {}: {e}",
+                        contract.accepted_contract.get_contract_id_string()
+                    );
+                    Err(e)
+                }
+            }
+        } else {
+            Err(Error::InvalidState(
+                "Attestations did not match contract infos".to_string(),
+            ))
+        }
     }
 
     fn check_preclosed_contracts(&mut self) -> Result<(), Error> {
