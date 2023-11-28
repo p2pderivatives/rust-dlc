@@ -795,6 +795,56 @@ where
 
         Ok(())
     }
+
+    /// Function to call when we detect that a contract was closed by our counter party.
+    /// This will update the state of the contract and return the [`Contract`] object.
+    pub fn on_counterparty_close(
+        &mut self,
+        contract: &SignedContract,
+        closing_tx: Transaction,
+        confirmations: u32,
+    ) -> Result<Contract, Error> {
+        // check if the closing tx actually spends the funding output
+        if !closing_tx.input.iter().any(|i| {
+            i.previous_output
+                == contract
+                    .accepted_contract
+                    .dlc_transactions
+                    .get_fund_outpoint()
+        }) {
+            return Err(Error::InvalidParameters(
+                "Closing tx does not spend the funding tx".to_string(),
+            ));
+        }
+
+        // check if it is the refund tx (easy case)
+        if contract.accepted_contract.dlc_transactions.refund.txid() == closing_tx.txid() {
+            let refunded = Contract::Refunded(contract.clone());
+            self.store.update_contract(&refunded)?;
+            return Ok(refunded);
+        }
+
+        let contract = if confirmations < NB_CONFIRMATIONS {
+            Contract::PreClosed(PreClosedContract {
+                signed_contract: contract.clone(),
+                attestations: None, // todo in some cases we can get the attestations from the closing tx
+                signed_cet: closing_tx,
+            })
+        } else {
+            Contract::Closed(ClosedContract {
+                attestations: None, // todo in some cases we can get the attestations from the closing tx
+                pnl: contract.accepted_contract.compute_pnl(&closing_tx),
+                signed_cet: Some(closing_tx),
+                contract_id: contract.accepted_contract.get_contract_id(),
+                temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                counter_party_id: contract.accepted_contract.offered_contract.counter_party,
+            })
+        };
+
+        self.store.update_contract(&contract)?;
+
+        Ok(contract)
+    }
 }
 
 impl<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
