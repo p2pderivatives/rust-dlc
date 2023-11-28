@@ -271,19 +271,33 @@ where
 
     /// Function called to create a new DLC. The offered contract will be stored
     /// and an OfferDlc message returned.
+    ///
+    /// This function will fetch the oracle announcements from the oracle.
     pub fn send_offer(
         &mut self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferDlc, Error> {
-        contract_input.validate()?;
-
         let oracle_announcements = contract_input
             .contract_infos
             .iter()
             .map(|x| self.get_oracle_announcements(&x.oracles))
             .collect::<Result<Vec<_>, Error>>()?;
 
+        self.send_offer_with_announcements(contract_input, counter_party, oracle_announcements)
+    }
+
+    /// Function called to create a new DLC. The offered contract will be stored
+    /// and an OfferDlc message returned.
+    ///
+    /// This function allows to pass the oracle announcements directly instead of
+    /// fetching them from the oracle.
+    pub fn send_offer_with_announcements(
+        &mut self,
+        contract_input: &ContractInput,
+        counter_party: PublicKey,
+        oracle_announcements: Vec<Vec<OracleAnnouncement>>,
+    ) -> Result<OfferDlc, Error> {
         let (offered_contract, offer_msg) = crate::contract_updater::offer_contract(
             &self.secp,
             contract_input,
