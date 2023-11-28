@@ -1290,4 +1290,38 @@ mod test {
         assert_eq!(polynomial.evaluate(0), 10.0);
         assert_eq!(polynomial.evaluate(1), 8.0);
     }
+
+    #[test]
+    fn try_to_get_negative() {
+        let total_collateral_doesnt_matter = 1324451 + 1324451;
+
+        let polynomial = PolynomialPayoutCurvePiece {
+            payout_points: vec![
+                PayoutPoint {
+                    event_outcome: 25207,
+                    outcome_payout: 2648902,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 25227,
+                    outcome_payout: 2647503,
+                    extra_precision: 0,
+                },
+            ],
+        };
+
+
+        // this is where our payout curve fails
+        let outcome = 1048575;
+
+        let doesnt_matter = RoundingIntervals {
+            intervals: vec![RoundingInterval {
+                begin_interval: 0,
+                rounding_mod: 0,
+            }],
+        };
+        let result = polynomial.get_rounded_payout(outcome, &doesnt_matter, total_collateral_doesnt_matter);
+        // TODO: this should not fail I think
+        result.unwrap();
+    }
 }
