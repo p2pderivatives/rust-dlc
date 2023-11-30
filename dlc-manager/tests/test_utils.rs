@@ -62,6 +62,7 @@ macro_rules! receive_loop {
                             Some(msg) => {
                                 let msg_opt = $rcv_callback(msg);
                                 if let Some(msg) = msg_opt {
+                                    #[allow(clippy::redundant_closure_call)]
                                     $msg_callback(&msg);
                                     (&$send).send(Some(msg)).expect("Error sending");
                                 }
