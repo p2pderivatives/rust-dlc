@@ -49,7 +49,7 @@ impl Signer for MockWallet {
         &self,
         _tx: &mut bitcoin::Transaction,
         _input_index: usize,
-        _tx_out: &bitcoin::TxOut,
+        _tx_out: &[TxOut],
         _redeem_script: Option<bitcoin::Script>,
     ) -> Result<(), dlc_manager::error::Error> {
         Ok(())

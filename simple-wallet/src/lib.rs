@@ -154,8 +154,13 @@ where
         let fee = (weight * fee_rate) / 1000;
         tx.output[0].value -= fee;
 
-        for (i, utxo) in utxos.iter().enumerate().take(tx.input.len()) {
-            self.sign_tx_input(&mut tx, i, &utxo.tx_out, None)?;
+        let mut txouts = Vec::with_capacity(tx.input.len());
+        for utxo in utxos {
+            txouts.push(utxo.tx_out.clone());
+        }
+
+        for i in 0..tx.input.len() {
+            self.sign_tx_input(&mut tx, i, &txouts, None)?;
         }
 
         self.blockchain.send_transaction(&tx)
@@ -171,9 +176,10 @@ where
         &self,
         tx: &mut bitcoin::Transaction,
         input_index: usize,
-        tx_out: &bitcoin::TxOut,
+        tx_outs: &[TxOut],
         _: Option<bitcoin::Script>,
     ) -> Result<()> {
+        let tx_out = &tx_outs[input_index];
         let address = Address::from_script(&tx_out.script_pubkey, self.network)
             .expect("a valid scriptpubkey");
         let seckey = self

@@ -400,6 +400,32 @@ where
         .collect();
     input_serial_ids.sort_unstable();
 
+    // get all funding inputs
+    let mut all_funding_inputs = offered_contract
+        .funding_inputs_info
+        .iter()
+        .chain(funding_inputs_info.iter())
+        .collect::<Vec<_>>();
+    // sort by serial id
+    all_funding_inputs.sort_by_key(|x| x.funding_input.input_serial_id);
+
+    // add witness utxo to fund_psbt for all inputs
+    let mut txouts = Vec::with_capacity(all_funding_inputs.len());
+    for input_info in all_funding_inputs {
+        let tx = Transaction::consensus_decode(&mut input_info.funding_input.prev_tx.as_slice())
+            .map_err(|_| {
+                Error::InvalidParameters(
+                    "Could not decode funding input previous tx parameter".to_string(),
+                )
+            })?;
+        let vout = input_info.funding_input.prev_tx_vout;
+        let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
+            Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
+        })?;
+
+        txouts.push(tx_out.clone());
+    }
+
     // Vec<Witness>
     let witnesses: Vec<Witness> = offered_contract
         .funding_inputs_info
@@ -414,19 +440,8 @@ where
                         x.funding_input.input_serial_id
                     ))
                 })?;
-            let tx = Transaction::consensus_decode(&mut x.funding_input.prev_tx.as_slice())
-                .map_err(|_| {
-                    Error::InvalidParameters(
-                        "Could not decode funding input previous tx parameter".to_string(),
-                    )
-                })?;
-            let vout = x.funding_input.prev_tx_vout;
-            let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
-                Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
-            })?;
-
             // pass wallet instead of privkeys
-            signer.sign_tx_input(&mut fund, input_index, tx_out, None)?;
+            signer.sign_tx_input(&mut fund, input_index, &txouts, None)?;
 
             Ok(fund.input[input_index].witness.clone())
         })
@@ -444,8 +459,6 @@ where
             Ok(FundingSignature { witness_elements })
         })
         .collect::<Result<Vec<_>, Error>>()?;
-
-    input_serial_ids.sort_unstable();
 
     let offer_refund_signature = dlc::util::get_raw_sig_for_tx_input(
         secp,
@@ -575,6 +588,32 @@ where
 
     let mut fund_tx = accepted_contract.dlc_transactions.fund.clone();
 
+    // get all funding inputs
+    let mut all_funding_inputs = offered_contract
+        .funding_inputs_info
+        .iter()
+        .chain(accepted_contract.funding_inputs.iter())
+        .collect::<Vec<_>>();
+    // sort by serial id
+    all_funding_inputs.sort_by_key(|x| x.funding_input.input_serial_id);
+
+    // add witness utxo to fund_psbt for all inputs
+    let mut txouts = Vec::with_capacity(all_funding_inputs.len());
+    for input_info in all_funding_inputs {
+        let tx = Transaction::consensus_decode(&mut input_info.funding_input.prev_tx.as_slice())
+            .map_err(|_| {
+                Error::InvalidParameters(
+                    "Could not decode funding input previous tx parameter".to_string(),
+                )
+            })?;
+        let vout = input_info.funding_input.prev_tx_vout;
+        let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
+            Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
+        })?;
+
+        txouts.push(tx_out.clone());
+    }
+
     for (funding_input, funding_signatures) in offered_contract
         .funding_inputs_info
         .iter()
@@ -609,19 +648,8 @@ where
                     funding_input_info.funding_input.input_serial_id,
                 ))
             })?;
-        let tx =
-            Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
-                .map_err(|_| {
-                    Error::InvalidParameters(
-                        "Could not decode funding input previous tx parameter".to_string(),
-                    )
-                })?;
-        let vout = funding_input_info.funding_input.prev_tx_vout;
-        let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
-            Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
-        })?;
 
-        signer.sign_tx_input(&mut fund_tx, input_index, tx_out, None)?;
+        signer.sign_tx_input(&mut fund_tx, input_index, &txouts, None)?;
     }
 
     let signed_contract = SignedContract {

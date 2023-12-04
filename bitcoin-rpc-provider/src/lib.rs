@@ -189,9 +189,10 @@ impl Signer for BitcoinCoreProvider {
         &self,
         tx: &mut Transaction,
         input_index: usize,
-        tx_out: &TxOut,
+        tx_outs: &[TxOut],
         redeem_script: Option<Script>,
     ) -> Result<(), ManagerError> {
+        let tx_out = tx_outs.get(input_index).ok_or(Error::InvalidState)?;
         let outpoint = &tx.input[input_index].previous_output;
 
         let input = json::SignRawTransactionInput {

@@ -82,7 +82,7 @@ pub trait Signer {
         &self,
         tx: &mut Transaction,
         input_index: usize,
-        tx_out: &TxOut,
+        prev_outputs: &[TxOut],
         redeem_script: Option<Script>,
     ) -> Result<(), Error>;
     /// Get the secret key associated with the provided public key.
