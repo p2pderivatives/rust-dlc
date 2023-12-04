@@ -16,7 +16,7 @@ extern crate bitcoin;
 extern crate core;
 extern crate miniscript;
 extern crate secp256k1_sys;
-extern crate secp256k1_zkp;
+pub extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
 extern crate serde;
 
