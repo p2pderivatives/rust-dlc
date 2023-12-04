@@ -340,7 +340,7 @@ where
                 .get_sub_channel(channel_details.channel_id)?
             {
                 Some(mut s) => match s.state {
-                    SubChannelState::OffChainClosed => {
+                    SubChannelState::OffChainClosed | SubChannelState::Rejected => {
                         s.is_offer = true;
                         s.update_idx -= 1;
 
@@ -1585,7 +1585,7 @@ where
                 .get_sub_channel(channel_details.channel_id)?
             {
                 Some(mut s) => match s.state {
-                    SubChannelState::OffChainClosed => {
+                    SubChannelState::OffChainClosed | SubChannelState::Rejected => {
                         s.is_offer = false;
                         s.update_idx -= 1;
                         Some(s)
