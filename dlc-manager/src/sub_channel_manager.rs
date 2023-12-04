@@ -1480,7 +1480,7 @@ where
     }
 
     /// Reject an offer to establish a sub channel.
-    pub fn reject_sub_channel_offer(&self, channel_id: ChannelId) -> Result<Reject, Error> {
+    pub fn reject_sub_channel_offer(&self, channel_id: ChannelId) -> Result<(PublicKey, Reject), Error> {
         let (mut sub_channel, _) = get_sub_channel_in_state!(
             self.dlc_channel_manager,
             channel_id,
@@ -1494,7 +1494,7 @@ where
             .get_store()
             .upsert_sub_channel(&sub_channel)?;
 
-        Ok(Reject { channel_id })
+        Ok((sub_channel.counter_party, Reject { channel_id }))
     }
 
     /// Reject an offer to collaboratively close a sub channel off chain.

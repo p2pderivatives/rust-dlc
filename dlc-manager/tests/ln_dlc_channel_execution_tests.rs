@@ -2860,7 +2860,7 @@ fn reject_offer(test_params: &LnDlcTestParams) {
         Offered
     );
 
-    let reject = test_params
+    let (_, reject) = test_params
         .bob_node
         .sub_channel_manager
         .reject_sub_channel_offer(test_params.channel_id)
