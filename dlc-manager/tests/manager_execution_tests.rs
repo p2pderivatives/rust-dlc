@@ -19,6 +19,7 @@ use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
 use dlc_manager::manager::Manager;
 use dlc_manager::{Blockchain, Oracle, Storage, Wallet};
+use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
 use lightning::ln::wire::Type;
@@ -102,6 +103,7 @@ fn numerical_common<F>(
     threshold: usize,
     payout_function_pieces_cb: F,
     difference_params: Option<DifferenceParams>,
+    manual_close: bool,
 ) where
     F: Fn(usize) -> Vec<PayoutFunctionPiece>,
 {
@@ -121,6 +123,7 @@ fn numerical_common<F>(
             false,
         ),
         TestPath::Close,
+        manual_close,
     );
 }
 
@@ -128,12 +131,14 @@ fn numerical_polynomial_common(
     nb_oracles: usize,
     threshold: usize,
     difference_params: Option<DifferenceParams>,
+    manual_close: bool,
 ) {
     numerical_common(
         nb_oracles,
         threshold,
         get_polynomial_payout_curve_pieces,
         difference_params,
+        manual_close,
     );
 }
 
@@ -142,6 +147,7 @@ fn numerical_common_diff_nb_digits(
     threshold: usize,
     difference_params: Option<DifferenceParams>,
     use_max_value: bool,
+    manual_close: bool,
 ) {
     let with_diff = difference_params.is_some();
     let oracle_numeric_infos = get_variable_oracle_numeric_infos(
@@ -164,6 +170,7 @@ fn numerical_common_diff_nb_digits(
             use_max_value,
         ),
         TestPath::Close,
+        manual_close,
     );
 }
 
@@ -180,61 +187,97 @@ enum TestPath {
 #[test]
 #[ignore]
 fn single_oracle_numerical_test() {
-    numerical_polynomial_common(1, 1, None);
+    numerical_polynomial_common(1, 1, None, false);
+}
+
+#[test]
+#[ignore]
+fn single_oracle_numerical_manual_test() {
+    numerical_polynomial_common(1, 1, None, true);
 }
 
 #[test]
 #[ignore]
 fn single_oracle_numerical_hyperbola_test() {
-    numerical_common(1, 1, get_hyperbola_payout_curve_pieces, None);
+    numerical_common(1, 1, get_hyperbola_payout_curve_pieces, None, false);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_test() {
-    numerical_polynomial_common(3, 3, None);
+    numerical_polynomial_common(3, 3, None, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_test() {
-    numerical_polynomial_common(5, 2, None);
+    numerical_polynomial_common(5, 2, None, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_manual_test() {
+    numerical_polynomial_common(5, 2, None, true);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_with_diff_test() {
-    numerical_polynomial_common(3, 3, Some(get_difference_params()));
+    numerical_polynomial_common(3, 3, Some(get_difference_params()), false);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_with_diff_test() {
-    numerical_polynomial_common(5, 2, Some(get_difference_params()));
+    numerical_polynomial_common(5, 2, Some(get_difference_params()), false);
 }
 
 #[test]
 #[ignore]
 fn three_of_five_oracle_numerical_with_diff_test() {
-    numerical_polynomial_common(5, 3, Some(get_difference_params()));
+    numerical_polynomial_common(5, 3, Some(get_difference_params()), false);
+}
+
+#[test]
+#[ignore]
+fn three_of_five_oracle_numerical_with_diff_manual_test() {
+    numerical_polynomial_common(5, 3, Some(get_difference_params()), true);
 }
 
 #[test]
 #[ignore]
 fn enum_single_oracle_test() {
-    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close);
+    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close, false);
+}
+
+#[test]
+#[ignore]
+fn enum_single_oracle_manual_test() {
+    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close, true);
 }
 
 #[test]
 #[ignore]
 fn enum_3_of_3_test() {
-    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close);
+    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close, false);
+}
+
+#[test]
+#[ignore]
+fn enum_3_of_3_manual_test() {
+    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close, true);
 }
 
 #[test]
 #[ignore]
 fn enum_3_of_5_test() {
-    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close);
+    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close, false);
+}
+
+#[test]
+#[ignore]
+fn enum_3_of_5_manual_test() {
+    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close, true);
 }
 
 #[test]
@@ -243,6 +286,17 @@ fn enum_and_numerical_with_diff_3_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 3, true, Some(get_difference_params())),
         TestPath::Close,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn enum_and_numerical_with_diff_3_of_5_manual_test() {
+    manager_execution_test(
+        get_enum_and_numerical_test_params(5, 3, true, Some(get_difference_params())),
+        TestPath::Close,
+        true,
     );
 }
 
@@ -252,6 +306,17 @@ fn enum_and_numerical_with_diff_5_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 5, true, Some(get_difference_params())),
         TestPath::Close,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn enum_and_numerical_with_diff_5_of_5_manual_test() {
+    manager_execution_test(
+        get_enum_and_numerical_test_params(5, 5, true, Some(get_difference_params())),
+        TestPath::Close,
+        true,
     );
 }
 
@@ -261,6 +326,17 @@ fn enum_and_numerical_3_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 3, false, None),
         TestPath::Close,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn enum_and_numerical_3_of_5_manual_test() {
+    manager_execution_test(
+        get_enum_and_numerical_test_params(5, 3, false, None),
+        TestPath::Close,
+        true,
     );
 }
 
@@ -270,6 +346,17 @@ fn enum_and_numerical_5_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 5, false, None),
         TestPath::Close,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn enum_and_numerical_5_of_5_manual_test() {
+    manager_execution_test(
+        get_enum_and_numerical_test_params(5, 5, false, None),
+        TestPath::Close,
+        true,
     );
 }
 
@@ -279,6 +366,17 @@ fn enum_single_oracle_refund_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::Refund,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn enum_single_oracle_refund_manual_test() {
+    manager_execution_test(
+        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
+        TestPath::Refund,
+        true,
     );
 }
 
@@ -288,6 +386,7 @@ fn enum_single_oracle_bad_accept_cet_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadAcceptCetSignature,
+        false,
     );
 }
 
@@ -297,6 +396,7 @@ fn enum_single_oracle_bad_accept_refund_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadAcceptRefundSignature,
+        false,
     );
 }
 
@@ -306,6 +406,7 @@ fn enum_single_oracle_bad_sign_cet_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadSignCetSignature,
+        false,
     );
 }
 
@@ -315,73 +416,98 @@ fn enum_single_oracle_bad_sign_refund_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadSignRefundSignature,
+        false,
     );
 }
 
 #[test]
 #[ignore]
 fn two_of_two_oracle_numerical_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(2, 2, None, false);
+    numerical_common_diff_nb_digits(2, 2, None, false, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_two_oracle_numerical_diff_nb_digits_manual_test() {
+    numerical_common_diff_nb_digits(2, 2, None, false, true);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(5, 2, None, false);
+    numerical_common_diff_nb_digits(5, 2, None, false, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_diff_nb_digits_manual_test() {
+    numerical_common_diff_nb_digits(5, 2, None, false, true);
 }
 
 #[test]
 #[ignore]
 fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), false);
+    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), false, false);
 }
 
 #[test]
 #[ignore]
 fn three_of_three_oracle_numerical_with_diff_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(3, 3, Some(get_difference_params()), false);
+    numerical_common_diff_nb_digits(3, 3, Some(get_difference_params()), false, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), false);
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), false, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), true);
+    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), true, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_three_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(3, 2, Some(get_difference_params()), true);
+    numerical_common_diff_nb_digits(3, 2, Some(get_difference_params()), true, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true);
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_manual_test() {
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true, true);
 }
 
 #[test]
 #[ignore]
 fn two_of_two_oracle_numerical_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(2, 2, None, true);
+    numerical_common_diff_nb_digits(2, 2, None, true, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_three_oracle_numerical_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(3, 2, None, true);
+    numerical_common_diff_nb_digits(3, 2, None, true, false);
 }
 
 #[test]
 #[ignore]
 fn two_of_five_oracle_numerical_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(5, 2, None, true);
+    numerical_common_diff_nb_digits(5, 2, None, true, false);
+}
+
+#[test]
+#[ignore]
+fn two_of_five_oracle_numerical_diff_nb_digits_max_value_manual_test() {
+    numerical_common_diff_nb_digits(5, 2, None, true, true);
 }
 
 fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
@@ -404,8 +530,34 @@ fn alter_refund_sig(refund_signature: &Signature) -> Signature {
     Signature::from_compact(&copy).unwrap()
 }
 
-fn manager_execution_test(test_params: TestParams, path: TestPath) {
-    env_logger::init();
+fn get_attestations(test_params: &TestParams) -> Vec<(usize, OracleAttestation)> {
+    for contract_info in test_params.contract_input.contract_infos.iter() {
+        let attestations: Vec<_> = contract_info
+            .oracles
+            .public_keys
+            .iter()
+            .enumerate()
+            .filter_map(|(i, pk)| {
+                let oracle = test_params
+                    .oracles
+                    .iter()
+                    .find(|x| x.get_public_key() == *pk);
+
+                oracle
+                    .and_then(|o| o.get_attestation(&contract_info.oracles.event_id).ok())
+                    .map(|a| (i, a))
+            })
+            .collect();
+        if attestations.len() >= contract_info.oracles.threshold as usize {
+            return attestations;
+        }
+    }
+
+    panic!("No attestations found");
+}
+
+fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close: bool) {
+    env_logger::try_init().ok();
     let (alice_send, bob_receive) = channel::<Option<Message>>();
     let (bob_send, alice_receive) = channel::<Option<Message>>();
     let (sync_send, sync_receive) = channel::<()>();
@@ -416,7 +568,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
 
-    for oracle in test_params.oracles {
+    for oracle in test_params.oracles.clone() {
         let oracle = Arc::new(oracle);
         alice_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
         bob_oracles.insert(oracle.get_public_key(), Arc::clone(&oracle));
@@ -631,7 +783,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             sync_receive.recv().expect("Error synchronizing");
             assert_contract_state!(alice_manager_send, contract_id, FailedSign);
         }
-        _ => {
+        TestPath::Close | TestPath::Refund => {
             alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
@@ -649,7 +801,9 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
             periodic_check!(alice_manager_send, contract_id, Confirmed);
             periodic_check!(bob_manager_send, contract_id, Confirmed);
 
-            mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
+            if !manual_close {
+                mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
+            }
 
             // Select the first one to close or refund randomly
             let (first, second) = if thread_rng().next_u32() % 2 == 0 {
@@ -660,20 +814,56 @@ fn manager_execution_test(test_params: TestParams, path: TestPath) {
 
             match path {
                 TestPath::Close => {
-                    periodic_check!(first, contract_id, PreClosed);
+                    let case = thread_rng().next_u64() % 3;
+                    let blocks: Option<u32> = if case == 2 {
+                        Some(6)
+                    } else if case == 1 {
+                        Some(1)
+                    } else {
+                        None
+                    };
+
+                    if manual_close {
+                        periodic_check!(first, contract_id, Confirmed);
+
+                        let attestations = get_attestations(&test_params);
+
+                        let mut f = first.lock().unwrap();
+                        let contract = f
+                            .close_confirmed_contract(&contract_id, attestations)
+                            .expect("Error closing contract");
+
+                        if let Contract::PreClosed(contract) = contract {
+                            let mut s = second.lock().unwrap();
+                            let second_contract =
+                                s.get_store().get_contract(&contract_id).unwrap().unwrap();
+                            if let Contract::Confirmed(signed) = second_contract {
+                                s.on_counterparty_close(
+                                    &signed,
+                                    contract.signed_cet,
+                                    blocks.unwrap_or(0),
+                                )
+                                .expect("Error registering counterparty close");
+                            } else {
+                                panic!("Invalid contract state: {:?}", second_contract);
+                            }
+                        } else {
+                            panic!("Invalid contract state {:?}", contract);
+                        }
+                    } else {
+                        periodic_check!(first, contract_id, PreClosed);
+                    }
+
+                    // mine blocks for the CET to be confirmed
+                    if let Some(b) = blocks {
+                        generate_blocks(b as u64);
+                    }
 
                     // Randomly check with or without having the CET mined
-                    let case = thread_rng().next_u64() % 3;
                     if case == 2 {
                         // cet becomes fully confirmed to blockchain
-                        generate_blocks(6);
                         periodic_check!(first, contract_id, Closed);
                         periodic_check!(second, contract_id, Closed);
-                    } else if case == 1 {
-                        // cet is not yet fully confirmed to blockchain
-                        generate_blocks(1);
-                        periodic_check!(first, contract_id, PreClosed);
-                        periodic_check!(second, contract_id, PreClosed);
                     } else {
                         periodic_check!(first, contract_id, PreClosed);
                         periodic_check!(second, contract_id, PreClosed);
