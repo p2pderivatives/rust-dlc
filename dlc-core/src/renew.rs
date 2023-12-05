@@ -66,7 +66,7 @@ pub fn renew(
 
     // Checking that new contract is genuine
     let secp = Secp256k1::new();
-    let adaptor_infos = validate_presigned_without_infos(
+    let (new_dlc_transactions, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &new_dlc_transactions,
         accept_side.refund_sig,
