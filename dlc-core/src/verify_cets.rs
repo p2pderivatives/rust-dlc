@@ -14,7 +14,7 @@ pub fn check_signed_dlc(
     fee_party_params: Option<&FeePartyParams>,
     adaptor_sig: &[EcdsaAdaptorSignature],
     refund_sig: &Signature,
-) -> Result<(Box<[AdaptorInfo]>, bool)> {
+) -> Result<(Vec<AdaptorInfo>, bool)> {
     let dlc_transactions = get_dlc_transactions(
         contract_params,
         offer_params,
@@ -28,7 +28,7 @@ pub fn check_signed_dlc(
 
     let mut is_offer = false;
 
-    let adaptor_infos = validate_presigned_without_infos(
+    let (_, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
         refund_sig,

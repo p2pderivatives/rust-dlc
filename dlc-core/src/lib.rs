@@ -101,9 +101,9 @@ fn validate_presigned_without_infos(
     contract_info: &[ContractInfo],
     own_params: &PartyParams,
     checked_params: &PartyParams,
-) -> Result<Box<[AdaptorInfo]>> {
+) -> Result<(DlcTransactions, Vec<AdaptorInfo>)> {
     let DlcTransactions {
-        fund: _,
+        fund,
         mut cets,
         refund,
         funding_script_pubkey,
@@ -175,7 +175,14 @@ fn validate_presigned_without_infos(
 
         adaptor_infos.push(adaptor_info);
     }
-    Ok(adaptor_infos.into_boxed_slice())
+
+    let dlc_transactions = DlcTransactions {
+        fund,
+        cets,
+        refund,
+        funding_script_pubkey,
+    };
+    Ok((dlc_transactions, adaptor_infos))
 }
 
 fn validate_presigned_with_infos(

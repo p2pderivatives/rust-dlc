@@ -78,7 +78,7 @@ pub fn get_signed_cet(
     )?;
     let secp = Secp256k1::new();
 
-    let adaptor_infos = validate_presigned_without_infos(
+    let (dlc_transactions, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
         accept_side.refund_sig,
@@ -87,19 +87,16 @@ pub fn get_signed_cet(
         offer_side.party_params,
         accept_side.party_params,
     )?;
-    let (range_info, sigs): (RangeInfo, Box<[Vec<SchnorrSignature>]>) =
-        get_range_info_and_oracle_sigs(
-            contract_params
-                .contract_info
-                .get(0)
-                .ok_or(FromDlcError::InvalidState(
-                    "Contract Params malformed".to_owned(),
-                ))?,
-            adaptor_infos.get(0).ok_or(FromDlcError::InvalidState(
-                "Contract Params malformed".to_owned(),
-            ))?,
-            &attestations,
-        )?;
+    let (range_info, sigs): (RangeInfo, Box<[Vec<SchnorrSignature>]>) = contract_params
+        .contract_info
+        .iter()
+        .zip(adaptor_infos)
+        .find_map(|(contract_info, adaptor_info)| {
+            get_range_info_and_oracle_sigs(contract_info, &adaptor_info, &attestations).ok()
+        })
+        .ok_or(FromDlcError::InvalidState(
+            "The contract cannot be closed with the provided attestation set".to_owned(),
+        ))?;
     let mut cet = dlc_transactions.cets[range_info.cet_index].clone();
 
     let (adaptor_sigs_offer, fund_pubkey_offer) =

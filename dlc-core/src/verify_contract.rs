@@ -22,7 +22,7 @@ pub fn check_all_signed_dlc(
 
     let secp = Secp256k1::new();
 
-    let adaptor_infos = validate_presigned_without_infos(
+    let (dlc_transactions, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
         accept_side.refund_sig,
