@@ -219,6 +219,10 @@ where
         Ok(address)
     }
 
+    fn get_new_change_address(&self) -> Result<Address> {
+        self.get_new_address()
+    }
+
     fn get_new_secret_key(&self) -> Result<SecretKey> {
         let seckey = SecretKey::new(&mut thread_rng());
         let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &seckey);

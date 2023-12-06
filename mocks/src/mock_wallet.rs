@@ -68,6 +68,10 @@ impl Wallet for MockWallet {
         Ok(get_address())
     }
 
+    fn get_new_change_address(&self) -> Result<Address, dlc_manager::error::Error> {
+        Ok(get_address())
+    }
+
     fn get_new_secret_key(&self) -> Result<SecretKey, dlc_manager::error::Error> {
         Ok(get_secret_key())
     }
