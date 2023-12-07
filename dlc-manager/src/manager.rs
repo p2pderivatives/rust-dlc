@@ -17,8 +17,9 @@ use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract
 use crate::error::Error;
 use crate::Signer;
 use crate::{ChannelId, ContractId};
-use bitcoin::Address;
+use bitcoin::locktime::Height;
 use bitcoin::Transaction;
+use bitcoin::{locktime, Address, LockTime};
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
@@ -271,19 +272,33 @@ where
 
     /// Function called to create a new DLC. The offered contract will be stored
     /// and an OfferDlc message returned.
+    ///
+    /// This function will fetch the oracle announcements from the oracle.
     pub fn send_offer(
         &mut self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferDlc, Error> {
-        contract_input.validate()?;
-
         let oracle_announcements = contract_input
             .contract_infos
             .iter()
             .map(|x| self.get_oracle_announcements(&x.oracles))
             .collect::<Result<Vec<_>, Error>>()?;
 
+        self.send_offer_with_announcements(contract_input, counter_party, oracle_announcements)
+    }
+
+    /// Function called to create a new DLC. The offered contract will be stored
+    /// and an OfferDlc message returned.
+    ///
+    /// This function allows to pass the oracle announcements directly instead of
+    /// fetching them from the oracle.
+    pub fn send_offer_with_announcements(
+        &mut self,
+        contract_input: &ContractInput,
+        counter_party: PublicKey,
+        oracle_announcements: Vec<Vec<OracleAnnouncement>>,
+    ) -> Result<OfferDlc, Error> {
         let (offered_contract, offer_msg) = crate::contract_updater::offer_contract(
             &self.secp,
             contract_input,
@@ -592,6 +607,75 @@ where
         Ok(())
     }
 
+    /// Manually close a contract with the oracle attestations.
+    pub fn close_confirmed_contract(
+        &mut self,
+        contract_id: &ContractId,
+        attestations: Vec<(usize, OracleAttestation)>,
+    ) -> Result<Contract, Error> {
+        let contract = get_contract_in_state!(self, &contract_id, Confirmed, None::<PublicKey>)?;
+        let contract_infos = &contract.accepted_contract.offered_contract.contract_info;
+        let adaptor_infos = &contract.accepted_contract.adaptor_infos;
+
+        // find the contract info that matches the attestations
+        if let Some((contract_info, adaptor_info)) =
+            contract_infos.iter().zip(adaptor_infos).find(|(c, _)| {
+                let matches = attestations
+                    .iter()
+                    .filter(|(i, a)| {
+                        c.oracle_announcements[*i].oracle_event.oracle_nonces == a.nonces()
+                    })
+                    .count();
+
+                matches >= c.threshold
+            })
+        {
+            let cet = crate::contract_updater::get_signed_cet(
+                &self.secp,
+                &contract,
+                contract_info,
+                adaptor_info,
+                &attestations,
+                &self.wallet,
+            )?;
+
+            // Check that the lock time has passed
+            let time = locktime::Time::from_consensus(self.time.unix_time_now() as u32)
+                .expect("Time is not in valid range. This should never happen.");
+            let height = Height::from_consensus(self.blockchain.get_blockchain_height()? as u32)
+                .expect("Height is not in valid range. This should never happen.");
+            let locktime = LockTime::from(cet.lock_time);
+
+            if !locktime.is_satisfied_by(height, time) {
+                return Err(Error::InvalidState(
+                    "CET lock time has not passed yet".to_string(),
+                ));
+            }
+
+            match self.close_contract(
+                &contract,
+                cet,
+                attestations.into_iter().map(|x| x.1).collect(),
+            ) {
+                Ok(closed_contract) => {
+                    self.store.update_contract(&closed_contract)?;
+                    Ok(closed_contract)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to close contract {}: {e}",
+                        contract.accepted_contract.get_contract_id_string()
+                    );
+                    Err(e)
+                }
+            }
+        } else {
+            Err(Error::InvalidState(
+                "Attestations did not match contract infos".to_string(),
+            ))
+        }
+    }
+
     fn check_preclosed_contracts(&mut self) -> Result<(), Error> {
         for c in self.store.get_preclosed_contracts()? {
             if let Err(e) = self.check_preclosed_contract(&c) {
@@ -710,6 +794,56 @@ where
         }
 
         Ok(())
+    }
+
+    /// Function to call when we detect that a contract was closed by our counter party.
+    /// This will update the state of the contract and return the [`Contract`] object.
+    pub fn on_counterparty_close(
+        &mut self,
+        contract: &SignedContract,
+        closing_tx: Transaction,
+        confirmations: u32,
+    ) -> Result<Contract, Error> {
+        // check if the closing tx actually spends the funding output
+        if !closing_tx.input.iter().any(|i| {
+            i.previous_output
+                == contract
+                    .accepted_contract
+                    .dlc_transactions
+                    .get_fund_outpoint()
+        }) {
+            return Err(Error::InvalidParameters(
+                "Closing tx does not spend the funding tx".to_string(),
+            ));
+        }
+
+        // check if it is the refund tx (easy case)
+        if contract.accepted_contract.dlc_transactions.refund.txid() == closing_tx.txid() {
+            let refunded = Contract::Refunded(contract.clone());
+            self.store.update_contract(&refunded)?;
+            return Ok(refunded);
+        }
+
+        let contract = if confirmations < NB_CONFIRMATIONS {
+            Contract::PreClosed(PreClosedContract {
+                signed_contract: contract.clone(),
+                attestations: None, // todo in some cases we can get the attestations from the closing tx
+                signed_cet: closing_tx,
+            })
+        } else {
+            Contract::Closed(ClosedContract {
+                attestations: None, // todo in some cases we can get the attestations from the closing tx
+                pnl: contract.accepted_contract.compute_pnl(&closing_tx),
+                signed_cet: Some(closing_tx),
+                contract_id: contract.accepted_contract.get_contract_id(),
+                temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                counter_party_id: contract.accepted_contract.offered_contract.counter_party,
+            })
+        };
+
+        self.store.update_contract(&contract)?;
+
+        Ok(contract)
     }
 }
 

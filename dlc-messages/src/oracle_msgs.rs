@@ -314,6 +314,17 @@ pub struct OracleAttestation {
     pub outcomes: Vec<String>,
 }
 
+impl OracleAttestation {
+    /// Returns the nonces used by the oracle to sign the event outcome.
+    /// This is used for finding the matching oracle announcement.
+    pub fn nonces(&self) -> Vec<XOnlyPublicKey> {
+        self.signatures
+            .iter()
+            .map(|s| XOnlyPublicKey::from_slice(&s[0..32]).expect("valid signature"))
+            .collect()
+    }
+}
+
 impl Type for OracleAttestation {
     fn type_id(&self) -> u16 {
         ATTESTATION_TYPE

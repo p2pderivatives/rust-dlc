@@ -144,6 +144,14 @@ impl DlcTransactions {
             .unwrap()
             .0
     }
+
+    /// Get the outpoint for the fund output in the fund transaction
+    pub fn get_fund_outpoint(&self) -> OutPoint {
+        OutPoint {
+            txid: self.fund.txid(),
+            vout: self.get_fund_output_index() as u32,
+        }
+    }
 }
 
 /// Contains info about a utxo used for funding a DLC contract
