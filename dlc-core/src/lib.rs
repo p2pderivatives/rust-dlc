@@ -4,6 +4,7 @@ use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
+pub mod create_contract;
 pub mod error;
 pub mod renew;
 pub mod settlement;

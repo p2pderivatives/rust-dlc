@@ -1,59 +1,11 @@
 use dlc::{DlcTransactions, PartyParams};
-use dlc_manager::contract::{
-    contract_info::ContractInfo, contract_input::ContractInput, AdaptorInfo,
-};
-use dlc_messages::oracle_msgs::OracleAnnouncement;
-use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey, Verification};
+use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
+
+use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{
     contract_tools::FeePartyParams, error::*, get_dlc_transactions, CetSignatures, ContractParams,
 };
-
-pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncement]>>(
-    secp: &Secp256k1<C>,
-    contract_input: &ContractInput,
-    refund_locktime: u32,
-    cet_locktime: u32,
-    oracle_announcements: &[O],
-) -> Result<ContractParams> {
-    let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
-
-    (contract_input.contract_infos.len() == oracle_announcements.len())
-        .then_some(())
-        .ok_or(FromDlcError::InvalidState(
-            "Number of contracts and Oracle Announcement set must match".to_owned(),
-        ))?;
-
-    let contract_info = contract_input
-        .contract_infos
-        .iter()
-        .zip(oracle_announcements.iter())
-        .map(|(x, y)| ContractInfo {
-            contract_descriptor: x.contract_descriptor.clone(),
-            oracle_announcements: y.as_ref().to_vec(),
-            threshold: x.oracles.threshold as usize,
-        })
-        .collect::<Box<[ContractInfo]>>();
-
-    // Missing check on locktime for refund and contract maturity compared to oracle maturity, cf OfferMsg validate method
-
-    // Maybe some check in validate method of offeredContract too
-
-    for c in contract_info.iter() {
-        for o in &c.oracle_announcements {
-            o.validate(secp).map_err(FromDlcError::Dlc)?
-        }
-    }
-
-    Ok(ContractParams {
-        contract_info,
-        offer_collateral: contract_input.offer_collateral,
-        accept_collateral: contract_input.accept_collateral,
-        refund_locktime,
-        cet_locktime,
-        fee_rate_per_vb: contract_input.fee_rate,
-    })
-}
 
 pub fn sign_cets(
     secp: &Secp256k1<All>,
