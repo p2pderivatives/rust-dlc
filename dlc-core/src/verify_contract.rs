@@ -39,6 +39,7 @@ pub fn check_all_signed_dlc(
         offer_side.adaptor_sig,
         &contract_params.contract_info,
         &adaptor_infos,
+        accept_side.party_params,
         offer_side.party_params,
     )?;
 

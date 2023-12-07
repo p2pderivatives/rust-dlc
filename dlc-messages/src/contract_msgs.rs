@@ -210,11 +210,14 @@ pub enum PayoutCurvePiece {
     PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece),
     /// Used for curves represented as hyperbola functions.
     HyperbolaPayoutCurvePiece(HyperbolaPayoutCurvePiece),
+    /// Used for range where no settlement can be made.
+    NoPayoutCurvePiece(NoPayoutCurvePiece),
 }
 
 impl_dlc_writeable_enum!(PayoutCurvePiece,
   (0, PolynomialPayoutCurvePiece),
-  (1, HyperbolaPayoutCurvePiece);;;
+  (1, HyperbolaPayoutCurvePiece),
+  (2, NoPayoutCurvePiece);;;
 );
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -283,6 +286,17 @@ impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
     (c, float),
     (d, float)
 });
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+/// A range without payout.
+pub struct NoPayoutCurvePiece {}
+
+impl_dlc_writeable!(NoPayoutCurvePiece, {});
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(

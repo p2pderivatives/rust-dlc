@@ -83,6 +83,7 @@ pub fn renew(
         offer_side.adaptor_sig,
         &contract_params.contract_info,
         &adaptor_infos,
+        accept_side.party_params,
         offer_side.party_params,
     )?;
 

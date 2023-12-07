@@ -192,11 +192,10 @@ fn validate_presigned_with_infos(
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     contract_info: &[ContractInfo],
     adaptor_infos: &[AdaptorInfo],
-    // own_params: &PartyParams,
+    own_params: &PartyParams,
     checked_params: &PartyParams,
 ) -> Result<()> {
     let fund_output_value = dlc_transactions.get_fund_output().value;
-    // let total_collateral = own_params.collateral + checked_params.collateral;
 
     dlc::verify_tx_input_sig(
         secp,
@@ -209,16 +208,47 @@ fn validate_presigned_with_infos(
     )
     .map_err(FromDlcError::Dlc)?;
 
+    let total_collateral = own_params.collateral + checked_params.collateral;
+
+    let cet_input = dlc_transactions.cets[0].input[0].clone();
+
     let mut adaptor_sig_start = 0;
 
-    for (adaptor_info, contract_info) in adaptor_infos.iter().zip(contract_info.iter()) {
+    adaptor_sig_start = contract_info[0]
+        .verify_adaptor_info(
+            secp,
+            &checked_params.fund_pubkey,
+            &dlc_transactions.funding_script_pubkey,
+            fund_output_value,
+            &dlc_transactions.cets,
+            cet_adaptor_signatures,
+            adaptor_sig_start,
+            &adaptor_infos[0],
+        )
+        .map_err(FromDlcError::Manager)?;
+
+    for (adaptor_info, contract_info) in adaptor_infos.iter().zip(contract_info.iter()).skip(1) {
+        let payouts: Box<[Payout]> = contract_info
+            .get_payouts(total_collateral)
+            .map_err(FromDlcError::Manager)?
+            .into_boxed_slice();
+
+        let tmp_cets = dlc::create_cets(
+            &cet_input,
+            &own_params.payout_script_pubkey,
+            own_params.payout_serial_id,
+            &checked_params.payout_script_pubkey,
+            checked_params.payout_serial_id,
+            &payouts,
+            0,
+        );
         adaptor_sig_start = contract_info
             .verify_adaptor_info(
                 secp,
                 &checked_params.fund_pubkey,
                 &dlc_transactions.funding_script_pubkey,
                 fund_output_value,
-                &dlc_transactions.cets,
+                &tmp_cets,
                 cet_adaptor_signatures,
                 adaptor_sig_start,
                 adaptor_info,

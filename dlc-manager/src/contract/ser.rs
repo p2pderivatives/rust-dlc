@@ -13,8 +13,8 @@ use crate::contract::{
     PreClosedContract,
 };
 use crate::payout_curve::{
-    HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
-    PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
+    HyperbolaPayoutCurvePiece, NoPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece,
+    PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
 };
 use dlc::DlcTransactions;
 use dlc_messages::ser_impls::{
@@ -60,7 +60,8 @@ impl_dlc_writeable!(PayoutPoint, { (event_outcome, writeable), (outcome_payout, 
 impl_dlc_writeable_enum!(
     PayoutFunctionPiece,
     (0, PolynomialPayoutCurvePiece),
-    (1, HyperbolaPayoutCurvePiece);;;
+    (1, HyperbolaPayoutCurvePiece),
+    (2, NoPayoutCurvePiece);;;
 );
 impl_dlc_writeable!(RoundingInterval, { (begin_interval, writeable), (rounding_mod, writeable) });
 impl_dlc_writeable!(PayoutFunction, { (payout_function_pieces, vec) });
@@ -78,6 +79,10 @@ impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
     (b, float),
     (c, float),
     (d, float)
+});
+impl_dlc_writeable!(NoPayoutCurvePiece, {
+    (left_end_point, writeable),
+    (right_end_point, writeable)
 });
 impl_dlc_writeable_enum!(ContractDescriptor, (0, Enum), (1, Numerical);;;);
 impl_dlc_writeable!(ContractInfo, { (contract_descriptor, writeable), (oracle_announcements, vec), (threshold, usize)});

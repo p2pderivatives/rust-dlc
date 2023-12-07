@@ -64,6 +64,7 @@ impl PayoutFunction {
                 PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
                     h.left_end_point.event_outcome == 0
                 }
+                PayoutFunctionPiece::NoPayoutCurvePiece(n) => n.left_end_point.event_outcome == 0,
             };
 
             let last = self
@@ -81,6 +82,7 @@ impl PayoutFunction {
                 PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
                     h.right_end_point.event_outcome == max_value
                 }
+                PayoutFunctionPiece::NoPayoutCurvePiece(n) => n.right_end_point.event_outcome == 0,
             };
 
             starts_at_zero && finishes_at_max
@@ -121,6 +123,8 @@ pub enum PayoutFunctionPiece {
     PolynomialPayoutCurvePiece(PolynomialPayoutCurvePiece),
     /// A function piece represented by an hyperbola.
     HyperbolaPayoutCurvePiece(HyperbolaPayoutCurvePiece),
+    /// A piece which represents no payout for its range.
+    NoPayoutCurvePiece(NoPayoutCurvePiece),
 }
 
 impl PayoutFunctionPiece {
@@ -138,6 +142,9 @@ impl PayoutFunctionPiece {
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
                 h.to_range_payouts(rounding_intervals, total_collateral, range_payouts)
             }
+            PayoutFunctionPiece::NoPayoutCurvePiece(n) => {
+                n.to_range_payouts(rounding_intervals, total_collateral, range_payouts)
+            }
         }
     }
 
@@ -145,6 +152,7 @@ impl PayoutFunctionPiece {
         match self {
             PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => &p.payout_points[0],
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => &h.left_end_point,
+            PayoutFunctionPiece::NoPayoutCurvePiece(n) => &n.left_end_point,
         }
     }
 
@@ -152,6 +160,7 @@ impl PayoutFunctionPiece {
         match self {
             PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.payout_points.last().unwrap(),
             PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => &h.right_end_point,
+            PayoutFunctionPiece::NoPayoutCurvePiece(n) => &n.right_end_point,
         }
     }
 }
@@ -480,6 +489,70 @@ impl Evaluable for HyperbolaPayoutCurvePiece {
     }
     fn get_last_outcome(&self) -> u64 {
         self.right_end_point.event_outcome
+    }
+}
+
+/// A function piece where no settlement can be made from outcome in its range
+/// TWO SUCCESSIVES NoPayoutCurvePiece ARE NOT THE SAME AS ONE LARGE
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct NoPayoutCurvePiece {
+    /// The left end point of the piece.
+    pub(crate) left_end_point: PayoutPoint,
+    /// The right end point of the piece.
+    /// The payout must be continuous with next piece.
+    pub(crate) right_end_point: PayoutPoint,
+}
+
+impl NoPayoutCurvePiece {
+    /// Create a new NoPayoutCurvePiece
+    pub fn new(left_end_point: PayoutPoint, right_end_point: PayoutPoint) -> Self {
+        NoPayoutCurvePiece {
+            left_end_point,
+            right_end_point,
+        }
+    }
+}
+
+impl Evaluable for NoPayoutCurvePiece {
+    fn evaluate(&self, _outcome: u64) -> f64 {
+        // We cannot return None payout
+        // Nevertheless there is no way to make a sensible value so we panic
+        unreachable!()
+    }
+
+    fn get_first_outcome(&self) -> u64 {
+        self.left_end_point.event_outcome
+    }
+    fn get_last_outcome(&self) -> u64 {
+        self.right_end_point.event_outcome
+    }
+
+    // Other function pieces assume continuity of the payout curve
+    // and a previous range payout that make sense
+    // so we create a fake tiny range at the end at the cost of
+    // breaking equivalence between successive NoPayoutCurvePiece
+    // with one large NoPayoutCurvePiece
+    fn to_range_payouts(
+        &self,
+        _rounding_intervals: &RoundingIntervals,
+        total_collateral: u64,
+        range_payouts: &mut Vec<RangePayout>,
+    ) -> Result<(), Error> {
+        let end_no_payout_range = RangePayout {
+            start: self.right_end_point.event_outcome as usize - 1,
+            count: 1,
+            payout: Payout {
+                offer: self.right_end_point.outcome_payout,
+                accept: total_collateral - self.right_end_point.outcome_payout,
+            },
+        };
+        range_payouts.push(end_no_payout_range);
+        Ok(())
     }
 }
 

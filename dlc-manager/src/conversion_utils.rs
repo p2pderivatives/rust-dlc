@@ -6,8 +6,8 @@ use crate::contract::{
     ContractDescriptor, FundingInputInfo,
 };
 use crate::payout_curve::{
-    HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
-    PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
+    HyperbolaPayoutCurvePiece, NoPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece,
+    PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
 };
 use bitcoin::{consensus::encode::Decodable, OutPoint, Transaction};
 use dlc::{EnumerationPayout, Payout, TxInputInfo};
@@ -20,9 +20,10 @@ use dlc_messages::{
         ContractDescriptor as SerContractDescriptor, ContractInfo as SerContractInfo,
         ContractInfoInner, ContractOutcome, DisjointContractInfo, EnumeratedContractDescriptor,
         HyperbolaPayoutCurvePiece as SerHyperbolaPayoutCurvePiece,
-        NumericOutcomeContractDescriptor, PayoutCurvePiece as SerPayoutCurvePiece,
-        PayoutFunction as SerPayoutFunction, PayoutFunctionPiece as SerPayoutFunctionPiece,
-        PayoutPoint as SerPayoutPoint, PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
+        NoPayoutCurvePiece as SerNoPayoutCurvePiece, NumericOutcomeContractDescriptor,
+        PayoutCurvePiece as SerPayoutCurvePiece, PayoutFunction as SerPayoutFunction,
+        PayoutFunctionPiece as SerPayoutFunctionPiece, PayoutPoint as SerPayoutPoint,
+        PolynomialPayoutCurvePiece as SerPolynomialPayoutCurvePiece,
         RoundingInterval as SerRoundingInterval, RoundingIntervals as SerRoundingIntervals,
         SingleContractInfo,
     },
@@ -342,6 +343,10 @@ impl From<&PayoutFunction> for SerPayoutFunction {
                             (&h.left_end_point).into(),
                             SerPayoutCurvePiece::HyperbolaPayoutCurvePiece(h.into()),
                         ),
+                        PayoutFunctionPiece::NoPayoutCurvePiece(h) => (
+                            (&h.left_end_point).into(),
+                            SerPayoutCurvePiece::NoPayoutCurvePiece(h.into()),
+                        ),
                     };
                     SerPayoutFunctionPiece {
                         end_point: left,
@@ -358,6 +363,7 @@ impl From<&PayoutFunction> for SerPayoutFunction {
                     PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
                         (&h.right_end_point).into()
                     }
+                    PayoutFunctionPiece::NoPayoutCurvePiece(h) => (&h.right_end_point).into(),
                 }
             },
         }
@@ -409,6 +415,12 @@ fn from_ser_payout_function_piece(
                 b: h.b,
                 c: h.c,
                 d: h.d,
+            })
+        }
+        SerPayoutCurvePiece::NoPayoutCurvePiece(_n) => {
+            PayoutFunctionPiece::NoPayoutCurvePiece(NoPayoutCurvePiece {
+                left_end_point: (&piece.end_point).into(),
+                right_end_point: right_end_point.into(),
             })
         }
     }
@@ -485,6 +497,12 @@ impl From<&HyperbolaPayoutCurvePiece> for SerHyperbolaPayoutCurvePiece {
             c: piece.c,
             d: piece.d,
         }
+    }
+}
+
+impl From<&NoPayoutCurvePiece> for SerNoPayoutCurvePiece {
+    fn from(_piece: &NoPayoutCurvePiece) -> SerNoPayoutCurvePiece {
+        SerNoPayoutCurvePiece {}
     }
 }
 

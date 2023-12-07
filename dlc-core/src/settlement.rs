@@ -63,6 +63,7 @@ pub fn get_signed_cet(
     offer_side: &SideSign,
     accept_side: &SideSign,
     fee_party_params: Option<&FeePartyParams>,
+    event_id: &str,
     attestations: &[AttestationData],
 ) -> Result<Transaction> {
     let attestations: Box<[(usize, &OracleAttestation)]> = attestations
@@ -87,16 +88,21 @@ pub fn get_signed_cet(
         offer_side.party_params,
         accept_side.party_params,
     )?;
-    let (range_info, sigs): (RangeInfo, Box<[Vec<SchnorrSignature>]>) = contract_params
+
+    let (contract_info, adaptor_info) = contract_params
         .contract_info
         .iter()
         .zip(adaptor_infos)
-        .find_map(|(contract_info, adaptor_info)| {
-            get_range_info_and_oracle_sigs(contract_info, &adaptor_info, &attestations).ok()
+        .find(|(contract_info, _)| {
+            contract_info.oracle_announcements[0]
+                .oracle_event
+                .event_id
+                .as_str()
+                == event_id
         })
-        .ok_or(FromDlcError::InvalidState(
-            "The contract cannot be closed with the provided attestation set".to_owned(),
-        ))?;
+        .ok_or(FromDlcError::InvalidArgument)?;
+    let (range_info, sigs) =
+        get_range_info_and_oracle_sigs(contract_info, &adaptor_info, &attestations)?;
     let mut cet = dlc_transactions.cets[range_info.cet_index].clone();
 
     let (adaptor_sigs_offer, fund_pubkey_offer) =
