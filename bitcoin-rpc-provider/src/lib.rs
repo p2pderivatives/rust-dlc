@@ -227,6 +227,10 @@ impl Wallet for BitcoinCoreProvider {
             .map_err(rpc_err_to_manager_err)
     }
 
+    fn get_new_change_address(&self) -> Result<Address, ManagerError> {
+        self.get_new_address()
+    }
+
     fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
         let sk = SecretKey::new(&mut thread_rng());
         let network = self.get_network()?;

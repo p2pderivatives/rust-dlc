@@ -94,6 +94,8 @@ pub trait Signer {
 pub trait Wallet: Signer {
     /// Returns a new (unused) address.
     fn get_new_address(&self) -> Result<Address, Error>;
+    /// Returns a new (unused) change address.
+    fn get_new_change_address(&self) -> Result<Address, Error>;
     /// Generate a new secret key and store it in the wallet so that it can later
     /// be retrieved.
     fn get_new_secret_key(&self) -> Result<SecretKey, Error>;
