@@ -26,6 +26,7 @@ use test_utils::{get_enum_test_params, TestParams};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 
+use bitcoin::secp256k1::rand::random;
 use std::{
     collections::HashMap,
     sync::{
@@ -250,7 +251,7 @@ fn channel_renew_race_test() {
 }
 
 fn channel_execution_test(test_params: TestParams, path: TestPath) {
-    env_logger::init();
+    env_logger::try_init().ok();
     let (alice_send, bob_receive) = channel::<Option<Message>>();
     let (bob_send, alice_receive) = channel::<Option<Message>>();
     let (sync_send, sync_receive) = channel::<()>();
@@ -339,12 +340,14 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     refresh_wallet(&alice_wallet, 200000000);
     refresh_wallet(&bob_wallet, 200000000);
 
+    let alice_seed = random::<[u8; 32]>();
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&alice_wallet),
             Arc::clone(&electrs),
             alice_store,
             alice_oracles,
+            alice_seed,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
@@ -354,12 +357,14 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let alice_manager_loop = Arc::clone(&alice_manager);
     let alice_manager_send = Arc::clone(&alice_manager);
 
+    let bob_seed = random::<[u8; 32]>();
     let bob_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&bob_wallet),
             Arc::clone(&electrs),
             Arc::clone(&bob_store),
             bob_oracles,
+            bob_seed,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )

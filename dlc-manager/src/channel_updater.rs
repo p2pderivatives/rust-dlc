@@ -62,6 +62,7 @@ macro_rules! get_signed_channel_state {
         }
     }};
 }
+use crate::utils::SerialIds;
 pub(crate) use get_signed_channel_state;
 
 /// Creates an [`OfferedChannel`] and an associated [`OfferedContract`] using
@@ -74,6 +75,7 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     cet_nsequence: u32,
     refund_delay: u32,
     wallet: &W,
+    seed: [u8; 32],
     blockchain: &B,
     time: &T,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
@@ -82,8 +84,13 @@ where
     B::Target: Blockchain,
     T::Target: Time,
 {
-    let (offer_params, _, funding_inputs_info) = crate::utils::get_party_params(
+    let temp_id = get_new_temporary_id();
+    let serial_ids = SerialIds::generate();
+    let funding_privkey = crate::utils::compute_secret_key(seed, temp_id, serial_ids);
+    let (offer_params, funding_inputs_info) = crate::utils::get_party_params(
         secp,
+        funding_privkey,
+        serial_ids,
         contract.offer_collateral,
         contract.fee_rate,
         wallet,
@@ -92,6 +99,7 @@ where
     let party_points = crate::utils::get_party_base_points(secp, wallet)?;
 
     let offered_contract = OfferedContract::new(
+        temp_id,
         contract,
         oracle_announcements.to_vec(),
         &offer_params,
@@ -136,6 +144,7 @@ pub fn accept_channel_offer<W: Deref, B: Deref>(
     offered_channel: &OfferedChannel,
     offered_contract: &OfferedContract,
     wallet: &W,
+    seed: [u8; 32],
     blockchain: &B,
 ) -> Result<(AcceptedChannel, AcceptedContract, AcceptChannel), Error>
 where
@@ -146,8 +155,12 @@ where
 
     let total_collateral = offered_contract.total_collateral;
 
-    let (accept_params, _, funding_inputs) = crate::utils::get_party_params(
+    let serial_ids = SerialIds::generate();
+    let fund_secret_key = crate::utils::compute_secret_key(seed, offered_contract.id, serial_ids);
+    let (accept_params, funding_inputs) = crate::utils::get_party_params(
         secp,
+        fund_secret_key,
+        serial_ids,
         total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
@@ -209,7 +222,11 @@ where
         &offered_channel.temporary_channel_id,
     );
 
-    let own_fund_sk = wallet.get_secret_key_for_pubkey(&accept_params.fund_pubkey)?;
+    let serial_ids = SerialIds {
+        payout_serial_id: accept_params.payout_serial_id,
+        change_serial_id: accept_params.change_serial_id,
+    };
+    let own_fund_sk = crate::utils::compute_secret_key(seed, offered_contract.id, serial_ids);
 
     let buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
@@ -265,6 +282,7 @@ pub fn verify_and_sign_accepted_channel<S: Deref>(
     offered_contract: &OfferedContract,
     accept_channel: &AcceptChannel,
     cet_nsequence: u32,
+    seed: [u8; 32],
     signer: &S,
 ) -> Result<(SignedChannel, SignedContract, SignChannel), Error>
 where
@@ -299,8 +317,11 @@ where
         &offer_own_base_secret,
     );
 
-    let offer_fund_sk =
-        signer.get_secret_key_for_pubkey(&offered_contract.offer_params.fund_pubkey)?;
+    let serial_ids = SerialIds {
+        payout_serial_id: accept_params.payout_serial_id,
+        change_serial_id: accept_params.change_serial_id,
+    };
+    let offer_fund_sk = crate::utils::compute_secret_key(seed, offered_contract.id, serial_ids);
 
     let offer_revoke_params = offered_channel.party_points.get_revokable_params(
         secp,
@@ -596,6 +617,7 @@ pub fn settle_channel_accept<S: Deref, T: Deref>(
     lock_time: u32,
     peer_timeout: u64,
     signer: &S,
+    seed: [u8; 32],
     time: &T,
 ) -> Result<SettleAccept, Error>
 where
@@ -634,7 +656,13 @@ where
     let fund_vout = channel.fund_output_index;
     let funding_script_pubkey = &channel.fund_script_pubkey;
 
-    let own_fund_sk = signer.get_secret_key_for_pubkey(&channel.own_params.fund_pubkey)?;
+    let serial_ids = SerialIds {
+        payout_serial_id: channel.own_params.payout_serial_id,
+        change_serial_id: channel.own_params.change_serial_id,
+    };
+    // todo i think wrong id
+    let own_fund_sk =
+        crate::utils::compute_secret_key(seed, channel.temporary_channel_id, serial_ids);
 
     let (settle_tx, settle_adaptor_signature) = get_settle_tx_and_adaptor_sig(
         secp,
@@ -967,7 +995,9 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
+    let temp_id = get_new_temporary_id();
     let mut offered_contract = OfferedContract::new(
+        temp_id,
         contract_input,
         oracle_announcements,
         &signed_channel.own_params,

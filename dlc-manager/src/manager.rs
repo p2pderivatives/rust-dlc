@@ -70,6 +70,7 @@ where
     store: S,
     secp: Secp256k1<All>,
     chain_monitor: ChainMonitor,
+    seed: [u8; 32],
     time: T,
     fee_estimator: F,
 }
@@ -174,6 +175,7 @@ where
         blockchain: B,
         store: S,
         oracles: HashMap<XOnlyPublicKey, O>,
+        seed: [u8; 32],
         time: T,
         fee_estimator: F,
     ) -> Result<Self, Error> {
@@ -191,6 +193,7 @@ where
             time,
             fee_estimator,
             chain_monitor,
+            seed,
         })
     }
 
@@ -306,6 +309,7 @@ where
             REFUND_DELAY,
             &counter_party,
             &self.wallet,
+            self.seed,
             &self.blockchain,
             &self.time,
         )?;
@@ -331,6 +335,7 @@ where
             &self.secp,
             &offered_contract,
             &self.wallet,
+            self.seed,
             &self.blockchain,
         )?;
 
@@ -580,7 +585,7 @@ where
                 contract_info,
                 adaptor_info,
                 &attestations,
-                &self.wallet,
+                self.seed,
             )?;
             match self.close_contract(
                 contract,
@@ -636,7 +641,7 @@ where
                 contract_info,
                 adaptor_info,
                 &attestations,
-                &self.wallet,
+                self.seed,
             )?;
 
             // Check that the lock time has passed
@@ -785,7 +790,7 @@ where
                 .get_transaction_confirmations(&refund.txid())?;
             if confirmations == 0 {
                 let refund =
-                    crate::contract_updater::get_signed_refund(&self.secp, contract, &self.wallet)?;
+                    crate::contract_updater::get_signed_refund(&self.secp, contract, self.seed)?;
                 self.blockchain.send_transaction(&refund)?;
             }
 
@@ -877,6 +882,7 @@ where
             CET_NSEQUENCE,
             REFUND_DELAY,
             &self.wallet,
+            self.seed,
             &self.blockchain,
             &self.time,
         )?;
@@ -920,6 +926,7 @@ where
                 &offered_channel,
                 &offered_contract,
                 &self.wallet,
+                self.seed,
                 &self.blockchain,
             )?;
 
@@ -991,6 +998,7 @@ where
             0,
             PEER_TIMEOUT,
             &self.wallet,
+            self.seed,
             &self.time,
         )?;
 
@@ -1324,6 +1332,7 @@ where
                 accept_channel,
                 //TODO(tibo): this should be parameterizable.
                 CET_NSEQUENCE,
+                self.seed,
                 &self.wallet,
             );
 
@@ -2366,7 +2375,18 @@ mod test {
 
         mocks::mock_time::set_time(0);
 
-        Manager::new(wallet, blockchain.clone(), store, oracles, time, blockchain).unwrap()
+        let seed = [0; 32];
+
+        Manager::new(
+            wallet,
+            blockchain.clone(),
+            store,
+            oracles,
+            seed,
+            time,
+            blockchain,
+        )
+        .unwrap()
     }
 
     fn pubkey() -> PublicKey {

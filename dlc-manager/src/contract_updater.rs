@@ -12,6 +12,7 @@ use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
 };
 
+use crate::utils::{get_new_temporary_id, SerialIds};
 use crate::{
     contract::{
         accepted_contract::AcceptedContract, contract_info::ContractInfo,
@@ -32,6 +33,7 @@ pub fn offer_contract<C: Signing, W: Deref, B: Deref, T: Deref>(
     refund_delay: u32,
     counter_party: &PublicKey,
     wallet: &W,
+    seed: [u8; 32],
     blockchain: &B,
     time: &T,
 ) -> Result<(OfferedContract, OfferDlc), Error>
@@ -42,8 +44,13 @@ where
 {
     contract_input.validate()?;
 
-    let (party_params, _, funding_inputs_info) = crate::utils::get_party_params(
+    let temp_id = get_new_temporary_id();
+    let serial_ids = SerialIds::generate();
+    let funding_privkey = crate::utils::compute_secret_key(seed, temp_id, serial_ids);
+    let (party_params, funding_inputs_info) = crate::utils::get_party_params(
         secp,
+        funding_privkey,
+        serial_ids,
         contract_input.offer_collateral,
         contract_input.fee_rate,
         wallet,
@@ -51,6 +58,7 @@ where
     )?;
 
     let offered_contract = OfferedContract::new(
+        temp_id,
         contract_input,
         oracle_announcements,
         &party_params,
@@ -71,6 +79,7 @@ pub fn accept_contract<W: Deref, B: Deref>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     wallet: &W,
+    seed: [u8; 32],
     blockchain: &B,
 ) -> Result<(AcceptedContract, AcceptDlc), crate::Error>
 where
@@ -79,8 +88,12 @@ where
 {
     let total_collateral = offered_contract.total_collateral;
 
-    let (accept_params, fund_secret_key, funding_inputs) = crate::utils::get_party_params(
+    let serial_ids = SerialIds::generate();
+    let fund_secret_key = crate::utils::compute_secret_key(seed, offered_contract.id, serial_ids);
+    let (accept_params, funding_inputs) = crate::utils::get_party_params(
         secp,
+        fund_secret_key,
+        serial_ids,
         total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
@@ -636,41 +649,37 @@ where
 }
 
 /// Signs and return the CET that can be used to close the given contract.
-pub fn get_signed_cet<C: Signing, S: Deref>(
+pub fn get_signed_cet<C: Signing>(
     secp: &Secp256k1<C>,
     contract: &SignedContract,
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
     attestations: &[(usize, OracleAttestation)],
-    signer: &S,
-) -> Result<Transaction, Error>
-where
-    S::Target: Signer,
-{
+    seed: [u8; 32],
+) -> Result<Transaction, Error> {
     let (range_info, sigs) =
         crate::utils::get_range_info_and_oracle_sigs(contract_info, adaptor_info, attestations)?;
     let mut cet = contract.accepted_contract.dlc_transactions.cets[range_info.cet_index].clone();
     let offered_contract = &contract.accepted_contract.offered_contract;
 
-    let (adaptor_sigs, fund_pubkey, other_pubkey) = if offered_contract.is_offer_party {
+    let (adaptor_sigs, other_pubkey) = if offered_contract.is_offer_party {
         (
             contract
                 .accepted_contract
                 .adaptor_signatures
                 .as_ref()
                 .unwrap(),
-            &offered_contract.offer_params.fund_pubkey,
             &contract.accepted_contract.accept_params.fund_pubkey,
         )
     } else {
         (
             contract.adaptor_signatures.as_ref().unwrap(),
-            &contract.accepted_contract.accept_params.fund_pubkey,
             &offered_contract.offer_params.fund_pubkey,
         )
     };
 
-    let funding_sk = signer.get_secret_key_for_pubkey(fund_pubkey)?;
+    let funding_sk =
+        crate::utils::compute_secret_key(seed, offered_contract.id, contract.get_serial_ids());
 
     dlc::sign_cet(
         secp,
@@ -694,33 +703,29 @@ where
 }
 
 /// Signs and return the refund transaction to refund the contract.
-pub fn get_signed_refund<C: Signing, S: Deref>(
+pub fn get_signed_refund<C: Signing>(
     secp: &Secp256k1<C>,
     contract: &SignedContract,
-    signer: &S,
-) -> Result<Transaction, Error>
-where
-    S::Target: Signer,
-{
+    seed: [u8; 32],
+) -> Result<Transaction, Error> {
     let accepted_contract = &contract.accepted_contract;
     let offered_contract = &accepted_contract.offered_contract;
     let funding_script_pubkey = &accepted_contract.dlc_transactions.funding_script_pubkey;
     let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
-    let (fund_pubkey, other_fund_pubkey, other_sig) = if offered_contract.is_offer_party {
+    let (other_fund_pubkey, other_sig) = if offered_contract.is_offer_party {
         (
-            &offered_contract.offer_params.fund_pubkey,
             &accepted_contract.accept_params.fund_pubkey,
             &accepted_contract.accept_refund_signature,
         )
     } else {
         (
-            &accepted_contract.accept_params.fund_pubkey,
             &offered_contract.offer_params.fund_pubkey,
             &contract.offer_refund_signature,
         )
     };
 
-    let fund_priv_key = signer.get_secret_key_for_pubkey(fund_pubkey)?;
+    let fund_priv_key =
+        crate::utils::compute_secret_key(seed, offered_contract.id, contract.get_serial_ids());
     let mut refund = accepted_contract.dlc_transactions.refund.clone();
     dlc::util::sign_multi_sig_input(
         secp,
@@ -766,6 +771,7 @@ mod tests {
             secp256k1_zkp::SECP256K1,
             &offered_contract,
             &wallet,
+            [0; 32],
             &blockchain,
         )
         .expect("Not to fail");

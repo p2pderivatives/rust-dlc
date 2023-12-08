@@ -1,6 +1,8 @@
 //! #Utils
 use std::ops::Deref;
 
+use bitcoin::hashes::sha256::Hash as Sha256;
+use bitcoin::hashes::{Hash, HashEngine, Hmac, HmacEngine};
 use bitcoin::{consensus::Encodable, Txid};
 use dlc::{PartyParams, TxInputInfo};
 use dlc_messages::{
@@ -59,26 +61,54 @@ pub(crate) fn compute_id(
     res
 }
 
+/// Computes the secret key from the temporary id and the seed.
+pub(crate) fn compute_secret_key(
+    seed: [u8; 32],
+    temporary_id: [u8; 32],
+    serial_ids: SerialIds,
+) -> SecretKey {
+    let mut hmac = HmacEngine::<Sha256>::new(&seed);
+    hmac.input(&temporary_id);
+    hmac.input(&serial_ids.payout_serial_id.to_be_bytes());
+    hmac.input(&serial_ids.change_serial_id.to_be_bytes());
+    let secret_bytes = Hmac::from_engine(hmac).into_inner();
+    SecretKey::from_slice(&secret_bytes).expect("Secret key is valid")
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SerialIds {
+    pub payout_serial_id: u64,
+    pub change_serial_id: u64,
+}
+
+impl SerialIds {
+    pub(crate) fn generate() -> Self {
+        SerialIds {
+            payout_serial_id: get_new_serial_id(),
+            change_serial_id: get_new_serial_id(),
+        }
+    }
+}
+
 pub(crate) fn get_party_params<C: Signing, W: Deref, B: Deref>(
     secp: &Secp256k1<C>,
+    funding_privkey: SecretKey,
+    serial_ids: SerialIds,
     own_collateral: u64,
     fee_rate: u64,
     wallet: &W,
     blockchain: &B,
-) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
+) -> Result<(PartyParams, Vec<FundingInputInfo>), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
 {
-    let funding_privkey = wallet.get_new_secret_key()?;
     let funding_pubkey = PublicKey::from_secret_key(secp, &funding_privkey);
 
     let payout_addr = wallet.get_new_address()?;
     let payout_spk = payout_addr.script_pubkey();
-    let payout_serial_id = get_new_serial_id();
     let change_addr = wallet.get_new_change_address()?;
     let change_spk = change_addr.script_pubkey();
-    let change_serial_id = get_new_serial_id();
 
     // Add base cost of fund tx + CET / 2 and a CET output to the collateral.
     let appr_required_amount =
@@ -116,15 +146,15 @@ where
     let party_params = PartyParams {
         fund_pubkey: funding_pubkey,
         change_script_pubkey: change_spk,
-        change_serial_id,
+        change_serial_id: serial_ids.payout_serial_id,
         payout_script_pubkey: payout_spk,
-        payout_serial_id,
+        payout_serial_id: serial_ids.payout_serial_id,
         inputs: funding_tx_info,
         collateral: own_collateral,
         input_amount: total_input,
     };
 
-    Ok((party_params, funding_privkey, funding_inputs_info))
+    Ok((party_params, funding_inputs_info))
 }
 
 pub(crate) fn get_party_base_points<C: Signing, W: Deref>(

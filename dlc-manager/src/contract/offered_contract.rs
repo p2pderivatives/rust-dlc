@@ -75,6 +75,7 @@ impl OfferedContract {
 
     /// Creates a new [`OfferedContract`] from the given parameters.
     pub fn new(
+        temp_id: [u8; 32],
         contract: &ContractInput,
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
         offer_params: &PartyParams,
@@ -102,7 +103,7 @@ impl OfferedContract {
             })
             .collect::<Vec<ContractInfo>>();
         OfferedContract {
-            id: crate::utils::get_new_temporary_id(),
+            id: temp_id,
             is_offer_party: true,
             contract_info,
             offer_params: offer_params.clone(),

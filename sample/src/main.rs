@@ -78,6 +78,13 @@ async fn main() {
     let mut oracles = HashMap::new();
     oracles.insert(oracle.get_public_key(), Box::new(oracle));
 
+    let dlc_data_dir = format!("{}/.dlc", config.storage_dir_path);
+    let logger = Arc::new(FilesystemLogger::new(dlc_data_dir.clone()));
+
+    let mut ephemeral_bytes = [0; 32];
+    thread_rng().fill_bytes(&mut ephemeral_bytes);
+    let sk_path = format!("{}/secret_key", dlc_data_dir);
+
     // Instantiate a DlcManager.
     let dlc_manager = Arc::new(Mutex::new(
         dlc_manager::manager::Manager::new(
@@ -88,18 +95,12 @@ async fn main() {
                     .expect("Error creating storage."),
             ),
             oracles,
+            ephemeral_bytes,
             Arc::new(dlc_manager::SystemTimeProvider {}),
             bitcoind_provider.clone(),
         )
         .expect("Could not create manager."),
     ));
-
-    let dlc_data_dir = format!("{}/.dlc", config.storage_dir_path);
-    let logger = Arc::new(FilesystemLogger::new(dlc_data_dir.clone()));
-
-    let mut ephemeral_bytes = [0; 32];
-    thread_rng().fill_bytes(&mut ephemeral_bytes);
-    let sk_path = format!("{}/secret_key", dlc_data_dir);
 
     // We store the private key in plaintext as this is an example, should be
     // avoided in a real application.

@@ -4,6 +4,7 @@ use crate::conversion_utils::PROTOCOL_VERSION;
 use crate::ChannelId;
 
 use super::accepted_contract::AcceptedContract;
+use crate::utils::SerialIds;
 use dlc_messages::CetAdaptorSignature;
 use dlc_messages::CetAdaptorSignatures;
 use dlc_messages::FundingSignatures;
@@ -44,6 +45,28 @@ impl SignedContract {
             },
             refund_signature: self.offer_refund_signature,
             funding_signatures: self.funding_signatures.clone(),
+        }
+    }
+
+    pub(crate) fn get_serial_ids(&self) -> SerialIds {
+        if self.accepted_contract.offered_contract.is_offer_party {
+            SerialIds {
+                payout_serial_id: self
+                    .accepted_contract
+                    .offered_contract
+                    .offer_params
+                    .payout_serial_id,
+                change_serial_id: self
+                    .accepted_contract
+                    .offered_contract
+                    .offer_params
+                    .change_serial_id,
+            }
+        } else {
+            SerialIds {
+                payout_serial_id: self.accepted_contract.accept_params.payout_serial_id,
+                change_serial_id: self.accepted_contract.accept_params.change_serial_id,
+            }
         }
     }
 }

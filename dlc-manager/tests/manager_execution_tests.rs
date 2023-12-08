@@ -14,6 +14,7 @@ use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use simple_wallet::SimpleWallet;
 use test_utils::*;
 
+use bitcoin::secp256k1::rand::random;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
@@ -646,12 +647,14 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     refresh_wallet(&alice_wallet, 200000000);
     refresh_wallet(&bob_wallet, 200000000);
 
+    let alice_seed = random::<[u8; 32]>();
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&alice_wallet),
             Arc::clone(&electrs),
             alice_store,
             alice_oracles,
+            alice_seed,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
@@ -661,12 +664,14 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     let alice_manager_loop = Arc::clone(&alice_manager);
     let alice_manager_send = Arc::clone(&alice_manager);
 
+    let bob_seed = random::<[u8; 32]>();
     let bob_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&bob_wallet),
             Arc::clone(&electrs),
             bob_store,
             bob_oracles,
+            bob_seed,
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
