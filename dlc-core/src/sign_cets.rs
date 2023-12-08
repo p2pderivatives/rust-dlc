@@ -80,9 +80,7 @@ fn sign(
         )
         .map_err(FromDlcError::Manager)?;
     let mut adaptor_infos = vec![adaptor_info];
-    let mut adaptor_sigs = adaptor_sig;
-
-    let mut cets = cets.clone();
+    let mut adaptor_sigs = vec![adaptor_sig.into_boxed_slice()];
 
     for contract_info in contract_info.iter().skip(1) {
         let payouts = contract_info
@@ -110,10 +108,8 @@ fn sign(
             )
             .map_err(FromDlcError::Manager)?;
 
-        cets.extend(tmp_cets);
-
         adaptor_infos.push(adaptor_info);
-        adaptor_sigs.extend(adaptor_sig);
+        adaptor_sigs.push(adaptor_sig.into_boxed_slice());
     }
 
     let refund_signature = dlc::util::get_raw_sig_for_tx_input(

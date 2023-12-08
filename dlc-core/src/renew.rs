@@ -2,7 +2,7 @@ use bitcoin::{Script, Transaction};
 use dlc::PartyParams;
 
 use dlc::util::get_output_for_script_pubkey;
-use secp256k1_zkp::Secp256k1;
+use secp256k1_zkp::{EcdsaAdaptorSignature, Secp256k1};
 
 use crate::contract_tools::FeePartyParams;
 use crate::{error::*, ContractParams, SideSign};
@@ -17,14 +17,14 @@ pub struct RenewInfos {
     pub value: u64,
 }
 
-pub fn renew(
+pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
     old_contract_params: &ContractParams,
     old_offer_params: &PartyParams,
     old_accept_params: &PartyParams,
     old_fee_party_params: Option<&FeePartyParams>,
     contract_params: &ContractParams,
-    offer_side: &SideSign,
-    accept_side: &SideSign,
+    offer_side: &SideSign<E>,
+    accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
 ) -> Result<RenewInfos> {
     // Checking that contracts are chained

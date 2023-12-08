@@ -26,14 +26,14 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct CetSignatures {
     pub refund_sig: Signature,
-    pub adaptor_sig: Box<[EcdsaAdaptorSignature]>,
+    pub adaptor_sig: Box<[Box<[EcdsaAdaptorSignature]>]>,
 }
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "camelCase"))]
-pub struct SideSign<'a> {
+pub struct SideSign<'a, E: AsRef<[EcdsaAdaptorSignature]>> {
     pub party_params: &'a PartyParams,
-    pub adaptor_sig: &'a [EcdsaAdaptorSignature],
+    pub adaptor_sig: &'a [E],
     pub refund_sig: &'a Signature,
 }
 
@@ -94,11 +94,11 @@ fn get_dlc_transactions(
     )
 }
 
-fn validate_presigned_without_infos(
+fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     refund_signature: &Signature,
-    cet_adaptor_signatures: &[EcdsaAdaptorSignature],
+    cet_adaptor_signatures: &[E],
     contract_info: &[ContractInfo],
     own_params: &PartyParams,
     checked_params: &PartyParams,
@@ -132,7 +132,7 @@ fn validate_presigned_without_infos(
             &funding_script_pubkey,
             fund_output_value,
             &cets,
-            cet_adaptor_signatures,
+            cet_adaptor_signatures[0].as_ref(),
             0,
         )
         .map_err(FromDlcError::Manager)?;
@@ -141,7 +141,9 @@ fn validate_presigned_without_infos(
 
     let cet_input = cets[0].input[0].clone();
 
-    for contract_info in contract_info.iter().skip(1) {
+    for (contract_info, cet_adaptor_signature) in
+        contract_info.iter().zip(cet_adaptor_signatures).skip(1)
+    {
         let payouts: Box<[Payout]> = contract_info
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?
@@ -165,7 +167,7 @@ fn validate_presigned_without_infos(
                 &funding_script_pubkey,
                 fund_output_value,
                 &tmp_cets,
-                cet_adaptor_signatures,
+                cet_adaptor_signature.as_ref(),
                 adaptor_index,
             )
             .map_err(FromDlcError::Manager)?;
@@ -186,11 +188,11 @@ fn validate_presigned_without_infos(
     Ok((dlc_transactions, adaptor_infos))
 }
 
-fn validate_presigned_with_infos(
+fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
     refund_signature: &Signature,
-    cet_adaptor_signatures: &[EcdsaAdaptorSignature],
+    cet_adaptor_signatures: &[E],
     contract_info: &[ContractInfo],
     adaptor_infos: &[AdaptorInfo],
     own_params: &PartyParams,
@@ -222,13 +224,18 @@ fn validate_presigned_with_infos(
             &dlc_transactions.funding_script_pubkey,
             fund_output_value,
             &dlc_transactions.cets,
-            cet_adaptor_signatures,
+            cet_adaptor_signatures[0].as_ref(),
             adaptor_sig_start,
             &adaptor_infos[0],
         )
         .map_err(FromDlcError::Manager)?;
 
-    for (adaptor_info, contract_info) in adaptor_infos.iter().zip(contract_info.iter()).skip(1) {
+    for ((adaptor_info, contract_info), cet_adaptor_signature) in adaptor_infos
+        .iter()
+        .zip(contract_info.iter())
+        .zip(cet_adaptor_signatures)
+        .skip(1)
+    {
         let payouts: Box<[Payout]> = contract_info
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?
@@ -250,7 +257,7 @@ fn validate_presigned_with_infos(
                 &dlc_transactions.funding_script_pubkey,
                 fund_output_value,
                 &tmp_cets,
-                cet_adaptor_signatures,
+                cet_adaptor_signature.as_ref(),
                 adaptor_sig_start,
                 adaptor_info,
             )

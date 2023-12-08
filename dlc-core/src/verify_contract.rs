@@ -1,16 +1,16 @@
 use bitcoin::Transaction;
 
-use secp256k1_zkp::Secp256k1;
+use secp256k1_zkp::{EcdsaAdaptorSignature, Secp256k1};
 
 use crate::{
     contract_tools::FeePartyParams, error::*, get_dlc_transactions, validate_presigned_with_infos,
     validate_presigned_without_infos, ContractParams, SideSign,
 };
 
-pub fn check_all_signed_dlc(
+pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
     contract_params: &ContractParams,
-    offer_side: &SideSign,
-    accept_side: &SideSign,
+    offer_side: &SideSign<E>,
+    accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(

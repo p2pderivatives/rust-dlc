@@ -2,7 +2,7 @@ use dlc_messages::oracle_msgs::OracleAttestation;
 use dlc_trie::RangeInfo;
 use secp256k1_zkp::{
     schnorr::{self, Signature as SchnorrSignature},
-    Secp256k1,
+    EcdsaAdaptorSignature, Secp256k1,
 };
 
 use bitcoin::{EcdsaSighashType, Script, Transaction, Witness};
@@ -18,10 +18,10 @@ use crate::{
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
-pub fn get_refund(
+pub fn get_refund<E: AsRef<[EcdsaAdaptorSignature]>>(
     contract_params: &ContractParams,
-    offer_side: &SideSign,
-    accept_side: &SideSign,
+    offer_side: &SideSign<E>,
+    accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
@@ -58,10 +58,10 @@ pub struct AttestationData<'o> {
     pub attestation: &'o OracleAttestation,
 }
 
-pub fn get_signed_cet(
+pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
     contract_params: &ContractParams,
-    offer_side: &SideSign,
-    accept_side: &SideSign,
+    offer_side: &SideSign<E>,
+    accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
     event_id: &str,
     attestations: &[AttestationData],
@@ -89,18 +89,21 @@ pub fn get_signed_cet(
         accept_side.party_params,
     )?;
 
-    let (contract_info, adaptor_info) = contract_params
-        .contract_info
-        .iter()
-        .zip(adaptor_infos)
-        .find(|(contract_info, _)| {
-            contract_info.oracle_announcements[0]
-                .oracle_event
-                .event_id
-                .as_str()
-                == event_id
-        })
-        .ok_or(FromDlcError::InvalidArgument)?;
+    let (((contract_info, adaptor_info), offer_adaptor_sigs), accept_adaptor_sigs) =
+        contract_params
+            .contract_info
+            .iter()
+            .zip(adaptor_infos)
+            .zip(offer_side.adaptor_sig)
+            .zip(accept_side.adaptor_sig)
+            .find(|(((contract_info, _), _), _)| {
+                contract_info.oracle_announcements[0]
+                    .oracle_event
+                    .event_id
+                    .as_str()
+                    == event_id
+            })
+            .ok_or(FromDlcError::InvalidArgument)?;
 
     let total_collateral = offer_side.party_params.collateral + accept_side.party_params.collateral;
 
@@ -125,11 +128,13 @@ pub fn get_signed_cet(
         get_range_info_and_oracle_sigs(contract_info, &adaptor_info, &attestations)?;
     let mut cet = tmp_cets[range_info.cet_index].clone();
 
-    let (adaptor_sigs_offer, fund_pubkey_offer) =
-        (offer_side.adaptor_sig, &offer_side.party_params.fund_pubkey);
+    let (adaptor_sigs_offer, fund_pubkey_offer) = (
+        offer_adaptor_sigs.as_ref(),
+        &offer_side.party_params.fund_pubkey,
+    );
 
     let (adaptor_sigs_accept, fund_pubkey_accept) = (
-        accept_side.adaptor_sig,
+        accept_adaptor_sigs.as_ref(),
         &accept_side.party_params.fund_pubkey,
     );
 
