@@ -79,7 +79,7 @@ pub fn get_signed_cet(
     )?;
     let secp = Secp256k1::new();
 
-    let (dlc_transactions, adaptor_infos) = validate_presigned_without_infos(
+    let (_, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
         accept_side.refund_sig,
@@ -101,9 +101,29 @@ pub fn get_signed_cet(
                 == event_id
         })
         .ok_or(FromDlcError::InvalidArgument)?;
+
+    let total_collateral = offer_side.party_params.collateral + accept_side.party_params.collateral;
+
+    let cet_input = dlc_transactions.cets[0].input[0].clone();
+
+    let payouts = contract_info
+        .get_payouts(total_collateral)
+        .map_err(FromDlcError::Manager)?
+        .into_boxed_slice();
+
+    let tmp_cets = dlc::create_cets(
+        &cet_input,
+        &offer_side.party_params.payout_script_pubkey,
+        offer_side.party_params.payout_serial_id,
+        &accept_side.party_params.payout_script_pubkey,
+        accept_side.party_params.payout_serial_id,
+        &payouts,
+        0,
+    );
+
     let (range_info, sigs) =
         get_range_info_and_oracle_sigs(contract_info, &adaptor_info, &attestations)?;
-    let mut cet = dlc_transactions.cets[range_info.cet_index].clone();
+    let mut cet = tmp_cets[range_info.cet_index].clone();
 
     let (adaptor_sigs_offer, fund_pubkey_offer) =
         (offer_side.adaptor_sig, &offer_side.party_params.fund_pubkey);
