@@ -124,7 +124,7 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     let fund_output_value = dlc_transactions.get_fund_output().value;
     let total_collateral = own_params.collateral + checked_params.collateral;
 
-    let (adaptor_info, mut adaptor_index) = contract_info[0]
+    let (adaptor_info, _) = contract_info[0]
         .verify_and_get_adaptor_info(
             secp,
             total_collateral,
@@ -159,7 +159,7 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             0,
         );
 
-        let (adaptor_info, tmp_adaptor_index) = contract_info
+        let (adaptor_info, _) = contract_info
             .verify_and_get_adaptor_info(
                 secp,
                 total_collateral,
@@ -168,11 +168,9 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
                 fund_output_value,
                 &tmp_cets,
                 cet_adaptor_signature.as_ref(),
-                adaptor_index,
+                0,
             )
             .map_err(FromDlcError::Manager)?;
-
-        adaptor_index = tmp_adaptor_index;
 
         cets.extend(tmp_cets);
 
@@ -215,9 +213,7 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
 
     let cet_input = dlc_transactions.cets[0].input[0].clone();
 
-    let mut adaptor_sig_start = 0;
-
-    adaptor_sig_start = contract_info[0]
+    _ = contract_info[0]
         .verify_adaptor_info(
             secp,
             &checked_params.fund_pubkey,
@@ -225,7 +221,7 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             fund_output_value,
             &dlc_transactions.cets,
             cet_adaptor_signatures[0].as_ref(),
-            adaptor_sig_start,
+            0,
             &adaptor_infos[0],
         )
         .map_err(FromDlcError::Manager)?;
@@ -250,7 +246,7 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             &payouts,
             0,
         );
-        adaptor_sig_start = contract_info
+        _ = contract_info
             .verify_adaptor_info(
                 secp,
                 &checked_params.fund_pubkey,
@@ -258,7 +254,7 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
                 fund_output_value,
                 &tmp_cets,
                 cet_adaptor_signature.as_ref(),
-                adaptor_sig_start,
+                0,
                 adaptor_info,
             )
             .map_err(FromDlcError::Manager)?;
