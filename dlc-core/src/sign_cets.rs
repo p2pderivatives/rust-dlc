@@ -7,6 +7,12 @@ use crate::{
     contract_tools::FeePartyParams, error::*, get_dlc_transactions, CetSignatures, ContractParams,
 };
 
+#[derive(PartialEq)]
+enum DlcSide {
+    Offer,
+    Accept,
+}
+
 pub fn sign_cets(
     secp: &Secp256k1<All>,
     offer_params: &PartyParams,
@@ -24,10 +30,9 @@ pub fn sign_cets(
 
     let fund_public_key = PublicKey::from_secret_key(secp, fund_secret_key);
 
-    let (my_party_params, counterparty_params) = if offer_params.fund_pubkey == fund_public_key {
-        (offer_params, accept_params)
-    } else {
-        (accept_params, offer_params)
+    let signing_side = match offer_params.fund_pubkey == fund_public_key {
+        true => DlcSide::Offer,
+        false => DlcSide::Accept,
     };
 
     let sign_res = sign(
@@ -35,8 +40,9 @@ pub fn sign_cets(
         &dlc_transactions,
         &contract_params.contract_info,
         fund_secret_key,
-        my_party_params,
-        counterparty_params,
+        offer_params,
+        accept_params,
+        signing_side,
     )?;
 
     Ok(sign_res.1)
@@ -47,15 +53,18 @@ fn sign(
     dlc_transactions: &DlcTransactions,
     contract_info: &[ContractInfo],
     adaptor_secret_key: &SecretKey,
-    own_params: &PartyParams,
-    other_params: &PartyParams,
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    signing_side: DlcSide,
 ) -> Result<(Box<[AdaptorInfo]>, CetSignatures)> {
-    if PublicKey::from_secret_key(secp, adaptor_secret_key) != own_params.fund_pubkey {
+    if signing_side == DlcSide::Accept
+        && PublicKey::from_secret_key(secp, adaptor_secret_key) != accept_params.fund_pubkey
+    {
         return Err(FromDlcError::Secp(secp256k1_zkp::Error::Upstream(
             secp256k1_zkp::UpstreamError::InvalidPublicKey,
         )));
     };
-    let total_collateral = own_params.collateral + other_params.collateral;
+    let total_collateral = offer_params.collateral + accept_params.collateral;
 
     let DlcTransactions {
         fund: _,
@@ -88,10 +97,10 @@ fn sign(
             .map_err(FromDlcError::Manager)?;
         let tmp_cets = dlc::create_cets(
             &cet_input,
-            &other_params.payout_script_pubkey,
-            other_params.payout_serial_id,
-            &own_params.payout_script_pubkey,
-            own_params.payout_serial_id,
+            &offer_params.payout_script_pubkey,
+            offer_params.payout_serial_id,
+            &accept_params.payout_script_pubkey,
+            accept_params.payout_serial_id,
             &payouts,
             0,
         );
