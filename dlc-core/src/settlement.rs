@@ -87,7 +87,7 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
         &contract_params.contract_info,
         offer_side.party_params,
         accept_side.party_params,
-        &DlcSide::Offer,
+        &DlcSide::Accept,
     )?;
 
     let (((contract_info, adaptor_info), offer_adaptor_sigs), accept_adaptor_sigs) =
