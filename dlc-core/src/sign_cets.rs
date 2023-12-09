@@ -5,13 +5,8 @@ use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{
     contract_tools::FeePartyParams, error::*, get_dlc_transactions, CetSignatures, ContractParams,
+    DlcSide,
 };
-
-#[derive(PartialEq)]
-enum DlcSide {
-    Offer,
-    Accept,
-}
 
 pub fn sign_cets(
     secp: &Secp256k1<All>,
@@ -42,7 +37,7 @@ pub fn sign_cets(
         fund_secret_key,
         offer_params,
         accept_params,
-        signing_side,
+        &signing_side,
     )?;
 
     Ok(sign_res.1)
@@ -55,9 +50,9 @@ fn sign(
     adaptor_secret_key: &SecretKey,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
-    signing_side: DlcSide,
+    signing_side: &DlcSide,
 ) -> Result<(Box<[AdaptorInfo]>, CetSignatures)> {
-    if signing_side == DlcSide::Accept
+    if signing_side == &DlcSide::Accept
         && PublicKey::from_secret_key(secp, adaptor_secret_key) != accept_params.fund_pubkey
     {
         return Err(FromDlcError::Secp(secp256k1_zkp::Error::Upstream(

@@ -4,7 +4,7 @@ use secp256k1_zkp::{EcdsaAdaptorSignature, Secp256k1};
 
 use crate::{
     contract_tools::FeePartyParams, error::*, get_dlc_transactions, validate_presigned_with_infos,
-    validate_presigned_without_infos, ContractParams, SideSign,
+    validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
 };
 
 pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
@@ -30,6 +30,7 @@ pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
         &contract_params.contract_info,
         offer_side.party_params,
         accept_side.party_params,
+        &DlcSide::Offer,
     )?;
 
     validate_presigned_with_infos(
@@ -39,8 +40,9 @@ pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
         offer_side.adaptor_sig,
         &contract_params.contract_info,
         &adaptor_infos,
-        accept_side.party_params,
         offer_side.party_params,
+        accept_side.party_params,
+        &DlcSide::Accept,
     )?;
 
     Ok(dlc_transactions.fund)

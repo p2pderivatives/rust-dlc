@@ -12,7 +12,7 @@ use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
 use crate::{
     contract_tools::FeePartyParams, error::*, get_dlc_transactions,
-    validate_presigned_without_infos, ContractParams, SideSign,
+    validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
 };
 
 #[cfg(feature = "serde")]
@@ -87,6 +87,7 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
         &contract_params.contract_info,
         offer_side.party_params,
         accept_side.party_params,
+        &DlcSide::Offer,
     )?;
 
     let (((contract_info, adaptor_info), offer_adaptor_sigs), accept_adaptor_sigs) =

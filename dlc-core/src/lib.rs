@@ -18,6 +18,12 @@ use crate::error::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[derive(PartialEq)]
+enum DlcSide {
+    Offer,
+    Accept,
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -100,8 +106,9 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     refund_signature: &Signature,
     cet_adaptor_signatures: &[E],
     contract_info: &[ContractInfo],
-    own_params: &PartyParams,
-    checked_params: &PartyParams,
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    checked_side: &DlcSide,
 ) -> Result<(DlcTransactions, Vec<AdaptorInfo>)> {
     let DlcTransactions {
         fund,
@@ -109,6 +116,11 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
         refund,
         funding_script_pubkey,
     } = dlc_transactions.clone();
+
+    let checked_params = match checked_side {
+        DlcSide::Offer => &offer_params,
+        DlcSide::Accept => &accept_params,
+    };
 
     dlc::verify_tx_input_sig(
         secp,
@@ -122,7 +134,7 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     .map_err(FromDlcError::Dlc)?;
 
     let fund_output_value = dlc_transactions.get_fund_output().value;
-    let total_collateral = own_params.collateral + checked_params.collateral;
+    let total_collateral = offer_params.collateral + accept_params.collateral;
 
     let (adaptor_info, _) = contract_info[0]
         .verify_and_get_adaptor_info(
@@ -151,10 +163,10 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
 
         let tmp_cets = dlc::create_cets(
             &cet_input,
-            &own_params.payout_script_pubkey,
-            own_params.payout_serial_id,
-            &checked_params.payout_script_pubkey,
-            checked_params.payout_serial_id,
+            &offer_params.payout_script_pubkey,
+            offer_params.payout_serial_id,
+            &accept_params.payout_script_pubkey,
+            accept_params.payout_serial_id,
             &payouts,
             0,
         );
@@ -193,10 +205,16 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     cet_adaptor_signatures: &[E],
     contract_info: &[ContractInfo],
     adaptor_infos: &[AdaptorInfo],
-    own_params: &PartyParams,
-    checked_params: &PartyParams,
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    checked_side: &DlcSide,
 ) -> Result<()> {
     let fund_output_value = dlc_transactions.get_fund_output().value;
+
+    let checked_params = match checked_side {
+        DlcSide::Offer => &offer_params,
+        DlcSide::Accept => &accept_params,
+    };
 
     dlc::verify_tx_input_sig(
         secp,
@@ -209,7 +227,7 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     )
     .map_err(FromDlcError::Dlc)?;
 
-    let total_collateral = own_params.collateral + checked_params.collateral;
+    let total_collateral = offer_params.collateral + accept_params.collateral;
 
     let cet_input = dlc_transactions.cets[0].input[0].clone();
 
@@ -239,10 +257,10 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
 
         let tmp_cets = dlc::create_cets(
             &cet_input,
-            &own_params.payout_script_pubkey,
-            own_params.payout_serial_id,
-            &checked_params.payout_script_pubkey,
-            checked_params.payout_serial_id,
+            &offer_params.payout_script_pubkey,
+            offer_params.payout_serial_id,
+            &accept_params.payout_script_pubkey,
+            accept_params.payout_serial_id,
             &payouts,
             0,
         );
