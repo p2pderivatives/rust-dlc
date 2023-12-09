@@ -74,7 +74,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
         &contract_params.contract_info,
         offer_side.party_params,
         accept_side.party_params,
-        &DlcSide::Offer,
+        &DlcSide::Accept,
     )?;
 
     validate_presigned_with_infos(
@@ -86,7 +86,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
         &adaptor_infos,
         offer_side.party_params,
         accept_side.party_params,
-        &DlcSide::Accept,
+        &DlcSide::Offer,
     )?;
 
     let old_funding_output =
