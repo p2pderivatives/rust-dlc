@@ -25,8 +25,8 @@ pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
     let (dlc_transactions, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
-        accept_side.refund_sig,
-        accept_side.adaptor_sig,
+        offer_side.refund_sig,
+        offer_side.adaptor_sig,
         &contract_params.contract_info,
         offer_side.party_params,
         accept_side.party_params,
@@ -36,8 +36,8 @@ pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
     validate_presigned_with_infos(
         &secp,
         &dlc_transactions,
-        offer_side.refund_sig,
-        offer_side.adaptor_sig,
+        accept_side.refund_sig,
+        accept_side.adaptor_sig,
         &contract_params.contract_info,
         &adaptor_infos,
         offer_side.party_params,
