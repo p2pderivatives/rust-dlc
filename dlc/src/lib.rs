@@ -20,6 +20,7 @@ extern crate secp256k1_zkp;
 #[cfg(feature = "serde")]
 extern crate serde;
 
+use bitcoin::consensus::Encodable;
 use bitcoin::secp256k1::Scalar;
 use bitcoin::{
     blockdata::{
@@ -27,7 +28,7 @@ use bitcoin::{
         script::{Builder, Script},
         transaction::{OutPoint, Transaction, TxIn, TxOut},
     },
-    PackedLockTime, Sequence, Witness,
+    Address, PackedLockTime, Sequence, Witness,
 };
 use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
 use secp256k1_zkp::{
@@ -37,6 +38,8 @@ use secp256k1_zkp::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::fmt::Write;
+use std::str::FromStr;
 
 pub mod channel;
 pub mod secp_utils;
@@ -54,6 +57,9 @@ const TX_VERSION: i32 = 2;
 /// The base weight of a fund transaction
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
 const FUND_TX_BASE_WEIGHT: usize = 214;
+
+/// The base weight of the protocol fee portion of the fund transaction
+const PROTOCOL_FEE_OUTPUT_WEIGHT: usize = 214;
 
 /// The weight of a CET excluding payout outputs
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
@@ -79,6 +85,9 @@ macro_rules! checked_add {
     };
     ($a: expr, $b: expr, $c: expr, $d: expr) => {
         checked_add!(checked_add!($a, $b, $c)?, $d)
+    };
+    ($a: expr, $b: expr, $c: expr, $d: expr, $e: expr) => {
+        checked_add!(checked_add!($a, $b, $c, $d)?, $e)
     };
 }
 
@@ -275,6 +284,7 @@ impl PartyParams {
         &self,
         fee_rate_per_vb: u64,
         extra_fee: u64,
+        protocol_fee: u64,
     ) -> Result<(TxOut, u64, u64), Error> {
         let mut inputs_weight: usize = 0;
         for w in &self.inputs {
@@ -305,6 +315,7 @@ impl PartyParams {
             this_party_fund_base_weight,
             inputs_weight,
             change_weight,
+            PROTOCOL_FEE_OUTPUT_WEIGHT,
             36
         )?;
         let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
@@ -324,8 +335,13 @@ impl PartyParams {
         ))?;
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
         let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
-        let required_input_funds =
-            checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
+        let required_input_funds = checked_add!(
+            self.collateral,
+            fund_fee,
+            cet_or_refund_fee,
+            extra_fee,
+            protocol_fee
+        )?;
         if self.input_amount < required_input_funds {
             return Err(Error::InvalidArgument(format!("[get_change_output_and_fees] error: input amount is lower than the sum of the collateral plus the required fees => input_amount: {}, collateral: {}, fund fee: {}, cet_or_refund_fee: {}, extra_fee: {}", self.input_amount, self.collateral, fund_fee, cet_or_refund_fee, extra_fee)));
         }
@@ -367,6 +383,7 @@ pub fn create_dlc_transactions(
     fund_lock_time: u32,
     cet_lock_time: u32,
     fund_output_serial_id: u64,
+    protocol_fee_percentage: f64,
 ) -> Result<DlcTransactions, Error> {
     let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
         offer_params,
@@ -375,6 +392,7 @@ pub fn create_dlc_transactions(
         fund_lock_time,
         fund_output_serial_id,
         0,
+        protocol_fee_percentage,
     )?;
     let fund_outpoint = OutPoint {
         txid: fund_tx.txid(),
@@ -407,6 +425,7 @@ pub(crate) fn create_fund_transaction_with_fees(
     fund_lock_time: u32,
     fund_output_serial_id: u64,
     extra_fee: u64,
+    protocol_fee_percentage: f64,
 ) -> Result<(Transaction, Script), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
@@ -414,18 +433,35 @@ pub(crate) fn create_fund_transaction_with_fees(
         value: 0,
         script_pubkey: offer_params.change_script_pubkey.clone(),
     };
+    println!("accept params: {:?}", accept_params);
+    let protocol_fee_amount = accept_params.collateral / ((1.0 / protocol_fee_percentage) as u64);
+    println!("desired value for fee: {:?}", (protocol_fee_amount));
+    let acceptor_protocol_fee_output = TxOut {
+        value: protocol_fee_amount,
+        script_pubkey: Address::from_str("bcrt1qvgkz8m4m73kly4xhm28pcnv46n6u045lfq9ta3")
+            .expect("A valid address")
+            .script_pubkey(),
+    };
+    println!("do we see this?? ****************************");
+
     let offer_fund_fee = 0;
     let offer_cet_fee = 0;
 
-    let (accept_change_output, accept_fund_fee, accept_cet_fee) =
-        accept_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
+    let (accept_change_output, accept_fund_fee, accept_cet_fee) = accept_params
+        .get_change_output_and_fees(fee_rate_per_vb, extra_fee, protocol_fee_amount)?;
+
+    println!(
+        "Setting up the protocol fee, looks like this: {:?}",
+        acceptor_protocol_fee_output
+    );
 
     let fund_output_value = checked_add!(offer_params.input_amount, accept_params.input_amount)?
         - offer_change_output.value
         - accept_change_output.value
         - offer_fund_fee
         - accept_fund_fee
-        - extra_fee;
+        - extra_fee
+        - acceptor_protocol_fee_output.value;
 
     assert_eq!(
         total_collateral + offer_cet_fee + accept_cet_fee + extra_fee,
@@ -435,7 +471,7 @@ pub(crate) fn create_fund_transaction_with_fees(
     assert_eq!(
         offer_params.input_amount + accept_params.input_amount,
         fund_output_value
-            + offer_change_output.value
+            + acceptor_protocol_fee_output.value
             + accept_change_output.value
             + offer_fund_fee
             + accept_fund_fee
@@ -458,15 +494,27 @@ pub(crate) fn create_fund_transaction_with_fees(
         &offer_inputs_serial_ids,
         &accept_tx_ins,
         &accept_inputs_serial_ids,
-        offer_change_output,
-        offer_params.change_serial_id,
+        acceptor_protocol_fee_output,
+        accept_params.change_serial_id + 1 as u64, // do this better, also include the change offer output as well as the new protocol fee out
         accept_change_output,
         accept_params.change_serial_id,
         fund_output_serial_id,
         fund_lock_time,
     );
 
+    println!("\n\nfund tx: \n{:?}\n\n", tx_to_string(&fund_tx));
+
     Ok((fund_tx, funding_script_pubkey))
+}
+
+pub(crate) fn tx_to_string(tx: &Transaction) -> String {
+    let mut writer = Vec::new();
+    tx.consensus_encode(&mut writer).unwrap();
+    let mut serialized = String::new();
+    for x in writer {
+        write!(&mut serialized, "{:02x}", x).unwrap();
+    }
+    serialized
 }
 
 pub(crate) fn create_cets_and_refund_tx(
@@ -623,6 +671,7 @@ pub fn create_funding_transaction(
             offer_change_serial_id,
             accept_change_serial_id,
         ];
+        println!("serial_ids: {:?}", serial_ids);
         util::discard_dust(
             util::order_by_serial_ids(
                 vec![fund_tx_out, offer_change_output, accept_change_output],
@@ -631,6 +680,8 @@ pub fn create_funding_transaction(
             DUST_LIMIT,
         )
     };
+
+    println!("outputs as a vector: {:?}", output);
 
     let input = util::order_by_serial_ids(
         [offer_inputs, accept_inputs].concat(),
@@ -1260,7 +1311,7 @@ mod tests {
         // Act
 
         let (change_out, fund_fee, cet_fee) =
-            party_params.get_change_output_and_fees(4, 0).unwrap();
+            party_params.get_change_output_and_fees(4, 0, 0).unwrap();
 
         // Assert
         assert!(change_out.value > 0 && fund_fee > 0 && cet_fee > 0);
@@ -1272,7 +1323,7 @@ mod tests {
         let (party_params, _) = get_party_params(100000, 100000, None);
 
         // Act
-        let res = party_params.get_change_output_and_fees(4, 0);
+        let res = party_params.get_change_output_and_fees(4, 0, 0);
 
         // Assert
         assert!(res.is_err());
@@ -1294,6 +1345,7 @@ mod tests {
             10,
             10,
             0,
+            0.0,
         )
         .unwrap();
 
@@ -1320,6 +1372,7 @@ mod tests {
             10,
             10,
             0,
+            0.0,
         )
         .unwrap();
 
@@ -1490,6 +1543,7 @@ mod tests {
                 10,
                 10,
                 case.serials[0],
+                0.0,
             )
             .unwrap();
 

@@ -85,8 +85,9 @@ where
         _ => {
             let common_fee = get_common_fee(fee_rate)?;
             let total_fee = common_fee + own_collateral;
+            let protocol_fee = own_collateral / 100;
             let appr_required_amount =
-                own_collateral + total_fee + dlc::util::weight_to_fee(124, fee_rate)?;
+                protocol_fee + total_fee + dlc::util::weight_to_fee(124, fee_rate)?;
             wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?
         }
     };

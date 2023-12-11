@@ -204,13 +204,18 @@ where
         &mut self,
         msg: &DlcMessage,
         counter_party: PublicKey,
+        protocol_fee_percentage: f64,
     ) -> Result<Option<DlcMessage>, Error> {
         match msg {
             DlcMessage::Offer(o) => {
                 self.on_offer_message(o, counter_party)?;
                 Ok(None)
             }
-            DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a, &counter_party)?)),
+            DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(
+                a,
+                &counter_party,
+                protocol_fee_percentage,
+            )?)),
             DlcMessage::Sign(s) => {
                 self.on_sign_message(s, &counter_party)?;
                 Ok(None)
@@ -303,6 +308,7 @@ where
     pub fn accept_contract_offer(
         &mut self,
         contract_id: &ContractId,
+        protocol_fee_percentage: f64,
     ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
         let offered_contract =
             get_contract_in_state!(self, contract_id, Offered, None as Option<PublicKey>)?;
@@ -314,6 +320,7 @@ where
             &offered_contract,
             &self.wallet,
             &self.blockchain,
+            protocol_fee_percentage,
         )?;
 
         self.wallet.import_address(&Address::p2wsh(
@@ -367,6 +374,7 @@ where
         &mut self,
         accept_msg: &AcceptDlc,
         counter_party: &PublicKey,
+        protocol_fee_percentage: f64,
     ) -> Result<DlcMessage, Error> {
         let offered_contract = get_contract_in_state!(
             self,
@@ -380,6 +388,7 @@ where
             &offered_contract,
             accept_msg,
             &self.wallet,
+            protocol_fee_percentage,
         ) {
             Ok(contract) => contract,
             Err(e) => return self.accept_fail_on_error(offered_contract, accept_msg.clone(), e),
