@@ -14,7 +14,7 @@ pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
     fee_party_params: Option<&FeePartyParams>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
-        &contract_params,
+        contract_params,
         offer_side.party_params,
         accept_side.party_params,
         fee_party_params,

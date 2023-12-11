@@ -56,7 +56,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
         .input
         .iter()
         .position(|input| {
-            (&input.previous_output.txid == &old_funding.txid())
+            (input.previous_output.txid == old_funding.txid())
                 && (input.previous_output.vout == vout_old_dlc)
         })
         .ok_or(FromDlcError::InvalidState(format!(

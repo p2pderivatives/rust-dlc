@@ -53,6 +53,7 @@ pub struct ContractParams {
     pub contract_info: Box<[ContractInfo]>,
     pub offer_collateral: u64,
     pub accept_collateral: u64,
+    pub fund_serial_id: u64,
     pub refund_locktime: u32,
     pub cet_locktime: u32,
     pub fee_rate_per_vb: u64,
@@ -68,6 +69,7 @@ fn get_dlc_transactions(
         contract_info,
         offer_collateral,
         accept_collateral,
+        fund_serial_id,
         refund_locktime,
         cet_locktime,
         fee_rate_per_vb,
@@ -96,7 +98,7 @@ fn get_dlc_transactions(
         *fee_rate_per_vb,
         0,
         *cet_locktime,
-        u64::MAX / 2,
+        *fund_serial_id,
     )
 }
 
