@@ -132,7 +132,6 @@ pub struct DlcTransactions {
     /// The refund transaction for returning the collateral for each party in
     /// case of an oracle misbehavior
     pub refund: Transaction,
-
     /// The script pubkey of the fund output in the fund transaction
     pub funding_script_pubkey: Script,
 }
@@ -396,15 +395,6 @@ impl PartyParams {
     }
 }
 
-/// The details regarding the fee a protocol charges to create this DLC
-pub struct ProtocolFee {
-    /// The denominator `x` for i = `1/x`, where i is the percentage of locked collateral to be paid to the protocol as a fee.
-    /// 0 for no fee
-    pub percentage_denominator: u64,
-    /// The address to which the protocol fee is paid
-    pub address: Address,
-}
-
 /// Create the transactions for a DLC contract based on the provided parameters
 pub fn create_dlc_transactions(
     offer_params: &PartyParams,
@@ -415,7 +405,8 @@ pub fn create_dlc_transactions(
     fund_lock_time: u32,
     cet_lock_time: u32,
     fund_output_serial_id: u64,
-    protocol_fee: Option<ProtocolFee>,
+    fee_percentage_denominator: u64,
+    fee_address: String,
 ) -> Result<DlcTransactions, Error> {
     let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
         offer_params,
@@ -424,7 +415,8 @@ pub fn create_dlc_transactions(
         fund_lock_time,
         fund_output_serial_id,
         0,
-        protocol_fee,
+        fee_percentage_denominator,
+        fee_address,
     )?;
     let fund_outpoint = OutPoint {
         txid: fund_tx.txid(),
@@ -457,7 +449,8 @@ pub(crate) fn create_fund_transaction_with_fees(
     fund_lock_time: u32,
     fund_output_serial_id: u64,
     extra_fee: u64,
-    protocol_fee: Option<ProtocolFee>,
+    fee_percentage_denominator: u64,
+    fee_address: String,
 ) -> Result<(Transaction, Script), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
@@ -466,16 +459,25 @@ pub(crate) fn create_fund_transaction_with_fees(
         script_pubkey: offer_params.change_script_pubkey.clone(),
     };
 
-    let (protocol_fee_amount, protocol_fee_address) = match protocol_fee {
-        None => (
-            0,
-            Address::from_str("1111111111111111111114oLvT2").expect("An address type to null"),
-        ),
-        Some(protocol_fee) => (
-            accept_params.collateral / protocol_fee.percentage_denominator,
-            protocol_fee.address,
-        ),
-    };
+    let (protocol_fee_amount, protocol_fee_address) =
+        match (fee_percentage_denominator, fee_address) {
+            (fee_denom, fee_address) if fee_denom > 0 && !fee_address.is_empty() => (
+                accept_params.collateral / fee_denom,
+                match Address::from_str(&fee_address) {
+                    Ok(address) => address,
+                    Err(_) => {
+                        return Err(Error::InvalidArgument(
+                            "[create_fund_transaction_with_fees] error: invalid fee address"
+                                .to_string(),
+                        ))
+                    }
+                },
+            ),
+            _ => (
+                0,
+                Address::from_str("1111111111111111111114oLvT2").expect("valid address"),
+            ),
+        };
 
     println!("desired value for fee: {:?}", (protocol_fee_amount));
     let acceptor_protocol_fee_output = TxOut {
@@ -1355,7 +1357,7 @@ mod tests {
         // Act
 
         let (change_out, fund_fee, cet_fee) =
-            party_params.get_change_output_and_fees(4, 0, 0).unwrap();
+            party_params.get_change_output_and_fees(4, 0, 0, 0).unwrap();
 
         // Assert
         assert!(change_out.value > 0 && fund_fee > 0 && cet_fee > 0);
@@ -1390,6 +1392,7 @@ mod tests {
             10,
             0,
             0,
+            None,
         )
         .unwrap();
 
@@ -1417,6 +1420,7 @@ mod tests {
             10,
             0,
             0,
+            "".to_string(),
         )
         .unwrap();
 
@@ -1588,6 +1592,7 @@ mod tests {
                 10,
                 case.serials[0],
                 0,
+                "".to_string(),
             )
             .unwrap();
 

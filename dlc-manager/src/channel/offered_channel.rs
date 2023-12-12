@@ -128,6 +128,8 @@ impl OfferedChannel {
                 .map(|x| x.into())
                 .collect(),
             total_collateral: offer_channel.contract_info.get_total_collateral(),
+            fee_percentage_denominator: 0,
+            fee_address: "".to_string(),
         };
 
         Ok((channel, contract))

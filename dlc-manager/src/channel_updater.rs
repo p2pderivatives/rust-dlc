@@ -99,6 +99,8 @@ where
         counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        0,
+        "".to_string(),
     );
 
     let temporary_channel_id = get_new_temporary_id();
@@ -975,6 +977,8 @@ where
         &signed_channel.counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        0,
+        "".to_string(),
     );
 
     offered_contract.fund_output_serial_id = 0;
@@ -1047,6 +1051,8 @@ pub fn on_renew_offer(
         fee_rate_per_vb: signed_channel.fee_rate_per_vb,
         cet_locktime: renew_offer.cet_locktime,
         refund_locktime: renew_offer.refund_locktime,
+        fee_percentage_denominator: 0,
+        fee_address: "".to_string(),
     };
 
     let mut state = SignedChannelState::RenewOffered {

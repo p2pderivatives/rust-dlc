@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
+use bitcoin::{consensus::Decodable, Address, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
@@ -34,6 +34,8 @@ pub fn offer_contract<C: Signing, W: Deref, B: Deref, T: Deref>(
     wallet: &W,
     blockchain: &B,
     time: &T,
+    fee_percentage_denominator: u64,
+    fee_address: Address,
 ) -> Result<(OfferedContract, OfferDlc), Error>
 where
     W::Target: Wallet,
@@ -58,6 +60,8 @@ where
         counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        fee_percentage_denominator,
+        fee_address.to_string(),
     );
 
     let offer_msg: OfferDlc = (&offered_contract).into();
@@ -72,7 +76,6 @@ pub fn accept_contract<W: Deref, B: Deref>(
     offered_contract: &OfferedContract,
     wallet: &W,
     blockchain: &B,
-    protocol_fee: Option<dlc::ProtocolFee>,
 ) -> Result<(AcceptedContract, AcceptDlc), crate::Error>
 where
     W::Target: Wallet,
@@ -97,7 +100,8 @@ where
         0,
         offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
-        protocol_fee,
+        offered_contract.fee_percentage_denominator,
+        offered_contract.fee_address.clone(),
     )?;
 
     let fund_output_value = dlc_transactions.get_fund_output().value;
@@ -222,7 +226,6 @@ pub fn verify_accepted_and_sign_contract<S: Deref>(
     offered_contract: &OfferedContract,
     accept_msg: &AcceptDlc,
     signer: &S,
-    protocol_fee: Option<dlc::ProtocolFee>,
 ) -> Result<(SignedContract, SignDlc), Error>
 where
     S::Target: Signer,
@@ -258,7 +261,8 @@ where
         0,
         offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
-        protocol_fee,
+        offered_contract.fee_percentage_denominator,
+        offered_contract.fee_address.clone(),
     )?;
     let fund_output_value = dlc_transactions.get_fund_output().value;
     let fund_privkey =

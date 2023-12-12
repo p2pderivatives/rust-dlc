@@ -341,6 +341,11 @@ pub struct OfferDlc {
     pub cet_locktime: u32,
     /// The lock time for the refund transactions.
     pub refund_locktime: u32,
+    /// The denominator `x` for i = `1/x`, where i is the percentage of locked collateral to be paid to the protocol as a fee.
+    /// 0 for no fee
+    pub fee_percentage_denominator: u64,
+    /// The address to which the protocol fee is paid
+    pub fee_address: String,
 }
 
 impl OfferDlc {
@@ -406,7 +411,9 @@ impl_dlc_writeable!(OfferDlc, {
         (fund_output_serial_id, writeable),
         (fee_rate_per_vb, writeable),
         (cet_locktime, writeable),
-        (refund_locktime, writeable)
+        (refund_locktime, writeable),
+        (fee_percentage_denominator, writeable),
+        (fee_address, writeable)
 });
 
 /// Contains information about a party wishing to accept a DLC offer. The contained

@@ -5,6 +5,7 @@ use crate::DlcMessageHandler;
 use crate::PeerManager;
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Address;
 use dlc_manager::channel::signed_channel::SignedChannelState;
 use dlc_manager::channel::signed_channel::SignedChannelStateType;
 use dlc_manager::contract::contract_input::ContractInput;
@@ -198,7 +199,13 @@ pub(crate) async fn poll_for_user_input(
                                 manager_clone
                                     .lock()
                                     .unwrap()
-                                    .send_offer(&contract_input, pubkey)
+                                    .send_offer(
+                                        &contract_input,
+                                        pubkey,
+                                        0,
+                                        Address::from_str("1111111111111111111114oLvT2")
+                                            .expect("A valid btc address."),
+                                    )
                                     .expect("Error sending offer"),
                             )
                         } else {
@@ -242,7 +249,7 @@ pub(crate) async fn poll_for_user_input(
                     let (_, node_id, msg) = dlc_manager
                         .lock()
                         .unwrap()
-                        .accept_contract_offer(&contract_id, None)
+                        .accept_contract_offer(&contract_id)
                         .expect("Error accepting contract.");
                     dlc_message_handler.send_message(node_id, DlcMessage::Accept(msg));
                     peer_manager.process_events();
@@ -630,7 +637,7 @@ fn process_incoming_messages(
         let resp = dlc_manager
             .lock()
             .unwrap()
-            .on_dlc_message(&message, node_id, None)
+            .on_dlc_message(&message, node_id)
             .expect("Error processing message");
         if let Some(msg) = resp {
             println!("Sending message to {}", node_id);

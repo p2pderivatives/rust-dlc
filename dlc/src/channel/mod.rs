@@ -254,7 +254,8 @@ pub fn create_channel_transactions(
         fund_lock_time,
         fund_output_serial_id,
         extra_fee,
-        None,
+        0,
+        "".to_string(),
     )?;
 
     create_renewal_channel_transactions(

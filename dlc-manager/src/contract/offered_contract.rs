@@ -44,6 +44,11 @@ pub struct OfferedContract {
     pub cet_locktime: u32,
     /// The time at which the contract becomes refundable.
     pub refund_locktime: u32,
+    /// The denominator `x` for i = `1/x`, where i is the percentage of locked collateral to be paid to the protocol as a fee.
+    /// 0 for no fee
+    pub fee_percentage_denominator: u64,
+    /// The address to which the protocol fee is paid
+    pub fee_address: String,
 }
 
 impl OfferedContract {
@@ -82,6 +87,8 @@ impl OfferedContract {
         counter_party: &PublicKey,
         refund_delay: u32,
         cet_locktime: u32,
+        fee_percentage_denominator: u64,
+        fee_address: String,
     ) -> Self {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
 
@@ -113,6 +120,8 @@ impl OfferedContract {
             cet_locktime,
             refund_locktime: latest_maturity + refund_delay,
             counter_party: *counter_party,
+            fee_percentage_denominator,
+            fee_address,
         }
     }
 
@@ -146,6 +155,8 @@ impl OfferedContract {
             funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
             total_collateral: offer_dlc.contract_info.get_total_collateral(),
             counter_party,
+            fee_percentage_denominator: offer_dlc.fee_percentage_denominator,
+            fee_address: offer_dlc.fee_address.clone(),
         })
     }
 }
@@ -173,6 +184,8 @@ impl From<&OfferedContract> for OfferDlc {
             refund_locktime: offered_contract.refund_locktime,
             fee_rate_per_vb: offered_contract.fee_rate_per_vb,
             fund_output_serial_id: offered_contract.fund_output_serial_id,
+            fee_percentage_denominator: offered_contract.fee_percentage_denominator,
+            fee_address: offered_contract.fee_address.clone(),
         }
     }
 }
