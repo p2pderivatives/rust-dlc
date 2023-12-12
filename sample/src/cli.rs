@@ -242,7 +242,7 @@ pub(crate) async fn poll_for_user_input(
                     let (_, node_id, msg) = dlc_manager
                         .lock()
                         .unwrap()
-                        .accept_contract_offer(&contract_id)
+                        .accept_contract_offer(&contract_id, 0.0)
                         .expect("Error accepting contract.");
                     dlc_message_handler.send_message(node_id, DlcMessage::Accept(msg));
                     peer_manager.process_events();
@@ -630,7 +630,7 @@ fn process_incoming_messages(
         let resp = dlc_manager
             .lock()
             .unwrap()
-            .on_dlc_message(&message, node_id)
+            .on_dlc_message(&message, node_id, 0.0)
             .expect("Error processing message");
         if let Some(msg) = resp {
             println!("Sending message to {}", node_id);
