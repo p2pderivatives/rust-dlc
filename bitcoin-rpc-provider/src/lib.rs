@@ -254,7 +254,7 @@ impl Wallet for BitcoinCoreProvider {
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        _fee_rate: Option<u64>,
+        _fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, ManagerError> {
         let client = self.client.lock().unwrap();

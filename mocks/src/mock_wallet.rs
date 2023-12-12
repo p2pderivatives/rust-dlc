@@ -79,7 +79,7 @@ impl Wallet for MockWallet {
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        _fee_rate: Option<u64>,
+        _fee_rate: u64,
         _lock_utxos: bool,
     ) -> Result<Vec<dlc_manager::Utxo>, Error> {
         let mut utxo_pool = self.utxos.clone();

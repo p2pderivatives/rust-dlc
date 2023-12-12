@@ -103,7 +103,7 @@ pub trait Wallet: Signer {
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        fee_rate: Option<u64>,
+        fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, Error>;
     /// Import the provided address.
