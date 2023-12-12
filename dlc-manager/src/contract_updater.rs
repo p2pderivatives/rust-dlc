@@ -72,7 +72,7 @@ pub fn accept_contract<W: Deref, B: Deref>(
     offered_contract: &OfferedContract,
     wallet: &W,
     blockchain: &B,
-    protocol_fee_percentage: f64,
+    protocol_fee: Option<dlc::ProtocolFee>,
 ) -> Result<(AcceptedContract, AcceptDlc), crate::Error>
 where
     W::Target: Wallet,
@@ -97,7 +97,7 @@ where
         0,
         offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
-        protocol_fee_percentage,
+        protocol_fee,
     )?;
 
     let fund_output_value = dlc_transactions.get_fund_output().value;
@@ -222,7 +222,7 @@ pub fn verify_accepted_and_sign_contract<S: Deref>(
     offered_contract: &OfferedContract,
     accept_msg: &AcceptDlc,
     signer: &S,
-    protocol_fee_percentage: f64,
+    protocol_fee: Option<dlc::ProtocolFee>,
 ) -> Result<(SignedContract, SignDlc), Error>
 where
     S::Target: Signer,
@@ -258,7 +258,7 @@ where
         0,
         offered_contract.cet_locktime,
         offered_contract.fund_output_serial_id,
-        protocol_fee_percentage,
+        protocol_fee,
     )?;
     let fund_output_value = dlc_transactions.get_fund_output().value;
     let fund_privkey =

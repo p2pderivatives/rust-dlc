@@ -19,6 +19,7 @@ use crate::Signer;
 use crate::{ChannelId, ContractId};
 use bitcoin::Address;
 use bitcoin::Transaction;
+use dlc::ProtocolFee;
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
@@ -204,7 +205,7 @@ where
         &mut self,
         msg: &DlcMessage,
         counter_party: PublicKey,
-        protocol_fee_percentage: f64,
+        protocol_fee: Option<ProtocolFee>,
     ) -> Result<Option<DlcMessage>, Error> {
         match msg {
             DlcMessage::Offer(o) => {
@@ -214,7 +215,7 @@ where
             DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(
                 a,
                 &counter_party,
-                protocol_fee_percentage,
+                protocol_fee,
             )?)),
             DlcMessage::Sign(s) => {
                 self.on_sign_message(s, &counter_party)?;
@@ -308,7 +309,7 @@ where
     pub fn accept_contract_offer(
         &mut self,
         contract_id: &ContractId,
-        protocol_fee_percentage: f64,
+        protocol_fee: Option<ProtocolFee>,
     ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
         let offered_contract =
             get_contract_in_state!(self, contract_id, Offered, None as Option<PublicKey>)?;
@@ -320,7 +321,7 @@ where
             &offered_contract,
             &self.wallet,
             &self.blockchain,
-            protocol_fee_percentage,
+            protocol_fee,
         )?;
 
         self.wallet.import_address(&Address::p2wsh(
@@ -374,7 +375,7 @@ where
         &mut self,
         accept_msg: &AcceptDlc,
         counter_party: &PublicKey,
-        protocol_fee_percentage: f64,
+        protocol_fee: Option<ProtocolFee>,
     ) -> Result<DlcMessage, Error> {
         let offered_contract = get_contract_in_state!(
             self,
@@ -388,7 +389,7 @@ where
             &offered_contract,
             accept_msg,
             &self.wallet,
-            protocol_fee_percentage,
+            protocol_fee,
         ) {
             Ok(contract) => contract,
             Err(e) => return self.accept_fail_on_error(offered_contract, accept_msg.clone(), e),

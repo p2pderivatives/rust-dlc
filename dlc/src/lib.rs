@@ -58,9 +58,6 @@ const TX_VERSION: i32 = 2;
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
 const FUND_TX_BASE_WEIGHT: usize = 214;
 
-/// The base weight of the protocol fee portion of the fund transaction
-const PROTOCOL_FEE_OUTPUT_WEIGHT: usize = 214;
-
 /// The weight of a CET excluding payout outputs
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
 const CET_BASE_WEIGHT: usize = 500;
@@ -285,6 +282,7 @@ impl PartyParams {
         fee_rate_per_vb: u64,
         extra_fee: u64,
         protocol_fee: u64,
+        protocol_fee_script_pubkey_len: usize,
     ) -> Result<(TxOut, u64, u64), Error> {
         let mut inputs_weight: usize = 0;
         for w in &self.inputs {
@@ -307,17 +305,42 @@ impl PartyParams {
             "[get_change_output_and_fees] error: failed to calculate change weight".to_string(),
         ))?;
 
+        // Value size + script length var_int + ouput script pubkey size
+        // let protocol_fee_size = protocol_fee_script_pubkey_len;
+        // Change size is scaled by 4 from vBytes to weight units
+        let protocol_fee_weight =
+            protocol_fee_script_pubkey_len
+                .checked_mul(4)
+                .ok_or(Error::InvalidArgument(
+                    "[get_change_output_and_fees] error: failed to calculate change weight"
+                        .to_string(),
+                ))?;
+
+        println!(
+            "**** using protocol fee weight of {} from spk len {} ****",
+            protocol_fee_weight, protocol_fee_script_pubkey_len
+        );
+
+        println!(
+            "compared to change values of {} and {}",
+            change_weight, change_size
+        );
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
         let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT;
 
+        // println all the following vars
+        println!(
+            "**** all weights {this_party_fund_base_weight} {inputs_weight} {change_weight} {} {} ****", protocol_fee_weight + 36, 36
+        );
         let total_fund_weight = checked_add!(
             this_party_fund_base_weight,
             inputs_weight,
             change_weight,
-            PROTOCOL_FEE_OUTPUT_WEIGHT,
+            protocol_fee_weight + 36,
             36
         )?;
+        println!("**** using total fund weight of {} ****", total_fund_weight);
         let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
@@ -373,6 +396,15 @@ impl PartyParams {
     }
 }
 
+/// The details regarding the fee a protocol charges to create this DLC
+pub struct ProtocolFee {
+    /// The denominator `x` for i = `1/x`, where i is the percentage of locked collateral to be paid to the protocol as a fee.
+    /// 0 for no fee
+    pub percentage_denominator: u64,
+    /// The address to which the protocol fee is paid
+    pub address: Address,
+}
+
 /// Create the transactions for a DLC contract based on the provided parameters
 pub fn create_dlc_transactions(
     offer_params: &PartyParams,
@@ -383,7 +415,7 @@ pub fn create_dlc_transactions(
     fund_lock_time: u32,
     cet_lock_time: u32,
     fund_output_serial_id: u64,
-    protocol_fee_percentage: f64,
+    protocol_fee: Option<ProtocolFee>,
 ) -> Result<DlcTransactions, Error> {
     let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
         offer_params,
@@ -392,7 +424,7 @@ pub fn create_dlc_transactions(
         fund_lock_time,
         fund_output_serial_id,
         0,
-        protocol_fee_percentage,
+        protocol_fee,
     )?;
     let fund_outpoint = OutPoint {
         txid: fund_tx.txid(),
@@ -425,7 +457,7 @@ pub(crate) fn create_fund_transaction_with_fees(
     fund_lock_time: u32,
     fund_output_serial_id: u64,
     extra_fee: u64,
-    protocol_fee_percentage: f64,
+    protocol_fee: Option<ProtocolFee>,
 ) -> Result<(Transaction, Script), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
@@ -433,22 +465,34 @@ pub(crate) fn create_fund_transaction_with_fees(
         value: 0,
         script_pubkey: offer_params.change_script_pubkey.clone(),
     };
-    println!("accept params: {:?}", accept_params);
-    let protocol_fee_amount = accept_params.collateral / ((1.0 / protocol_fee_percentage) as u64);
+
+    let (protocol_fee_amount, protocol_fee_address) = match protocol_fee {
+        None => (
+            0,
+            Address::from_str("1111111111111111111114oLvT2").expect("An address type to null"),
+        ),
+        Some(protocol_fee) => (
+            accept_params.collateral / protocol_fee.percentage_denominator,
+            protocol_fee.address,
+        ),
+    };
+
     println!("desired value for fee: {:?}", (protocol_fee_amount));
     let acceptor_protocol_fee_output = TxOut {
         value: protocol_fee_amount,
-        script_pubkey: Address::from_str("bcrt1qvgkz8m4m73kly4xhm28pcnv46n6u045lfq9ta3")
-            .expect("A valid address")
-            .script_pubkey(),
+        script_pubkey: protocol_fee_address.script_pubkey(),
     };
-    println!("do we see this?? ****************************");
 
     let offer_fund_fee = 0;
     let offer_cet_fee = 0;
 
     let (accept_change_output, accept_fund_fee, accept_cet_fee) = accept_params
-        .get_change_output_and_fees(fee_rate_per_vb, extra_fee, protocol_fee_amount)?;
+        .get_change_output_and_fees(
+            fee_rate_per_vb,
+            extra_fee,
+            protocol_fee_amount,
+            acceptor_protocol_fee_output.script_pubkey.len(),
+        )?;
 
     println!(
         "Setting up the protocol fee, looks like this: {:?}",
@@ -1323,7 +1367,7 @@ mod tests {
         let (party_params, _) = get_party_params(100000, 100000, None);
 
         // Act
-        let res = party_params.get_change_output_and_fees(4, 0, 0);
+        let res = party_params.get_change_output_and_fees(4, 0, 0, 0);
 
         // Assert
         assert!(res.is_err());
@@ -1345,7 +1389,7 @@ mod tests {
             10,
             10,
             0,
-            0.0,
+            0,
         )
         .unwrap();
 
@@ -1372,7 +1416,7 @@ mod tests {
             10,
             10,
             0,
-            0.0,
+            0,
         )
         .unwrap();
 
@@ -1543,7 +1587,7 @@ mod tests {
                 10,
                 10,
                 case.serials[0],
-                0.0,
+                0,
             )
             .unwrap();
 
