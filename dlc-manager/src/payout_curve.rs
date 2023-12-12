@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct PayoutFunction {
     /// The pieces making up the function.
-    pub(crate) payout_function_pieces: Vec<PayoutFunctionPiece>,
+    pub payout_function_pieces: Vec<PayoutFunctionPiece>,
 }
 
 fn is_continuous(function_pieces: &[PayoutFunctionPiece]) -> bool {
@@ -502,10 +502,10 @@ impl Evaluable for HyperbolaPayoutCurvePiece {
 )]
 pub struct NoPayoutCurvePiece {
     /// The left end point of the piece.
-    pub(crate) left_end_point: PayoutPoint,
+    pub left_end_point: PayoutPoint,
     /// The right end point of the piece.
     /// The payout must be continuous with next piece.
-    pub(crate) right_end_point: PayoutPoint,
+    pub right_end_point: PayoutPoint,
 }
 
 impl NoPayoutCurvePiece {
