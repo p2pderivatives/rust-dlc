@@ -951,6 +951,29 @@ fn ln_dlc_rejected_offer() {
     reject_offer(&test_params);
 }
 
+
+#[test]
+#[ignore]
+fn ln_dlc_rejected_offer_then_new_offer_and_accept_offer() {
+    let test_params = test_init();
+    make_ln_payment(&test_params.alice_node, &test_params.bob_node, 900000);
+
+    reject_offer(&test_params);
+
+    open_sub_channel(&test_params);
+
+    assert_sub_channel_state!(
+        test_params.alice_node.sub_channel_manager,
+        &test_params.channel_id,
+        Signed
+    );
+    assert_sub_channel_state!(
+        test_params.bob_node.sub_channel_manager,
+        &test_params.channel_id,
+        Signed
+    );
+}
+
 #[test]
 #[ignore]
 fn ln_dlc_rejected_close() {
@@ -2860,7 +2883,7 @@ fn reject_offer(test_params: &LnDlcTestParams) {
         Offered
     );
 
-    let reject = test_params
+    let (_, reject) = test_params
         .bob_node
         .sub_channel_manager
         .reject_sub_channel_offer(test_params.channel_id)
