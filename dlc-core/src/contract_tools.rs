@@ -43,11 +43,11 @@ pub struct AnchorParams {
 }
 
 /// Create the transactions for a DLC contract based on the provided parameters
-pub fn create_dlc_transactions(
+pub fn create_dlc_transactions<T: AsRef<[AnchorParams]>>(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
-    anchors_params: Option<&[AnchorParams]>,
+    anchors_params: Option<T>,
     payouts: &[Payout],
     refund_lock_time: u32,
     fee_rate_per_vb: u64,
@@ -55,8 +55,9 @@ pub fn create_dlc_transactions(
     cet_lock_time: u32,
     fund_output_serial_id: u64,
 ) -> Result<DlcTransactions, Error> {
-    let anchors_outputs = anchors_params.map(|a| {
-        a.iter()
+    let anchors_outputs = anchors_params.as_ref().map(|a| {
+        a.as_ref()
+            .iter()
             .map(|p| TxOut {
                 value: p.payout_fee_value,
                 script_pubkey: p.payout_script_pubkey.clone(),
@@ -64,8 +65,12 @@ pub fn create_dlc_transactions(
             .collect::<Box<[_]>>()
     });
 
-    let anchors_serials_ids =
-        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
+    let anchors_serials_ids = anchors_params.as_ref().map(|a| {
+        a.as_ref()
+            .iter()
+            .map(|p| p.payout_serial_id)
+            .collect::<Box<[_]>>()
+    });
 
     let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
         offer_params,

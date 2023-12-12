@@ -9,12 +9,12 @@ use crate::{
     get_dlc_transactions, CetSignatures, ContractParams, DlcSide,
 };
 
-pub fn sign_cets(
+pub fn sign_cets<T: AsRef<[AnchorParams]>>(
     secp: &Secp256k1<All>,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
-    anchors_params: Option<&[AnchorParams]>,
+    anchors_params: Option<T>,
     contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
 ) -> Result<CetSignatures> {
