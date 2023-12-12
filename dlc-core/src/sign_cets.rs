@@ -4,8 +4,9 @@ use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{
-    contract_tools::FeePartyParams, error::*, get_dlc_transactions, CetSignatures, ContractParams,
-    DlcSide,
+    contract_tools::{AnchorParams, FeePartyParams},
+    error::*,
+    get_dlc_transactions, CetSignatures, ContractParams, DlcSide,
 };
 
 pub fn sign_cets(
@@ -13,6 +14,7 @@ pub fn sign_cets(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
     contract_params: &ContractParams,
     fund_secret_key: &SecretKey,
 ) -> Result<CetSignatures> {
@@ -21,6 +23,7 @@ pub fn sign_cets(
         offer_params,
         accept_params,
         fee_party_params,
+        anchors_params,
     )?;
 
     let fund_public_key = PublicKey::from_secret_key(secp, fund_secret_key);

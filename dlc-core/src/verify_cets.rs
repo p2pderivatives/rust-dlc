@@ -3,8 +3,9 @@ use dlc_manager::contract::AdaptorInfo;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, Secp256k1};
 
 use crate::{
-    contract_tools::FeePartyParams, error::*, get_dlc_transactions,
-    validate_presigned_without_infos, ContractParams, DlcSide,
+    contract_tools::{AnchorParams, FeePartyParams},
+    error::*,
+    get_dlc_transactions, validate_presigned_without_infos, ContractParams, DlcSide,
 };
 
 pub fn check_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
@@ -12,6 +13,7 @@ pub fn check_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
     adaptor_sig: &[E],
     refund_sig: &Signature,
 ) -> Result<(Vec<AdaptorInfo>, bool)> {
@@ -20,6 +22,7 @@ pub fn check_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
         offer_params,
         accept_params,
         fee_party_params,
+        anchors_params,
     )?;
 
     let secp = Secp256k1::new();

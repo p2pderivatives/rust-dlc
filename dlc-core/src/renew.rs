@@ -4,7 +4,7 @@ use dlc::PartyParams;
 use dlc::util::get_output_for_script_pubkey;
 use secp256k1_zkp::{EcdsaAdaptorSignature, Secp256k1};
 
-use crate::contract_tools::FeePartyParams;
+use crate::contract_tools::{AnchorParams, FeePartyParams};
 use crate::{error::*, ContractParams, DlcSide, SideSign};
 use crate::{
     get_dlc_transactions, validate_presigned_with_infos, validate_presigned_without_infos,
@@ -22,10 +22,12 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
     old_offer_params: &PartyParams,
     old_accept_params: &PartyParams,
     old_fee_party_params: Option<&FeePartyParams>,
+    old_anchors_params: Option<&[AnchorParams]>,
     contract_params: &ContractParams,
     offer_side: &SideSign<E>,
     accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
 ) -> Result<RenewInfos> {
     // Checking that contracts are chained
     let old_dlc_transactions = get_dlc_transactions(
@@ -33,6 +35,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
         old_offer_params,
         old_accept_params,
         old_fee_party_params,
+        old_anchors_params,
     )?;
 
     let new_dlc_transactions = get_dlc_transactions(
@@ -40,6 +43,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
         offer_side.party_params,
         accept_side.party_params,
         fee_party_params,
+        anchors_params,
     )?;
 
     let old_funding = old_dlc_transactions.fund;

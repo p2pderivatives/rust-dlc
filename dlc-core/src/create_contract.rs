@@ -7,6 +7,7 @@ use crate::{error::*, ContractParams};
 pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncement]>>(
     secp: &Secp256k1<C>,
     contract_input: ContractInput,
+    fund_serial_id: u64,
     refund_locktime: u32,
     cet_locktime: u32,
     oracle_announcements: &mut [O],
@@ -68,6 +69,7 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
         contract_info: contract_info.into_boxed_slice(),
         offer_collateral: contract_input.offer_collateral,
         accept_collateral: contract_input.accept_collateral,
+        fund_serial_id,
         refund_locktime,
         cet_locktime,
         fee_rate_per_vb: contract_input.fee_rate,

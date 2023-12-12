@@ -1,4 +1,4 @@
-use contract_tools::{create_dlc_transactions, FeePartyParams};
+use contract_tools::{create_dlc_transactions, AnchorParams, FeePartyParams};
 use dlc::{DlcTransactions, PartyParams, Payout};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
@@ -64,6 +64,7 @@ fn get_dlc_transactions(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
 ) -> Result<DlcTransactions> {
     let ContractParams {
         contract_info,
@@ -91,6 +92,7 @@ fn get_dlc_transactions(
         offer_params,
         accept_params,
         fee_party_params,
+        anchors_params,
         &contract_info[0]
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?,

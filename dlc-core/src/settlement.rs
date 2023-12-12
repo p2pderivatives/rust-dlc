@@ -11,8 +11,9 @@ use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
 use crate::{
-    contract_tools::FeePartyParams, error::*, get_dlc_transactions,
-    validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
+    contract_tools::{AnchorParams, FeePartyParams},
+    error::*,
+    get_dlc_transactions, validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
 };
 
 #[cfg(feature = "serde")]
@@ -23,12 +24,14 @@ pub fn get_refund<E: AsRef<[EcdsaAdaptorSignature]>>(
     offer_side: &SideSign<E>,
     accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
         contract_params,
         offer_side.party_params,
         accept_side.party_params,
         fee_party_params,
+        anchors_params,
     )?;
 
     let (refund_sigs_offer, fund_pubkey_offer) =
@@ -63,6 +66,7 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
     offer_side: &SideSign<E>,
     accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
     event_id: &str,
     attestations: &[AttestationData],
 ) -> Result<Transaction> {
@@ -76,6 +80,7 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
         offer_side.party_params,
         accept_side.party_params,
         fee_party_params,
+        anchors_params,
     )?;
     let secp = Secp256k1::new();
 

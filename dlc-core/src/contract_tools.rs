@@ -18,15 +18,26 @@ type Error = FromDlcError;
 )]
 pub struct FeePartyParams {
     /// The amount of fee to be paid in funding transaction
-    pub in_change_fee_value: u64,
+    pub change_fee_value: u64,
     /// An address to receive fees in funding
-    pub in_change_script_pubkey: Script,
+    pub change_script_pubkey: Script,
     /// Id used to order fund outputs
     pub change_serial_id: u64,
+}
+
+/// Contains the parameters to add an anchor output
+/// to CPFP CET
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct AnchorParams {
     /// The amount of fee to be paid in cet transaction
-    pub in_payout_fee_value: u64,
+    pub payout_fee_value: u64,
     /// An address to receive the outcome amount
-    pub in_payout_script_pubkey: Script,
+    pub payout_script_pubkey: Script,
     /// Id used to order CET outputs
     pub payout_serial_id: u64,
 }
@@ -36,6 +47,7 @@ pub fn create_dlc_transactions(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
     payouts: &[Payout],
     refund_lock_time: u32,
     fee_rate_per_vb: u64,
@@ -43,10 +55,23 @@ pub fn create_dlc_transactions(
     cet_lock_time: u32,
     fund_output_serial_id: u64,
 ) -> Result<DlcTransactions, Error> {
+    let anchors_outputs = anchors_params.map(|a| {
+        a.iter()
+            .map(|p| TxOut {
+                value: p.payout_fee_value,
+                script_pubkey: p.payout_script_pubkey.clone(),
+            })
+            .collect::<Box<[_]>>()
+    });
+
+    let anchors_serials_ids =
+        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
+
     let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
         offer_params,
         accept_params,
         fee_party_params,
+        anchors_outputs.as_ref(),
         fee_rate_per_vb,
         fund_lock_time,
         fund_output_serial_id,
@@ -61,7 +86,8 @@ pub fn create_dlc_transactions(
     let (cets, refund_tx) = create_cets_and_refund_tx(
         offer_params,
         accept_params,
-        fee_party_params,
+        anchors_outputs.as_ref(),
+        anchors_serials_ids.as_ref(),
         fund_outpoint,
         payouts,
         refund_lock_time,
@@ -77,10 +103,11 @@ pub fn create_dlc_transactions(
     })
 }
 
-pub(crate) fn create_fund_transaction_with_fees(
+pub(crate) fn create_fund_transaction_with_fees<T: AsRef<[TxOut]>>(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_outputs: Option<T>,
     fee_rate_per_vb: u64,
     fund_lock_time: u32,
     fund_output_serial_id: u64,
@@ -90,20 +117,21 @@ pub(crate) fn create_fund_transaction_with_fees(
 
     let total_extra_coordinator_fee = fee_party_params
         .map(|p| {
-            p.in_change_fee_value
-                + (fee_rate_per_vb * (9_u64 + p.in_change_script_pubkey.len() as u64))
+            p.change_fee_value + (fee_rate_per_vb * (9_u64 + p.change_script_pubkey.len() as u64))
         })
         .unwrap_or(0);
 
     // Emulate ceil function
     let party_coordinator_fee = total_extra_coordinator_fee / 2 + total_extra_coordinator_fee % 2;
 
-    let total_payout_coordinator_fee = fee_party_params
-        .map(|p| {
-            p.in_payout_fee_value
-                + (fee_rate_per_vb * (9_u64 + p.in_payout_script_pubkey.len() as u64))
-        })
-        .unwrap_or(0);
+    let total_payout_coordinator_fee = match anchors_outputs.as_ref() {
+        Some(anchors) => anchors
+            .as_ref()
+            .iter()
+            .map(|p| p.value + (fee_rate_per_vb * (9_u64 + p.script_pubkey.len() as u64)))
+            .sum(),
+        None => 0,
+    };
 
     let in_payout_coordinator_fee =
         total_payout_coordinator_fee / 2 + total_payout_coordinator_fee % 2;
@@ -170,10 +198,10 @@ pub(crate) fn create_fund_transaction_with_fees(
         accept_change_output,
         accept_params.change_serial_id,
         fee_party_params.map(|p| TxOut {
-            value: p.in_change_fee_value,
-            script_pubkey: p.in_change_script_pubkey.clone(),
+            value: p.change_fee_value,
+            script_pubkey: p.change_script_pubkey.clone(),
         }),
-        fee_party_params.map(|p| p.in_change_fee_value),
+        fee_party_params.map(|p| p.change_fee_value),
         fund_output_serial_id,
         fund_lock_time,
     );
@@ -239,10 +267,11 @@ pub fn create_funding_transaction(
 }
 
 /// Create the offchain transactions for a DLC contract based on the provided parameters
-pub fn create_cets_and_refund_tx(
+pub fn create_cets_and_refund_tx<T: AsRef<[TxOut]>, U: AsRef<[u64]>>(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
-    fee_party_params: Option<&FeePartyParams>,
+    anchors_outputs: Option<T>,
+    anchors_serials_ids: Option<U>,
     prev_outpoint: OutPoint,
     payouts: &[Payout],
     refund_lock_time: u32,
@@ -271,19 +300,14 @@ pub fn create_cets_and_refund_tx(
         sequence: cet_nsequence.unwrap_or_else(|| util::get_sequence(cet_lock_time)),
     };
 
-    let fee_payout_output = fee_party_params.map(|p| TxOut {
-        value: p.in_payout_fee_value,
-        script_pubkey: p.in_payout_script_pubkey.clone(),
-    });
-
     let cets = create_cets(
         &cet_input,
         &offer_params.payout_script_pubkey,
         offer_params.payout_serial_id,
         &accept_params.payout_script_pubkey,
         accept_params.payout_serial_id,
-        fee_payout_output.as_ref(),
-        fee_party_params.map(|p| p.payout_serial_id),
+        anchors_outputs.as_ref(),
+        anchors_serials_ids.as_ref(),
         payouts,
         cet_lock_time,
     );
@@ -310,8 +334,8 @@ pub fn create_cets_and_refund_tx(
         offer_params.payout_serial_id,
         accept_refund_ouput,
         accept_params.payout_serial_id,
-        fee_payout_output.as_ref(),
-        fee_party_params.map(|p| p.payout_serial_id),
+        anchors_outputs,
+        anchors_serials_ids,
         refund_input,
         refund_lock_time,
     );
@@ -320,13 +344,13 @@ pub fn create_cets_and_refund_tx(
 }
 
 /// Create a contract execution transaction
-pub fn create_cet(
+pub fn create_cet<T: AsRef<[TxOut]>, U: AsRef<[u64]>>(
     offer_output: TxOut,
     offer_payout_serial_id: u64,
     accept_output: TxOut,
     accept_payout_serial_id: u64,
-    fee_payout_output: Option<&TxOut>,
-    fee_payout_serial_id: Option<u64>,
+    anchors_outputs: Option<T>,
+    anchors_serials_ids: Option<U>,
     fund_tx_in: &TxIn,
     lock_time: u32,
 ) -> Transaction {
@@ -335,11 +359,11 @@ pub fn create_cet(
 
         let mut inputs = vec![offer_output, accept_output];
 
-        if let Some(id) = fee_payout_serial_id {
-            serial_ids.push(id);
+        if let Some(id) = anchors_serials_ids {
+            serial_ids.extend(id.as_ref());
         };
-        if let Some(o) = fee_payout_output {
-            inputs.push(o.clone());
+        if let Some(o) = anchors_outputs {
+            inputs.extend(o.as_ref().iter().cloned());
         };
 
         util::discard_dust(
@@ -357,14 +381,14 @@ pub fn create_cet(
 }
 
 /// Create a set of contract execution transaction for each provided outcome
-pub fn create_cets(
+pub fn create_cets<T: AsRef<[TxOut]>, U: AsRef<[u64]>>(
     fund_tx_input: &TxIn,
     offer_payout_script_pubkey: &Script,
     offer_payout_serial_id: u64,
     accept_payout_script_pubkey: &Script,
     accept_payout_serial_id: u64,
-    fee_payout_output: Option<&TxOut>,
-    fee_payout_serial_id: Option<u64>,
+    anchors_outputs: Option<T>,
+    anchors_serials_ids: Option<U>,
     payouts: &[Payout],
     lock_time: u32,
 ) -> Vec<Transaction> {
@@ -383,8 +407,8 @@ pub fn create_cets(
             offer_payout_serial_id,
             accept_output,
             accept_payout_serial_id,
-            fee_payout_output,
-            fee_payout_serial_id,
+            anchors_outputs.as_ref(),
+            anchors_serials_ids.as_ref(),
             fund_tx_input,
             lock_time,
         );
@@ -396,13 +420,13 @@ pub fn create_cets(
 }
 
 /// Create a refund transaction
-pub fn create_refund_transaction(
+pub fn create_refund_transaction<T: AsRef<[TxOut]>, U: AsRef<[u64]>>(
     offer_output: TxOut,
     offer_payout_serial_id: u64,
     accept_output: TxOut,
     accept_payout_serial_id: u64,
-    fee_payout_output: Option<&TxOut>,
-    fee_payout_serial_id: Option<u64>,
+    anchors_outputs: Option<T>,
+    anchors_serials_ids: Option<U>,
     funding_input: TxIn,
     locktime: u32,
 ) -> Transaction {
@@ -411,11 +435,11 @@ pub fn create_refund_transaction(
 
         let mut inputs = vec![offer_output, accept_output];
 
-        if let Some(id) = fee_payout_serial_id {
-            serial_ids.push(id);
+        if let Some(id) = anchors_serials_ids {
+            serial_ids.extend(id.as_ref());
         };
-        if let Some(o) = fee_payout_output {
-            inputs.push(o.clone());
+        if let Some(o) = anchors_outputs {
+            inputs.extend(o.as_ref().iter().cloned());
         };
 
         util::discard_dust(
