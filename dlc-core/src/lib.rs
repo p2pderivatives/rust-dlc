@@ -1,4 +1,5 @@
-use contract_tools::{create_dlc_transactions, AnchorParams, FeePartyParams};
+use bitcoin::TxOut;
+use contract_tools::{create_cets, create_dlc_transactions, AnchorParams, FeePartyParams};
 use dlc::{DlcTransactions, PartyParams, Payout};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
@@ -107,6 +108,7 @@ fn get_dlc_transactions(
 fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
+    anchors_params: Option<&[AnchorParams]>,
     refund_signature: &Signature,
     cet_adaptor_signatures: &[E],
     contract_info: &[ContractInfo],
@@ -137,6 +139,18 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     )
     .map_err(FromDlcError::Dlc)?;
 
+    let anchors_outputs = anchors_params.map(|a| {
+        a.iter()
+            .map(|p| TxOut {
+                value: p.payout_fee_value,
+                script_pubkey: p.payout_script_pubkey.clone(),
+            })
+            .collect::<Box<[_]>>()
+    });
+
+    let anchors_serials_ids =
+        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
+
     let fund_output_value = dlc_transactions.get_fund_output().value;
     let total_collateral = offer_params.collateral + accept_params.collateral;
 
@@ -165,12 +179,14 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             .map_err(FromDlcError::Manager)?
             .into_boxed_slice();
 
-        let tmp_cets = dlc::create_cets(
+        let tmp_cets = create_cets(
             &cet_input,
             &offer_params.payout_script_pubkey,
             offer_params.payout_serial_id,
             &accept_params.payout_script_pubkey,
             accept_params.payout_serial_id,
+            anchors_outputs.as_deref(),
+            anchors_serials_ids.as_deref(),
             &payouts,
             0,
         );
@@ -205,6 +221,7 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
 fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
+    anchors_params: Option<&[AnchorParams]>,
     refund_signature: &Signature,
     cet_adaptor_signatures: &[E],
     contract_info: &[ContractInfo],
@@ -230,6 +247,18 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
         &checked_params.fund_pubkey,
     )
     .map_err(FromDlcError::Dlc)?;
+
+    let anchors_outputs = anchors_params.map(|a| {
+        a.iter()
+            .map(|p| TxOut {
+                value: p.payout_fee_value,
+                script_pubkey: p.payout_script_pubkey.clone(),
+            })
+            .collect::<Box<[_]>>()
+    });
+
+    let anchors_serials_ids =
+        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
 
     let total_collateral = offer_params.collateral + accept_params.collateral;
 
@@ -259,12 +288,14 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             .map_err(FromDlcError::Manager)?
             .into_boxed_slice();
 
-        let tmp_cets = dlc::create_cets(
+        let tmp_cets = create_cets(
             &cet_input,
             &offer_params.payout_script_pubkey,
             offer_params.payout_serial_id,
             &accept_params.payout_script_pubkey,
             accept_params.payout_serial_id,
+            anchors_outputs.as_deref(),
+            anchors_serials_ids.as_deref(),
             &payouts,
             0,
         );

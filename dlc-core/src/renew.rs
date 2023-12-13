@@ -73,6 +73,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
     let (new_dlc_transactions, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &new_dlc_transactions,
+        anchors_params,
         accept_side.refund_sig,
         accept_side.adaptor_sig,
         &contract_params.contract_info,
@@ -84,6 +85,7 @@ pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
     validate_presigned_with_infos(
         &secp,
         &new_dlc_transactions,
+        anchors_params,
         offer_side.refund_sig,
         offer_side.adaptor_sig,
         &contract_params.contract_info,

@@ -1,10 +1,11 @@
+use bitcoin::TxOut;
 use dlc::{DlcTransactions, PartyParams};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{
-    contract_tools::{AnchorParams, FeePartyParams},
+    contract_tools::{create_cets, AnchorParams, FeePartyParams},
     error::*,
     get_dlc_transactions, CetSignatures, ContractParams, DlcSide,
 };
@@ -36,6 +37,7 @@ pub fn sign_cets(
     let sign_res = sign(
         secp,
         &dlc_transactions,
+        anchors_params,
         &contract_params.contract_info,
         fund_secret_key,
         offer_params,
@@ -49,6 +51,7 @@ pub fn sign_cets(
 fn sign(
     secp: &Secp256k1<All>,
     dlc_transactions: &DlcTransactions,
+    anchors_params: Option<&[AnchorParams]>,
     contract_info: &[ContractInfo],
     adaptor_secret_key: &SecretKey,
     offer_params: &PartyParams,
@@ -70,6 +73,18 @@ fn sign(
         refund,
         funding_script_pubkey,
     } = dlc_transactions;
+
+    let anchors_outputs = anchors_params.map(|a| {
+        a.iter()
+            .map(|p| TxOut {
+                value: p.payout_fee_value,
+                script_pubkey: p.payout_script_pubkey.clone(),
+            })
+            .collect::<Box<[_]>>()
+    });
+
+    let anchors_serials_ids =
+        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
 
     let input_value = dlc_transactions.get_fund_output().value;
 
@@ -93,12 +108,14 @@ fn sign(
         let payouts = contract_info
             .get_payouts(total_collateral)
             .map_err(FromDlcError::Manager)?;
-        let tmp_cets = dlc::create_cets(
+        let tmp_cets = create_cets(
             &cet_input,
             &offer_params.payout_script_pubkey,
             offer_params.payout_serial_id,
             &accept_params.payout_script_pubkey,
             accept_params.payout_serial_id,
+            anchors_outputs.as_deref(),
+            anchors_serials_ids.as_deref(),
             &payouts,
             0,
         );
