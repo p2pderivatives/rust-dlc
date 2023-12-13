@@ -5,14 +5,15 @@ use secp256k1_zkp::{
     EcdsaAdaptorSignature, Secp256k1,
 };
 
-use bitcoin::{EcdsaSighashType, Script, Transaction, Witness};
+use bitcoin::{EcdsaSighashType, Script, Transaction, TxOut, Witness};
 use dlc::secp_utils;
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
 use crate::{
-    contract_tools::FeePartyParams, error::*, get_dlc_transactions,
-    validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
+    contract_tools::{create_cets, AnchorParams, FeePartyParams},
+    error::*,
+    get_dlc_transactions, validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
 };
 
 #[cfg(feature = "serde")]
@@ -23,12 +24,14 @@ pub fn get_refund<E: AsRef<[EcdsaAdaptorSignature]>>(
     offer_side: &SideSign<E>,
     accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
 ) -> Result<Transaction> {
     let dlc_transactions = get_dlc_transactions(
-        &contract_params,
+        contract_params,
         offer_side.party_params,
         accept_side.party_params,
         fee_party_params,
+        anchors_params,
     )?;
 
     let (refund_sigs_offer, fund_pubkey_offer) =
@@ -63,6 +66,7 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
     offer_side: &SideSign<E>,
     accept_side: &SideSign<E>,
     fee_party_params: Option<&FeePartyParams>,
+    anchors_params: Option<&[AnchorParams]>,
     event_id: &str,
     attestations: &[AttestationData],
 ) -> Result<Transaction> {
@@ -72,16 +76,30 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
         .collect();
 
     let dlc_transactions = get_dlc_transactions(
-        &contract_params,
+        contract_params,
         offer_side.party_params,
         accept_side.party_params,
         fee_party_params,
+        anchors_params,
     )?;
+
+    let anchors_outputs = anchors_params.map(|a| {
+        a.iter()
+            .map(|p| TxOut {
+                value: p.payout_fee_value,
+                script_pubkey: p.payout_script_pubkey.clone(),
+            })
+            .collect::<Box<[_]>>()
+    });
+
+    let anchors_serials_ids =
+        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
     let secp = Secp256k1::new();
 
     let (_, adaptor_infos) = validate_presigned_without_infos(
         &secp,
         &dlc_transactions,
+        anchors_params,
         accept_side.refund_sig,
         accept_side.adaptor_sig,
         &contract_params.contract_info,
@@ -115,12 +133,14 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
         .map_err(FromDlcError::Manager)?
         .into_boxed_slice();
 
-    let tmp_cets = dlc::create_cets(
+    let tmp_cets = create_cets(
         &cet_input,
         &offer_side.party_params.payout_script_pubkey,
         offer_side.party_params.payout_serial_id,
         &accept_side.party_params.payout_script_pubkey,
         accept_side.party_params.payout_serial_id,
+        anchors_outputs.as_deref(),
+        anchors_serials_ids.as_deref(),
         &payouts,
         0,
     );

@@ -13,9 +13,9 @@ use crate::Error;
 // Setting the nSequence for every input of a transaction to this value disables
 // both RBF and nLockTime usage.
 pub(crate) const DISABLE_LOCKTIME: Sequence = Sequence(0xffffffff);
-// Setting the nSequence for every input of a transaction to this value disables
-// RBF but enables nLockTime usage.
-pub(crate) const ENABLE_LOCKTIME: Sequence = Sequence(0xfffffffe);
+/// Setting the nSequence for every input of a transaction to this value disables
+/// RBF but enables nLockTime usage.
+pub const ENABLE_LOCKTIME: Sequence = Sequence(0xfffffffe);
 
 /// Get a BIP143 (https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
 /// signature hash with sighash all flag for a segwit transaction input as
