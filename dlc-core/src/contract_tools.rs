@@ -55,7 +55,7 @@ pub fn create_dlc_transactions(
     cet_lock_time: u32,
     fund_output_serial_id: u64,
 ) -> Result<DlcTransactions, Error> {
-    let anchors_outputs = anchors_params.as_deref().map(|a| {
+    let anchors_outputs = anchors_params.map(|a| {
         a.iter()
             .map(|p| TxOut {
                 value: p.payout_fee_value,
@@ -64,9 +64,8 @@ pub fn create_dlc_transactions(
             .collect::<Box<[_]>>()
     });
 
-    let anchors_serials_ids = anchors_params
-        .as_ref()
-        .map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
+    let anchors_serials_ids =
+        anchors_params.map(|a| a.iter().map(|p| p.payout_serial_id).collect::<Box<[_]>>());
 
     let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
         offer_params,
@@ -307,8 +306,8 @@ pub fn create_cets_and_refund_tx(
         offer_params.payout_serial_id,
         &accept_params.payout_script_pubkey,
         accept_params.payout_serial_id,
-        anchors_outputs.as_deref(),
-        anchors_serials_ids.as_deref(),
+        anchors_outputs,
+        anchors_serials_ids,
         payouts,
         cet_lock_time,
     );
@@ -361,10 +360,10 @@ pub fn create_cet(
         let mut inputs = vec![offer_output, accept_output];
 
         if let Some(id) = anchors_serials_ids {
-            serial_ids.extend(id.as_ref());
+            serial_ids.extend(id);
         };
         if let Some(o) = anchors_outputs {
-            inputs.extend(o.as_ref().iter().cloned());
+            inputs.extend(o.iter().cloned());
         };
 
         util::discard_dust(
@@ -408,8 +407,8 @@ pub fn create_cets(
             offer_payout_serial_id,
             accept_output,
             accept_payout_serial_id,
-            anchors_outputs.as_deref(),
-            anchors_serials_ids.as_deref(),
+            anchors_outputs,
+            anchors_serials_ids,
             fund_tx_input,
             lock_time,
         );
@@ -437,10 +436,10 @@ pub fn create_refund_transaction(
         let mut inputs = vec![offer_output, accept_output];
 
         if let Some(id) = anchors_serials_ids {
-            serial_ids.extend(id.as_ref());
+            serial_ids.extend(id);
         };
         if let Some(o) = anchors_outputs {
-            inputs.extend(o.as_ref().iter().cloned());
+            inputs.extend(o.iter().cloned());
         };
 
         util::discard_dust(
