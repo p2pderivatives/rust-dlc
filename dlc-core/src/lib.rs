@@ -59,12 +59,12 @@ pub struct ContractParams {
     pub fee_rate_per_vb: u64,
 }
 
-fn get_dlc_transactions<T: AsRef<[AnchorParams]>>(
+fn get_dlc_transactions(
     contract_params: &ContractParams,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
-    anchors_params: Option<T>,
+    anchors_params: Option<&[AnchorParams]>,
 ) -> Result<DlcTransactions> {
     let ContractParams {
         contract_info,
