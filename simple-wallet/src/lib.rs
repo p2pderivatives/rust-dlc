@@ -233,7 +233,7 @@ where
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        fee_rate: Option<u64>,
+        fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>> {
         let org_utxos = self.storage.get_utxos()?;
@@ -257,7 +257,7 @@ where
                 .unwrap();
         let dummy_drain =
             Script::new_v0_p2wpkh(&bitcoin::WPubkeyHash::hash(&dummy_pubkey.serialize()));
-        let fee_rate = FeeRate::from_sat_per_vb(fee_rate.unwrap() as f32);
+        let fee_rate = FeeRate::from_sat_per_vb(fee_rate as f32);
         let selection = coin_selection
             .coin_select(self, Vec::new(), utxos, fee_rate, amount, &dummy_drain)
             .map_err(|e| Error::WalletError(Box::new(e)))?;
