@@ -1390,7 +1390,7 @@ where
             Some(*peer_id)
         )?;
 
-        let (signed_channel, signed_contract) = {
+        let (signed_channel, signed_contract, signed_fund_tx) = {
             let res = verify_signed_channel(
                 &self.secp,
                 &accepted_channel,
@@ -1430,7 +1430,7 @@ where
             unreachable!();
         }
 
-        self.blockchain.send_transaction(&signed_channel.fund_tx)?;
+        self.blockchain.send_transaction(&signed_fund_tx)?;
 
         self.store.upsert_channel(
             Channel::Signed(signed_channel),

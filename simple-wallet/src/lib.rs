@@ -5,6 +5,7 @@ use bdk::{
     wallet::coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
     FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
 };
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{
     hashes::Hash, Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut,
     Txid, Witness,
@@ -154,9 +155,17 @@ where
         let fee = (weight * fee_rate) / 1000;
         tx.output[0].value -= fee;
 
+        // construct psbt
+        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).unwrap();
         for (i, utxo) in utxos.iter().enumerate().take(tx.input.len()) {
-            self.sign_tx_input(&mut tx, i, &utxo.tx_out, None)?;
+            psbt.inputs[i].witness_utxo = Some(utxo.tx_out.clone());
         }
+
+        for (i, _) in utxos.iter().enumerate().take(tx.input.len()) {
+            self.sign_psbt_input(&mut psbt, i)?;
+        }
+
+        let tx = psbt.extract_tx();
 
         self.blockchain.send_transaction(&tx)
     }
@@ -167,27 +176,49 @@ where
     B::Target: WalletBlockchainProvider,
     W::Target: WalletStorage,
 {
-    fn sign_tx_input(
+    fn sign_psbt_input(
         &self,
-        tx: &mut bitcoin::Transaction,
+        psbt: &mut PartiallySignedTransaction,
         input_index: usize,
-        tx_out: &bitcoin::TxOut,
-        _: Option<bitcoin::Script>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), Error> {
+        let tx_out = if let Some(input) = psbt.inputs.get(input_index) {
+            if let Some(wit_utxo) = &input.witness_utxo {
+                Ok(wit_utxo.clone())
+            } else if let Some(in_tx) = &input.non_witness_utxo {
+                Ok(
+                    in_tx.output[psbt.unsigned_tx.input[input_index].previous_output.vout as usize]
+                        .clone(),
+                )
+            } else {
+                Err(Error::InvalidParameters(
+                    "No TxOut for PSBT inout".to_string(),
+                ))
+            }
+        } else {
+            Err(Error::InvalidParameters(
+                "No TxOut for PSBT inout".to_string(),
+            ))
+        }?;
         let address = Address::from_script(&tx_out.script_pubkey, self.network)
             .expect("a valid scriptpubkey");
         let seckey = self
             .storage
             .get_priv_key_for_address(&address)?
             .expect("to have the requested private key");
+
+        let mut tx = psbt.unsigned_tx.clone();
         dlc::util::sign_p2wpkh_input(
             &self.secp_ctx,
             &seckey,
-            tx,
+            &mut tx,
             input_index,
             bitcoin::EcdsaSighashType::All,
             tx_out.value,
         )?;
+
+        let tx_input = tx.input[input_index].clone();
+        psbt.inputs[input_index].final_script_sig = Some(tx_input.script_sig);
+        psbt.inputs[input_index].final_script_witness = Some(tx_input.witness);
         Ok(())
     }
 

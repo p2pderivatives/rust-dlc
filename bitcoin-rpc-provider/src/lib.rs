@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bitcoin::consensus::encode::Error as EncodeError;
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::rand::thread_rng;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{
@@ -185,14 +186,32 @@ impl Signer for BitcoinCoreProvider {
         Ok(pk.inner)
     }
 
-    fn sign_tx_input(
+    fn sign_psbt_input(
         &self,
-        tx: &mut Transaction,
+        psbt: &mut PartiallySignedTransaction,
         input_index: usize,
-        tx_out: &TxOut,
-        redeem_script: Option<Script>,
     ) -> Result<(), ManagerError> {
-        let outpoint = &tx.input[input_index].previous_output;
+        let outpoint = &psbt.unsigned_tx.input[input_index].previous_output;
+        let tx_out = if let Some(input) = psbt.inputs.get(input_index) {
+            if let Some(wit_utxo) = &input.witness_utxo {
+                Ok(wit_utxo.clone())
+            } else if let Some(in_tx) = &input.non_witness_utxo {
+                Ok(in_tx.output[outpoint.vout as usize].clone())
+            } else {
+                Err(ManagerError::InvalidParameters(
+                    "No TxOut for PSBT input".to_string(),
+                ))
+            }
+        } else {
+            Err(ManagerError::InvalidParameters(
+                "No TxOut for PSBT input".to_string(),
+            ))
+        }?;
+
+        let redeem_script = psbt
+            .inputs
+            .get(input_index)
+            .and_then(|i| i.redeem_script.clone());
 
         let input = json::SignRawTransactionInput {
             txid: outpoint.txid,
@@ -206,13 +225,15 @@ impl Signer for BitcoinCoreProvider {
             .client
             .lock()
             .unwrap()
-            .sign_raw_transaction_with_wallet(&*tx, Some(&[input]), None)
+            .sign_raw_transaction_with_wallet(&psbt.unsigned_tx, Some(&[input]), None)
             .map_err(rpc_err_to_manager_err)?;
         let signed_tx = Transaction::consensus_decode(&mut sign_result.hex.as_slice())
             .map_err(enc_err_to_manager_err)?;
 
-        tx.input[input_index].script_sig = signed_tx.input[input_index].script_sig.clone();
-        tx.input[input_index].witness = signed_tx.input[input_index].witness.clone();
+        psbt.inputs[input_index].final_script_sig =
+            Some(signed_tx.input[input_index].script_sig.clone());
+        psbt.inputs[input_index].final_script_witness =
+            Some(signed_tx.input[input_index].witness.clone());
 
         Ok(())
     }
