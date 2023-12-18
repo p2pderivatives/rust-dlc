@@ -1326,7 +1326,7 @@ where
             Some(*peer_id)
         )?;
 
-        let (signed_channel, signed_contract) = {
+        let (signed_channel, signed_contract, signed_fund_tx) = {
             let res = verify_signed_channel(
                 &self.secp,
                 &accepted_channel,
@@ -1352,7 +1352,23 @@ where
             }
         };
 
-        self.blockchain.send_transaction(&signed_channel.fund_tx)?;
+        // TODO(lucas): Maybe we just delete this.
+        if let SignedChannelState::Established {
+            buffer_transaction, ..
+        } = &signed_channel.state
+        {
+            self.chain_monitor.lock().unwrap().add_tx(
+                buffer_transaction.txid(),
+                ChannelInfo {
+                    channel_id: signed_channel.channel_id,
+                    tx_type: TxType::BufferTx,
+                },
+            );
+        } else {
+            unreachable!();
+        }
+
+        self.blockchain.send_transaction(&signed_fund_tx)?;
 
         self.store.upsert_channel(
             Channel::Signed(signed_channel),

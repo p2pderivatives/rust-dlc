@@ -645,7 +645,7 @@ pub fn verify_signed_channel<S: Deref>(
     sign_channel: &SignChannel,
     signer: &S,
     chain_monitor: &Mutex<ChainMonitor>,
-) -> Result<(SignedChannel, SignedContract), Error>
+) -> Result<(SignedChannel, SignedContract, Transaction), Error>
 where
     S::Target: Signer,
 {
@@ -668,7 +668,7 @@ pub(crate) fn verify_signed_channel_internal<S: Deref>(
     signer: &S,
     sub_channel_info: Option<SubChannelVerifyInfo>,
     chain_monitor: &Mutex<ChainMonitor>,
-) -> Result<(SignedChannel, SignedContract), Error>
+) -> Result<(SignedChannel, SignedContract, Transaction), Error>
 where
     S::Target: Signer,
 {
@@ -719,7 +719,7 @@ where
 
     let cet_adaptor_signatures: Vec<_> = (&sign_channel.cet_adaptor_signatures).into();
 
-    let (signed_contract, fund_tx) = verify_signed_contract_internal(
+    let (signed_contract, signed_fund_tx) = verify_signed_contract_internal(
         secp,
         accepted_contract,
         &sign_channel.refund_signature,
@@ -769,7 +769,11 @@ where
             total_collateral: accepted_contract.offered_contract.total_collateral,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
-        fund_tx,
+        fund_tx: signed_contract
+            .accepted_contract
+            .dlc_transactions
+            .fund
+            .clone(),
         fund_script_pubkey: accepted_contract
             .dlc_transactions
             .funding_script_pubkey
@@ -784,7 +788,7 @@ where
         sub_channel_id,
     };
 
-    Ok((signed_channel, signed_contract))
+    Ok((signed_channel, signed_contract, signed_fund_tx))
 }
 
 /// Creates a [`SettleOffer`] message from the given [`SignedChannel`] and parameters,

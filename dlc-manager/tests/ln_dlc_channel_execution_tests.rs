@@ -336,17 +336,7 @@ impl EventHandler for LnDlcParty {
                     script_pubkey: change_address.script_pubkey(),
                 });
 
-                for (i, utxo) in utxos.iter().enumerate() {
-                    tx.input.push(TxIn {
-                        previous_output: utxo.outpoint,
-                        script_sig: Script::default(),
-                        sequence: Sequence::MAX,
-                        witness: Witness::default(),
-                    });
-                    self.wallet
-                        .sign_tx_input(&mut tx, i, &utxo.tx_out, None)
-                        .unwrap();
-                }
+                todo!();
 
                 // Give the funding transaction back to LDK for opening the channel.
                 self.channel_manager
@@ -950,7 +940,6 @@ fn ln_dlc_rejected_offer() {
 
     reject_offer(&test_params);
 }
-
 
 #[test]
 #[ignore]

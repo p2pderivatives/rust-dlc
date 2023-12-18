@@ -1480,7 +1480,10 @@ where
     }
 
     /// Reject an offer to establish a sub channel.
-    pub fn reject_sub_channel_offer(&self, channel_id: ChannelId) -> Result<(PublicKey, Reject), Error> {
+    pub fn reject_sub_channel_offer(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<(PublicKey, Reject), Error> {
         let (mut sub_channel, _) = get_sub_channel_in_state!(
             self.dlc_channel_manager,
             channel_id,
@@ -2098,7 +2101,7 @@ where
                     sub_channel_id: accepted_sub_channel.channel_id,
                 };
 
-                let (signed_channel, signed_contract) =
+                let (signed_channel, signed_contract, _) =
                     channel_updater::verify_signed_channel_internal(
                         self.dlc_channel_manager.get_secp(),
                         &accepted_channel,
