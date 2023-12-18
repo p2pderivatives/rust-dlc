@@ -6,6 +6,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v2
       - name: install clippy
@@ -15,6 +16,7 @@ jobs:
   no-std:
     name: no-std lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v2
       - name: install clippy
@@ -28,6 +30,7 @@ jobs:
   unit-tests:
     name: unit-tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v2
       - name: Build
@@ -37,6 +40,7 @@ jobs:
 
   integration_tests_prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -53,6 +57,7 @@ jobs:
     name: integration-tests
     needs: integration_tests_prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         tests: ${{ fromJson(needs.integration_tests_prepare.outputs.matrix) }}
