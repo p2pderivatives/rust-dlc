@@ -22,6 +22,7 @@ pub mod contract_input;
 pub mod enum_descriptor;
 pub mod numerical_descriptor;
 pub mod offered_contract;
+pub mod ord_descriptor;
 pub mod ser;
 pub mod signed_contract;
 pub(crate) mod utils;
@@ -211,6 +212,8 @@ pub enum ContractDescriptor {
     Enum(enum_descriptor::EnumDescriptor),
     /// Case for numerical outcome DLC.
     Numerical(numerical_descriptor::NumericalDescriptor),
+    /// Case for a contract involving an ordinal.
+    Ord(ord_descriptor::OrdDescriptor),
 }
 
 impl ContractDescriptor {
@@ -219,6 +222,7 @@ impl ContractDescriptor {
         match self {
             ContractDescriptor::Enum(_) => None,
             ContractDescriptor::Numerical(n) => n.difference_params.clone(),
+            ContractDescriptor::Ord(_) => None,
         }
     }
 
@@ -242,7 +246,7 @@ impl ContractDescriptor {
                                 ));
                             }
                         }
-                        _ => {
+                        EventDescriptor::DigitDecompositionEvent(_) => {
                             return Err(Error::InvalidParameters(
                                 "Expected enum event descriptor.".to_string(),
                             ))
@@ -251,9 +255,24 @@ impl ContractDescriptor {
                 }
                 match self {
                     ContractDescriptor::Enum(ed) => ed.validate(ee),
-                    _ => Err(Error::InvalidParameters(
+                    ContractDescriptor::Numerical(_) => Err(Error::InvalidParameters(
                         "Event descriptor from contract and oracle differ.".to_string(),
                     )),
+                    ContractDescriptor::Ord(ord_desc) => {
+                        match &ord_desc.outcome_descriptor {
+                            ord_descriptor::OrdOutcomeDescriptor::Enum(e) => {
+                                if e.to_offer_payouts.len() != e.descriptor.outcome_payouts.len() {
+                                    return Err(Error::InvalidParameters("Ordinal to offer list length differ from outcome list length.".to_string()));
+                                }
+                                e.descriptor.validate(ee)
+                            }
+                            ord_descriptor::OrdOutcomeDescriptor::Numerical(_) => {
+                                Err(Error::InvalidParameters(
+                                    "Event descriptor from contract and oracle differ.".to_string(),
+                                ))
+                            }
+                        }
+                    }
                 }
             }
             EventDescriptor::DigitDecompositionEvent(_) => match self {
@@ -268,6 +287,40 @@ impl ContractDescriptor {
                         })?;
                     n.validate((max_value - 1) as u64)
                 }
+                ContractDescriptor::Ord(ord_desc) => match &ord_desc.outcome_descriptor {
+                    ord_descriptor::OrdOutcomeDescriptor::Numerical(n) => {
+                        let min_nb_digits = n.descriptor.oracle_numeric_infos.get_min_nb_digits();
+                        let max_value = n
+                            .descriptor
+                            .oracle_numeric_infos
+                            .base
+                            .checked_pow(min_nb_digits as u32)
+                            .ok_or_else(|| {
+                                Error::InvalidParameters("Could not compute max value".to_string())
+                            })?;
+
+                        for i in 0..n.to_offer_ranges.len() {
+                            if n.to_offer_ranges[i].0 > n.to_offer_ranges[i].1 {
+                                return Err(Error::InvalidParameters(
+                                    "Invalid range, start greater than end".to_string(),
+                                ));
+                            }
+                            if i > 0 && n.to_offer_ranges[i - 1].1 >= n.to_offer_ranges[i].0 {
+                                return Err(Error::InvalidParameters(
+                                    "Consecutive to offer ranges should not overlap.".to_string(),
+                                ));
+                            }
+
+                            if n.to_offer_ranges[i].1 as usize > max_value - 1 {
+                                return Err(Error::InvalidParameters("To offer range end is greater than maximum value for the event.".to_string()));
+                            }
+                        }
+                        n.descriptor.validate((max_value - 1) as u64)
+                    }
+                    ord_descriptor::OrdOutcomeDescriptor::Enum(_) => Err(Error::InvalidParameters(
+                        "Event descriptor from contract and oracle differ.".to_string(),
+                    )),
+                },
                 _ => Err(Error::InvalidParameters(
                     "Event descriptor from contract and oracle differ.".to_string(),
                 )),

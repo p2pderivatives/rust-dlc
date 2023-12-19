@@ -39,6 +39,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod channel;
+pub mod ord;
 pub mod secp_utils;
 pub mod util;
 
@@ -79,10 +80,12 @@ macro_rules! checked_add {
     };
 }
 
+pub(crate) use checked_add;
+
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
 /// accepting the contract.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Payout {
     /// Payout for the offering party
@@ -91,7 +94,7 @@ pub struct Payout {
     pub accept: u64,
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 /// Representation of a set of contiguous outcomes that share a single payout.
 pub struct RangePayout {
     /// The start of the range
@@ -1193,7 +1196,7 @@ mod tests {
             .script_pubkey()
     }
 
-    fn get_party_params(
+    pub(crate) fn get_party_params(
         input_amount: u64,
         collateral: u64,
         serial_id: Option<u64>,

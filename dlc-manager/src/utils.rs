@@ -2,7 +2,7 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
-use dlc::{PartyParams, TxInputInfo};
+use dlc::{DlcTransactions, PartyParams, Payout, TxInputInfo};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,
@@ -183,6 +183,28 @@ pub(crate) fn get_latest_maturity_date(
         .ok_or_else(|| {
             Error::InvalidParameters("Could not find maximum event maturity.".to_string())
         })
+}
+
+pub(crate) fn create_dlc_transactions_from_payouts(
+    offer_params: &PartyParams,
+    accept_params: &PartyParams,
+    payouts: &[Payout],
+    refund_locktime: u32,
+    fee_rate_per_vb: u64,
+    fund_locktime: u32,
+    cet_locktime: u32,
+    fund_output_serial_id: u64,
+) -> Result<DlcTransactions, Error> {
+    Ok(dlc::create_dlc_transactions(
+        offer_params,
+        accept_params,
+        payouts,
+        refund_locktime,
+        fee_rate_per_vb,
+        fund_locktime,
+        cet_locktime,
+        fund_output_serial_id,
+    )?)
 }
 
 #[cfg(test)]
