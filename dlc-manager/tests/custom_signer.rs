@@ -429,4 +429,19 @@ impl NodeSigner for CustomKeysManager {
     ) -> Result<secp256k1_zkp::ecdsa::Signature, ()> {
         self.keys_manager.sign_gossip_message(msg)
     }
+
+    fn sign_bolt12_invoice_request(
+        &self,
+        invoice_request: &lightning::offers::invoice_request::UnsignedInvoiceRequest,
+    ) -> Result<secp256k1_zkp::schnorr::Signature, ()> {
+        self.keys_manager
+            .sign_bolt12_invoice_request(invoice_request)
+    }
+
+    fn sign_bolt12_invoice(
+        &self,
+        invoice: &lightning::offers::invoice::UnsignedBolt12Invoice,
+    ) -> Result<secp256k1_zkp::schnorr::Signature, ()> {
+        self.keys_manager.sign_bolt12_invoice(invoice)
+    }
 }

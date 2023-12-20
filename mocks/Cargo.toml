@@ -9,6 +9,6 @@ bitcoin = "0.29"
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {path = "../dlc-messages"}
-lightning = {version = "0.0.116"}
+lightning = {version = "0.0.117"}
 secp256k1-zkp = {version = "0.7.0", features = ["bitcoin_hashes", "rand", "rand-std", "global-context"]}
 simple-wallet = {path = "../simple-wallet"}

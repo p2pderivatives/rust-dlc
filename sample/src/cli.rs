@@ -5,6 +5,7 @@ use crate::DlcMessageHandler;
 use crate::PeerManager;
 use bitcoin::network::constants::Network;
 use bitcoin::secp256k1::PublicKey;
+use dlc::DlcChannelId;
 use dlc_manager::channel::signed_channel::SignedChannelState;
 use dlc_manager::channel::signed_channel::SignedChannelStateType;
 use dlc_manager::contract::contract_input::ContractInput;
@@ -14,7 +15,7 @@ use dlc_messages::ChannelMessage;
 use dlc_messages::Message as DlcMessage;
 use dlc_messages::OnChainMessage;
 use hex_utils::{hex_str, to_slice};
-use lightning::ln::msgs::NetAddress;
+use lightning::ln::msgs::SocketAddress;
 use serde::Deserialize;
 use serde_json::Value;
 use std::convert::TryInto;
@@ -46,7 +47,7 @@ pub struct OracleConfig {
 #[derive(Debug)]
 pub struct NetworkConfig {
     pub peer_listening_port: u16,
-    pub announced_listen_addr: Option<NetAddress>,
+    pub announced_listen_addr: Option<SocketAddress>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,11 +81,11 @@ where
             .as_str()
             .expect("Error parsing announcedListeAddr");
         match IpAddr::from_str(buf) {
-            Ok(IpAddr::V4(a)) => Some(NetAddress::IPv4 {
+            Ok(IpAddr::V4(a)) => Some(SocketAddress::TcpIpV4 {
                 addr: a.octets(),
                 port: peer_listening_port,
             }),
-            Ok(IpAddr::V6(a)) => Some(NetAddress::IPv6 {
+            Ok(IpAddr::V6(a)) => Some(SocketAddress::TcpIpV6 {
                 addr: a.octets(),
                 port: peer_listening_port,
             }),
@@ -316,7 +317,7 @@ pub(crate) async fn poll_for_user_input(
                         .iter()
                         .filter(|x| !x.is_offer_party)
                     {
-                        let channel_id = hex_str(&offer.temporary_channel_id);
+                        let channel_id = hex_str(&offer.temporary_channel_id.inner());
                         let channel_offer_json_path =
                             format!("{}/{}.json", offers_path, channel_id);
                         if fs::metadata(&channel_offer_json_path).is_err() {
@@ -333,6 +334,7 @@ pub(crate) async fn poll_for_user_input(
                 }
                 a @ "acceptchannel" => {
                     let channel_id = read_id_or_continue!(words, a, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
 
                     let (msg, _, _, node_id) = dlc_manager
                         .lock()
@@ -345,6 +347,8 @@ pub(crate) async fn poll_for_user_input(
                 }
                 s @ "offersettlechannel" => {
                     let channel_id = read_id_or_continue!(words, s, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
+
                     let counter_payout: u64 = match words.next().map(|w| w.parse().ok()) {
                         Some(Some(p)) => p,
                         _ => {
@@ -366,6 +370,8 @@ pub(crate) async fn poll_for_user_input(
                 }
                 l @ "acceptsettlechanneloffer" => {
                     let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
+
                     let (msg, node_id) = dlc_manager
                         .lock()
                         .unwrap()
@@ -379,6 +385,8 @@ pub(crate) async fn poll_for_user_input(
                 }
                 l @ "rejectsettlechanneloffer" => {
                     let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
+
                     let (msg, node_id) = dlc_manager
                         .lock()
                         .unwrap()
@@ -396,7 +404,7 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .iter()
                     {
-                        let channel_id = hex_str(&channel.channel_id);
+                        let channel_id = hex_str(&channel.channel_id.inner());
                         let own_payout = match channel.state {
                             SignedChannelState::SettledReceived { own_payout, .. } => own_payout,
                             _ => continue,
@@ -409,6 +417,8 @@ pub(crate) async fn poll_for_user_input(
                 }
                 o @ "offerchannelrenew" => {
                     let channel_id = read_id_or_continue!(words, o, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
+
                     let (counter_payout, contract_path) =
                         match (words.next().map(|x| x.parse()), words.next()) {
                             (Some(Ok(payout)), Some(s)) => (payout, s),
@@ -442,7 +452,7 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .iter()
                     {
-                        let channel_id = hex_str(&channel.channel_id);
+                        let channel_id = hex_str(&channel.channel_id.inner());
                         let own_payout = match channel.state {
                             SignedChannelState::RenewOffered {
                                 counter_payout,
@@ -466,6 +476,8 @@ pub(crate) async fn poll_for_user_input(
                 }
                 l @ "acceptrenewchannel" => {
                     let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
+
                     let (msg, node_id) = dlc_manager
                         .lock()
                         .unwrap()
@@ -479,6 +491,8 @@ pub(crate) async fn poll_for_user_input(
                 }
                 l @ "rejectrenewchanneloffer" => {
                     let channel_id = read_id_or_continue!(words, l, "channel id");
+                    let channel_id = DlcChannelId::from_bytes(channel_id);
+
                     let (msg, node_id) = dlc_manager
                         .lock()
                         .unwrap()
@@ -496,7 +510,7 @@ pub(crate) async fn poll_for_user_input(
                         .unwrap()
                         .iter()
                     {
-                        let channel_id = hex_str(&channel.channel_id);
+                        let channel_id = hex_str(&channel.channel_id.inner());
                         println!(
                             "Signed channel {:?} with {}",
                             channel_id, channel.counter_party

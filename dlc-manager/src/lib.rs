@@ -47,6 +47,7 @@ use channel::signed_channel::{SignedChannel, SignedChannelStateType};
 use channel::Channel;
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
+use dlc::{DlcChannelId, SubChannelId};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
@@ -59,9 +60,6 @@ use subchannel::SubChannel;
 
 /// Type alias for a contract id.
 pub type ContractId = [u8; 32];
-
-/// Type alias for a channel id.
-pub type ChannelId = [u8; 32];
 
 /// Time trait to provide current unix time. Mainly defined to facilitate testing.
 pub trait Time {
@@ -154,10 +152,10 @@ pub trait Storage {
     /// Update the state of the channel and optionally its associated contract
     /// atomically.
     fn upsert_channel(&self, channel: Channel, contract: Option<Contract>) -> Result<(), Error>;
-    /// Delete the channel with given [`ChannelId`] if any.
-    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), Error>;
-    /// Returns the channel with given [`ChannelId`] if any.
-    fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, Error>;
+    /// Delete the channel with given [`DlcChannelId`] if any.
+    fn delete_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error>;
+    /// Returns the channel with given [`DlcChannelId`] if any.
+    fn get_channel(&self, channel_id: &DlcChannelId) -> Result<Option<Channel>, Error>;
     /// Returns the set of [`SignedChannel`] in the store. Returns only the one
     /// with matching `channel_state` if set.
     fn get_signed_channels(
@@ -172,8 +170,8 @@ pub trait Storage {
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
     /// Creates or updates a [`SubChannel`].
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error>;
-    /// Returns the [`SubChannel`] with given `channel_id` if it exists.
-    fn get_sub_channel(&self, channel_id: ChannelId) -> Result<Option<SubChannel>, Error>;
+    /// Returns the [`SubChannel`] with given [`ChannelId`] if it exists.
+    fn get_sub_channel(&self, channel_id: SubChannelId) -> Result<Option<SubChannel>, Error>;
     /// Return all the [`SubChannel`] within the store.
     fn get_sub_channels(&self) -> Result<Vec<SubChannel>, Error>;
     /// Returns all the [`SubChannel`] in the `Offered` state.

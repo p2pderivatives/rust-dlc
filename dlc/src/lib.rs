@@ -14,6 +14,7 @@
 
 extern crate bitcoin;
 extern crate core;
+extern crate lightning;
 extern crate miniscript;
 extern crate secp256k1_sys;
 extern crate secp256k1_zkp;
@@ -38,9 +39,16 @@ use secp256k1_zkp::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+mod ids;
+
 pub mod channel;
 pub mod secp_utils;
 pub mod util;
+
+#[cfg(feature = "serde")]
+pub mod serde_utils;
+
+pub use ids::{DlcChannelId, SubChannelId};
 
 /// Minimum value that can be included in a transaction output. Under this value,
 /// outputs are discarded

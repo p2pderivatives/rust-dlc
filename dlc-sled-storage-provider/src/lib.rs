@@ -16,6 +16,7 @@ extern crate sled;
 
 #[cfg(feature = "wallet")]
 use bitcoin::{Address, Txid};
+use dlc::{DlcChannelId, SubChannelId};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::accepted_channel::AcceptedChannel;
 use dlc_manager::channel::offered_channel::OfferedChannel;
@@ -352,12 +353,12 @@ impl Storage for SledStorageProvider {
                 |(channel_db, contract_db)| -> ConflictableTransactionResult<(), UnabortableTransactionError> {
                     match &channel {
                         a @ Channel::Accepted(_) | a @ Channel::Signed(_) => {
-                            channel_db.remove(&a.get_temporary_id())?;
+                            channel_db.remove(&a.get_temporary_id().inner())?;
                         }
                         _ => {}
                     };
 
-                    channel_db.insert(&channel.get_id(), serialized.clone())?;
+                    channel_db.insert(&channel.get_id().inner(), serialized.clone())?;
 
                     if let Some(c) = contract.as_ref() {
                         insert_contract(
@@ -377,17 +378,17 @@ impl Storage for SledStorageProvider {
         Ok(())
     }
 
-    fn delete_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<(), Error> {
+    fn delete_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
         self.channel_tree()?
-            .remove(channel_id)
+            .remove(channel_id.inner())
             .map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<Option<Channel>, Error> {
+    fn get_channel(&self, channel_id: &DlcChannelId) -> Result<Option<Channel>, Error> {
         match self
             .channel_tree()?
-            .get(channel_id)
+            .get(channel_id.inner())
             .map_err(to_storage_error)?
         {
             Some(res) => Ok(Some(deserialize_channel(&res)?)),
@@ -446,20 +447,17 @@ impl Storage for SledStorageProvider {
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), Error> {
         let serialized = serialize_sub_channel(subchannel)?;
         self.sub_channel_tree()?
-            .insert(subchannel.channel_id, serialized)
+            .insert(subchannel.channel_id.inner(), serialized)
             .map_err(to_storage_error)?;
 
         self.sub_channel_tree()?.flush().map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_sub_channel(
-        &self,
-        channel_id: dlc_manager::ChannelId,
-    ) -> Result<Option<SubChannel>, Error> {
+    fn get_sub_channel(&self, channel_id: SubChannelId) -> Result<Option<SubChannel>, Error> {
         match self
             .sub_channel_tree()?
-            .get(channel_id)
+            .get(channel_id.inner())
             .map_err(to_storage_error)?
         {
             Some(res) => Ok(Some(deserialize_sub_channel(&res)?)),

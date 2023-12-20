@@ -9,7 +9,7 @@ version = "0.1.0"
 bitcoin = "0.29"
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.116"}
+lightning = {version = "0.0.117"}
 rust-bitcoin-coin-selection = { rev = "23a6bf85", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", features = ["rand"]}
 secp256k1-zkp = {version = "0.7.0"}
 

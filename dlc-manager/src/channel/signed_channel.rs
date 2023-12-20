@@ -3,11 +3,13 @@
 //! the possible states in which it can be as well as methods to work with it.
 
 use bitcoin::{Script, Transaction};
+use dlc::DlcChannelId;
 use dlc::PartyParams;
+use dlc::SubChannelId;
 use lightning::ln::chan_utils::CounterpartyCommitmentSecrets;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey};
 
-use crate::{ChannelId, ContractId};
+use crate::ContractId;
 
 use super::party_points::PartyBasePoints;
 
@@ -346,12 +348,12 @@ impl SignedChannelState {
 /// A channel that had a successful setup.
 #[derive(Clone)]
 pub struct SignedChannel {
-    /// The [`crate::ChannelId`] for the channel.
-    pub channel_id: ChannelId,
+    /// The [`DlcChannelId`] for the channel.
+    pub channel_id: DlcChannelId,
     /// The [`secp256k1_zkp::PublicKey`] of the counter party's node.
     pub counter_party: PublicKey,
-    /// The temporary [`crate::ChannelId`] for the channel.
-    pub temporary_channel_id: ChannelId,
+    /// The temporary [`DlcChannelId`] for the channel.
+    pub temporary_channel_id: DlcChannelId,
     /// The contract setup parameters for the local party.
     pub own_params: PartyParams,
     /// The base points used for channel updates and revocation by the local party.
@@ -385,7 +387,7 @@ pub struct SignedChannel {
     /// The current fee rate to be used to create transactions.
     pub fee_rate_per_vb: u64,
     /// Whether this channel is embedded within a Lightning Network channel.
-    pub sub_channel_id: Option<ChannelId>,
+    pub sub_channel_id: Option<SubChannelId>,
 }
 
 impl SignedChannel {

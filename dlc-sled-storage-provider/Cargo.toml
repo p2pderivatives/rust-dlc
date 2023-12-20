@@ -13,8 +13,9 @@ wallet = ["bitcoin", "secp256k1-zkp", "simple-wallet"]
 
 [dependencies]
 bitcoin = {version = "0.29", optional = true}
+dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.116"}
+lightning = {version = "0.0.117"}
 log = "0.4.14"
 secp256k1-zkp = {version = "0.7", optional = true}
 simple-wallet = {path = "../simple-wallet", optional = true}

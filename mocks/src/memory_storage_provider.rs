@@ -1,4 +1,5 @@
 use bitcoin::{Address, OutPoint, Txid};
+use dlc::{DlcChannelId, SubChannelId};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::{
     offered_channel::OfferedChannel,
@@ -11,7 +12,7 @@ use dlc_manager::contract::{
 use dlc_manager::sub_channel_manager::Action;
 use dlc_manager::subchannel::{SubChannel, SubChannelState};
 use dlc_manager::Storage;
-use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
+use dlc_manager::{error::Error as DaemonError, ContractId, Utxo};
 use secp256k1_zkp::{PublicKey, SecretKey};
 use simple_wallet::WalletStorage;
 use std::collections::HashMap;
@@ -19,11 +20,11 @@ use std::sync::{Mutex, RwLock};
 
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
-    channels: RwLock<HashMap<ChannelId, Channel>>,
-    sub_channels: RwLock<HashMap<ChannelId, SubChannel>>,
+    channels: RwLock<HashMap<[u8; 32], Channel>>,
+    sub_channels: RwLock<HashMap<[u8; 32], SubChannel>>,
     contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
-    channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
-    sub_channels_saved: Mutex<Option<HashMap<ChannelId, SubChannel>>>,
+    channels_saved: Mutex<Option<HashMap<[u8; 32], Channel>>>,
+    sub_channels_saved: Mutex<Option<HashMap<[u8; 32], SubChannel>>>,
     addresses: RwLock<HashMap<Address, SecretKey>>,
     utxos: RwLock<HashMap<OutPoint, Utxo>>,
     key_pairs: RwLock<HashMap<PublicKey, SecretKey>>,
@@ -207,11 +208,11 @@ impl Storage for MemoryStorage {
             let mut map = self.channels.write().expect("Could not get write lock");
             match &channel {
                 a @ Channel::Accepted(_) | a @ Channel::Signed(_) => {
-                    map.remove(&a.get_temporary_id());
+                    map.remove(&a.get_temporary_id().inner());
                 }
                 _ => {}
             };
-            map.insert(channel.get_id(), channel);
+            map.insert(channel.get_id().inner(), channel);
         }
         if let Some(c) = contract {
             self.update_contract(&c)?;
@@ -219,15 +220,15 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), DaemonError> {
+    fn delete_channel(&self, channel_id: &DlcChannelId) -> Result<(), DaemonError> {
         let mut map = self.channels.write().expect("Could not get write lock");
-        map.remove(channel_id);
+        map.remove(&channel_id.inner());
         Ok(())
     }
 
-    fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, DaemonError> {
+    fn get_channel(&self, channel_id: &DlcChannelId) -> Result<Option<Channel>, DaemonError> {
         let map = self.channels.read().expect("could not get read lock");
-        Ok(map.get(channel_id).cloned())
+        Ok(map.get(&channel_id.inner()).cloned())
     }
 
     fn get_signed_channels(
@@ -279,19 +280,16 @@ impl Storage for MemoryStorage {
 
     fn upsert_sub_channel(&self, subchannel: &SubChannel) -> Result<(), DaemonError> {
         let mut map = self.sub_channels.write().expect("Could not get write lock");
-        map.insert(subchannel.channel_id, subchannel.clone());
+        map.insert(subchannel.channel_id.inner(), subchannel.clone());
         Ok(())
     }
 
-    fn get_sub_channel(
-        &self,
-        channel_id: dlc_manager::ChannelId,
-    ) -> Result<Option<SubChannel>, DaemonError> {
+    fn get_sub_channel(&self, channel_id: SubChannelId) -> Result<Option<SubChannel>, DaemonError> {
         let res = self
             .sub_channels
             .read()
             .expect("could not get read lock")
-            .get(&channel_id)
+            .get(&channel_id.inner())
             .cloned();
         Ok(res)
     }
