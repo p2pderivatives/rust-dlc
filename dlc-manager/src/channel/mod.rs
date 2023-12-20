@@ -1,10 +1,11 @@
 //! # Module containing structures and methods for working with DLC channels.
 
 use bitcoin::{hashes::Hash, Transaction, Txid};
+use dlc::DlcChannelId;
 use dlc_messages::channel::{AcceptChannel, SignChannel};
 use secp256k1_zkp::PublicKey;
 
-use crate::{ChannelId, ContractId};
+use crate::ContractId;
 
 use self::{
     accepted_channel::AcceptedChannel, offered_channel::OfferedChannel,
@@ -95,8 +96,8 @@ impl Channel {
 pub struct FailedAccept {
     /// The [`secp256k1_zkp::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
-    /// The temporary [`crate::ChannelId`] of the channel.
-    pub temporary_channel_id: ChannelId,
+    /// The temporary [`DlcChannelId`] of the channel.
+    pub temporary_channel_id: DlcChannelId,
     /// An message describing the error encountered while validating the
     /// [`dlc_messages::channel::AcceptChannel`] message.
     pub error_message: String,
@@ -110,8 +111,8 @@ pub struct FailedAccept {
 pub struct FailedSign {
     /// The [`secp256k1_zkp::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
-    /// The [`crate::ChannelId`] of the channel.
-    pub channel_id: ChannelId,
+    /// The [`DlcChannelId`] of the channel.
+    pub channel_id: DlcChannelId,
     /// An message describing the error encountered while validating the
     /// [`dlc_messages::channel::SignChannel`] message.
     pub error_message: String,
@@ -124,10 +125,10 @@ pub struct FailedSign {
 pub struct ClosingChannel {
     /// The [`secp256k1_zkp::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
-    /// The temporary [`crate::ChannelId`] of the channel.
-    pub temporary_channel_id: ChannelId,
-    /// The [`crate::ChannelId`] for the channel.
-    pub channel_id: ChannelId,
+    /// The temporary [`DlcChannelId`] of the channel.
+    pub temporary_channel_id: DlcChannelId,
+    /// The [`DlcChannelId`] for the channel.
+    pub channel_id: DlcChannelId,
     /// The previous state the channel was before being closed, if that state was the `Signed` one,
     /// otherwise is `None`.
     pub rollback_state: Option<SignedChannel>,
@@ -145,10 +146,10 @@ pub struct ClosingChannel {
 pub struct ClosedChannel {
     /// The [`secp256k1_zkp::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
-    /// The temporary [`crate::ChannelId`] of the channel.
-    pub temporary_channel_id: ChannelId,
-    /// The [`crate::ChannelId`] for the channel.
-    pub channel_id: ChannelId,
+    /// The temporary [`DlcChannelId`] of the channel.
+    pub temporary_channel_id: DlcChannelId,
+    /// The [`DlcChannelId`] for the channel.
+    pub channel_id: DlcChannelId,
 }
 
 #[derive(Clone)]
@@ -157,17 +158,17 @@ pub struct ClosedChannel {
 pub struct ClosedPunishedChannel {
     /// The [`secp256k1_zkp::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
-    /// The temporary [`crate::ChannelId`] of the channel.
-    pub temporary_channel_id: ChannelId,
-    /// The [`crate::ChannelId`] for the channel.
-    pub channel_id: ChannelId,
+    /// The temporary [`DlcChannelId`] of the channel.
+    pub temporary_channel_id: DlcChannelId,
+    /// The [`DlcChannelId`] for the channel.
+    pub channel_id: DlcChannelId,
     /// The transaction id of the punishment transaction that was broadcast.
     pub punish_txid: Txid,
 }
 
 impl Channel {
-    /// Returns the temporary [`crate::ChannelId`] for the channel.
-    pub fn get_temporary_id(&self) -> ChannelId {
+    /// Returns the temporary [`DlcChannelId`] for the channel.
+    pub fn get_temporary_id(&self) -> DlcChannelId {
         match self {
             Channel::Offered(o) => o.temporary_channel_id,
             Channel::Accepted(a) => a.temporary_channel_id,
@@ -181,8 +182,8 @@ impl Channel {
         }
     }
 
-    /// Returns the [`crate::ChannelId`] for the channel.
-    pub fn get_id(&self) -> ChannelId {
+    /// Returns the [`DlcChannelId`] for the channel.
+    pub fn get_id(&self) -> DlcChannelId {
         match self {
             Channel::Offered(o) => o.temporary_channel_id,
             Channel::Accepted(a) => a.channel_id,
@@ -212,11 +213,11 @@ impl Channel {
 
 /// Generate a temporary contract id for a DLC based on the channel id and the update index of the DLC channel.
 pub fn generate_temporary_contract_id(
-    channel_id: ChannelId,
+    channel_id: DlcChannelId,
     channel_update_idx: u64,
 ) -> ContractId {
     let mut data = Vec::with_capacity(65);
-    data.extend_from_slice(&channel_id);
+    data.extend_from_slice(&channel_id.inner());
     data.extend_from_slice(&channel_update_idx.to_be_bytes());
     bitcoin::hashes::sha256::Hash::hash(&data).into_inner()
 }

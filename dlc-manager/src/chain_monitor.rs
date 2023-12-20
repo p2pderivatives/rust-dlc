@@ -11,8 +11,6 @@ use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 
-use crate::ChannelId;
-
 /// A `ChainMonitor` keeps a list of transaction ids to watch for in the blockchain,
 /// and some associated information used to apply an action when the id is seen.
 #[derive(Debug, PartialEq, Eq)]
@@ -26,7 +24,8 @@ impl_dlc_writeable!(ChainMonitor, { (watched_tx, { cb_writeable, write_hash_map,
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ChannelInfo {
-    pub channel_id: ChannelId,
+    /// The identifier for _either_ a Lightning channel or a DLC channel.
+    pub channel_id: [u8; 32],
     pub tx_type: TxType,
 }
 
@@ -111,7 +110,7 @@ impl ChainMonitor {
             .insert(outpoint, WatchState::new(channel_info));
     }
 
-    pub(crate) fn cleanup_channel(&mut self, channel_id: ChannelId) {
+    pub(crate) fn cleanup_channel(&mut self, channel_id: [u8; 32]) {
         log::debug!("Cleaning up data related to channel {channel_id:?}");
 
         self.watched_tx
@@ -220,7 +219,7 @@ impl WatchState {
         }
     }
 
-    fn channel_id(&self) -> ChannelId {
+    fn channel_id(&self) -> [u8; 32] {
         self.channel_info().channel_id
     }
 }

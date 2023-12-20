@@ -22,13 +22,14 @@ use crate::{
     },
     error::Error,
     subchannel::{ClosingSubChannel, SubChannel},
-    Blockchain, ChannelId, ContractId, Signer, Time, Wallet,
+    Blockchain, ContractId, Signer, Time, Wallet,
 };
 use bitcoin::{OutPoint, Script, Sequence, Transaction};
 use dlc::{
     channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions},
     PartyParams,
 };
+use dlc::{DlcChannelId, SubChannelId};
 use dlc_messages::{
     channel::{
         AcceptChannel, CollaborativeCloseOffer, Reject, RenewAccept, RenewConfirm, RenewFinalize,
@@ -81,7 +82,7 @@ pub(crate) struct SubChannelSignVerifyInfo {
     pub funding_info: FundingInfo,
     pub own_adaptor_sk: SecretKey,
     pub counter_adaptor_pk: PublicKey,
-    pub sub_channel_id: ChannelId,
+    pub sub_channel_id: SubChannelId,
 }
 
 pub(crate) struct SubChannelSignInfo {
@@ -92,7 +93,7 @@ pub(crate) struct SubChannelSignInfo {
 pub(crate) struct SubChannelVerifyInfo {
     pub funding_info: FundingInfo,
     pub counter_adaptor_pk: PublicKey,
-    pub sub_channel_id: ChannelId,
+    pub sub_channel_id: SubChannelId,
 }
 
 /// Creates an [`OfferedChannel`] and an associated [`OfferedContract`] using
@@ -107,7 +108,7 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     wallet: &W,
     blockchain: &B,
     time: &T,
-    temporary_channel_id: ContractId,
+    temporary_channel_id: DlcChannelId,
     is_sub_channel: bool,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where
@@ -321,8 +322,9 @@ where
     let channel_id = crate::utils::compute_id(
         dlc_transactions.fund.txid(),
         funding_vout as u16,
-        &offered_channel.temporary_channel_id,
+        &offered_channel.temporary_channel_id.inner(),
     );
+    let channel_id = DlcChannelId::from_bytes(channel_id);
 
     let buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
@@ -534,8 +536,9 @@ where
     let channel_id = crate::utils::compute_id(
         dlc_transactions.fund.txid(),
         fund_output_index as u16,
-        &offered_channel.temporary_channel_id,
+        &offered_channel.temporary_channel_id.inner(),
     );
+    let channel_id = DlcChannelId::from_bytes(channel_id);
 
     let accept_cet_adaptor_signatures: Vec<_> = (&accept_channel.cet_adaptor_signatures).into();
 
@@ -581,7 +584,7 @@ where
     chain_monitor.lock().unwrap().add_tx(
         buffer_transaction.txid(),
         ChannelInfo {
-            channel_id,
+            channel_id: channel_id.inner(),
             tx_type: TxType::BufferTx,
         },
     );
@@ -740,7 +743,7 @@ where
     chain_monitor.lock().unwrap().add_tx(
         accepted_channel.buffer_transaction.txid(),
         ChannelInfo {
-            channel_id: accepted_channel.channel_id,
+            channel_id: accepted_channel.channel_id.inner(),
             tx_type: TxType::BufferTx,
         },
     );
@@ -982,7 +985,7 @@ where
     chain_monitor.lock().unwrap().add_tx(
         settle_tx.txid(),
         ChannelInfo {
-            channel_id: channel.channel_id,
+            channel_id: channel.channel_id.inner(),
             tx_type: TxType::SettleTx,
         },
     );
@@ -1115,7 +1118,7 @@ where
     chain_monitor.lock().unwrap().add_tx(
         settle_tx.txid(),
         ChannelInfo {
-            channel_id: channel.channel_id,
+            channel_id: channel.channel_id.inner(),
             tx_type: TxType::SettleTx,
         },
     );
@@ -1960,7 +1963,7 @@ where
     chain_monitor.lock().unwrap().add_tx(
         buffer_transaction.txid(),
         ChannelInfo {
-            channel_id: signed_channel.channel_id,
+            channel_id: signed_channel.channel_id.inner(),
             tx_type: TxType::BufferTx,
         },
     );

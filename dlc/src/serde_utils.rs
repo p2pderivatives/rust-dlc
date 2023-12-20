@@ -1,5 +1,8 @@
 //! Utility functions to serialize hexadecimal values as strings in json.
 
+#[cfg(feature = "serde")]
+extern crate serde;
+
 use std::fmt::Write;
 
 /// Serialize an hexadecimal value.

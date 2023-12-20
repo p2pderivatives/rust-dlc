@@ -33,9 +33,6 @@ pub mod oracle_msgs;
 pub mod segmentation;
 pub mod sub_channel;
 
-#[cfg(any(test, feature = "serde"))]
-pub mod serde_utils;
-
 use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
@@ -118,8 +115,8 @@ pub struct FundingInput {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "crate::serde_utils::serialize_hex",
-            deserialize_with = "crate::serde_utils::deserialize_hex_string"
+            serialize_with = "dlc::serde_utils::serialize_hex",
+            deserialize_with = "dlc::serde_utils::deserialize_hex_string"
         )
     )]
     /// The previous transaction used by the associated input in serialized format.
@@ -250,8 +247,8 @@ pub struct WitnessElement {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "crate::serde_utils::serialize_hex",
-            deserialize_with = "crate::serde_utils::deserialize_hex_string"
+            serialize_with = "dlc::serde_utils::serialize_hex",
+            deserialize_with = "dlc::serde_utils::deserialize_hex_string"
         )
     )]
     /// The serialized witness data.
@@ -321,8 +318,8 @@ pub struct OfferDlc {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "crate::serde_utils::serialize_hex",
-            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+            serialize_with = "dlc::serde_utils::serialize_hex",
+            deserialize_with = "dlc::serde_utils::deserialize_hex_array"
         )
     )]
     /// The identifier of the chain on which the contract will be settled.
@@ -330,8 +327,8 @@ pub struct OfferDlc {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "crate::serde_utils::serialize_hex",
-            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+            serialize_with = "dlc::serde_utils::serialize_hex",
+            deserialize_with = "dlc::serde_utils::deserialize_hex_array"
         )
     )]
     /// Temporary contract id to identify the contract.
@@ -438,8 +435,8 @@ pub struct AcceptDlc {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "crate::serde_utils::serialize_hex",
-            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+            serialize_with = "dlc::serde_utils::serialize_hex",
+            deserialize_with = "dlc::serde_utils::deserialize_hex_array"
         )
     )]
     /// The temporary contract id for the contract.
@@ -495,8 +492,8 @@ pub struct SignDlc {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "crate::serde_utils::serialize_hex",
-            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+            serialize_with = "dlc::serde_utils::serialize_hex",
+            deserialize_with = "dlc::serde_utils::deserialize_hex_array"
         )
     )]
     /// The id of the contract referred to by this message.

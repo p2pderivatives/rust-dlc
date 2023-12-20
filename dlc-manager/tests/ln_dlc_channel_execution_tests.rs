@@ -22,9 +22,10 @@ use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::{Client, RpcApi};
 use console_logger::ConsoleLogger;
 use custom_signer::{CustomKeysManager, CustomSigner};
+use dlc::{DlcChannelId, SubChannelId};
 use dlc_manager::{
     channel::Channel, contract::Contract, manager::Manager, sub_channel_manager::SubChannelManager,
-    subchannel::SubChannelState, Blockchain, ChannelId, Oracle, Signer, Storage, Utxo, Wallet,
+    subchannel::SubChannelState, Blockchain, Oracle, Signer, Storage, Utxo, Wallet,
 };
 use dlc_messages::{
     sub_channel::{SubChannelAccept, SubChannelOffer},
@@ -44,12 +45,12 @@ use lightning::{
     routing::{
         gossip::{NetworkGraph, NodeId},
         router::{DefaultRouter, Path, RouteParameters},
-        scoring::{ChannelUsage, Score},
+        scoring::{ChannelUsage, ScoreLookUp, ScoreUpdate},
     },
     sign::{EntropySource, KeysManager},
     util::{config::UserConfig, ser::Writeable},
 };
-use lightning_persister::FilesystemPersister;
+use lightning_persister::fs_store::FilesystemStore;
 use lightning_transaction_sync::EsploraSyncClient;
 use log::error;
 use mocks::{
@@ -71,7 +72,7 @@ type ChainMonitor = lightning::chain::chainmonitor::ChainMonitor<
     Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     Arc<ConsoleLogger>,
-    Arc<FilesystemPersister>,
+    Arc<FilesystemStore>,
 >;
 
 pub(crate) type ChannelManager = lightning::ln::channelmanager::ChannelManager<
@@ -125,6 +126,7 @@ type DlcSubChannelManager = SubChannelManager<
     CustomSigner,
     Arc<CustomKeysManager>,
     CustomSigner,
+    Arc<CustomKeysManager>,
 >;
 
 struct LnDlcParty {
@@ -139,7 +141,7 @@ struct LnDlcParty {
     blockchain: Arc<ElectrsBlockchainProvider>,
     mock_blockchain: Arc<MockBlockchain<Arc<ElectrsBlockchainProvider>>>,
     wallet: Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
-    persister: Arc<FilesystemPersister>,
+    persister: Arc<FilesystemStore>,
     esplora_sync: Arc<EsploraSyncClient<Arc<ConsoleLogger>>>,
 }
 
@@ -182,7 +184,7 @@ struct LnDlcTestParams {
     electrs: Arc<ElectrsBlockchainProvider>,
     sink_rpc: Client,
     funding_txo: lightning::chain::transaction::OutPoint,
-    channel_id: ChannelId,
+    channel_id: SubChannelId,
     test_params: TestParams,
 }
 
@@ -247,7 +249,7 @@ impl lightning::ln::peer_handler::SocketDescriptor for MockSocketDescriptor {
 }
 
 #[derive(Clone)]
-/// [`Score`] implementation that uses a fixed penalty.
+/// [`ScoreLookUp`] implementation that uses a fixed penalty.
 pub struct TestScorer {
     penalty_msat: u64,
 }
@@ -259,26 +261,28 @@ impl TestScorer {
     }
 }
 
-impl Score for TestScorer {
+impl ScoreLookUp for TestScorer {
     type ScoreParams = ();
     fn channel_penalty_msat(
         &self,
-        _short_channel_id: u64,
-        _source: &NodeId,
-        _target: &NodeId,
-        _usage: ChannelUsage,
+        _: u64,
+        _: &NodeId,
+        _: &NodeId,
+        _: ChannelUsage,
         _score_params: &Self::ScoreParams,
     ) -> u64 {
         self.penalty_msat
     }
+}
 
-    fn payment_path_failed(&mut self, _actual_path: &Path, _actual_short_channel_id: u64) {}
+impl ScoreUpdate for TestScorer {
+    fn payment_path_failed(&mut self, _path: &Path, _short_channel_id: u64) {}
 
-    fn payment_path_successful(&mut self, _actual_path: &Path) {}
+    fn payment_path_successful(&mut self, _path: &Path) {}
 
-    fn probe_failed(&mut self, _actual_path: &Path, _: u64) {}
+    fn probe_failed(&mut self, _path: &Path, _short_channel_id: u64) {}
 
-    fn probe_successful(&mut self, _actual_path: &Path) {}
+    fn probe_successful(&mut self, _path: &Path) {}
 }
 
 impl EventHandler for LnDlcParty {
@@ -361,7 +365,7 @@ impl EventHandler for LnDlcParty {
                 };
                 self.channel_manager.claim_funds(payment_preimage.unwrap());
             }
-            Event::SpendableOutputs { outputs } => {
+            Event::SpendableOutputs { outputs, .. } => {
                 let destination_address = self.wallet.get_new_address().unwrap();
                 let output_descriptors = &outputs.iter().collect::<Vec<_>>();
                 let tx_feerate = self
@@ -415,7 +419,7 @@ fn create_ln_node(
     let logger = Arc::new(console_logger::ConsoleLogger { name });
 
     std::fs::create_dir_all(data_dir).unwrap();
-    let persister = Arc::new(FilesystemPersister::new(data_dir.to_string()));
+    let persister = Arc::new(FilesystemStore::new(data_dir.to_string().into()));
 
     let mock_blockchain = Arc::new(MockBlockchain::new(blockchain_provider.clone()));
 
@@ -829,7 +833,10 @@ fn ln_dlc_force_close_after_off_chain_close() {
     test_params
         .alice_node
         .channel_manager
-        .force_close_broadcasting_latest_txn(&test_params.channel_id, &test_params.bob_node_id)
+        .force_close_broadcasting_latest_txn(
+            &test_params.channel_id.into(),
+            &test_params.bob_node_id,
+        )
         .unwrap();
 
     test_params.generate_blocks(501);
@@ -2012,7 +2019,7 @@ fn test_init() -> LnDlcTestParams {
 
     let channel_details = alice_node.channel_manager.list_channels().remove(0);
     let funding_txo = channel_details.funding_txo.expect("to have a funding txo");
-    let channel_id = channel_details.channel_id;
+    let channel_id = channel_details.channel_id.into();
     let alice_node_id = alice_node.channel_manager.get_our_node_id();
     let bob_node_id = bob_node.channel_manager.get_our_node_id();
 
@@ -2142,6 +2149,7 @@ fn make_ln_payment(alice_node: &LnDlcParty, bob_node: &LnDlcParty, final_value_m
     let route_params = RouteParameters {
         payment_params,
         final_value_msat,
+        max_total_routing_fee_msat: None,
     };
 
     let route = lightning::routing::router::find_route(
@@ -2200,7 +2208,7 @@ fn get_commit_tx_from_node(
         .expect("to be able to get latest holder commitment transaction")
 }
 
-fn settle(test_params: &LnDlcTestParams, channel_id: &ChannelId) {
+fn settle(test_params: &LnDlcTestParams, channel_id: &DlcChannelId) {
     let (settle_offer, bob_key) = test_params
         .alice_node
         .dlc_manager
@@ -2249,7 +2257,7 @@ fn settle(test_params: &LnDlcTestParams, channel_id: &ChannelId) {
         .unwrap();
 }
 
-fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &ChannelId) {
+fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &DlcChannelId) {
     let (renew_offer, _) = test_params
         .alice_node
         .dlc_manager
@@ -2393,7 +2401,7 @@ fn cheat_with_revoked_tx(cheat_tx: &Transaction, test_params: &mut LnDlcTestPara
 fn generate_offer(
     test_params: &TestParams,
     offerer: &LnDlcParty,
-    channel_id: &ChannelId,
+    channel_id: &SubChannelId,
 ) -> SubChannelOffer {
     let oracle_announcements = test_params
         .oracles
@@ -2411,7 +2419,7 @@ fn generate_offer(
     let offer = offerer
         .sub_channel_manager
         .offer_sub_channel(
-            channel_id,
+            *channel_id,
             &test_params.contract_input,
             &[oracle_announcements],
         )
@@ -3559,7 +3567,10 @@ fn ldk_auto_close(test_params: &mut LnDlcTestParams, commit_tx: &Transaction) {
     test_params
         .bob_node
         .channel_manager
-        .force_close_broadcasting_latest_txn(&test_params.channel_id, &test_params.alice_node_id)
+        .force_close_broadcasting_latest_txn(
+            &test_params.channel_id.into(),
+            &test_params.alice_node_id,
+        )
         .unwrap();
     test_params.alice_node.process_events();
     test_params.bob_node.process_events();

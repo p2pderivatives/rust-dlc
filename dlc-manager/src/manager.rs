@@ -18,10 +18,11 @@ use crate::error::Error;
 use crate::sub_channel_manager::get_sub_channel_in_state;
 use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
-use crate::{ChannelId, ContractId, Signer};
+use crate::{ContractId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::Address;
 use bitcoin::Transaction;
+use dlc::DlcChannelId;
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize,
@@ -130,8 +131,8 @@ macro_rules! check_for_timed_out_channels {
                 if is_timed_out {
                     let sub_channel = if channel.is_sub_channel() {
                         log::info!(
-                            "Skipping force-closure of subchannel {}: not supported",
-                            bitcoin::hashes::hex::ToHex::to_hex(&channel.channel_id[..])
+                            "Skipping force-closure of subchannel {:?}: not supported",
+                            channel.channel_id
                         );
                         continue;
 
@@ -787,6 +788,9 @@ where
             .map(|x| self.get_oracle_announcements(&x.oracles))
             .collect::<Result<Vec<_>, Error>>()?;
 
+        let channel_id = crate::utils::get_new_temporary_id();
+        let channel_id = DlcChannelId::from_bytes(channel_id);
+
         let (offered_channel, offered_contract) = crate::channel_updater::offer_channel(
             &self.secp,
             contract_input,
@@ -797,7 +801,7 @@ where
             &self.wallet,
             &self.blockchain,
             &self.time,
-            crate::utils::get_new_temporary_id(),
+            channel_id,
             false,
         )?;
 
@@ -812,12 +816,12 @@ where
     }
 
     /// Accept a channel that was offered. Returns the [`dlc_messages::channel::AcceptChannel`]
-    /// message to be sent, the updated [`crate::ChannelId`] and [`crate::ContractId`],
+    /// message to be sent, the updated [`DlcChannelId`] and [`crate::ContractId`],
     /// as well as the public key of the offering node.
     pub fn accept_channel(
         &self,
-        channel_id: &ChannelId,
-    ) -> Result<(AcceptChannel, ChannelId, ContractId, PublicKey), Error> {
+        channel_id: &DlcChannelId,
+    ) -> Result<(AcceptChannel, DlcChannelId, ContractId, PublicKey), Error> {
         let offered_channel =
             get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
 
@@ -860,8 +864,8 @@ where
         Ok((accept_channel, channel_id, contract_id, counter_party))
     }
 
-    /// Force close the channel with given [`crate::ChannelId`].
-    pub fn force_close_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    /// Force close the channel with given [`DlcChannelId`].
+    pub fn force_close_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
         self.force_close_channel_internal(channel, None, true)
@@ -872,7 +876,7 @@ where
     /// message to be sent and the public key of the counter party node.
     pub fn settle_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         counter_payout: u64,
     ) -> Result<(SettleOffer, PublicKey), Error> {
         let mut signed_channel =
@@ -899,7 +903,7 @@ where
     /// sent to the node with the returned [`PublicKey`] id.
     pub fn accept_settle_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
     ) -> Result<(SettleAccept, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -944,7 +948,7 @@ where
     /// channel.
     pub fn renew_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         counter_payout: u64,
         contract_input: &ContractInput,
     ) -> Result<(RenewOffer, PublicKey), Error> {
@@ -985,7 +989,7 @@ where
     /// [`PublicKey`] as node id.
     pub fn accept_renew_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
     ) -> Result<(RenewAccept, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1023,7 +1027,10 @@ where
     /// Reject an offer to renew the contract in the channel. Returns the
     /// [`Reject`] message to be sent to the peer with the returned
     /// [`PublicKey`] node id.
-    pub fn reject_renew_offer(&self, channel_id: &ChannelId) -> Result<(Reject, PublicKey), Error> {
+    pub fn reject_renew_offer(
+        &self,
+        channel_id: &DlcChannelId,
+    ) -> Result<(Reject, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
         let offered_contract_id = signed_channel.get_contract_id().ok_or_else(|| {
@@ -1056,7 +1063,7 @@ where
     /// proposed settle offer.
     pub fn reject_settle_offer(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
     ) -> Result<(Reject, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1077,7 +1084,7 @@ where
     /// not broadcast the close transaction.
     pub fn offer_collaborative_close(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         counter_payout: u64,
     ) -> Result<CollaborativeCloseOffer, Error> {
         let mut signed_channel =
@@ -1094,7 +1101,7 @@ where
         self.chain_monitor.lock().unwrap().add_tx(
             close_tx.txid(),
             ChannelInfo {
-                channel_id: *channel_id,
+                channel_id: channel_id.inner(),
                 tx_type: TxType::CollaborativeClose,
             },
         );
@@ -1109,7 +1116,7 @@ where
 
     /// Accept an offer to collaboratively close the channel. The close transaction
     /// will be broadcast and the state of the channel updated.
-    pub fn accept_collaborative_close(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    pub fn accept_collaborative_close(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
         let signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
@@ -1202,7 +1209,7 @@ where
             self.chain_monitor
                 .lock()
                 .unwrap()
-                .cleanup_channel(signed_channel.channel_id);
+                .cleanup_channel(signed_channel.channel_id.inner());
 
             self.store
                 .upsert_channel(closed_channel, Some(closed_contract))?;
@@ -1487,7 +1494,7 @@ where
         self.chain_monitor.lock().unwrap().add_tx(
             prev_buffer_txid,
             ChannelInfo {
-                channel_id: signed_channel.channel_id,
+                channel_id: signed_channel.channel_id.inner(),
                 tx_type: TxType::Revoked {
                     update_idx: signed_channel.update_idx + 1,
                     own_adaptor_signature: own_buffer_adaptor_signature,
@@ -1542,7 +1549,7 @@ where
         self.chain_monitor.lock().unwrap().add_tx(
             buffer_txid,
             ChannelInfo {
-                channel_id: signed_channel.channel_id,
+                channel_id: signed_channel.channel_id.inner(),
                 tx_type: TxType::Revoked {
                     update_idx: signed_channel.update_idx + 1,
                     own_adaptor_signature: own_buffer_adaptor_signature,
@@ -1756,7 +1763,7 @@ where
         self.chain_monitor.lock().unwrap().add_tx(
             prev_tx_id,
             ChannelInfo {
-                channel_id: signed_channel.channel_id,
+                channel_id: signed_channel.channel_id.inner(),
                 tx_type,
             },
         );
@@ -1862,7 +1869,7 @@ where
         self.chain_monitor.lock().unwrap().add_tx(
             prev_tx_id,
             ChannelInfo {
-                channel_id: signed_channel.channel_id,
+                channel_id: signed_channel.channel_id.inner(),
                 tx_type,
             },
         );
@@ -1873,7 +1880,7 @@ where
         self.chain_monitor.lock().unwrap().add_tx(
             buffer_tx.txid(),
             ChannelInfo {
-                channel_id: signed_channel.channel_id,
+                channel_id: signed_channel.channel_id.inner(),
                 tx_type: TxType::BufferTx,
             },
         );
@@ -1976,7 +1983,7 @@ where
         for (tx, channel_info) in watched_txs {
             let mut signed_channel = match get_channel_in_state!(
                 self,
-                &channel_info.channel_id,
+                &DlcChannelId::from_bytes(channel_info.channel_id),
                 Signed,
                 None as Option<PublicKey>
             ) {
@@ -2167,7 +2174,7 @@ where
                     self.chain_monitor
                         .lock()
                         .unwrap()
-                        .cleanup_channel(signed_channel.channel_id);
+                        .cleanup_channel(signed_channel.channel_id.inner());
                     self.store.upsert_channel(closed_channel, None)?;
                     true
                 }
@@ -2197,7 +2204,7 @@ where
                     self.chain_monitor
                         .lock()
                         .unwrap()
-                        .cleanup_channel(signed_channel.channel_id);
+                        .cleanup_channel(signed_channel.channel_id.inner());
                     self.store.upsert_channel(closed_channel, None)?;
                     true
                 }
@@ -2210,7 +2217,7 @@ where
                     self.chain_monitor
                         .lock()
                         .unwrap()
-                        .cleanup_channel(signed_channel.channel_id);
+                        .cleanup_channel(signed_channel.channel_id.inner());
                     self.store.upsert_channel(closed_channel, None)?;
                     true
                 }
@@ -2247,7 +2254,7 @@ where
                     self.chain_monitor
                         .lock()
                         .unwrap()
-                        .cleanup_channel(signed_channel.channel_id);
+                        .cleanup_channel(signed_channel.channel_id.inner());
 
                     let pre_closed_contract = contract_id
                         .map(|contract_id| {
@@ -2297,7 +2304,7 @@ where
 
     pub(crate) fn force_close_sub_channel(
         &self,
-        channel_id: &ChannelId,
+        channel_id: &DlcChannelId,
         sub_channel: (SubChannel, &ClosingSubChannel),
     ) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -2437,7 +2444,7 @@ where
         self.chain_monitor
             .lock()
             .unwrap()
-            .cleanup_channel(signed_channel.channel_id);
+            .cleanup_channel(signed_channel.channel_id.inner());
 
         self.store.upsert_channel(closed_channel, None)?;
 
@@ -2448,7 +2455,7 @@ where
     /// collaboratively closed.
     pub(crate) fn get_closed_sub_dlc_channel(
         &self,
-        channel_id: ChannelId,
+        channel_id: DlcChannelId,
         own_balance: u64,
     ) -> Result<(Channel, Option<Contract>), Error> {
         let channel = get_channel_in_state!(self, &channel_id, Signed, None::<PublicKey>)?;

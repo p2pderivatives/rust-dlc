@@ -40,8 +40,8 @@ struct TestVectorPart<T> {
     #[cfg_attr(
         feature = "serde",
         serde(
-            serialize_with = "dlc_messages::serde_utils::serialize_hex",
-            deserialize_with = "dlc_messages::serde_utils::deserialize_hex_string"
+            serialize_with = "serialize_hex",
+            deserialize_with = "deserialize_hex_string"
         )
     )]
     serialized: Vec<u8>,
