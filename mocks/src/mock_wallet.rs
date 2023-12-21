@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{Address, PackedLockTime, Script, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
 use secp256k1_zkp::{rand::seq::SliceRandom, SecretKey};
@@ -45,13 +46,11 @@ impl MockWallet {
 }
 
 impl Signer for MockWallet {
-    fn sign_tx_input(
+    fn sign_psbt_input(
         &self,
-        _tx: &mut bitcoin::Transaction,
-        _input_index: usize,
-        _tx_out: &bitcoin::TxOut,
-        _redeem_script: Option<bitcoin::Script>,
-    ) -> Result<(), dlc_manager::error::Error> {
+        _psbt: &mut PartiallySignedTransaction,
+        _idx: usize,
+    ) -> Result<(), Error> {
         Ok(())
     }
 

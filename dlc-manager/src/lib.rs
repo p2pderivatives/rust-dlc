@@ -36,6 +36,7 @@ pub mod manager;
 pub mod payout_curve;
 mod utils;
 
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
@@ -78,12 +79,10 @@ impl Time for SystemTimeProvider {
 /// Provides signing related functionalities.
 pub trait Signer {
     /// Signs a transaction input
-    fn sign_tx_input(
+    fn sign_psbt_input(
         &self,
-        tx: &mut Transaction,
+        psbt: &mut PartiallySignedTransaction,
         input_index: usize,
-        tx_out: &TxOut,
-        redeem_script: Option<Script>,
     ) -> Result<(), Error>;
     /// Get the secret key associated with the provided public key.
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, Error>;

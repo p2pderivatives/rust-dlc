@@ -435,7 +435,7 @@ pub fn verify_signed_channel<S: Deref>(
     accepted_contract: &AcceptedContract,
     sign_channel: &SignChannel,
     signer: &S,
-) -> Result<(SignedChannel, SignedContract), Error>
+) -> Result<(SignedChannel, SignedContract, Transaction), Error>
 where
     S::Target: Signer,
 {
@@ -458,7 +458,7 @@ where
 
     let cet_adaptor_signatures: Vec<_> = (&sign_channel.cet_adaptor_signatures).into();
 
-    let (signed_contract, fund_tx) = verify_signed_contract_internal(
+    let (signed_contract, signed_fund_tx) = verify_signed_contract_internal(
         secp,
         accepted_contract,
         &sign_channel.refund_signature,
@@ -493,7 +493,11 @@ where
             is_offer: false,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
-        fund_tx,
+        fund_tx: signed_contract
+            .accepted_contract
+            .dlc_transactions
+            .fund
+            .clone(),
         fund_script_pubkey: accepted_contract
             .dlc_transactions
             .funding_script_pubkey
@@ -507,7 +511,7 @@ where
             .fee_rate_per_vb,
     };
 
-    Ok((signed_channel, signed_contract))
+    Ok((signed_channel, signed_contract, signed_fund_tx))
 }
 
 /// Creates a [`SettleOffer`] message from the given [`SignedChannel`] and parameters,
