@@ -158,6 +158,8 @@ pub trait Storage {
     fn delete_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error>;
     /// Returns the channel with given [`DlcChannelId`] if any.
     fn get_channel(&self, channel_id: &DlcChannelId) -> Result<Option<Channel>, Error>;
+    /// Returns all channels in the store.
+    fn get_channels(&self) -> Result<Vec<Channel>, Error>;
     /// Returns the set of [`SignedChannel`] in the store. Returns only the one
     /// with matching `channel_state` if set.
     fn get_signed_channels(

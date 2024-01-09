@@ -526,6 +526,10 @@ impl Storage for SledStorageProvider {
 
         Ok(res)
     }
+
+    fn get_channels(&self) -> Result<Vec<Channel>, Error> {
+        unimplemented!()
+    }
 }
 
 #[cfg(feature = "wallet")]

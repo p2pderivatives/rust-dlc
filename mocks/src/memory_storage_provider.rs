@@ -331,6 +331,10 @@ impl Storage for MemoryStorage {
             .expect("Could not get read lock")
             .clone())
     }
+
+    fn get_channels(&self) -> Result<Vec<Channel>, DaemonError> {
+        unimplemented!()
+    }
 }
 
 impl WalletStorage for MemoryStorage {
