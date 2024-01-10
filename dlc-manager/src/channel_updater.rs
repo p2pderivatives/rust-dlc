@@ -1408,11 +1408,11 @@ where
             counter_payout,
             ..
         } => {
-            if contract_input.offer_collateral != *own_payout
-                || contract_input.accept_collateral != *counter_payout
+            if own_payout + counter_payout
+                != contract_input.offer_collateral + contract_input.accept_collateral
             {
                 return Err(Error::InvalidParameters(
-                    "Contract collateral not equal to each party's balance in the channel"
+                    "Sum of collaterals in contract must equal total collateral in channel."
                         .to_string(),
                 ));
             }
