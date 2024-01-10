@@ -142,7 +142,7 @@ pub fn get_signed_cet<E: AsRef<[EcdsaAdaptorSignature]>>(
         anchors_outputs.as_deref(),
         anchors_serials_ids.as_deref(),
         &payouts,
-        0,
+        dlc_transactions.cets[0].lock_time.0,
     );
 
     let (range_info, sigs) =

@@ -188,7 +188,7 @@ fn validate_presigned_without_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             anchors_outputs.as_deref(),
             anchors_serials_ids.as_deref(),
             &payouts,
-            0,
+            cets[0].lock_time.0,
         );
 
         let (adaptor_info, _) = contract_info
@@ -297,7 +297,7 @@ fn validate_presigned_with_infos<E: AsRef<[EcdsaAdaptorSignature]>>(
             anchors_outputs.as_deref(),
             anchors_serials_ids.as_deref(),
             &payouts,
-            0,
+            dlc_transactions.cets[0].lock_time.0,
         );
         _ = contract_info
             .verify_adaptor_info(
