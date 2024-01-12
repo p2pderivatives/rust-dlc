@@ -99,7 +99,8 @@ impl_dlc_writeable!(OfferedContract, {
     (fee_rate_per_vb, writeable),
     (cet_locktime, writeable),
     (refund_locktime, writeable),
-    (counter_party, writeable)
+    (counter_party, writeable),
+    (keys_id, writeable)
 });
 impl_dlc_writeable_external!(RangeInfo, range_info, { (cet_index, usize), (adaptor_index, usize)});
 impl_dlc_writeable_enum!(AdaptorInfo,;; (0, Numerical, write_multi_oracle_trie, read_multi_oracle_trie), (1, NumericalWithDifference, write_multi_oracle_trie_with_diff, read_multi_oracle_trie_with_diff); (2, Enum));

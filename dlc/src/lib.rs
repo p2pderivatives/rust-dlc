@@ -222,7 +222,7 @@ impl From<miniscript::Error> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Secp256k1(_) => write!(f, "Secp256k1 error"),
+            Error::Secp256k1(ref e) => write!(f, "Secp256k1 error: {}", e),
             Error::InvalidArgument => write!(f, "Invalid argument"),
             Error::Sighash(_) => write!(f, "Error while computing sighash"),
             Error::Miniscript(_) => write!(f, "Error within miniscript"),

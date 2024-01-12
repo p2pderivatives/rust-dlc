@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Address, PackedLockTime, Script, Transaction, TxOut};
-use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
+use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
 use secp256k1_zkp::{rand::seq::SliceRandom, SecretKey};
 
 use crate::mock_blockchain::MockBlockchain;
@@ -45,19 +46,22 @@ impl MockWallet {
     }
 }
 
-impl Signer for MockWallet {
-    fn sign_psbt_input(
-        &self,
-        _psbt: &mut PartiallySignedTransaction,
-        _idx: usize,
-    ) -> Result<(), Error> {
-        Ok(())
+impl ContractSignerProvider for MockWallet {
+    type Signer = SimpleSigner;
+
+    fn derive_signer_key_id(&self, _: bool, temp_id: [u8; 32]) -> [u8; 32] {
+        temp_id
     }
 
-    fn get_secret_key_for_pubkey(
-        &self,
-        _pubkey: &secp256k1_zkp::PublicKey,
-    ) -> Result<SecretKey, dlc_manager::error::Error> {
+    fn derive_contract_signer(&self, _: [u8; 32]) -> Result<Self::Signer, Error> {
+        Ok(SimpleSigner::new(get_secret_key()))
+    }
+
+    fn get_secret_key_for_pubkey(&self, _: &PublicKey) -> Result<SecretKey, Error> {
+        Ok(get_secret_key())
+    }
+
+    fn get_new_secret_key(&self) -> Result<SecretKey, Error> {
         Ok(get_secret_key())
     }
 }
@@ -69,10 +73,6 @@ impl Wallet for MockWallet {
 
     fn get_new_change_address(&self) -> Result<Address, dlc_manager::error::Error> {
         Ok(get_address())
-    }
-
-    fn get_new_secret_key(&self) -> Result<SecretKey, dlc_manager::error::Error> {
-        Ok(get_secret_key())
     }
 
     fn get_utxos_for_amount(
@@ -109,6 +109,10 @@ impl Wallet for MockWallet {
     }
 
     fn import_address(&self, _address: &Address) -> Result<(), dlc_manager::error::Error> {
+        Ok(())
+    }
+
+    fn sign_psbt_input(&self, _: &mut PartiallySignedTransaction, _: usize) -> Result<(), Error> {
         Ok(())
     }
 }

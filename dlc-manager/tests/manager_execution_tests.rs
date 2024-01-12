@@ -649,6 +649,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&alice_wallet),
+            Arc::clone(&alice_wallet),
             Arc::clone(&electrs),
             alice_store,
             alice_oracles,
@@ -663,6 +664,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
     let bob_manager = Arc::new(Mutex::new(
         Manager::new(
+            Arc::clone(&bob_wallet),
             Arc::clone(&bob_wallet),
             Arc::clone(&electrs),
             bob_store,

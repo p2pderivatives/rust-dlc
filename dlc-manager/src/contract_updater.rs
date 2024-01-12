@@ -21,13 +21,12 @@ use crate::{
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
-    Blockchain, ChannelId, Signer, Time, Wallet,
+    Blockchain, ChannelId, ContractSigner, ContractSignerProvider, Time, Wallet,
 };
 
 /// Creates an [`OfferedContract`] and [`OfferDlc`] message from the provided
 /// contract and oracle information.
-pub fn offer_contract<C: Signing, W: Deref, B: Deref, T: Deref>(
-    secp: &Secp256k1<C>,
+pub fn offer_contract<W: Deref, B: Deref, T: Deref, X: ContractSigner, SP: Deref>(
     contract_input: &ContractInput,
     oracle_announcements: Vec<Vec<OracleAnnouncement>>,
     refund_delay: u32,
@@ -35,23 +34,29 @@ pub fn offer_contract<C: Signing, W: Deref, B: Deref, T: Deref>(
     wallet: &W,
     blockchain: &B,
     time: &T,
+    signer_provider: &SP,
 ) -> Result<(OfferedContract, OfferDlc), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
     T::Target: Time,
+    SP::Target: ContractSignerProvider<Signer = X>,
 {
     contract_input.validate()?;
 
-    let (party_params, _, funding_inputs_info) = crate::utils::get_party_params(
-        secp,
+    let id = crate::utils::get_new_temporary_id();
+    let keys_id = signer_provider.derive_signer_key_id(true, id);
+    let signer = signer_provider.derive_contract_signer(keys_id)?;
+    let (party_params, funding_inputs_info) = crate::utils::get_party_params(
         contract_input.offer_collateral,
         contract_input.fee_rate,
         wallet,
+        &signer,
         blockchain,
     )?;
 
     let offered_contract = OfferedContract::new(
+        id,
         contract_input,
         oracle_announcements,
         &party_params,
@@ -59,6 +64,7 @@ where
         counter_party,
         refund_delay,
         time.unix_time_now() as u32,
+        keys_id,
     );
 
     let offer_msg: OfferDlc = (&offered_contract).into();
@@ -68,23 +74,26 @@ where
 
 /// Creates an [`AcceptedContract`] and produces
 /// the accepting party's cet adaptor signatures.
-pub fn accept_contract<W: Deref, B: Deref>(
+pub fn accept_contract<W: Deref, X: ContractSigner, SP: Deref, B: Deref>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     wallet: &W,
+    signer_provider: &SP,
     blockchain: &B,
-) -> Result<(AcceptedContract, AcceptDlc), crate::Error>
+) -> Result<(AcceptedContract, AcceptDlc), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
+    SP::Target: ContractSignerProvider<Signer = X>,
 {
     let total_collateral = offered_contract.total_collateral;
 
-    let (accept_params, fund_secret_key, funding_inputs) = crate::utils::get_party_params(
-        secp,
+    let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
+    let (accept_params, funding_inputs) = crate::utils::get_party_params(
         total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
+        &signer,
         blockchain,
     )?;
 
@@ -106,7 +115,7 @@ where
         offered_contract,
         &accept_params,
         &funding_inputs,
-        &fund_secret_key,
+        &signer.get_secret_key()?,
         fund_output_value,
         None,
         &dlc_transactions,
@@ -216,14 +225,16 @@ pub(crate) fn accept_contract_internal(
 
 /// Verifies the information of the accepting party [`Accept` message](dlc_messages::AcceptDlc),
 /// creates a [`SignedContract`], and generates the offering party CET adaptor signatures.
-pub fn verify_accepted_and_sign_contract<S: Deref>(
+pub fn verify_accepted_and_sign_contract<W: Deref, X: ContractSigner, SP: Deref>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     accept_msg: &AcceptDlc,
-    signer: &S,
+    wallet: &W,
+    signer_provider: &SP,
 ) -> Result<(SignedContract, SignDlc), Error>
 where
-    S::Target: Signer,
+    W::Target: Wallet,
+    SP::Target: ContractSignerProvider<Signer = X>,
 {
     let (tx_input_infos, input_amount) = get_tx_input_infos(&accept_msg.funding_inputs)?;
 
@@ -258,8 +269,8 @@ where
         offered_contract.fund_output_serial_id,
     )?;
     let fund_output_value = dlc_transactions.get_fund_output().value;
-    let fund_privkey =
-        signer.get_secret_key_for_pubkey(&offered_contract.offer_params.fund_pubkey)?;
+
+    let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
     let (signed_contract, adaptor_sigs) = verify_accepted_and_sign_contract_internal(
         secp,
         offered_contract,
@@ -272,8 +283,8 @@ where
         &accept_msg.refund_signature,
         &cet_adaptor_signatures,
         fund_output_value,
-        &fund_privkey,
-        signer,
+        wallet,
+        &signer,
         None,
         None,
         &dlc_transactions,
@@ -310,7 +321,7 @@ fn populate_psbt(
     Ok(())
 }
 
-pub(crate) fn verify_accepted_and_sign_contract_internal<S: Deref>(
+pub(crate) fn verify_accepted_and_sign_contract_internal<W: Deref, X: ContractSigner>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     accept_params: &PartyParams,
@@ -318,15 +329,15 @@ pub(crate) fn verify_accepted_and_sign_contract_internal<S: Deref>(
     refund_signature: &Signature,
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     input_value: u64,
-    adaptor_secret: &SecretKey,
-    signer: &S,
+    wallet: &W,
+    signer: &X,
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
     dlc_transactions: &DlcTransactions,
     channel_id: Option<ChannelId>,
 ) -> Result<(SignedContract, Vec<EcdsaAdaptorSignature>), Error>
 where
-    S::Target: Signer,
+    W::Target: Wallet,
 {
     let DlcTransactions {
         fund,
@@ -411,7 +422,7 @@ where
         let sigs = contract_info.get_adaptor_signatures(
             secp,
             adaptor_info,
-            adaptor_secret,
+            &signer,
             &input_script_pubkey,
             input_value,
             &cets,
@@ -445,7 +456,7 @@ where
                     ))
                 })?;
 
-            signer.sign_psbt_input(&mut fund_psbt, input_index)?;
+            wallet.sign_psbt_input(&mut fund_psbt, input_index)?;
 
             let witness = fund_psbt.inputs[input_index]
                 .final_script_witness
@@ -477,7 +488,7 @@ where
         0,
         &input_script_pubkey,
         input_value,
-        adaptor_secret,
+        &signer.get_secret_key()?,
     )?;
 
     let dlc_transactions = DlcTransactions {
@@ -511,14 +522,14 @@ where
 /// Verifies the information from the offer party [`Sign` message](dlc_messages::SignDlc),
 /// creates the accepting party's [`SignedContract`] and returns it along with the
 /// signed fund transaction.
-pub fn verify_signed_contract<S: Deref>(
+pub fn verify_signed_contract<W: Deref>(
     secp: &Secp256k1<All>,
     accepted_contract: &AcceptedContract,
     sign_msg: &SignDlc,
-    signer: &S,
+    wallet: &W,
 ) -> Result<(SignedContract, Transaction), Error>
 where
-    S::Target: Signer,
+    W::Target: Wallet,
 {
     let cet_adaptor_signatures: Vec<_> = (&sign_msg.cet_adaptor_signatures).into();
     verify_signed_contract_internal(
@@ -530,12 +541,12 @@ where
         accepted_contract.dlc_transactions.get_fund_output().value,
         None,
         None,
-        signer,
+        wallet,
         None,
     )
 }
 
-pub(crate) fn verify_signed_contract_internal<S: Deref>(
+pub(crate) fn verify_signed_contract_internal<W: Deref>(
     secp: &Secp256k1<All>,
     accepted_contract: &AcceptedContract,
     refund_signature: &Signature,
@@ -544,11 +555,11 @@ pub(crate) fn verify_signed_contract_internal<S: Deref>(
     input_value: u64,
     input_script_pubkey: Option<Script>,
     counter_adaptor_pk: Option<PublicKey>,
-    signer: &S,
+    wallet: &W,
     channel_id: Option<ChannelId>,
 ) -> Result<(SignedContract, Transaction), Error>
 where
-    S::Target: Signer,
+    W::Target: Wallet,
 {
     let offered_contract = &accepted_contract.offered_contract;
     let input_script_pubkey = input_script_pubkey.unwrap_or_else(|| {
@@ -639,7 +650,7 @@ where
                 ))
             })?;
 
-        signer.sign_psbt_input(&mut fund_psbt, input_index)?;
+        wallet.sign_psbt_input(&mut fund_psbt, input_index)?;
     }
 
     let signed_contract = SignedContract {
@@ -660,35 +671,33 @@ pub fn get_signed_cet<C: Signing, S: Deref>(
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
     attestations: &[(usize, OracleAttestation)],
-    signer: &S,
+    signer: S,
 ) -> Result<Transaction, Error>
 where
-    S::Target: Signer,
+    S::Target: ContractSigner,
 {
     let (range_info, sigs) =
         crate::utils::get_range_info_and_oracle_sigs(contract_info, adaptor_info, attestations)?;
     let mut cet = contract.accepted_contract.dlc_transactions.cets[range_info.cet_index].clone();
     let offered_contract = &contract.accepted_contract.offered_contract;
 
-    let (adaptor_sigs, fund_pubkey, other_pubkey) = if offered_contract.is_offer_party {
+    let (adaptor_sigs, other_pubkey) = if offered_contract.is_offer_party {
         (
             contract
                 .accepted_contract
                 .adaptor_signatures
                 .as_ref()
                 .unwrap(),
-            &offered_contract.offer_params.fund_pubkey,
             &contract.accepted_contract.accept_params.fund_pubkey,
         )
     } else {
         (
             contract.adaptor_signatures.as_ref().unwrap(),
-            &contract.accepted_contract.accept_params.fund_pubkey,
             &offered_contract.offer_params.fund_pubkey,
         )
     };
 
-    let funding_sk = signer.get_secret_key_for_pubkey(fund_pubkey)?;
+    let funding_sk = signer.get_secret_key()?;
 
     dlc::sign_cet(
         secp,
@@ -715,30 +724,28 @@ where
 pub fn get_signed_refund<C: Signing, S: Deref>(
     secp: &Secp256k1<C>,
     contract: &SignedContract,
-    signer: &S,
+    signer: S,
 ) -> Result<Transaction, Error>
 where
-    S::Target: Signer,
+    S::Target: ContractSigner,
 {
     let accepted_contract = &contract.accepted_contract;
     let offered_contract = &accepted_contract.offered_contract;
     let funding_script_pubkey = &accepted_contract.dlc_transactions.funding_script_pubkey;
     let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
-    let (fund_pubkey, other_fund_pubkey, other_sig) = if offered_contract.is_offer_party {
+    let (other_fund_pubkey, other_sig) = if offered_contract.is_offer_party {
         (
-            &offered_contract.offer_params.fund_pubkey,
             &accepted_contract.accept_params.fund_pubkey,
             &accepted_contract.accept_refund_signature,
         )
     } else {
         (
-            &accepted_contract.accept_params.fund_pubkey,
             &offered_contract.offer_params.fund_pubkey,
             &contract.offer_refund_signature,
         )
     };
 
-    let fund_priv_key = signer.get_secret_key_for_pubkey(fund_pubkey)?;
+    let fund_priv_key = signer.get_secret_key()?;
     let mut refund = accepted_contract.dlc_transactions.refund.clone();
     dlc::util::sign_multi_sig_input(
         secp,
@@ -769,7 +776,7 @@ mod tests {
                 .parse()
                 .unwrap();
         let offered_contract =
-            OfferedContract::try_from_offer_dlc(&offer_dlc, dummy_pubkey).unwrap();
+            OfferedContract::try_from_offer_dlc(&offer_dlc, dummy_pubkey, [0; 32]).unwrap();
         let blockchain = Rc::new(mocks::mock_blockchain::MockBlockchain::new());
         let fee_rate: u64 = offered_contract.fee_rate_per_vb;
         let utxo_value: u64 = offered_contract.total_collateral
@@ -783,6 +790,7 @@ mod tests {
         mocks::dlc_manager::contract_updater::accept_contract(
             secp256k1_zkp::SECP256K1,
             &offered_contract,
+            &wallet,
             &wallet,
             &blockchain,
         )

@@ -8,7 +8,7 @@ use secp256k1_zkp::PublicKey;
 
 use crate::{
     contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos,
-    error::Error, ChannelId, ContractId,
+    error::Error, ChannelId, ContractId, KeysId,
 };
 
 use super::party_points::PartyBasePoints;
@@ -83,6 +83,7 @@ impl OfferedChannel {
     pub fn from_offer_channel(
         offer_channel: &OfferChannel,
         counter_party: PublicKey,
+        keys_id: KeysId,
     ) -> Result<(OfferedChannel, OfferedContract), Error> {
         let channel = OfferedChannel {
             offered_contract_id: offer_channel.temporary_contract_id,
@@ -128,6 +129,7 @@ impl OfferedChannel {
                 .map(|x| x.into())
                 .collect(),
             total_collateral: offer_channel.contract_info.get_total_collateral(),
+            keys_id,
         };
 
         Ok((channel, contract))

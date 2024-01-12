@@ -1,6 +1,8 @@
 //! #Manager a component to create and update DLCs.
 
-use super::{Blockchain, Oracle, Storage, Time, Wallet};
+use super::{
+    Blockchain, CachedContractSignerProvider, ContractSigner, Oracle, Storage, Time, Wallet,
+};
 use crate::chain_monitor::{ChainMonitor, ChannelInfo, RevokedTxType, TxType};
 use crate::channel::offered_channel::OfferedChannel;
 use crate::channel::signed_channel::{SignedChannel, SignedChannelState, SignedChannelStateType};
@@ -15,8 +17,7 @@ use crate::contract::{
 };
 use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract};
 use crate::error::Error;
-use crate::Signer;
-use crate::{ChannelId, ContractId};
+use crate::{ChannelId, ContractId, ContractSignerProvider};
 use bitcoin::locktime::Height;
 use bitcoin::Transaction;
 use bitcoin::{locktime, Address, LockTime};
@@ -37,6 +38,7 @@ use secp256k1_zkp::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
+use std::sync::Arc;
 
 /// The number of confirmations required before moving the the confirmed state.
 pub const NB_CONFIRMATIONS: u32 = 6;
@@ -55,9 +57,18 @@ type ClosableContractInfo<'a> = Option<(
 )>;
 
 /// Used to create and update DLCs.
-pub struct Manager<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref>
-where
+pub struct Manager<
+    W: Deref,
+    SP: Deref,
+    B: Deref,
+    S: Deref,
+    O: Deref,
+    T: Deref,
+    F: Deref,
+    X: ContractSigner,
+> where
     W::Target: Wallet,
+    SP::Target: ContractSignerProvider<Signer = X>,
     B::Target: Blockchain,
     S::Target: Storage,
     O::Target: Oracle,
@@ -66,6 +77,7 @@ where
 {
     oracles: HashMap<XOnlyPublicKey, O>,
     wallet: W,
+    signer_provider: SP,
     blockchain: B,
     store: S,
     secp: Secp256k1<All>,
@@ -159,9 +171,11 @@ macro_rules! check_for_timed_out_channels {
     };
 }
 
-impl<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
+impl<W: Deref, SP: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref, X: ContractSigner>
+    Manager<W, Arc<CachedContractSignerProvider<SP, X>>, B, S, O, T, F, X>
 where
     W::Target: Wallet,
+    SP::Target: ContractSignerProvider<Signer = X>,
     B::Target: Blockchain,
     S::Target: Storage,
     O::Target: Oracle,
@@ -171,6 +185,7 @@ where
     /// Create a new Manager struct.
     pub fn new(
         wallet: W,
+        signer_provider: SP,
         blockchain: B,
         store: S,
         oracles: HashMap<XOnlyPublicKey, O>,
@@ -182,9 +197,12 @@ where
             .get_chain_monitor()?
             .unwrap_or(ChainMonitor::new(init_height));
 
+        let signer_provider = Arc::new(CachedContractSignerProvider::new(signer_provider));
+
         Ok(Manager {
             secp: secp256k1_zkp::Secp256k1::new(),
             wallet,
+            signer_provider,
             blockchain,
             store,
             oracles,
@@ -300,7 +318,6 @@ where
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
     ) -> Result<OfferDlc, Error> {
         let (offered_contract, offer_msg) = crate::contract_updater::offer_contract(
-            &self.secp,
             contract_input,
             oracle_announcements,
             REFUND_DELAY,
@@ -308,6 +325,7 @@ where
             &self.wallet,
             &self.blockchain,
             &self.time,
+            &self.signer_provider,
         )?;
 
         offered_contract.validate()?;
@@ -331,6 +349,7 @@ where
             &self.secp,
             &offered_contract,
             &self.wallet,
+            &self.signer_provider,
             &self.blockchain,
         )?;
 
@@ -367,8 +386,11 @@ where
         counter_party: PublicKey,
     ) -> Result<(), Error> {
         offered_message.validate(&self.secp, REFUND_DELAY, REFUND_DELAY * 2)?;
+        let keys_id = self
+            .signer_provider
+            .derive_signer_key_id(false, offered_message.temporary_contract_id);
         let contract: OfferedContract =
-            OfferedContract::try_from_offer_dlc(offered_message, counter_party)?;
+            OfferedContract::try_from_offer_dlc(offered_message, counter_party, keys_id)?;
         contract.validate()?;
 
         if self.store.get_contract(&contract.id)?.is_some() {
@@ -399,6 +421,7 @@ where
             &offered_contract,
             accept_msg,
             &self.wallet,
+            &self.signer_provider,
         ) {
             Ok(contract) => contract,
             Err(e) => return self.accept_fail_on_error(offered_contract, accept_msg.clone(), e),
@@ -574,13 +597,15 @@ where
     fn check_confirmed_contract(&mut self, contract: &SignedContract) -> Result<(), Error> {
         let closable_contract_info = self.get_closable_contract_info(contract);
         if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
+            let offer = &contract.accepted_contract.offered_contract;
+            let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
             let cet = crate::contract_updater::get_signed_cet(
                 &self.secp,
                 contract,
                 contract_info,
                 adaptor_info,
                 &attestations,
-                &self.wallet,
+                &signer,
             )?;
             match self.close_contract(
                 contract,
@@ -630,13 +655,15 @@ where
                 matches >= c.threshold
             })
         {
+            let offer = &contract.accepted_contract.offered_contract;
+            let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
             let cet = crate::contract_updater::get_signed_cet(
                 &self.secp,
                 &contract,
                 contract_info,
                 adaptor_info,
                 &attestations,
-                &self.wallet,
+                &signer,
             )?;
 
             // Check that the lock time has passed
@@ -784,8 +811,10 @@ where
                 .blockchain
                 .get_transaction_confirmations(&refund.txid())?;
             if confirmations == 0 {
+                let offer = &contract.accepted_contract.offered_contract;
+                let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
                 let refund =
-                    crate::contract_updater::get_signed_refund(&self.secp, contract, &self.wallet)?;
+                    crate::contract_updater::get_signed_refund(&self.secp, contract, &signer)?;
                 self.blockchain.send_transaction(&refund)?;
             }
 
@@ -847,9 +876,11 @@ where
     }
 }
 
-impl<W: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref> Manager<W, B, S, O, T, F>
+impl<W: Deref, SP: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref, X: ContractSigner>
+    Manager<W, Arc<CachedContractSignerProvider<SP, X>>, B, S, O, T, F, X>
 where
     W::Target: Wallet,
+    SP::Target: ContractSignerProvider<Signer = X>,
     B::Target: Blockchain,
     S::Target: Storage,
     O::Target: Oracle,
@@ -877,6 +908,7 @@ where
             CET_NSEQUENCE,
             REFUND_DELAY,
             &self.wallet,
+            &self.signer_provider,
             &self.blockchain,
             &self.time,
         )?;
@@ -920,6 +952,7 @@ where
                 &offered_channel,
                 &offered_contract,
                 &self.wallet,
+                &self.signer_provider,
                 &self.blockchain,
             )?;
 
@@ -963,7 +996,7 @@ where
             &mut signed_channel,
             counter_payout,
             PEER_TIMEOUT,
-            &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -990,7 +1023,7 @@ where
             CET_NSEQUENCE,
             0,
             PEER_TIMEOUT,
-            &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -1029,7 +1062,7 @@ where
             REFUND_DELAY,
             PEER_TIMEOUT,
             CET_NSEQUENCE,
-            &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -1069,7 +1102,7 @@ where
             &offered_contract,
             CET_NSEQUENCE,
             PEER_TIMEOUT,
-            &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -1153,7 +1186,7 @@ where
             &self.secp,
             &mut signed_channel,
             counter_payout,
-            &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -1216,7 +1249,7 @@ where
         let close_tx = crate::channel_updater::accept_collaborative_close_offer(
             &self.secp,
             &mut signed_channel,
-            &self.wallet,
+            &self.signer_provider,
         )?;
 
         self.blockchain.send_transaction(&close_tx)?;
@@ -1278,7 +1311,11 @@ where
             CET_NSEQUENCE * 2,
         )?;
 
-        let (channel, contract) = OfferedChannel::from_offer_channel(offer_channel, counter_party)?;
+        let keys_id = self
+            .signer_provider
+            .derive_signer_key_id(false, offer_channel.temporary_contract_id);
+        let (channel, contract) =
+            OfferedChannel::from_offer_channel(offer_channel, counter_party, keys_id)?;
 
         contract.validate()?;
 
@@ -1325,6 +1362,7 @@ where
                 //TODO(tibo): this should be parameterizable.
                 CET_NSEQUENCE,
                 &self.wallet,
+                &self.signer_provider,
             );
 
             match res {
@@ -1478,7 +1516,7 @@ where
             CET_NSEQUENCE,
             0,
             PEER_TIMEOUT,
-            &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -1514,7 +1552,7 @@ where
             &self.secp,
             &mut signed_channel,
             settle_confirm,
-            &self.wallet,
+            &self.signer_provider,
         )?;
 
         self.chain_monitor.add_tx(
@@ -1646,8 +1684,12 @@ where
             }
         }
 
-        let offered_contract =
-            crate::channel_updater::on_renew_offer(&mut signed_channel, renew_offer, PEER_TIMEOUT, &self.time)?;
+        let offered_contract = crate::channel_updater::on_renew_offer(
+            &mut signed_channel,
+            renew_offer,
+            PEER_TIMEOUT,
+            &self.time,
+        )?;
 
         self.store.create_contract(&offered_contract)?;
         self.store
@@ -1680,6 +1722,7 @@ where
             CET_NSEQUENCE,
             PEER_TIMEOUT,
             &self.wallet,
+            &self.signer_provider,
             &self.time,
         )?;
 
@@ -1779,6 +1822,7 @@ where
             &accepted_contract,
             renew_confirm,
             &self.wallet,
+            &self.signer_provider,
         )?;
 
         self.chain_monitor.add_tx(
@@ -2060,8 +2104,9 @@ where
 
                     let per_update_seed_pk = signed_channel.own_per_update_seed;
 
-                    let per_update_seed_sk =
-                        self.wallet.get_secret_key_for_pubkey(&per_update_seed_pk)?;
+                    let per_update_seed_sk = self
+                        .signer_provider
+                        .get_secret_key_for_pubkey(&per_update_seed_pk)?;
 
                     let per_update_secret = SecretKey::from_slice(&build_commitment_secret(
                         per_update_seed_sk.as_ref(),
@@ -2082,7 +2127,7 @@ where
                         PublicKey::from_secret_key(&self.secp, &counter_per_update_secret);
 
                     let base_own_sk = self
-                        .wallet
+                        .signer_provider
                         .get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
 
                     let own_sk = derive_private_key(&self.secp, &per_update_point, &base_own_sk);
@@ -2115,9 +2160,10 @@ where
                         &counter_revocation_params.publish_pk.inner,
                     )?;
 
-                    let own_revocation_base_secret = &self.wallet.get_secret_key_for_pubkey(
-                        &signed_channel.own_points.revocation_basepoint,
-                    )?;
+                    let own_revocation_base_secret =
+                        &self.signer_provider.get_secret_key_for_pubkey(
+                            &signed_channel.own_points.revocation_basepoint,
+                        )?;
 
                     let counter_revocation_sk = derive_private_revocation_key(
                         &self.secp,
@@ -2291,7 +2337,7 @@ where
             contract_info,
             &attestations,
             adaptor_info,
-            &self.wallet,
+            &self.signer_provider,
         )?;
 
         let buffer_transaction =
@@ -2314,7 +2360,7 @@ where
         let settle_tx = crate::channel_updater::close_settled_channel(
             &self.secp,
             &mut signed_channel,
-            &self.wallet,
+            &self.signer_provider,
         )?;
 
         self.blockchain.send_transaction(&settle_tx)?;
@@ -2330,7 +2376,7 @@ where
 mod test {
     use dlc_messages::Message;
     use mocks::{
-        dlc_manager::{manager::Manager, Oracle},
+        dlc_manager::{manager::Manager, CachedContractSignerProvider, Oracle, SimpleSigner},
         memory_storage_provider::MemoryStorage,
         mock_blockchain::MockBlockchain,
         mock_oracle_provider::MockOracle,
@@ -2338,15 +2384,17 @@ mod test {
         mock_wallet::MockWallet,
     };
     use secp256k1_zkp::PublicKey;
-    use std::{collections::HashMap, rc::Rc};
+    use std::{collections::HashMap, rc::Rc, sync::Arc};
 
     type TestManager = Manager<
         Rc<MockWallet>,
+        Arc<CachedContractSignerProvider<Rc<MockWallet>, SimpleSigner>>,
         Rc<MockBlockchain>,
         Rc<MemoryStorage>,
         Rc<MockOracle>,
         Rc<MockTime>,
         Rc<MockBlockchain>,
+        SimpleSigner,
     >;
 
     fn get_manager() -> TestManager {
@@ -2366,7 +2414,16 @@ mod test {
 
         mocks::mock_time::set_time(0);
 
-        Manager::new(wallet, blockchain.clone(), store, oracles, time, blockchain).unwrap()
+        Manager::new(
+            wallet.clone(),
+            wallet,
+            blockchain.clone(),
+            store,
+            oracles,
+            time,
+            blockchain,
+        )
+        .unwrap()
     }
 
     fn pubkey() -> PublicKey {

@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bitcoin::consensus::encode::Error as EncodeError;
+use bitcoin::hashes::hex::ToHex;
+use bitcoin::hashes::serde;
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::rand::thread_rng;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
@@ -15,10 +17,12 @@ use bitcoin::{
     Txid,
 };
 use bitcoin::{Address, OutPoint, TxOut};
+use bitcoincore_rpc::jsonrpc::serde_json;
+use bitcoincore_rpc::jsonrpc::serde_json::Value;
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
-use dlc_manager::{Blockchain, Signer, Utxo, Wallet};
+use dlc_manager::{Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
 use json::EstimateMode;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use log::error;
@@ -102,7 +106,7 @@ impl BitcoinCoreProvider {
 
     pub fn new_from_rpc_client(rpc_client: Client) -> Self {
         let client = Arc::new(Mutex::new(rpc_client));
-        let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::new();
+        let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::with_capacity(7);
         fees.insert(ConfirmationTarget::OnChainSweep, AtomicU32::new(5000));
         fees.insert(
             ConfirmationTarget::MaxAllowedNonAnchorChannelRemoteFee,
@@ -168,7 +172,57 @@ fn enc_err_to_manager_err(_e: EncodeError) -> ManagerError {
     Error::BitcoinError.into()
 }
 
-impl Signer for BitcoinCoreProvider {
+impl ContractSignerProvider for BitcoinCoreProvider {
+    type Signer = SimpleSigner;
+
+    fn derive_signer_key_id(&self, _is_offer_party: bool, temp_id: [u8; 32]) -> [u8; 32] {
+        temp_id // fixme not safe
+    }
+
+    fn derive_contract_signer(&self, keys_id: [u8; 32]) -> Result<Self::Signer, ManagerError> {
+        let label_map = self
+            .client
+            .lock()
+            .unwrap()
+            .call::<HashMap<Address, Value>>(
+                "getaddressesbylabel",
+                &[Value::String(keys_id.to_hex())],
+            )
+            .map_err(rpc_err_to_manager_err)?;
+
+        if let Some(address) = label_map.keys().next() {
+            // we should only have one address per keys_id
+            // if not something has gone wrong
+            assert_eq!(label_map.len(), 1);
+
+            let pk = self
+                .client
+                .lock()
+                .unwrap()
+                .dump_private_key(address)
+                .map_err(rpc_err_to_manager_err)?;
+            Ok(SimpleSigner::new(pk.inner))
+        } else {
+            let sk = SecretKey::new(&mut thread_rng());
+            let network = self.get_network()?;
+            self.client
+                .lock()
+                .unwrap()
+                .import_private_key(
+                    &PrivateKey {
+                        compressed: true,
+                        network,
+                        inner: sk,
+                    },
+                    Some(&keys_id.to_hex()),
+                    Some(false),
+                )
+                .map_err(rpc_err_to_manager_err)?;
+
+            Ok(SimpleSigner::new(sk))
+        }
+    }
+
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
         let b_pubkey = bitcoin::PublicKey {
             compressed: true,
@@ -184,6 +238,97 @@ impl Signer for BitcoinCoreProvider {
             .dump_private_key(&address)
             .map_err(rpc_err_to_manager_err)?;
         Ok(pk.inner)
+    }
+
+    fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
+        let sk = SecretKey::new(&mut thread_rng());
+        let network = self.get_network()?;
+        self.client
+            .lock()
+            .unwrap()
+            .import_private_key(
+                &PrivateKey {
+                    compressed: true,
+                    network,
+                    inner: sk,
+                },
+                None,
+                Some(false),
+            )
+            .map_err(rpc_err_to_manager_err)?;
+
+        Ok(sk)
+    }
+}
+
+impl Wallet for BitcoinCoreProvider {
+    fn get_new_address(&self) -> Result<Address, ManagerError> {
+        self.client
+            .lock()
+            .unwrap()
+            .get_new_address(None, Some(AddressType::Bech32))
+            .map_err(rpc_err_to_manager_err)
+    }
+
+    fn get_new_change_address(&self) -> Result<Address, ManagerError> {
+        self.client
+            .lock()
+            .unwrap()
+            .call(
+                "getrawchangeaddress",
+                &[Value::Null, opt_into_json(Some(AddressType::Bech32))?],
+            )
+            .map_err(rpc_err_to_manager_err)
+    }
+
+    fn get_utxos_for_amount(
+        &self,
+        amount: u64,
+        _fee_rate: u64,
+        lock_utxos: bool,
+    ) -> Result<Vec<Utxo>, ManagerError> {
+        let client = self.client.lock().unwrap();
+        let utxo_res = client
+            .list_unspent(None, None, None, Some(false), None)
+            .map_err(rpc_err_to_manager_err)?;
+        let mut utxo_pool: Vec<UtxoWrap> = utxo_res
+            .iter()
+            .filter(|x| x.spendable)
+            .map(|x| {
+                Ok(UtxoWrap(Utxo {
+                    tx_out: TxOut {
+                        value: x.amount.to_sat(),
+                        script_pubkey: x.script_pub_key.clone(),
+                    },
+                    outpoint: OutPoint {
+                        txid: x.txid,
+                        vout: x.vout,
+                    },
+                    address: x.address.as_ref().ok_or(Error::InvalidState)?.clone(),
+                    redeem_script: x.redeem_script.as_ref().unwrap_or(&Script::new()).clone(),
+                    reserved: false,
+                }))
+            })
+            .collect::<Result<Vec<UtxoWrap>, Error>>()?;
+        // TODO(tibo): properly compute the cost of change
+        let selection = select_coins(amount, 20, &mut utxo_pool).ok_or(Error::NotEnoughCoins)?;
+
+        if lock_utxos {
+            let outputs: Vec<_> = selection.iter().map(|x| x.0.outpoint).collect();
+            client
+                .lock_unspent(&outputs)
+                .map_err(rpc_err_to_manager_err)?;
+        }
+
+        Ok(selection.into_iter().map(|x| x.0).collect())
+    }
+
+    fn import_address(&self, address: &Address) -> Result<(), ManagerError> {
+        self.client
+            .lock()
+            .unwrap()
+            .import_address(address, None, Some(false))
+            .map_err(rpc_err_to_manager_err)
     }
 
     fn sign_psbt_input(
@@ -236,90 +381,6 @@ impl Signer for BitcoinCoreProvider {
             Some(signed_tx.input[input_index].witness.clone());
 
         Ok(())
-    }
-}
-
-impl Wallet for BitcoinCoreProvider {
-    fn get_new_address(&self) -> Result<Address, ManagerError> {
-        self.client
-            .lock()
-            .unwrap()
-            .get_new_address(None, Some(AddressType::Bech32))
-            .map_err(rpc_err_to_manager_err)
-    }
-
-    fn get_new_change_address(&self) -> Result<Address, ManagerError> {
-        self.get_new_address()
-    }
-
-    fn get_new_secret_key(&self) -> Result<SecretKey, ManagerError> {
-        let sk = SecretKey::new(&mut thread_rng());
-        let network = self.get_network()?;
-        self.client
-            .lock()
-            .unwrap()
-            .import_private_key(
-                &PrivateKey {
-                    compressed: true,
-                    network,
-                    inner: sk,
-                },
-                None,
-                Some(false),
-            )
-            .map_err(rpc_err_to_manager_err)?;
-
-        Ok(sk)
-    }
-
-    fn get_utxos_for_amount(
-        &self,
-        amount: u64,
-        _fee_rate: u64,
-        lock_utxos: bool,
-    ) -> Result<Vec<Utxo>, ManagerError> {
-        let client = self.client.lock().unwrap();
-        let utxo_res = client
-            .list_unspent(None, None, None, Some(false), None)
-            .map_err(rpc_err_to_manager_err)?;
-        let mut utxo_pool: Vec<UtxoWrap> = utxo_res
-            .iter()
-            .filter(|x| x.spendable)
-            .map(|x| {
-                Ok(UtxoWrap(Utxo {
-                    tx_out: TxOut {
-                        value: x.amount.to_sat(),
-                        script_pubkey: x.script_pub_key.clone(),
-                    },
-                    outpoint: OutPoint {
-                        txid: x.txid,
-                        vout: x.vout,
-                    },
-                    address: x.address.as_ref().ok_or(Error::InvalidState)?.clone(),
-                    redeem_script: x.redeem_script.as_ref().unwrap_or(&Script::new()).clone(),
-                    reserved: false,
-                }))
-            })
-            .collect::<Result<Vec<UtxoWrap>, Error>>()?;
-        // TODO(tibo): properly compute the cost of change
-        let selection = select_coins(amount, 20, &mut utxo_pool).ok_or(Error::NotEnoughCoins)?;
-
-        if lock_utxos {
-            let outputs: Vec<_> = selection.iter().map(|x| x.0.outpoint).collect();
-            client
-                .lock_unspent(&outputs)
-                .map_err(rpc_err_to_manager_err)?;
-        }
-
-        Ok(selection.into_iter().map(|x| x.0).collect())
-    }
-
-    fn import_address(&self, address: &Address) -> Result<(), ManagerError> {
-        self.client
-            .lock()
-            .unwrap()
-            .import_address(address, None, Some(false))
-            .map_err(rpc_err_to_manager_err)
     }
 }
 
@@ -478,4 +539,23 @@ fn poll_for_fee_estimates(
 
         std::thread::sleep(Duration::from_secs(60));
     });
+}
+
+/// Shorthand for converting a variable into a serde_json::Value.
+fn into_json<T>(val: T) -> bitcoincore_rpc::Result<Value>
+where
+    T: serde::ser::Serialize,
+{
+    Ok(serde_json::to_value(val)?)
+}
+
+/// Shorthand for converting an Option into an Option<serde_json::Value>.
+fn opt_into_json<T>(opt: Option<T>) -> Result<Value, ManagerError>
+where
+    T: serde::ser::Serialize,
+{
+    match opt {
+        Some(val) => Ok(into_json(val).map_err(rpc_err_to_manager_err)?),
+        None => Ok(Value::Null),
+    }
 }
