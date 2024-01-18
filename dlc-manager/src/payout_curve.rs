@@ -174,7 +174,7 @@ trait Evaluable {
             )));
         }
 
-        if payout_double > total_collateral as f64 {
+        if payout_double.round() > total_collateral as f64 {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral".to_string(),
             ));
@@ -311,7 +311,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
             return if left_point.outcome_payout == right_point.outcome_payout {
                 right_point.outcome_payout as f64
             } else {
-                let slope = (right_point.outcome_payout - left_point.outcome_payout) as f64
+                let slope = (right_point.outcome_payout as f64 - left_point.outcome_payout as f64)
                     / (right_point.event_outcome - left_point.event_outcome) as f64;
                 (outcome - left_point.event_outcome) as f64 * slope
                     + left_point.outcome_payout as f64
@@ -1214,5 +1214,80 @@ mod test {
         payout_function
             .to_range_payouts(7513, &rounding_intervals)
             .expect("To be able to compute the range payouts");
+    }
+
+    #[test]
+    fn floating_point_error_doesnt_fail() {
+        let function = PayoutFunction::new(vec![PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+            PolynomialPayoutCurvePiece::new(vec![
+                PayoutPoint {
+                    event_outcome: 22352,
+                    outcome_payout: 0,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 55881,
+                    outcome_payout: 87455,
+                    extra_precision: 0,
+                },
+            ])
+            .unwrap(),
+        )])
+        .unwrap();
+
+        let rounding_mod = 1;
+
+        let rounding_intervals = RoundingIntervals {
+            intervals: vec![RoundingInterval {
+                begin_interval: 0,
+                rounding_mod,
+            }],
+        };
+
+        function
+            .to_range_payouts(87455, &rounding_intervals)
+            .expect("Not to fail");
+    }
+
+    #[test]
+    fn monotonic_increasing_payout_curve_is_valid() {
+        let polynomial = PolynomialPayoutCurvePiece {
+            payout_points: vec![
+                PayoutPoint {
+                    event_outcome: 0,
+                    outcome_payout: 1,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 2,
+                    outcome_payout: 5,
+                    extra_precision: 0,
+                },
+            ],
+        };
+
+        assert_eq!(polynomial.evaluate(0), 1.0);
+        assert_eq!(polynomial.evaluate(2), 5.0);
+    }
+
+    #[test]
+    fn monotonic_decreasing_payout_curve_is_valid() {
+        let polynomial = PolynomialPayoutCurvePiece {
+            payout_points: vec![
+                PayoutPoint {
+                    event_outcome: 0,
+                    outcome_payout: 10,
+                    extra_precision: 0,
+                },
+                PayoutPoint {
+                    event_outcome: 1,
+                    outcome_payout: 8,
+                    extra_precision: 0,
+                },
+            ],
+        };
+
+        assert_eq!(polynomial.evaluate(0), 10.0);
+        assert_eq!(polynomial.evaluate(1), 8.0);
     }
 }
