@@ -39,7 +39,7 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
     let contract_infos = contract_input.contract_infos;
 
     let regex: &Regex =
-        TIMESTAMP_FROM_EVENTID.get_or_init(|| Regex::new(r"/([a-z_]+)(\d+)/i").unwrap());
+        TIMESTAMP_FROM_EVENTID.get_or_init(|| Regex::new(r"([a-z_]+)(\d+)").unwrap());
 
     let contract_timestamps = contract_infos
         .iter()
