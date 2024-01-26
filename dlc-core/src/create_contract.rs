@@ -1,8 +1,16 @@
-use dlc_manager::contract::{contract_info::ContractInfo, contract_input::ContractInput};
+use std::sync::OnceLock;
+
+use dlc_manager::contract::{
+    contract_info::ContractInfo,
+    contract_input::{ContractInput, ContractInputInfo},
+};
 use dlc_messages::oracle_msgs::OracleAnnouncement;
+use regex::Regex;
 use secp256k1_zkp::{Secp256k1, Verification};
 
 use crate::{error::*, ContractParams};
+
+static TIMESTAMP_FROM_EVENTID: OnceLock<Regex> = OnceLock::new();
 
 pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncement]>>(
     secp: &Secp256k1<C>,
@@ -25,18 +33,39 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
             .get(0)
             .expect("At least one announcement per contract")
             .oracle_event
-            .event_id[6..]
-            .parse::<u32>()
-            .expect("format of event id")
+            .event_maturity_epoch
     });
 
-    let mut sorted_contract_infos = contract_input.contract_infos;
+    let contract_infos = contract_input.contract_infos;
 
-    sorted_contract_infos.sort_unstable_by_key(|c| {
-        c.oracles.event_id[6..]
-            .parse::<u32>()
-            .expect("format of event id")
-    });
+    let regex: &Regex =
+        TIMESTAMP_FROM_EVENTID.get_or_init(|| Regex::new(r"/([a-z_]+)(\d+)/i").unwrap());
+
+    let contract_timestamps = contract_infos
+        .iter()
+        .map(|c| {
+            Ok(regex
+                .captures(&c.oracles.event_id)
+                .ok_or(FromDlcError::InvalidEventId)?
+                .get(2)
+                .ok_or(FromDlcError::InvalidEventId)?
+                .as_str()
+                .parse::<u32>()
+                .map_err(|_| FromDlcError::InvalidEventId)?)
+        })
+        .collect::<Result<Vec<u32>>>()?;
+
+    let mut contracts_ts = contract_infos
+        .into_iter()
+        .zip(contract_timestamps)
+        .collect::<Vec<(ContractInputInfo, u32)>>();
+
+    contracts_ts.sort_unstable_by_key(|(_, ts)| *ts);
+
+    let sorted_contract_infos = contracts_ts
+        .into_iter()
+        .map(|(info, _)| info)
+        .collect::<Vec<ContractInputInfo>>();
 
     let mut contract_info = Vec::new();
     for (x, y) in sorted_contract_infos

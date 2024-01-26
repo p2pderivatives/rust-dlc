@@ -21,6 +21,7 @@ pub enum FromDlcError {
     EncodingError(#[from] std::io::Error),
     // #[error("{0}")]
     InvalidArgument,
+    InvalidEventId,
 }
 
 impl Display for FromDlcError {
@@ -41,6 +42,9 @@ impl Display for FromDlcError {
                 "Encoding error: ".to_owned() + err.to_string().as_str()
             }
             FromDlcError::InvalidArgument => "Some Argument is Invalid".to_string(),
+            FromDlcError::InvalidEventId => {
+                "The event_id of the contracts does not countain the maturity".to_string()
+            }
         };
 
         write!(f, "{}", str)
