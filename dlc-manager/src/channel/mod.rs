@@ -51,6 +51,8 @@ pub enum Channel {
     /// A channel that failed when validating an
     /// [`dlc_messages::channel::SignChannel`] message.
     FailedSign(FailedSign),
+    /// A [`OfferedChannel`] that got rejected by the counterparty.
+    Cancelled(OfferedChannel),
 }
 
 impl std::fmt::Debug for Channel {
@@ -66,6 +68,7 @@ impl std::fmt::Debug for Channel {
             Channel::CounterClosed(_) => "counter closed",
             Channel::ClosedPunished(_) => "closed punished",
             Channel::CollaborativelyClosed(_) => "collaboratively closed",
+            Channel::Cancelled(_) => "cancelled"
         };
         f.debug_struct("Channel").field("state", &state).finish()
     }
@@ -85,6 +88,7 @@ impl Channel {
                 c.counter_party
             }
             Channel::ClosedPunished(c) => c.counter_party,
+            Channel::Cancelled(o) => o.counter_party
         }
     }
 }
@@ -194,6 +198,7 @@ impl Channel {
                 c.channel_id
             }
             Channel::ClosedPunished(c) => c.channel_id,
+            Channel::Cancelled(o) => o.temporary_channel_id,
         }
     }
 

@@ -22,6 +22,7 @@ use crate::{ContractId, DlcChannelId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::Address;
 use bitcoin::Transaction;
+use bitcoin::hashes::hex::ToHex;
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize,
@@ -285,7 +286,7 @@ where
                     Ok(None)
                 }
                 ChannelMessage::Reject(r) => {
-                    self.on_reject(r, &counter_party)?;
+                    self.on_reject(r ,&counter_party)?;
                     Ok(None)
                 }
                 ChannelMessage::RenewRevoke(r) => {
@@ -809,6 +810,17 @@ where
         )?;
 
         Ok(msg)
+    }
+
+    /// Reject a channel that was offered. Returns the [`dlc_messages::channel::Reject`]
+    /// message to be sent as well as the public key of the offering node.
+    pub fn reject_channel(&self, channel_id: &DlcChannelId) -> Result<(Reject, PublicKey), Error> {
+        let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
+        let counterparty = offered_channel.counter_party;
+        self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+
+        let msg = Reject{ channel_id: *channel_id, timestamp: get_unix_time_now() };
+        Ok((msg, counterparty))
     }
 
     /// Accept a channel that was offered. Returns the [`dlc_messages::channel::AcceptChannel`]
@@ -1951,13 +1963,38 @@ where
     }
 
     fn on_reject(&self, reject: &Reject, counter_party: &PublicKey) -> Result<(), Error> {
-        let mut signed_channel =
-            get_channel_in_state!(self, &reject.channel_id, Signed, Some(*counter_party))?;
+        let channel = self.store.get_channel(&reject.channel_id)?;
 
-        crate::channel_updater::on_reject(&mut signed_channel)?;
+        if let Some(channel) = channel {
+            if channel.get_counter_party_id() != *counter_party {
+                return Err(Error::InvalidParameters(format!(
+                    "Peer {:02x?} is not involved with {} {:02x?}.",
+                    counter_party,
+                    stringify!(Channel),
+                    channel.get_id()
+                )));
+            }
+            match channel {
+                Channel::Offered(offered_channel) => {
+                    // remove rejected channel, since nothing has been confirmed on chain yet.
+                    self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+                },
+                Channel::Signed(mut signed_channel) => {
+                    crate::channel_updater::on_reject(&mut signed_channel)?;
 
-        self.store
-            .upsert_channel(Channel::Signed(signed_channel), None)?;
+                    self.store
+                        .upsert_channel(Channel::Signed(signed_channel), None)?;
+                },
+                channel => {
+                    return Err(Error::InvalidState(
+                        format!("Not in a state adequate to receive a reject message. {:?}", channel),
+                    ))
+                }
+            }
+        } else {
+            warn!("Couldn't find rejected dlc channel with id: {}", reject.channel_id.to_hex());
+        }
+
         Ok(())
     }
 
