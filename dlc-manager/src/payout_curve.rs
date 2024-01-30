@@ -82,7 +82,9 @@ impl PayoutFunction {
                 PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => {
                     h.right_end_point.event_outcome == max_value
                 }
-                PayoutFunctionPiece::NoPayoutCurvePiece(n) => n.right_end_point.event_outcome == 0,
+                PayoutFunctionPiece::NoPayoutCurvePiece(n) => {
+                    n.right_end_point.event_outcome == max_value
+                }
             };
 
             starts_at_zero && finishes_at_max
@@ -108,6 +110,23 @@ impl PayoutFunction {
             piece.to_range_payouts(total_collateral, rounding_intervals, &mut range_payouts)?;
         }
         Ok(range_payouts)
+    }
+
+    /// Evaluate the function at some outcome or return None if it does not allow settlement at this outcome
+    pub fn evaluate(&self, outcome: u64) -> Result<Option<f64>, Error> {
+        self.payout_function_pieces
+            .iter()
+            .find_map(|piece| {
+                (piece.get_first_point().event_outcome <= outcome).then_some(match piece {
+                    PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.evaluate(outcome),
+                    PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => h.evaluate(outcome),
+                    PayoutFunctionPiece::NoPayoutCurvePiece(_) => None,
+                })
+            })
+            .ok_or(Error::InvalidParameters(format!(
+                "Payout function doesn't cover outcome {}",
+                outcome
+            )))
     }
 }
 
@@ -166,15 +185,18 @@ impl PayoutFunctionPiece {
 }
 
 trait Evaluable {
-    fn evaluate(&self, outcome: u64) -> f64;
+    /// If evaluate is None for a certain outcome, then it means we cannot settle if this outcome is produced
+    fn evaluate(&self, outcome: u64) -> Option<f64>;
 
     fn get_rounded_payout(
         &self,
         outcome: u64,
         rounding_intervals: &RoundingIntervals,
         total_collateral: u64,
-    ) -> Result<u64, Error> {
-        let payout_double = self.evaluate(outcome);
+    ) -> Result<Option<u64>, Error> {
+        let Some(payout_double) = self.evaluate(outcome) else {
+            return Ok(None);
+        };
         if payout_double.is_sign_negative() || (payout_double != 0.0 && !payout_double.is_normal())
         {
             return Err(Error::InvalidParameters(format!(
@@ -191,10 +213,10 @@ trait Evaluable {
         }
 
         // Ensure that we never round over the total collateral.
-        Ok(u64::min(
+        Ok(Some(u64::min(
             rounding_intervals.round(outcome, payout_double),
             total_collateral,
-        ))
+        )))
     }
 
     fn get_first_outcome(&self) -> u64;
@@ -206,13 +228,16 @@ trait Evaluable {
         range_payouts: &mut Vec<RangePayout>,
         total_collateral: u64,
         rounding_intervals: &RoundingIntervals,
-    ) -> Result<RangePayout, Error> {
+    ) -> Result<Option<RangePayout>, Error> {
         let res = match range_payouts.pop() {
             Some(cur) => cur,
             None => {
                 let first_outcome = self.get_first_outcome();
-                let first_payout =
-                    self.get_rounded_payout(first_outcome, rounding_intervals, total_collateral)?;
+                let Some(first_payout) =
+                    self.get_rounded_payout(first_outcome, rounding_intervals, total_collateral)?
+                else {
+                    return Ok(None);
+                };
                 RangePayout {
                     start: first_outcome as usize,
                     count: 1,
@@ -223,7 +248,7 @@ trait Evaluable {
                 }
             }
         };
-        Ok(res)
+        Ok(Some(res))
     }
 
     fn to_range_payouts(
@@ -246,8 +271,11 @@ where
     E::Target: Evaluable,
 {
     let first_outcome = function.get_first_outcome();
-    let mut cur_range =
-        function.get_cur_range(range_payouts, total_collateral, rounding_intervals)?;
+    let Some(mut cur_range) =
+        function.get_cur_range(range_payouts, total_collateral, rounding_intervals)?
+    else {
+        return Ok(());
+    };
 
     let range_end = function
         .get_last_outcome()
@@ -255,13 +283,19 @@ where
         .unwrap_or(u64::MAX);
 
     for outcome in (first_outcome + 1)..range_end {
-        let payout = function.get_rounded_payout(outcome, rounding_intervals, total_collateral)?;
+        let Some(payout) =
+            function.get_rounded_payout(outcome, rounding_intervals, total_collateral)?
+        else {
+            continue;
+        };
         if payout > total_collateral {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral.".to_string(),
             ));
         }
-        if cur_range.payout.offer == payout {
+        if (cur_range.payout.offer == payout)
+            && (cur_range.start + cur_range.count == outcome as usize)
+        {
             cur_range.count += 1;
         } else {
             range_payouts.push(cur_range);
@@ -312,19 +346,21 @@ impl PolynomialPayoutCurvePiece {
 }
 
 impl Evaluable for PolynomialPayoutCurvePiece {
-    fn evaluate(&self, outcome: u64) -> f64 {
+    fn evaluate(&self, outcome: u64) -> Option<f64> {
         let nb_points = self.payout_points.len();
 
         // Optimizations for constant and linear cases.
         if nb_points == 2 {
             let (left_point, right_point) = (&self.payout_points[0], &self.payout_points[1]);
             return if left_point.outcome_payout == right_point.outcome_payout {
-                right_point.outcome_payout as f64
+                Some(right_point.outcome_payout as f64)
             } else {
                 let slope = (right_point.outcome_payout as f64 - left_point.outcome_payout as f64)
                     / (right_point.event_outcome as f64 - left_point.event_outcome as f64);
-                (outcome as f64 - left_point.event_outcome as f64) * slope
-                    + left_point.outcome_payout as f64
+                Some(
+                    (outcome as f64 - left_point.event_outcome as f64) * slope
+                        + left_point.outcome_payout as f64,
+                )
             };
         }
 
@@ -348,7 +384,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
             result += l;
         }
 
-        result
+        Some(result)
     }
 
     fn get_first_outcome(&self) -> u64 {
@@ -368,8 +404,11 @@ impl Evaluable for PolynomialPayoutCurvePiece {
         if self.payout_points.len() == 2
             && self.payout_points[0].outcome_payout == self.payout_points[1].outcome_payout
         {
-            let mut cur_range =
-                self.get_cur_range(range_payouts, total_collateral, rounding_intervals)?;
+            let Some(mut cur_range) =
+                self.get_cur_range(range_payouts, total_collateral, rounding_intervals)?
+            else {
+                return Ok(());
+            };
             cur_range.count += (self.payout_points[1].event_outcome
                 - self.payout_points[0].event_outcome) as usize;
             range_payouts.push(cur_range);
@@ -469,7 +508,7 @@ impl HyperbolaPayoutCurvePiece {
 }
 
 impl Evaluable for HyperbolaPayoutCurvePiece {
-    fn evaluate(&self, outcome: u64) -> f64 {
+    fn evaluate(&self, outcome: u64) -> Option<f64> {
         let outcome = outcome as f64;
         let translated_outcome = outcome - self.translate_outcome;
         let sqrt_term_abs_val = (translated_outcome.powi(2) - 4.0 * self.a * self.b).sqrt();
@@ -481,7 +520,7 @@ impl Evaluable for HyperbolaPayoutCurvePiece {
 
         let first_term = self.c * (translated_outcome + sqrt_term) / (2.0 * self.a);
         let second_term = 2.0 * self.a * self.d / (translated_outcome + sqrt_term);
-        first_term + second_term + self.translate_payout
+        Some(first_term + second_term + self.translate_payout)
     }
 
     fn get_first_outcome(&self) -> u64 {
@@ -519,10 +558,8 @@ impl NoPayoutCurvePiece {
 }
 
 impl Evaluable for NoPayoutCurvePiece {
-    fn evaluate(&self, _outcome: u64) -> f64 {
-        // We cannot return None payout
-        // Nevertheless there is no way to make a sensible value so we panic
-        unreachable!()
+    fn evaluate(&self, _outcome: u64) -> Option<f64> {
+        None
     }
 
     fn get_first_outcome(&self) -> u64 {
@@ -532,26 +569,12 @@ impl Evaluable for NoPayoutCurvePiece {
         self.right_end_point.event_outcome
     }
 
-    // Other function pieces assume continuity of the payout curve
-    // and a previous range payout that make sense
-    // so we create a fake tiny range at the end at the cost of
-    // breaking equivalence between successive NoPayoutCurvePiece
-    // with one large NoPayoutCurvePiece
     fn to_range_payouts(
         &self,
         _rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
-        range_payouts: &mut Vec<RangePayout>,
+        _total_collateral: u64,
+        _range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
-        let end_no_payout_range = RangePayout {
-            start: self.right_end_point.event_outcome as usize - 1,
-            count: 1,
-            payout: Payout {
-                offer: self.right_end_point.outcome_payout,
-                accept: total_collateral - self.right_end_point.outcome_payout,
-            },
-        };
-        range_payouts.push(end_no_payout_range);
         Ok(())
     }
 }
@@ -619,11 +642,13 @@ impl RoundingIntervals {
             ));
         }
 
-        if self.intervals[0].begin_interval != 0 {
-            return Err(Error::InvalidParameters(
-                "Rounding interval doesn't start at 0.".to_string(),
-            ));
-        }
+        // There is no reason to enforce this. The user must have deliberatly made the choice
+        // to not allow settlement for low outcome value when building the payout function.
+        // if self.intervals[0].begin_interval != 0 {
+        //     return Err(Error::InvalidParameters(
+        //         "Rounding interval doesn't start at 0.".to_string(),
+        //     ));
+        // }
 
         let mut cur = self.intervals[0].begin_interval;
 
@@ -668,8 +693,8 @@ mod test {
             ],
         };
 
-        assert_eq!(101_f64, polynomial.evaluate(10));
-        assert_eq!(10001_f64, polynomial.evaluate(100));
+        assert_eq!(Some(101_f64), polynomial.evaluate(10));
+        assert_eq!(Some(10001_f64), polynomial.evaluate(100));
     }
 
     #[test]
@@ -806,7 +831,7 @@ mod test {
         };
 
         for outcome in outcomes {
-            assert_eq!(expected_payout(outcome), hyperbola.evaluate(outcome));
+            assert_eq!(Some(expected_payout(outcome)), hyperbola.evaluate(outcome));
         }
     }
 
