@@ -125,6 +125,7 @@ fn read_dlc_message<R: ::std::io::Read>(
         (
             Channel,
             ChannelMessage,
+            (REJECT, Reject),
             (OFFER_CHANNEL_TYPE, Offer),
             (ACCEPT_CHANNEL_TYPE, Accept),
             (SIGN_CHANNEL_TYPE, Sign),
