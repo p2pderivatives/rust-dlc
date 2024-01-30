@@ -302,7 +302,7 @@ pub fn create_renewal_channel_transactions(
     };
 
     if fund_output.value <= extra_fee + super::DUST_LIMIT {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument(format!("Fund output: {} smaller or equal to extra fee: {} + dust limit: {}", fund_output.value, extra_fee, super::DUST_LIMIT)));
     }
 
     let outpoint = OutPoint {
@@ -392,7 +392,7 @@ pub fn sign_cet<C: Signing>(
 
     descriptor
         .satisfy(&mut cet.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+        .map_err(|e| Error::InvalidArgument(format!("{e:#}")))?;
 
     Ok(())
 }
@@ -422,7 +422,7 @@ pub fn satisfy_buffer_descriptor(
 
     descriptor
         .satisfy(&mut tx.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+        .map_err(|e| Error::InvalidArgument(format!("{e:#}")))?;
 
     Ok(())
 }
@@ -498,7 +498,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
 
     descriptor
         .satisfy(&mut tx.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+        .map_err(|e| Error::InvalidArgument(format!("{e:#}")))?;
 
     Ok(tx)
 }
@@ -578,7 +578,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     descriptor
         .satisfy(&mut tx.input[0], sigs)
-        .map_err(|_| Error::InvalidArgument)?;
+        .map_err(|e| Error::InvalidArgument(format!("{e:#}")))?;
 
     Ok(tx)
 }

@@ -69,7 +69,7 @@ pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
 macro_rules! checked_add {
     ($a: expr, $b: expr) => {
-        $a.checked_add($b).ok_or(Error::InvalidArgument)
+        $a.checked_add($b).ok_or(Error::InvalidArgument("Failed to checked add".to_string()))
     };
     ($a: expr, $b: expr, $c: expr) => {
         checked_add!(checked_add!($a, $b)?, $c)
@@ -182,7 +182,7 @@ pub enum Error {
     /// An error while computing a signature hash
     Sighash(bitcoin::util::sighash::Error),
     /// An invalid argument was provided
-    InvalidArgument,
+    InvalidArgument(String),
     /// An error occurred in miniscript
     Miniscript(miniscript::Error),
 }
@@ -213,9 +213,9 @@ impl From<miniscript::Error> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             Error::Secp256k1(_) => write!(f, "Secp256k1 error"),
-            Error::InvalidArgument => write!(f, "Invalid argument"),
+            Error::InvalidArgument(message) => write!(f, "Invalid argument {message}"),
             Error::Sighash(_) => write!(f, "Error while computing sighash"),
             Error::Miniscript(_) => write!(f, "Error within miniscript"),
         }
@@ -227,7 +227,7 @@ impl std::error::Error for Error {
         match self {
             Error::Secp256k1(e) => Some(e),
             Error::Sighash(e) => Some(e),
-            Error::InvalidArgument => None,
+            Error::InvalidArgument(_) => None,
             Error::Miniscript(e) => Some(e),
         }
     }
@@ -278,7 +278,7 @@ impl PartyParams {
             let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
                 .len()
                 .checked_mul(4)
-                .ok_or(Error::InvalidArgument)?;
+                .ok_or(Error::InvalidArgument("Failed to multiple 4 to script weight".to_string()))?;
             inputs_weight = checked_add!(
                 inputs_weight,
                 TX_INPUT_BASE_WEIGHT,
@@ -290,7 +290,7 @@ impl PartyParams {
         // Value size + script length var_int + ouput script pubkey size
         let change_size = self.change_script_pubkey.len();
         // Change size is scaled by 4 from vBytes to weight units
-        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument)?;
+        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument("failed to multiply 4 to change size".to_string()))?;
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
@@ -313,13 +313,13 @@ impl PartyParams {
             .payout_script_pubkey
             .len()
             .checked_mul(4)
-            .ok_or(Error::InvalidArgument)?;
+            .ok_or(Error::InvalidArgument("failed to multiply 4 to payout script pubkey length".to_string()))?;
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
         let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
         let required_input_funds =
             checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(format!("input amount: {} smaller than required input funds: {} (collateral: {}, fund_fee: {}, cet_or_refund_fee: {}, extra_fee: {})", self.input_amount, required_input_funds, self.collateral, fund_fee, cet_or_refund_fee, extra_fee)));
         }
 
         let change_output = TxOut {
@@ -476,8 +476,13 @@ pub(crate) fn create_cets_and_refund_tx(
         }
     });
 
+    let total_in_offer = payouts.iter().map(|p| checked_add!(p.offer, p.accept).unwrap_or(0)).collect::<Vec<u64>>().iter().sum::<u64>();
+    dbg!(total_in_offer);
+
     if !has_proper_outcomes {
-        return Err(Error::InvalidArgument);
+        dbg!(has_proper_outcomes);
+        dbg!(total_collateral);
+        return Err(Error::InvalidArgument("payouts doe not have proper outcomes".to_string()));
     }
 
     let cet_input = TxIn {
@@ -667,7 +672,7 @@ fn get_oracle_sig_point<C: secp256k1_zkp::Verification>(
     msgs: &[Message],
 ) -> Result<PublicKey, Error> {
     if oracle_info.nonces.len() < msgs.len() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument("length of oracle info nonces is smaller than msgs length".to_string()));
     }
 
     let sig_points: Vec<PublicKey> = oracle_info
@@ -690,7 +695,7 @@ pub fn get_adaptor_point_from_oracle_info<C: Verification>(
     msgs: &[Vec<Message>],
 ) -> Result<PublicKey, Error> {
     if oracle_infos.is_empty() || msgs.is_empty() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument("empty oracle infos or msgs".to_string()));
     }
 
     let mut oracle_sigpoints = Vec::with_capacity(msgs[0].len());
@@ -776,7 +781,7 @@ pub fn create_cet_adaptor_sigs_from_oracle_info(
     msgs: &[Vec<Vec<Message>>],
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     if msgs.len() != cets.len() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::InvalidArgument("length of msgs is not equal to length of cets".to_string()));
     }
 
     cets.iter()

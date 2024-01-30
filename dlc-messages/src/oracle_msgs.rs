@@ -224,7 +224,7 @@ impl OracleEvent {
         if expected_nb_nonces == self.oracle_nonces.len() {
             Ok(())
         } else {
-            Err(Error::InvalidArgument)
+            Err(Error::InvalidArgument("Expected nb nonces is not equal to oracle nonecs length".to_string()))
         }
     }
 }

@@ -124,7 +124,7 @@ impl OfferChannel {
             && self.cet_nsequence >= min_cet_nsequence
             && self.cet_nsequence <= max_cet_nsequence;
         if !valid_dates {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument("Invalid dates".to_string()));
         }
 
         match &self.contract_info {
