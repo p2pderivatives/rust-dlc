@@ -2,7 +2,7 @@ version: "3.4"
 services:
   ### BITCOIND
   bitcoind:
-    image: ruimarinho/bitcoin-core:0.20.0
+    image: ghcr.io/vulpemventures/bitcoin:latest
     container_name: bitcoin-node
     command: |
       -conf=/config/default.conf
@@ -16,9 +16,20 @@ services:
       - bitcoind-data:/home/bitcoin/.bitcoin
       - ./testconfig/config:/config
   electrs:
-    image: cryptogarageinc/electrs:v0.4.8-bitcoin
-    command: |
-      sh -c "electrs -vv --daemon-rpc-addr bitcoind:18443 --daemon-dir /home/bitcoin/.bitcoin --network regtest --http-addr 0.0.0.0:3004"
+    image: ghcr.io/vulpemventures/electrs:latest
+    container_name: electrs
+    entrypoint:
+      - /build/electrs
+    command:
+      - -vv
+      - --daemon-rpc-addr
+      - bitcoind:18443
+      - --daemon-dir
+      - /home/bitcoin/.bitcoin
+      - --network
+      - regtest
+      - --http-addr
+      - 0.0.0.0:3004
     volumes:
       - bitcoind-data:/home/bitcoin/.bitcoin
     ports:
