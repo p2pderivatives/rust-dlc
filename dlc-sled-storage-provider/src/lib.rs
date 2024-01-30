@@ -121,7 +121,8 @@ convertible_enum!(
         Accepted,
         Signed,
         FailedAccept,
-        FailedSign,;
+        FailedSign,
+        Cancelled,;
     },
     Channel
 );
@@ -604,6 +605,7 @@ fn serialize_channel(channel: &Channel) -> Result<Vec<u8>, ::std::io::Error> {
         Channel::Signed(s) => s.serialize(),
         Channel::FailedAccept(f) => f.serialize(),
         Channel::FailedSign(f) => f.serialize(),
+        Channel::Cancelled(o) => o.serialize(),
     };
     let mut serialized = serialized?;
     let mut res = Vec::with_capacity(serialized.len() + 1);
@@ -637,6 +639,9 @@ fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
         }
         ChannelPrefix::FailedSign => {
             Channel::FailedSign(FailedSign::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
+        ChannelPrefix::Cancelled => {
+            Channel::Cancelled(OfferedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
     };
     Ok(channel)
