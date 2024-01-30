@@ -5,7 +5,7 @@ use crate::chain_monitor::{ChainMonitor, ChannelInfo, RevokedTxType, TxType};
 use crate::channel::offered_channel::OfferedChannel;
 use crate::channel::signed_channel::{SignedChannel, SignedChannelState, SignedChannelStateType};
 use crate::channel::{Channel, ClosedChannel, ClosedPunishedChannel};
-use crate::channel_updater::verify_signed_channel;
+use crate::channel_updater::{get_unix_time_now, verify_signed_channel};
 use crate::channel_updater::{self, get_signed_channel_state};
 use crate::contract::{
     accepted_contract::AcceptedContract, contract_info::ContractInfo,
@@ -1391,6 +1391,7 @@ where
         if let SignedChannelState::SettledOffered { .. } = signed_channel.state {
             return Ok(Some(Reject {
                 channel_id: settle_offer.channel_id,
+                timestamp: get_unix_time_now()
             }));
         }
 
@@ -1597,6 +1598,7 @@ where
             if is_offer {
                 return Ok(Some(Reject {
                     channel_id: renew_offer.channel_id,
+                    timestamp: get_unix_time_now()
                 }));
             }
         }

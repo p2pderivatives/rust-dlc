@@ -270,12 +270,15 @@ pub struct SettleOffer {
     /// The per update point to be used by the sending party to setup the next
     /// channel state.
     pub next_per_update_point: PublicKey,
+    /// The timestamp when the message was created
+    pub timestamp: u64,
 }
 
 impl_dlc_writeable!(SettleOffer, {
     (channel_id, writeable),
     (counter_payout, writeable),
-    (next_per_update_point, writeable)
+    (next_per_update_point, writeable),
+    (timestamp, writeable)
 });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -581,6 +584,8 @@ pub struct Reject {
     )]
     /// The id of the channel referred to by the message.
     pub channel_id: [u8; 32],
+    /// The timestamp when the message was created
+    pub timestamp: u64,
 }
 
-impl_dlc_writeable!(Reject, { (channel_id, writeable) });
+impl_dlc_writeable!(Reject, { (channel_id, writeable), (timestamp, writeable) });

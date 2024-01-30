@@ -838,6 +838,7 @@ where
         channel_id: channel.channel_id,
         counter_payout,
         next_per_update_point,
+        timestamp: get_unix_time_now()
     };
 
     Ok(settle_channel_offer)
@@ -1368,6 +1369,7 @@ pub fn reject_settle_offer(signed_channel: &mut SignedChannel) -> Result<Reject,
 
     Ok(Reject {
         channel_id: signed_channel.channel_id,
+        timestamp: get_unix_time_now()
     })
 }
 
@@ -2163,6 +2165,7 @@ pub fn reject_renew_offer(signed_channel: &mut SignedChannel) -> Result<Reject, 
 
     Ok(Reject {
         channel_id: signed_channel.channel_id,
+        timestamp: get_unix_time_now()
     })
 }
 
@@ -2796,4 +2799,12 @@ where
         })
     };
     Ok((settle_tx, channel))
+}
+
+/// Returns the current time as unix time (in seconds)
+pub fn get_unix_time_now() -> u64 {
+    let now = std::time::SystemTime::now();
+    now.duration_since(std::time::UNIX_EPOCH)
+        .expect("Unexpected time error")
+        .as_secs()
 }
