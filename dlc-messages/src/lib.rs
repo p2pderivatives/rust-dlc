@@ -52,6 +52,7 @@ use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
+use serde::{Deserialize, Serialize};
 use segmentation::{SegmentChunk, SegmentStart};
 use sub_channel::{
     Reject as SubChannelReject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
@@ -534,7 +535,7 @@ pub enum OnChainMessage {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChannelMessage {
     Offer(OfferChannel),
     Accept(AcceptChannel),
