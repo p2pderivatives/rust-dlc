@@ -101,6 +101,7 @@ enum TestPath {
     RenewReject,
     RenewRace,
     RenewEstablishedClose,
+    CancelOffer,
 }
 
 #[test]
@@ -254,6 +255,12 @@ fn channel_renew_reject_test() {
 #[ignore]
 fn channel_renew_race_test() {
     channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewRace);
+}
+
+#[test]
+#[ignore]
+fn channel_offer_reject_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::CancelOffer);
 }
 
 fn channel_execution_test(test_params: TestParams, path: TestPath) {
@@ -465,6 +472,18 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     sync_receive.recv().expect("Error synchronizing");
 
     assert_channel_state!(alice_manager_send, temporary_channel_id, Offered);
+
+    if let TestPath::CancelOffer = path {
+        let (reject_msg, _) = alice_manager_send.lock().unwrap().reject_channel(&temporary_channel_id).expect("Error rejecting contract offer");
+        assert_channel_state!(alice_manager_send, temporary_channel_id, Cancelled);
+        alice_send
+            .send(Some(Message::Reject(reject_msg)))
+            .unwrap();
+
+        sync_receive.recv().expect("Error synchronizing");
+        assert_channel_state!(bob_manager_send, temporary_channel_id, Cancelled);
+        return;
+    }
 
     let (mut accept_msg, channel_id, contract_id, _) = alice_manager_send
         .lock()
