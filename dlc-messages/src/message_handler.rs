@@ -116,7 +116,8 @@ pub fn read_dlc_message<R: ::lightning::io::Read>(
         (RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept),
         (RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm),
         (RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize),
-        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
+        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer),
+        (REJECT, Reject)
     )
 }
 
