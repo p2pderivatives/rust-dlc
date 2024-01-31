@@ -37,7 +37,7 @@ pub mod payout_curve;
 mod utils;
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
+use bitcoin::{Address, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
 use channel::signed_channel::{SignedChannel, SignedChannelStateType};
@@ -249,7 +249,7 @@ pub struct Utxo {
     /// The address associated with the referenced output.
     pub address: Address,
     /// The redeem script for the referenced output.
-    pub redeem_script: Script,
+    pub redeem_script: ScriptBuf,
     /// Whether this Utxo has been reserved (and so should not be used to fund
     /// a DLC).
     pub reserved: bool,

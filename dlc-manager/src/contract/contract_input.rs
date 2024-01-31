@@ -104,7 +104,7 @@ impl ContractInput {
 #[cfg(test)]
 mod tests {
     use dlc::{EnumerationPayout, Payout};
-    use secp256k1_zkp::{KeyPair, SECP256K1};
+    use secp256k1_zkp::{KeyPair, SecretKey, SECP256K1};
 
     use crate::contract::enum_descriptor::EnumDescriptor;
 
@@ -138,7 +138,7 @@ mod tests {
                     public_keys: vec![
                         XOnlyPublicKey::from_keypair(&KeyPair::from_secret_key(
                             SECP256K1,
-                            &secp256k1_zkp::ONE_KEY,
+                            &SecretKey::from_slice(&secp256k1_zkp::constants::ONE).unwrap(),
                         ))
                         .0,
                     ],

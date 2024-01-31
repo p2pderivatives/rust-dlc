@@ -65,13 +65,16 @@ pub fn init_clients() -> (Client, Client, Client) {
 
     let offer_address = offer_rpc
         .get_new_address(None, Some(AddressType::Bech32))
-        .unwrap();
+        .unwrap()
+        .assume_checked();
     let accept_address = accept_rpc
         .get_new_address(None, Some(AddressType::Bech32))
-        .unwrap();
+        .unwrap()
+        .assume_checked();
     let sink_address = sink_rpc
         .get_new_address(None, Some(AddressType::Bech32))
-        .unwrap();
+        .unwrap()
+        .assume_checked();
 
     sink_rpc.generate_to_address(1, &offer_address).unwrap();
     sink_rpc.generate_to_address(1, &accept_address).unwrap();

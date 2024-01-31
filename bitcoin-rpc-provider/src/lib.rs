@@ -1,28 +1,27 @@
 //! # Bitcoin rpc provider
 
-use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use bitcoin::address::NetworkUnchecked;
 use bitcoin::consensus::encode::Error as EncodeError;
-use bitcoin::hashes::hex::ToHex;
 use bitcoin::hashes::serde;
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::rand::thread_rng;
 use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{
-    consensus::Decodable, network::constants::Network, Amount, PrivateKey, Script, Transaction,
-    Txid,
+    consensus::Decodable, network::constants::Network, Amount, PrivateKey, Transaction, Txid,
 };
-use bitcoin::{Address, OutPoint, TxOut};
+use bitcoin::{Address, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::jsonrpc::serde_json;
 use bitcoincore_rpc::jsonrpc::serde_json::Value;
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
 use dlc_manager::{Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
+use hex::DisplayHex;
 use json::EstimateMode;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use log::error;
@@ -109,10 +108,6 @@ impl BitcoinCoreProvider {
         let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::with_capacity(7);
         fees.insert(ConfirmationTarget::OnChainSweep, AtomicU32::new(5000));
         fees.insert(
-            ConfirmationTarget::MaxAllowedNonAnchorChannelRemoteFee,
-            AtomicU32::new(25 * 250),
-        );
-        fees.insert(
             ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
             AtomicU32::new(MIN_FEERATE),
         );
@@ -184,9 +179,9 @@ impl ContractSignerProvider for BitcoinCoreProvider {
             .client
             .lock()
             .unwrap()
-            .call::<HashMap<Address, Value>>(
+            .call::<HashMap<Address<NetworkUnchecked>, Value>>(
                 "getaddressesbylabel",
-                &[Value::String(keys_id.to_hex())],
+                &[Value::String(keys_id.to_lower_hex_string())],
             )
             .map_err(rpc_err_to_manager_err)?;
 
@@ -199,7 +194,7 @@ impl ContractSignerProvider for BitcoinCoreProvider {
                 .client
                 .lock()
                 .unwrap()
-                .dump_private_key(address)
+                .dump_private_key(&address.clone().assume_checked())
                 .map_err(rpc_err_to_manager_err)?;
             Ok(SimpleSigner::new(sk.inner))
         } else {
@@ -214,7 +209,7 @@ impl ContractSignerProvider for BitcoinCoreProvider {
                         network,
                         inner: sk,
                     },
-                    Some(&keys_id.to_hex()),
+                    Some(&keys_id.to_lower_hex_string()),
                     Some(false),
                 )
                 .map_err(rpc_err_to_manager_err)?;
@@ -263,22 +258,26 @@ impl ContractSignerProvider for BitcoinCoreProvider {
 
 impl Wallet for BitcoinCoreProvider {
     fn get_new_address(&self) -> Result<Address, ManagerError> {
-        self.client
+        Ok(self
+            .client
             .lock()
             .unwrap()
             .get_new_address(None, Some(AddressType::Bech32))
-            .map_err(rpc_err_to_manager_err)
+            .map_err(rpc_err_to_manager_err)?
+            .assume_checked())
     }
 
     fn get_new_change_address(&self) -> Result<Address, ManagerError> {
-        self.client
+        Ok(self
+            .client
             .lock()
             .unwrap()
-            .call(
+            .call::<Address<NetworkUnchecked>>(
                 "getrawchangeaddress",
                 &[Value::Null, opt_into_json(Some(AddressType::Bech32))?],
             )
-            .map_err(rpc_err_to_manager_err)
+            .map_err(rpc_err_to_manager_err)?
+            .assume_checked())
     }
 
     fn get_utxos_for_amount(
@@ -304,8 +303,16 @@ impl Wallet for BitcoinCoreProvider {
                         txid: x.txid,
                         vout: x.vout,
                     },
-                    address: x.address.as_ref().ok_or(Error::InvalidState)?.clone(),
-                    redeem_script: x.redeem_script.as_ref().unwrap_or(&Script::new()).clone(),
+                    address: x
+                        .address
+                        .as_ref()
+                        .map(|x| x.clone().assume_checked())
+                        .ok_or(Error::InvalidState)?,
+                    redeem_script: x
+                        .redeem_script
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or(ScriptBuf::new()),
                     reserved: false,
                 }))
             })
@@ -536,9 +543,6 @@ fn poll_for_fee_estimates(
                 fees.get(&ConfirmationTarget::OnChainSweep)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
-                fees.get(&ConfirmationTarget::MaxAllowedNonAnchorChannelRemoteFee)
-                    .unwrap()
-                    .store(max(25 * 250, fee_rate * 10), Ordering::Release);
             }
             Err(e) => {
                 error!("Error querying fee estimate: {}", e);

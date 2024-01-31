@@ -1,6 +1,6 @@
 //! # Structure and methods for channels that have been accepted.
 
-use bitcoin::{Script, Transaction};
+use bitcoin::{ScriptBuf, Transaction};
 use dlc_messages::channel::AcceptChannel;
 use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey};
 
@@ -29,7 +29,7 @@ pub struct AcceptedChannel {
     /// The buffer transaction for the initial contract in the channel.
     pub buffer_transaction: Transaction,
     /// The script pubkey of the buffer transaction output.
-    pub buffer_script_pubkey: Script,
+    pub buffer_script_pubkey: ScriptBuf,
     /// The temporary id of the channel.
     pub temporary_channel_id: ChannelId,
     /// The actual id of the channel.
@@ -53,7 +53,7 @@ impl AcceptedChannel {
             funding_pubkey: contract.accept_params.fund_pubkey,
             payout_spk: contract.accept_params.payout_script_pubkey.clone(),
             payout_serial_id: contract.accept_params.payout_serial_id,
-            funding_inputs: contract.funding_inputs.iter().map(|x| x.into()).collect(),
+            funding_inputs: contract.funding_inputs.clone(),
             change_spk: contract.accept_params.change_script_pubkey.clone(),
             change_serial_id: contract.accept_params.change_serial_id,
             cet_adaptor_signatures: cet_adaptor_signatures.into(),

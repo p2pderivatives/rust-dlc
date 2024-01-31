@@ -18,10 +18,10 @@ use crate::contract::{
 use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract};
 use crate::error::Error;
 use crate::{ChannelId, ContractId, ContractSignerProvider};
-use bitcoin::locktime::Height;
+use bitcoin::absolute::Height;
+use bitcoin::consensus::Decodable;
+use bitcoin::Address;
 use bitcoin::{OutPoint, Transaction};
-use bitcoin::hashes::hex::{ToHex};
-use bitcoin::{locktime, Address, LockTime};
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
@@ -29,6 +29,7 @@ use dlc_messages::channel::{
 };
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc};
+use hex::DisplayHex;
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
@@ -40,7 +41,6 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
 use std::sync::Arc;
-use bitcoin::consensus::Decodable;
 
 /// The number of confirmations required before moving the the confirmed state.
 pub const NB_CONFIRMATIONS: u32 = 6;
@@ -670,11 +670,11 @@ where
             )?;
 
             // Check that the lock time has passed
-            let time = locktime::Time::from_consensus(self.time.unix_time_now() as u32)
+            let time = bitcoin::absolute::Time::from_consensus(self.time.unix_time_now() as u32)
                 .expect("Time is not in valid range. This should never happen.");
             let height = Height::from_consensus(self.blockchain.get_blockchain_height()? as u32)
                 .expect("Height is not in valid range. This should never happen.");
-            let locktime = LockTime::from(cet.lock_time);
+            let locktime = cet.lock_time;
 
             if !locktime.is_satisfied_by(height, time) {
                 return Err(Error::InvalidState(
@@ -805,7 +805,7 @@ where
             .dlc_transactions
             .refund
             .lock_time
-            .0 as u64
+            .to_consensus_u32() as u64
             <= self.time.unix_time_now()
         {
             let accepted_contract = &contract.accepted_contract;
@@ -929,7 +929,8 @@ where
     /// Reject a channel that was offered. Returns the [`dlc_messages::channel::Reject`]
     /// message to be sent as well as the public key of the offering node.
     pub fn reject_channel(&self, channel_id: &ChannelId) -> Result<(Reject, PublicKey), Error> {
-        let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
+        let offered_channel =
+            get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
 
         if offered_channel.is_offer_party {
             return Err(Error::InvalidState(
@@ -937,12 +938,22 @@ where
             ));
         }
 
-        let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
+        let offered_contract = get_contract_in_state!(
+            self,
+            &offered_channel.offered_contract_id,
+            Offered,
+            None as Option<PublicKey>
+        )?;
 
         let counterparty = offered_channel.counter_party;
-        self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
+        self.store.upsert_channel(
+            Channel::Cancelled(offered_channel),
+            Some(Contract::Rejected(offered_contract)),
+        )?;
 
-        let msg = Reject{ channel_id: *channel_id };
+        let msg = Reject {
+            channel_id: *channel_id,
+        };
         Ok((msg, counterparty))
     }
 
@@ -2022,44 +2033,68 @@ where
             }
             match channel {
                 Channel::Offered(offered_channel) => {
-                    let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
-                    let utxos = offered_contract.funding_inputs_info.iter().map(|funding_input_info| {
-                        let txid = Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
+                    let offered_contract = get_contract_in_state!(
+                        self,
+                        &offered_channel.offered_contract_id,
+                        Offered,
+                        None as Option<PublicKey>
+                    )?;
+                    let utxos = offered_contract
+                        .funding_inputs
+                        .iter()
+                        .map(|funding_input| {
+                            let txid = Transaction::consensus_decode(
+                                &mut funding_input.prev_tx.as_slice(),
+                            )
                             .expect("Transaction Decode Error")
                             .txid();
-                        let vout = funding_input_info.funding_input.prev_tx_vout;
-                        OutPoint{txid, vout}
-                    }).collect::<Vec<_>>();
+                            let vout = funding_input.prev_tx_vout;
+                            OutPoint { txid, vout }
+                        })
+                        .collect::<Vec<_>>();
 
                     self.wallet.unreserve_utxos(&utxos)?;
 
                     // remove rejected channel, since nothing has been confirmed on chain yet.
-                    self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
-                },
+                    self.store.upsert_channel(
+                        Channel::Cancelled(offered_channel),
+                        Some(Contract::Rejected(offered_contract)),
+                    )?;
+                }
                 Channel::Signed(mut signed_channel) => {
-
                     let contract = match signed_channel.state {
-                        SignedChannelState::RenewOffered { offered_contract_id, .. } => {
-                            let offered_contract = get_contract_in_state!(self, &offered_contract_id, Offered, None::<PublicKey>)?;
+                        SignedChannelState::RenewOffered {
+                            offered_contract_id,
+                            ..
+                        } => {
+                            let offered_contract = get_contract_in_state!(
+                                self,
+                                &offered_contract_id,
+                                Offered,
+                                None::<PublicKey>
+                            )?;
                             Some(Contract::Rejected(offered_contract))
-
                         }
-                        _ => None
+                        _ => None,
                     };
 
                     crate::channel_updater::on_reject(&mut signed_channel)?;
 
                     self.store
                         .upsert_channel(Channel::Signed(signed_channel), contract)?;
-                },
+                }
                 channel => {
-                    return Err(Error::InvalidState(
-                        format!("Not in a state adequate to receive a reject message. {:?}", channel),
-                    ))
+                    return Err(Error::InvalidState(format!(
+                        "Not in a state adequate to receive a reject message. {:?}",
+                        channel
+                    )))
                 }
             }
         } else {
-            warn!("Couldn't find rejected dlc channel with id: {}", reject.channel_id.to_hex());
+            warn!(
+                "Couldn't find rejected dlc channel with id: {}",
+                reject.channel_id.to_lower_hex_string()
+            );
         }
 
         Ok(())
@@ -2452,7 +2487,7 @@ mod test {
         mock_time::MockTime,
         mock_wallet::MockWallet,
     };
-    use secp256k1_zkp::PublicKey;
+    use secp256k1_zkp::{PublicKey, XOnlyPublicKey};
     use std::{collections::HashMap, rc::Rc, sync::Arc};
 
     type TestManager = Manager<
@@ -2475,7 +2510,7 @@ mod test {
         ));
 
         let oracle_list = (0..5).map(|_| MockOracle::new()).collect::<Vec<_>>();
-        let oracles: HashMap<bitcoin::XOnlyPublicKey, _> = oracle_list
+        let oracles: HashMap<XOnlyPublicKey, _> = oracle_list
             .into_iter()
             .map(|x| (x.get_public_key(), Rc::new(x)))
             .collect();
