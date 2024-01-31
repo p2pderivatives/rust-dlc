@@ -1647,7 +1647,7 @@ where
         }
 
         let offered_contract =
-            crate::channel_updater::on_renew_offer(&mut signed_channel, renew_offer)?;
+            crate::channel_updater::on_renew_offer(&mut signed_channel, renew_offer, PEER_TIMEOUT, &self.time)?;
 
         self.store.create_contract(&offered_contract)?;
         self.store
