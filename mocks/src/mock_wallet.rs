@@ -1,10 +1,9 @@
 use std::rc::Rc;
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::secp256k1::PublicKey;
-use bitcoin::{Address, OutPoint, PackedLockTime, Script, Transaction, TxOut};
+use bitcoin::{absolute::LockTime, Address, OutPoint, ScriptBuf, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
-use secp256k1_zkp::{rand::seq::SliceRandom, SecretKey};
+use secp256k1_zkp::{rand::seq::SliceRandom, PublicKey, SecretKey};
 
 use crate::mock_blockchain::MockBlockchain;
 
@@ -19,11 +18,11 @@ impl MockWallet {
         for utxo_value in utxo_values {
             let tx_out = TxOut {
                 value: *utxo_value,
-                script_pubkey: Script::default(),
+                script_pubkey: ScriptBuf::default(),
             };
             let tx = Transaction {
                 version: 2,
-                lock_time: PackedLockTime::ZERO,
+                lock_time: LockTime::ZERO,
                 input: vec![],
                 output: vec![tx_out.clone()],
             };
@@ -35,7 +34,7 @@ impl MockWallet {
                     vout: 0,
                 },
                 address: get_address(),
-                redeem_script: Script::default(),
+                redeem_script: ScriptBuf::default(),
                 reserved: false,
             };
 

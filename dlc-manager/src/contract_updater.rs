@@ -5,6 +5,7 @@ use std::ops::Deref;
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
+use dlc_messages::FundingInput;
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
@@ -17,7 +18,7 @@ use crate::{
     contract::{
         accepted_contract::AcceptedContract, contract_info::ContractInfo,
         contract_input::ContractInput, offered_contract::OfferedContract,
-        signed_contract::SignedContract, AdaptorInfo, FundingInputInfo,
+        signed_contract::SignedContract, AdaptorInfo,
     },
     conversion_utils::get_tx_input_infos,
     error::Error,
@@ -133,16 +134,16 @@ pub(crate) fn accept_contract_internal(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     accept_params: &PartyParams,
-    funding_inputs: &[FundingInputInfo],
+    funding_inputs: &[FundingInput],
     adaptor_secret_key: &SecretKey,
     input_value: u64,
-    input_script_pubkey: Option<Script>,
+    input_script_pubkey: Option<&Script>,
     dlc_transactions: &DlcTransactions,
 ) -> Result<(AcceptedContract, Vec<EcdsaAdaptorSignature>), crate::Error> {
     let total_collateral = offered_contract.total_collateral;
 
     let input_script_pubkey =
-        input_script_pubkey.unwrap_or_else(|| dlc_transactions.funding_script_pubkey.clone());
+        input_script_pubkey.unwrap_or_else(|| &dlc_transactions.funding_script_pubkey);
 
     let cet_input = dlc_transactions.cets[0].input[0].clone();
 
@@ -150,7 +151,7 @@ pub(crate) fn accept_contract_internal(
         secp,
         offered_contract.total_collateral,
         adaptor_secret_key,
-        &input_script_pubkey,
+        input_script_pubkey,
         input_value,
         &dlc_transactions.cets,
         0,
@@ -184,7 +185,7 @@ pub(crate) fn accept_contract_internal(
             secp,
             offered_contract.total_collateral,
             adaptor_secret_key,
-            &input_script_pubkey,
+            input_script_pubkey,
             input_value,
             &tmp_cets,
             adaptor_sigs.len(),
@@ -200,7 +201,7 @@ pub(crate) fn accept_contract_internal(
         secp,
         refund,
         0,
-        &input_script_pubkey,
+        input_script_pubkey,
         input_value,
         adaptor_secret_key,
     )?;
@@ -278,11 +279,7 @@ where
         secp,
         offered_contract,
         &accept_params,
-        &accept_msg
-            .funding_inputs
-            .iter()
-            .map(|x| x.into())
-            .collect::<Vec<_>>(),
+        &accept_msg.funding_inputs,
         &accept_msg.refund_signature,
         &cet_adaptor_signatures,
         fund_output_value,
@@ -301,24 +298,22 @@ where
 
 fn populate_psbt(
     psbt: &mut PartiallySignedTransaction,
-    all_funding_inputs: &[&FundingInputInfo],
+    all_funding_inputs: &[&FundingInput],
 ) -> Result<(), Error> {
     // add witness utxo to fund_psbt for all inputs
     for (input_index, x) in all_funding_inputs.iter().enumerate() {
-        let tx = Transaction::consensus_decode(&mut x.funding_input.prev_tx.as_slice()).map_err(
-            |_| {
-                Error::InvalidParameters(
-                    "Could not decode funding input previous tx parameter".to_string(),
-                )
-            },
-        )?;
-        let vout = x.funding_input.prev_tx_vout;
+        let tx = Transaction::consensus_decode(&mut x.prev_tx.as_slice()).map_err(|_| {
+            Error::InvalidParameters(
+                "Could not decode funding input previous tx parameter".to_string(),
+            )
+        })?;
+        let vout = x.prev_tx_vout;
         let tx_out = tx.output.get(vout as usize).ok_or_else(|| {
             Error::InvalidParameters(format!("Previous tx output not found at index {}", vout))
         })?;
 
         psbt.inputs[input_index].witness_utxo = Some(tx_out.clone());
-        psbt.inputs[input_index].redeem_script = Some(x.funding_input.redeem_script.clone());
+        psbt.inputs[input_index].redeem_script = Some(x.redeem_script.clone());
     }
 
     Ok(())
@@ -328,13 +323,13 @@ pub(crate) fn verify_accepted_and_sign_contract_internal<W: Deref, X: ContractSi
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     accept_params: &PartyParams,
-    funding_inputs_info: &[FundingInputInfo],
+    funding_inputs_info: &[FundingInput],
     refund_signature: &Signature,
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     input_value: u64,
     wallet: &W,
     signer: &X,
-    input_script_pubkey: Option<Script>,
+    input_script_pubkey: Option<&Script>,
     counter_adaptor_pk: Option<PublicKey>,
     dlc_transactions: &DlcTransactions,
     channel_id: Option<ChannelId>,
@@ -353,7 +348,7 @@ where
         .map_err(|_| Error::InvalidState("Tried to create PSBT from signed tx".to_string()))?;
     let mut cets = cets.clone();
 
-    let input_script_pubkey = input_script_pubkey.unwrap_or_else(|| funding_script_pubkey.clone());
+    let input_script_pubkey = input_script_pubkey.unwrap_or_else(|| funding_script_pubkey);
     let counter_adaptor_pk = counter_adaptor_pk.unwrap_or(accept_params.fund_pubkey);
 
     dlc::verify_tx_input_sig(
@@ -361,7 +356,7 @@ where
         refund_signature,
         refund,
         0,
-        &input_script_pubkey,
+        input_script_pubkey,
         input_value,
         &counter_adaptor_pk,
     )?;
@@ -371,7 +366,7 @@ where
             secp,
             offered_contract.total_collateral,
             &counter_adaptor_pk,
-            &input_script_pubkey,
+            input_script_pubkey,
             input_value,
             &cets,
             cet_adaptor_signatures,
@@ -426,7 +421,7 @@ where
             secp,
             adaptor_info,
             &signer,
-            &input_script_pubkey,
+            input_script_pubkey,
             input_value,
             &cets,
         )?;
@@ -435,27 +430,27 @@ where
 
     // get all funding inputs
     let mut all_funding_inputs = offered_contract
-        .funding_inputs_info
+        .funding_inputs
         .iter()
         .chain(funding_inputs_info.iter())
         .collect::<Vec<_>>();
     // sort by serial id
-    all_funding_inputs.sort_by_key(|x| x.funding_input.input_serial_id);
+    all_funding_inputs.sort_by_key(|x| x.input_serial_id);
 
     populate_psbt(&mut fund_psbt, &all_funding_inputs)?;
 
     // Vec<Witness>
     let witnesses: Vec<Witness> = offered_contract
-        .funding_inputs_info
+        .funding_inputs
         .iter()
         .map(|x| {
             let input_index = all_funding_inputs
                 .iter()
-                .position(|y| y.funding_input == x.funding_input)
+                .position(|y| y == &x)
                 .ok_or_else(|| {
                     Error::InvalidState(format!(
                         "Could not find input for serial id {}",
-                        x.funding_input.input_serial_id
+                        x.input_serial_id
                     ))
                 })?;
 
@@ -489,7 +484,7 @@ where
         secp,
         refund,
         0,
-        &input_script_pubkey,
+        input_script_pubkey,
         input_value,
         &signer.get_secret_key()?,
     )?;
@@ -556,7 +551,7 @@ pub(crate) fn verify_signed_contract_internal<W: Deref>(
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     funding_signatures: &FundingSignatures,
     input_value: u64,
-    input_script_pubkey: Option<Script>,
+    input_script_pubkey: Option<&Script>,
     counter_adaptor_pk: Option<PublicKey>,
     wallet: &W,
     channel_id: Option<ChannelId>,
@@ -565,12 +560,8 @@ where
     W::Target: Wallet,
 {
     let offered_contract = &accepted_contract.offered_contract;
-    let input_script_pubkey = input_script_pubkey.unwrap_or_else(|| {
-        accepted_contract
-            .dlc_transactions
-            .funding_script_pubkey
-            .clone()
-    });
+    let input_script_pubkey = input_script_pubkey
+        .unwrap_or_else(|| &accepted_contract.dlc_transactions.funding_script_pubkey);
     let counter_adaptor_pk =
         counter_adaptor_pk.unwrap_or(accepted_contract.offered_contract.offer_params.fund_pubkey);
 
@@ -579,7 +570,7 @@ where
         refund_signature,
         &accepted_contract.dlc_transactions.refund,
         0,
-        &input_script_pubkey,
+        input_script_pubkey,
         input_value,
         &counter_adaptor_pk,
     )?;
@@ -594,7 +585,7 @@ where
         adaptor_sig_start = contract_info.verify_adaptor_info(
             secp,
             &counter_adaptor_pk,
-            &input_script_pubkey,
+            input_script_pubkey,
             input_value,
             &accepted_contract.dlc_transactions.cets,
             cet_adaptor_signatures,
@@ -609,47 +600,47 @@ where
 
     // get all funding inputs
     let mut all_funding_inputs = offered_contract
-        .funding_inputs_info
+        .funding_inputs
         .iter()
         .chain(accepted_contract.funding_inputs.iter())
         .collect::<Vec<_>>();
     // sort by serial id
-    all_funding_inputs.sort_by_key(|x| x.funding_input.input_serial_id);
+    all_funding_inputs.sort_by_key(|x| x.input_serial_id);
 
     populate_psbt(&mut fund_psbt, &all_funding_inputs)?;
 
     for (funding_input, funding_signatures) in offered_contract
-        .funding_inputs_info
+        .funding_inputs
         .iter()
         .zip(funding_signatures.funding_signatures.iter())
     {
         let input_index = all_funding_inputs
             .iter()
-            .position(|x| x.funding_input == funding_input.funding_input)
+            .position(|x| x == &funding_input)
             .ok_or_else(|| {
                 Error::InvalidState(format!(
                     "Could not find input for serial id {}",
-                    funding_input.funding_input.input_serial_id
+                    funding_input.input_serial_id
                 ))
             })?;
 
-        fund_psbt.inputs[input_index].final_script_witness = Some(Witness::from_vec(
-            funding_signatures
+        fund_psbt.inputs[input_index].final_script_witness = Some(Witness::from_slice(
+            &funding_signatures
                 .witness_elements
                 .iter()
                 .map(|x| x.witness.clone())
-                .collect(),
+                .collect::<Vec<_>>(),
         ));
     }
 
     for funding_input in &accepted_contract.funding_inputs {
         let input_index = all_funding_inputs
             .iter()
-            .position(|x| x.funding_input == funding_input.funding_input)
+            .position(|x| x == &funding_input)
             .ok_or_else(|| {
                 Error::InvalidState(format!(
                     "Could not find input for serial id {}",
-                    funding_input.funding_input.input_serial_id
+                    funding_input.input_serial_id
                 ))
             })?;
 

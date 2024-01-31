@@ -335,7 +335,10 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let generate_blocks = |nb_blocks: u64| {
         let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
 
-        let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
+        let sink_address = sink_rpc
+            .get_new_address(None, None)
+            .expect("RPC Error")
+            .assume_checked();
         sink_rpc
             .generate_to_address(nb_blocks, &sink_address)
             .expect("RPC Error");

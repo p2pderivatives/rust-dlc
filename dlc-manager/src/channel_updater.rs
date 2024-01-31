@@ -22,7 +22,7 @@ use crate::{
     utils::get_new_temporary_id,
     Blockchain, ContractSigner, ContractSignerProvider, Time, Wallet,
 };
-use bitcoin::{OutPoint, Script, Sequence, Transaction, TxIn, Witness};
+use bitcoin::{OutPoint, Script, ScriptBuf, Sequence, Transaction, TxIn, Witness};
 use dlc::{
     channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions},
     PartyParams,
@@ -238,7 +238,7 @@ where
         &funding_inputs,
         &own_secret_key,
         buffer_transaction.output[0].value,
-        Some(buffer_script_pubkey.clone()),
+        Some(&buffer_script_pubkey),
         &dlc_transactions,
     )?;
 
@@ -356,17 +356,13 @@ where
         secp,
         offered_contract,
         &accept_params,
-        &accept_channel
-            .funding_inputs
-            .iter()
-            .map(|x| x.into())
-            .collect::<Vec<_>>(),
+        &accept_channel.funding_inputs,
         &accept_channel.refund_signature,
         &accept_cet_adaptor_signatures,
         buffer_transaction.output[0].value,
         wallet,
         &offer_own_sk,
-        Some(buffer_script_pubkey),
+        Some(&buffer_script_pubkey),
         Some(accept_revoke_params.own_pk.inner),
         &dlc_transactions,
         Some(channel_id),
@@ -477,7 +473,7 @@ where
         &cet_adaptor_signatures,
         &sign_channel.funding_signatures,
         accepted_channel.buffer_transaction.output[0].value,
-        Some(accepted_channel.buffer_script_pubkey.clone()),
+        Some(&accepted_channel.buffer_script_pubkey),
         Some(counter_own_pk),
         wallet,
         Some(accepted_channel.channel_id),
@@ -1090,7 +1086,7 @@ where
         offer_params: signed_channel.counter_params.clone(),
         total_collateral: signed_channel.own_params.collateral
             + signed_channel.counter_params.collateral,
-        funding_inputs_info: Vec::new(),
+        funding_inputs: Vec::new(),
         fund_output_serial_id: 0,
         fee_rate_per_vb: signed_channel.fee_rate_per_vb,
         cet_locktime: renew_offer.cet_locktime,
@@ -1209,7 +1205,7 @@ where
         &[],
         &own_secret_key,
         buffer_transaction.output[0].value,
-        Some(buffer_script_pubkey.clone()),
+        Some(&buffer_script_pubkey),
         &dlc_transactions,
     )?;
 
@@ -1325,7 +1321,7 @@ where
         buffer_transaction.output[0].value,
         wallet,
         &offer_own_sk,
-        Some(buffer_script_pubkey.clone()),
+        Some(&buffer_script_pubkey),
         Some(accept_revoke_params.own_pk.inner),
         &dlc_transactions,
         Some(signed_channel.channel_id),
@@ -1436,7 +1432,7 @@ where
             funding_signatures: Vec::new(),
         },
         buffer_transaction.output[0].value,
-        Some(buffer_script_pubkey.clone()),
+        Some(buffer_script_pubkey),
         Some(counter_own_pk),
         wallet,
         Some(signed_channel.channel_id),
@@ -1750,7 +1746,7 @@ fn get_settle_tx_and_adaptor_sig(
             txid: fund_tx.txid(),
             vout: fund_vout as u32,
         },
-        script_sig: Script::new(),
+        script_sig: ScriptBuf::new(),
         sequence: Sequence::MAX,
         witness: Witness::default(),
     };

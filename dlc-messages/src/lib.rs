@@ -36,7 +36,8 @@ pub mod serde_utils;
 use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
-use bitcoin::{consensus::Decodable, OutPoint, Script, Transaction};
+use bitcoin::ScriptBuf;
+use bitcoin::{consensus::Decodable, OutPoint, Transaction};
 use channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
@@ -112,7 +113,7 @@ pub struct FundingInput {
     /// The maximum witness length that can be used to spend the previous UTXO.
     pub max_witness_len: u16,
     /// The redeem script of the previous UTXO.
-    pub redeem_script: Script,
+    pub redeem_script: ScriptBuf,
 }
 
 impl_dlc_writeable!(FundingInput, {
@@ -322,7 +323,7 @@ pub struct OfferDlc {
     /// The public key of the offerer to be used to lock the collateral.
     pub funding_pubkey: PublicKey,
     /// The SPK where the offerer will receive their payout.
-    pub payout_spk: Script,
+    pub payout_spk: ScriptBuf,
     /// Serial id to order CET outputs.
     pub payout_serial_id: u64,
     /// Collateral of the offer party.
@@ -330,7 +331,7 @@ pub struct OfferDlc {
     /// Inputs used by the offer party to fund the contract.
     pub funding_inputs: Vec<FundingInput>,
     /// The SPK where the offer party will receive their change.
-    pub change_spk: Script,
+    pub change_spk: ScriptBuf,
     /// Serial id to order funding transaction outputs.
     pub change_serial_id: u64,
     /// Serial id to order funding transaction outputs.
@@ -430,13 +431,13 @@ pub struct AcceptDlc {
     /// The public key of the accept party to be used to lock the collateral.
     pub funding_pubkey: PublicKey,
     /// The SPK where the accept party will receive their payout.
-    pub payout_spk: Script,
+    pub payout_spk: ScriptBuf,
     /// Serial id to order CET outputs.
     pub payout_serial_id: u64,
     /// Inputs used by the accept party to fund the contract.
     pub funding_inputs: Vec<FundingInput>,
     /// The SPK where the accept party will receive their change.
-    pub change_spk: Script,
+    pub change_spk: ScriptBuf,
     /// Serial id to order funding transaction outputs.
     pub change_serial_id: u64,
     /// The set of adaptor signatures from the accept party.

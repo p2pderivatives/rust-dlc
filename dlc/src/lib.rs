@@ -22,12 +22,13 @@ extern crate serde;
 
 use bitcoin::secp256k1::Scalar;
 use bitcoin::{
+    absolute::LockTime,
     blockdata::{
         opcodes,
-        script::{Builder, Script},
+        script::{Builder, Script, ScriptBuf},
         transaction::{OutPoint, Transaction, TxIn, TxOut},
     },
-    PackedLockTime, Sequence, Witness,
+    Sequence, Witness,
 };
 use secp256k1_zkp::schnorr::Signature as SchnorrSignature;
 use secp256k1_zkp::{
@@ -125,7 +126,7 @@ pub struct DlcTransactions {
     pub refund: Transaction,
 
     /// The script pubkey of the fund output in the fund transaction
-    pub funding_script_pubkey: Script,
+    pub funding_script_pubkey: ScriptBuf,
 }
 
 impl DlcTransactions {
@@ -167,7 +168,7 @@ pub struct TxInputInfo {
     /// The maximum witness length
     pub max_witness_len: usize,
     /// The redeem script
-    pub redeem_script: Script,
+    pub redeem_script: ScriptBuf,
     /// The serial id for the input that will be used for ordering inputs of
     /// the fund transaction
     pub serial_id: u64,
@@ -188,7 +189,7 @@ pub enum Error {
     /// Secp256k1 error
     Secp256k1(secp256k1_zkp::Error),
     /// An error while computing a signature hash
-    Sighash(bitcoin::util::sighash::Error),
+    Sighash(bitcoin::sighash::Error),
     /// An invalid argument was provided
     InvalidArgument,
     /// An error occurred in miniscript
@@ -207,8 +208,8 @@ impl From<secp256k1_zkp::UpstreamError> for Error {
     }
 }
 
-impl From<bitcoin::util::sighash::Error> for Error {
-    fn from(error: bitcoin::util::sighash::Error) -> Error {
+impl From<bitcoin::sighash::Error> for Error {
+    fn from(error: bitcoin::sighash::Error) -> Error {
         Error::Sighash(error)
     }
 }
@@ -255,11 +256,11 @@ pub struct PartyParams {
     /// The public key for the fund multisig script
     pub fund_pubkey: PublicKey,
     /// An address to receive change
-    pub change_script_pubkey: Script,
+    pub change_script_pubkey: ScriptBuf,
     /// Id used to order fund outputs
     pub change_serial_id: u64,
     /// An address to receive the outcome amount
-    pub payout_script_pubkey: Script,
+    pub payout_script_pubkey: ScriptBuf,
     /// Id used to order CET outputs
     pub payout_serial_id: u64,
     /// A list of inputs to fund the contract
@@ -408,7 +409,7 @@ pub(crate) fn create_fund_transaction_with_fees(
     fund_lock_time: u32,
     fund_output_serial_id: u64,
     extra_fee: u64,
-) -> Result<(Transaction, Script), Error> {
+) -> Result<(Transaction, ScriptBuf), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
     let (offer_change_output, offer_fund_fee, offer_cet_fee) =
@@ -492,7 +493,7 @@ pub(crate) fn create_cets_and_refund_tx(
     let cet_input = TxIn {
         previous_output: prev_outpoint,
         witness: Witness::default(),
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         sequence: cet_nsequence.unwrap_or_else(|| util::get_sequence(cet_lock_time)),
     };
 
@@ -519,7 +520,7 @@ pub(crate) fn create_cets_and_refund_tx(
     let refund_input = TxIn {
         previous_output: prev_outpoint,
         witness: Witness::default(),
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         sequence: util::ENABLE_LOCKTIME,
     };
 
@@ -552,7 +553,7 @@ pub fn create_cet(
 
     Transaction {
         version: TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
     }
@@ -572,11 +573,11 @@ pub fn create_cets(
     for payout in payouts {
         let offer_output = TxOut {
             value: payout.offer,
-            script_pubkey: offer_payout_script_pubkey.clone(),
+            script_pubkey: offer_payout_script_pubkey.to_owned(),
         };
         let accept_output = TxOut {
             value: payout.accept,
-            script_pubkey: accept_payout_script_pubkey.clone(),
+            script_pubkey: accept_payout_script_pubkey.to_owned(),
         };
         let tx = create_cet(
             offer_output,
@@ -635,7 +636,7 @@ pub fn create_funding_transaction(
 
     Transaction {
         version: TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input,
         output,
     }
@@ -651,20 +652,20 @@ pub fn create_refund_transaction(
     let output = util::discard_dust(vec![offer_output, accept_output], DUST_LIMIT);
     Transaction {
         version: TX_VERSION,
-        lock_time: PackedLockTime(locktime),
+        lock_time: LockTime::from_consensus(locktime),
         input: vec![funding_input],
         output,
     }
 }
 
 /// Create the multisig redeem script for the funding output
-pub fn make_funding_redeemscript(a: &PublicKey, b: &PublicKey) -> Script {
+pub fn make_funding_redeemscript(a: &PublicKey, b: &PublicKey) -> ScriptBuf {
     let (first, second) = if a <= b { (a, b) } else { (b, a) };
 
     Builder::new()
         .push_opcode(opcodes::all::OP_PUSHNUM_2)
-        .push_slice(&first.serialize())
-        .push_slice(&second.serialize())
+        .push_slice(first.serialize())
+        .push_slice(second.serialize())
         .push_opcode(opcodes::all::OP_PUSHNUM_2)
         .push_opcode(opcodes::all::OP_CHECKMULTISIG)
         .into_script()
@@ -913,10 +914,10 @@ pub fn verify_tx_input_sig<V: Verification>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::blockdata::script::Script;
-    use bitcoin::blockdata::transaction::{EcdsaSighashType, OutPoint};
+    use bitcoin::blockdata::script::ScriptBuf;
+    use bitcoin::blockdata::transaction::OutPoint;
     use bitcoin::consensus::encode::Encodable;
-    use bitcoin::hashes::hex::FromHex;
+    use bitcoin::sighash::EcdsaSighashType;
     use bitcoin::{network::constants::Network, Address, Txid};
     use secp256k1_zkp::{
         rand::{Rng, RngCore},
@@ -930,7 +931,7 @@ mod tests {
         let mut inputs = Vec::new();
         let txin = TxIn {
             previous_output: OutPoint::default(),
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence,
             witness: Witness::new(),
         };
@@ -952,17 +953,17 @@ mod tests {
     fn create_test_tx_io() -> (TxOut, TxOut, TxIn) {
         let offer = TxOut {
             value: DUST_LIMIT + 1,
-            script_pubkey: Script::new(),
+            script_pubkey: ScriptBuf::new(),
         };
 
         let accept = TxOut {
             value: DUST_LIMIT + 2,
-            script_pubkey: Script::new(),
+            script_pubkey: ScriptBuf::new(),
         };
 
         let funding = TxIn {
             previous_output: OutPoint::default(),
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence(3),
             witness: Witness::new(),
         };
@@ -976,7 +977,7 @@ mod tests {
 
         let refund_transaction = create_refund_transaction(offer, accept, funding, 0);
         assert_eq!(2, refund_transaction.version);
-        assert_eq!(0, refund_transaction.lock_time.0);
+        assert_eq!(0, refund_transaction.lock_time.to_consensus_u32());
         assert_eq!(DUST_LIMIT + 1, refund_transaction.output[0].value);
         assert_eq!(DUST_LIMIT + 2, refund_transaction.output[1].value);
         assert_eq!(3, refund_transaction.input[0].sequence.0);
@@ -995,11 +996,11 @@ mod tests {
 
         let offer_change_output = TxOut {
             value: change,
-            script_pubkey: Script::new(),
+            script_pubkey: ScriptBuf::new(),
         };
         let accept_change_output = TxOut {
             value: change,
-            script_pubkey: Script::new(),
+            script_pubkey: ScriptBuf::new(),
         };
         let funding_script_pubkey = make_funding_redeemscript(&pk, &pk1);
 
@@ -1039,11 +1040,11 @@ mod tests {
 
         let offer_change_output = TxOut {
             value: change,
-            script_pubkey: Script::new(),
+            script_pubkey: ScriptBuf::new(),
         };
         let accept_change_output = TxOut {
             value: change,
-            script_pubkey: Script::new(),
+            script_pubkey: ScriptBuf::new(),
         };
 
         let funding_script_pubkey = make_funding_redeemscript(&pk, &pk1);
@@ -1074,9 +1075,13 @@ mod tests {
         let change = 4899999719;
         let total_collateral = 200000312;
         let offer_change_address =
-            Address::from_str("bcrt1qlgmznucxpdkp5k3ktsct7eh6qrc4tju7ktjukn").unwrap();
+            Address::from_str("bcrt1qlgmznucxpdkp5k3ktsct7eh6qrc4tju7ktjukn")
+                .unwrap()
+                .assume_checked();
         let accept_change_address =
-            Address::from_str("bcrt1qvh2dvgjctwh4z5w7sc93u7h4sug0yrdz2lgpqf").unwrap();
+            Address::from_str("bcrt1qvh2dvgjctwh4z5w7sc93u7h4sug0yrdz2lgpqf")
+                .unwrap()
+                .assume_checked();
 
         let offer_change_output = TxOut {
             value: change,
@@ -1096,9 +1101,9 @@ mod tests {
                 .unwrap(),
                 vout: 0,
             },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence(0xffffffff),
-            witness: Witness::from_vec(vec![Script::new().to_bytes()]),
+            witness: Witness::from_slice(&[ScriptBuf::new().to_bytes()]),
         };
 
         let accept_input = TxIn {
@@ -1109,9 +1114,9 @@ mod tests {
                 .unwrap(),
                 vout: 0,
             },
-            script_sig: Script::new(),
+            script_sig: ScriptBuf::new(),
             sequence: Sequence(0xffffffff),
-            witness: Witness::from_vec(vec![Script::new().to_bytes()]),
+            witness: Witness::from_slice(&[ScriptBuf::new().to_bytes()]),
         };
         let offer_fund_sk =
             SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001")
@@ -1181,7 +1186,7 @@ mod tests {
     fn get_p2wpkh_script_pubkey<C: Signing, R: Rng + ?Sized>(
         secp: &Secp256k1<C>,
         rng: &mut R,
-    ) -> Script {
+    ) -> ScriptBuf {
         let sk = bitcoin::PrivateKey {
             inner: SecretKey::new(rng),
             network: Network::Testnet,
@@ -1213,9 +1218,9 @@ mod tests {
                 collateral,
                 inputs: vec![TxInputInfo {
                     max_witness_len: 108,
-                    redeem_script: Script::new(),
+                    redeem_script: ScriptBuf::new(),
                     outpoint: OutPoint {
-                        txid: Txid::from_hex(
+                        txid: Txid::from_str(
                             "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
                         )
                         .unwrap(),
@@ -1287,9 +1292,12 @@ mod tests {
         .unwrap();
 
         // Assert
-        assert_eq!(10, dlc_txs.fund.lock_time.0);
-        assert_eq!(100, dlc_txs.refund.lock_time.0);
-        assert!(dlc_txs.cets.iter().all(|x| x.lock_time.0 == 10));
+        assert_eq!(10, dlc_txs.fund.lock_time.to_consensus_u32());
+        assert_eq!(100, dlc_txs.refund.lock_time.to_consensus_u32());
+        assert!(dlc_txs
+            .cets
+            .iter()
+            .all(|x| x.lock_time.to_consensus_u32() == 10));
     }
 
     #[test]

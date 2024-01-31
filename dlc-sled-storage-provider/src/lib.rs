@@ -15,7 +15,7 @@ extern crate dlc_manager;
 extern crate sled;
 
 #[cfg(feature = "wallet")]
-use bitcoin::{Address, Txid};
+use bitcoin::{address::NetworkUnchecked, Address, Txid};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::accepted_channel::AcceptedChannel;
 use dlc_manager::channel::offered_channel::OfferedChannel;
@@ -430,8 +430,9 @@ impl WalletStorage for SledStorageProvider {
             .map(|x| {
                 Ok(String::from_utf8(x.map_err(to_storage_error)?.to_vec())
                     .map_err(|e| Error::InvalidState(format!("Could not read address key {}", e)))?
-                    .parse()
-                    .expect("to have a valid address as key"))
+                    .parse::<Address<NetworkUnchecked>>()
+                    .expect("to have a valid address as key")
+                    .assume_checked())
             })
             .collect::<Result<Vec<Address>, Error>>()
     }
@@ -654,8 +655,9 @@ fn get_address_key(address: &Address) -> Vec<u8> {
 
 #[cfg(feature = "wallet")]
 fn get_utxo_key(txid: &Txid, vout: u32) -> Vec<u8> {
-    let res: Result<Vec<_>, _> = txid.bytes().collect();
-    let mut key = res.expect("a valid txid");
+    use bitcoin::hashes::Hash;
+
+    let mut key = txid.to_byte_array().to_vec();
     key.extend_from_slice(&vout.to_be_bytes());
     key
 }

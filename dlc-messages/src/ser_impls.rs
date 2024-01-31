@@ -483,6 +483,7 @@ pub fn write_address<W: Writer>(
         Network::Testnet => 1,
         Network::Signet => 2,
         Network::Regtest => 3,
+        _ => unimplemented!(),
     };
 
     net.write(writer)
@@ -490,7 +491,7 @@ pub fn write_address<W: Writer>(
 
 /// Reads a [`bitcoin::util::address::Address`] value from the given reader.
 pub fn read_address<R: Read>(reader: &mut R) -> Result<Address, DecodeError> {
-    let script: bitcoin::Script = Readable::read(reader)?;
+    let script: bitcoin::ScriptBuf = Readable::read(reader)?;
     let net: u8 = Readable::read(reader)?;
     let network = match net {
         0 => Network::Bitcoin,
