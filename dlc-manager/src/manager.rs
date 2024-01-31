@@ -147,6 +147,8 @@ macro_rules! check_for_timed_out_channels {
                     } else {
                         None
                     };
+
+                    log::warn!("Force closing channel that timed out. {} < {}", timeout, $manager.time.unix_time_now());
                     match $manager.force_close_channel_internal(channel, sub_channel, true) {
                         Err(e) => error!("Error force closing channel {}", e),
                         _ => {}
@@ -227,6 +229,8 @@ where
         msg: &DlcMessage,
         counter_party: PublicKey,
     ) -> Result<Option<DlcMessage>, Error> {
+        log::info!("===========> Received dlc message IN RUST DLC!!!!");
+
         match msg {
             DlcMessage::OnChain(on_chain) => match on_chain {
                 OnChainMessage::Offer(o) => {
@@ -1616,7 +1620,7 @@ where
         }
 
         let offered_contract =
-            crate::channel_updater::on_renew_offer(&mut signed_channel, renew_offer)?;
+            crate::channel_updater::on_renew_offer(&mut signed_channel, renew_offer,PEER_TIMEOUT, &self.time)?;
 
         self.store.create_contract(&offered_contract)?;
         self.store
@@ -2375,6 +2379,8 @@ where
                 buffer_transaction,
                 ..
             } => {
+                warn!("Force closing established channel with id: {}", channel.channel_id.to_hex());
+
                 let counter_buffer_adaptor_signature = *counter_buffer_adaptor_signature;
                 let buffer_transaction = buffer_transaction.clone();
                 self.initiate_unilateral_close_established_channel(
@@ -2390,6 +2396,8 @@ where
                 offer_buffer_adaptor_signature,
                 ..
             } => {
+                warn!("Force closing renew finalized channel with id: {}", channel.channel_id.to_hex());
+
                 let offer_buffer_adaptor_signature = *offer_buffer_adaptor_signature;
                 let buffer_transaction = buffer_transaction.clone();
                 self.initiate_unilateral_close_established_channel(
@@ -2401,6 +2409,8 @@ where
                 )
             }
             SignedChannelState::Settled { .. } => {
+                warn!("Force closing settled channel with id: {}", channel.channel_id.to_hex());
+
                 self.close_settled_channel(channel, sub_channel, is_initiator)
             }
             SignedChannelState::SettledOffered { .. }

@@ -1483,10 +1483,14 @@ where
 /// Update the state of the given [`SignedChannel`] from the given [`RenewOffer`].
 /// Expects the channel to be in one of [`SignedChannelState::Settled`] or
 /// [`SignedChannelState::Established`] state.
-pub fn on_renew_offer(
+pub fn on_renew_offer<T: Deref>(
     signed_channel: &mut SignedChannel,
     renew_offer: &RenewOffer,
-) -> Result<OfferedContract, Error> {
+    peer_timeout: u64,
+    time: &T,
+) -> Result<OfferedContract, Error> where
+    T::Target: Time,
+{
     if let SignedChannelState::Settled { .. } | SignedChannelState::Established { .. } =
         signed_channel.state
     {
@@ -1523,7 +1527,7 @@ pub fn on_renew_offer(
         counter_payout: renew_offer.counter_payout,
         offer_next_per_update_point: renew_offer.next_per_update_point,
         is_offer: false,
-        timeout: 0,
+        timeout: time.unix_time_now() + peer_timeout,
     };
 
     std::mem::swap(&mut signed_channel.state, &mut state);
