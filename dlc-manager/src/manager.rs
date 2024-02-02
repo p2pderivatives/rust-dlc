@@ -229,8 +229,6 @@ where
         msg: &DlcMessage,
         counter_party: PublicKey,
     ) -> Result<Option<DlcMessage>, Error> {
-        log::info!("===========> Received dlc message IN RUST DLC!!!!");
-
         match msg {
             DlcMessage::OnChain(on_chain) => match on_chain {
                 OnChainMessage::Offer(o) => {
