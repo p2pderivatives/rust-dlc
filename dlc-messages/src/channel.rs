@@ -530,11 +530,14 @@ pub struct RenewRevoke {
     /// The pre image of the per update point used by the sending party to setup
     /// the previous channel state.
     pub per_update_secret: SecretKey,
+    /// The timestamp when the message was created
+    pub timestamp: u64,
 }
 
 impl_dlc_writeable!(RenewRevoke, {
     (channel_id, writeable),
-    (per_update_secret, writeable)
+    (per_update_secret, writeable),
+    (timestamp, writeable)
 });
 
 #[derive(Clone, Debug, PartialEq, Eq)]

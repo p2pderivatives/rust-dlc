@@ -2092,6 +2092,7 @@ where
     let msg = RenewRevoke {
         channel_id: signed_channel.channel_id,
         per_update_secret: prev_per_update_secret,
+        timestamp: get_unix_time_now()
     };
 
     Ok(msg)
