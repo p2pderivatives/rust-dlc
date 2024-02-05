@@ -85,7 +85,9 @@
           "differenceParams": null,
           "oracleNumericInfos": {
             "base": 2,
-            "nbDigits": [10]
+            "nbDigits": [
+              10
+            ]
           }
         }
       },
@@ -158,5 +160,39 @@
   "fundOutputSerialId": 16475280753107887427,
   "feeRatePerVb": 2,
   "cetLocktime": 1623133104,
-  "refundLocktime": 1623737904
+  "refundLocktime": 1623737904,
+  "keysId": [
+    16,
+    175,
+    248,
+    204,
+    229,
+    173,
+    124,
+    107,
+    34,
+    204,
+    75,
+    138,
+    154,
+    151,
+    193,
+    8,
+    142,
+    116,
+    180,
+    156,
+    90,
+    229,
+    80,
+    251,
+    77,
+    5,
+    215,
+    234,
+    70,
+    117,
+    68,
+    208
+  ]
 }

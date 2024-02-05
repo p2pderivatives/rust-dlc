@@ -7,7 +7,7 @@ use disk::FilesystemLogger;
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use bitcoin_rpc_provider::BitcoinCoreProvider;
-use dlc_manager::{Oracle, SystemTimeProvider};
+use dlc_manager::{CachedContractSignerProvider, Oracle, SimpleSigner, SystemTimeProvider};
 use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
@@ -33,11 +33,13 @@ pub(crate) type PeerManager = LdkPeerManager<
 
 pub(crate) type DlcManager = dlc_manager::manager::Manager<
     Arc<BitcoinCoreProvider>,
+    Arc<CachedContractSignerProvider<Arc<BitcoinCoreProvider>, SimpleSigner>>,
     Arc<BitcoinCoreProvider>,
     Box<dlc_sled_storage_provider::SledStorageProvider>,
     Box<P2PDOracleClient>,
     Arc<SystemTimeProvider>,
     Arc<BitcoinCoreProvider>,
+    SimpleSigner,
 >;
 
 #[tokio::main]
@@ -81,6 +83,7 @@ async fn main() {
     // Instantiate a DlcManager.
     let dlc_manager = Arc::new(Mutex::new(
         dlc_manager::manager::Manager::new(
+            bitcoind_provider.clone(),
             bitcoind_provider.clone(),
             bitcoind_provider.clone(),
             Box::new(

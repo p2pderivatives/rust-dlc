@@ -10,13 +10,13 @@ use dlc_messages::{
 use dlc_trie::RangeInfo;
 #[cfg(not(feature = "fuzztarget"))]
 use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
-use secp256k1_zkp::{PublicKey, Secp256k1, SecretKey, Signing};
+use secp256k1_zkp::{PublicKey, Secp256k1, Signing};
 
 use crate::{
     channel::party_points::PartyBasePoints,
     contract::{contract_info::ContractInfo, AdaptorInfo, FundingInputInfo},
     error::Error,
-    Blockchain, Wallet,
+    Blockchain, ContractSigner, ContractSignerProvider, Wallet,
 };
 
 #[cfg(not(feature = "fuzztarget"))]
@@ -59,19 +59,18 @@ pub(crate) fn compute_id(
     res
 }
 
-pub(crate) fn get_party_params<C: Signing, W: Deref, B: Deref>(
-    secp: &Secp256k1<C>,
+pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner>(
     own_collateral: u64,
     fee_rate: u64,
     wallet: &W,
+    signer: &X,
     blockchain: &B,
-) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
+) -> Result<(PartyParams, Vec<FundingInputInfo>), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
 {
-    let funding_privkey = wallet.get_new_secret_key()?;
-    let funding_pubkey = PublicKey::from_secret_key(secp, &funding_privkey);
+    let funding_pubkey = signer.get_public_key()?;
 
     let payout_addr = wallet.get_new_address()?;
     let payout_spk = payout_addr.script_pubkey();
@@ -124,20 +123,23 @@ where
         input_amount: total_input,
     };
 
-    Ok((party_params, funding_privkey, funding_inputs_info))
+    Ok((party_params, funding_inputs_info))
 }
 
-pub(crate) fn get_party_base_points<C: Signing, W: Deref>(
+pub(crate) fn get_party_base_points<C: Signing, SP: Deref>(
     secp: &Secp256k1<C>,
-    wallet: &W,
+    signer_provider: &SP,
 ) -> Result<PartyBasePoints, Error>
 where
-    W::Target: Wallet,
+    SP::Target: ContractSignerProvider,
 {
     Ok(PartyBasePoints {
-        own_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-        publish_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-        revocation_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
+        own_basepoint: PublicKey::from_secret_key(secp, &signer_provider.get_new_secret_key()?),
+        publish_basepoint: PublicKey::from_secret_key(secp, &signer_provider.get_new_secret_key()?),
+        revocation_basepoint: PublicKey::from_secret_key(
+            secp,
+            &signer_provider.get_new_secret_key()?,
+        ),
     })
 }
 

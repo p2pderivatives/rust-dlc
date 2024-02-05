@@ -8,6 +8,7 @@ use crate::utils::get_new_serial_id;
 use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
 use super::{ContractDescriptor, FundingInputInfo};
+use crate::KeysId;
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::OfferDlc;
@@ -44,6 +45,8 @@ pub struct OfferedContract {
     pub cet_locktime: u32,
     /// The time at which the contract becomes refundable.
     pub refund_locktime: u32,
+    /// Keys Id for generating the signers
+    pub(crate) keys_id: KeysId,
 }
 
 impl OfferedContract {
@@ -75,6 +78,7 @@ impl OfferedContract {
 
     /// Creates a new [`OfferedContract`] from the given parameters.
     pub fn new(
+        id: [u8; 32],
         contract: &ContractInput,
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
         offer_params: &PartyParams,
@@ -82,6 +86,7 @@ impl OfferedContract {
         counter_party: &PublicKey,
         refund_delay: u32,
         cet_locktime: u32,
+        keys_id: KeysId,
     ) -> Self {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
 
@@ -102,7 +107,7 @@ impl OfferedContract {
             })
             .collect::<Vec<ContractInfo>>();
         OfferedContract {
-            id: crate::utils::get_new_temporary_id(),
+            id,
             is_offer_party: true,
             contract_info,
             offer_params: offer_params.clone(),
@@ -113,6 +118,7 @@ impl OfferedContract {
             cet_locktime,
             refund_locktime: latest_maturity + refund_delay,
             counter_party: *counter_party,
+            keys_id,
         }
     }
 
@@ -120,6 +126,7 @@ impl OfferedContract {
     pub fn try_from_offer_dlc(
         offer_dlc: &OfferDlc,
         counter_party: PublicKey,
+        keys_id: KeysId,
     ) -> Result<OfferedContract, crate::conversion_utils::Error> {
         let contract_info = get_contract_info_and_announcements(&offer_dlc.contract_info)?;
 
@@ -146,6 +153,7 @@ impl OfferedContract {
             funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
             total_collateral: offer_dlc.contract_info.get_total_collateral(),
             counter_party,
+            keys_id,
         })
     }
 }

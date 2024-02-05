@@ -34,7 +34,7 @@ use dlc_manager::{error::Error, ContractId, Storage};
 #[cfg(feature = "wallet")]
 use lightning::util::ser::{Readable, Writeable};
 #[cfg(feature = "wallet")]
-use secp256k1_zkp::{PublicKey, SecretKey};
+use secp256k1_zkp::SecretKey;
 #[cfg(feature = "wallet")]
 use simple_wallet::WalletStorage;
 use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
@@ -448,17 +448,16 @@ impl WalletStorage for SledStorageProvider {
         ))
     }
 
-    fn upsert_key_pair(&self, public_key: &PublicKey, privkey: &SecretKey) -> Result<(), Error> {
+    fn upsert_key(&self, identifier: &[u8], privkey: &SecretKey) -> Result<(), Error> {
         self.key_pair_tree()?
-            .insert(public_key.serialize(), &privkey.secret_bytes())
+            .insert(identifier, &privkey.secret_bytes())
             .map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_priv_key_for_pubkey(&self, public_key: &PublicKey) -> Result<Option<SecretKey>, Error> {
+    fn get_priv_key(&self, identifier: &[u8]) -> Result<Option<SecretKey>, Error> {
         let db = self.key_pair_tree()?;
-        let key = public_key.serialize();
-        let raw_key = match db.get(key).map_err(to_storage_error)? {
+        let raw_key = match db.get(identifier).map_err(to_storage_error)? {
             Some(res) => res,
             None => return Ok(None),
         };
