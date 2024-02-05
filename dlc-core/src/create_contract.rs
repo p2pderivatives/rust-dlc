@@ -1,16 +1,10 @@
-use std::sync::OnceLock;
+use std::iter::zip;
 
-use dlc_manager::contract::{
-    contract_info::ContractInfo,
-    contract_input::{ContractInput, ContractInputInfo},
-};
+use dlc_manager::contract::{contract_info::ContractInfo, contract_input::ContractInput};
 use dlc_messages::oracle_msgs::OracleAnnouncement;
-use regex::Regex;
 use secp256k1_zkp::{Secp256k1, Verification};
 
 use crate::{error::*, ContractParams};
-
-static TIMESTAMP_FROM_EVENTID: OnceLock<Regex> = OnceLock::new();
 
 pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncement]>>(
     secp: &Secp256k1<C>,
@@ -18,7 +12,7 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
     fund_serial_id: u64,
     refund_locktime: u32,
     cet_locktime: u32,
-    oracle_announcements: &mut [O],
+    oracle_announcements: &[O],
 ) -> Result<ContractParams> {
     let _ = &contract_input.validate().map_err(FromDlcError::Manager)?;
 
@@ -28,53 +22,11 @@ pub fn verify_and_get_contract_params<C: Verification, O: AsRef<[OracleAnnouncem
             "Number of contracts and Oracle Announcement set must match".to_owned(),
         ))?;
 
-    oracle_announcements.sort_unstable_by_key(|c| {
-        c.as_ref()
-            .get(0)
-            .expect("At least one announcement per contract")
-            .oracle_event
-            .event_maturity_epoch
-    });
-
-    let contract_infos = contract_input.contract_infos;
-
-    let regex: &Regex =
-        TIMESTAMP_FROM_EVENTID.get_or_init(|| Regex::new(r"([a-z_]+)(\d+)").unwrap());
-
-    let contract_timestamps = contract_infos
-        .iter()
-        .map(|c| {
-            Ok(regex
-                .captures(&c.oracles.event_id)
-                .ok_or(FromDlcError::InvalidEventId)?
-                .get(2)
-                .ok_or(FromDlcError::InvalidEventId)?
-                .as_str()
-                .parse::<u32>()
-                .map_err(|_| FromDlcError::InvalidEventId)?)
-        })
-        .collect::<Result<Vec<u32>>>()?;
-
-    let mut contracts_ts = contract_infos
-        .into_iter()
-        .zip(contract_timestamps)
-        .collect::<Vec<(ContractInputInfo, u32)>>();
-
-    contracts_ts.sort_unstable_by_key(|(_, ts)| *ts);
-
-    let sorted_contract_infos = contracts_ts
-        .into_iter()
-        .map(|(info, _)| info)
-        .collect::<Vec<ContractInputInfo>>();
-
     let mut contract_info = Vec::new();
-    for (x, y) in sorted_contract_infos
-        .iter()
-        .zip(oracle_announcements.iter())
-    {
-        if x.oracles.event_id != y.as_ref().get(0).unwrap().oracle_event.event_id {
+    for (x, y) in zip(contract_input.contract_infos, oracle_announcements) {
+        if x.oracles.event_id != y.as_ref().first().unwrap().oracle_event.event_id {
             return Err(FromDlcError::InvalidState(
-                "Oracle Announcement and contract info cannot be matched".to_owned(),
+                "Oracle Announcement and contract info do not match".to_owned(),
             ));
         }
         contract_info.push(ContractInfo {

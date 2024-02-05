@@ -117,7 +117,7 @@ impl PayoutFunction {
         self.payout_function_pieces
             .iter()
             .find_map(|piece| {
-                (piece.get_first_point().event_outcome <= outcome).then_some(match piece {
+                (piece.get_last_point().event_outcome >= outcome).then_some(match piece {
                     PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.evaluate(outcome),
                     PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => h.evaluate(outcome),
                     PayoutFunctionPiece::NoPayoutCurvePiece(_) => None,
