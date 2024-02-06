@@ -5,14 +5,14 @@ mod hex_utils;
 use disk::FilesystemLogger;
 
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
-use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use bitcoin::secp256k1::SecretKey;
 use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc_manager::{CachedContractSignerProvider, Oracle, SimpleSigner, SystemTimeProvider};
 use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
-use lightning::sign::KeysManager;
+use lightning::sign::{KeysManager, NodeSigner};
 use lightning_net_tokio::SocketDescriptor;
 use p2pd_oracle_client::P2PDOracleClient;
 use std::collections::hash_map::HashMap;
@@ -118,10 +118,6 @@ async fn main() {
 
     // Setup a handler for the DLC messages that will be sent/received through LDK.
     let dlc_message_handler = Arc::new(DlcMessageHandler::new());
-    println!(
-        "Node public key: {}",
-        PublicKey::from_secret_key(&Secp256k1::new(), &sk)
-    );
 
     let time = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -132,6 +128,11 @@ async fn main() {
         time.as_secs(),
         time.as_nanos() as u32,
     ));
+
+    println!(
+        "Node public key: {}",
+        km.get_node_id(lightning::sign::Recipient::Node).unwrap()
+    );
 
     // The peer manager helps us establish connections and communicate with our peers.
     let peer_manager: Arc<PeerManager> = Arc::new(PeerManager::new(

@@ -9,4 +9,4 @@ networkConfiguration:
   peerListeningPort: 9001
 network: regtest
 oracleConfig:
-  host: 'https://oracle.p2pderivatives.io/'
+  host: 'http://localhost:8080/'
