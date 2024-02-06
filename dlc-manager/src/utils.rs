@@ -59,7 +59,8 @@ pub(crate) fn compute_id(
     res
 }
 
-pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner>(
+pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner, C: Signing>(
+    secp: &Secp256k1<C>,
     own_collateral: u64,
     fee_rate: u64,
     wallet: &W,
@@ -70,7 +71,7 @@ where
     W::Target: Wallet,
     B::Target: Blockchain,
 {
-    let funding_pubkey = signer.get_public_key()?;
+    let funding_pubkey = signer.get_public_key(secp)?;
 
     let payout_addr = wallet.get_new_address()?;
     let payout_spk = payout_addr.script_pubkey();

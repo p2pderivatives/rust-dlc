@@ -37,7 +37,6 @@ pub mod payout_curve;
 mod utils;
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::secp256k1::SECP256K1;
 use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
@@ -50,8 +49,8 @@ use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::XOnlyPublicKey;
-use secp256k1_zkp::{PublicKey, SecretKey};
+use secp256k1_zkp::{PublicKey, SecretKey, Signing};
+use secp256k1_zkp::{Secp256k1, XOnlyPublicKey};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::RwLock;
@@ -86,7 +85,7 @@ impl Time for SystemTimeProvider {
 /// Provides signing related functionalities.
 pub trait ContractSigner: Clone {
     /// Get the public key associated with the [`ContractSigner`].
-    fn get_public_key(&self) -> Result<PublicKey, Error>;
+    fn get_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<PublicKey, Error>;
     /// Returns the secret key associated with the [`ContractSigner`].
     // todo: remove this method and add create_adaptor_signature to the trait
     fn get_secret_key(&self) -> Result<SecretKey, Error>;
@@ -106,8 +105,8 @@ impl SimpleSigner {
 }
 
 impl ContractSigner for SimpleSigner {
-    fn get_public_key(&self) -> Result<PublicKey, Error> {
-        Ok(self.secret_key.public_key(SECP256K1))
+    fn get_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<PublicKey, Error> {
+        Ok(self.secret_key.public_key(secp))
     }
 
     fn get_secret_key(&self) -> Result<SecretKey, Error> {
@@ -116,8 +115,8 @@ impl ContractSigner for SimpleSigner {
 }
 
 impl ContractSigner for SecretKey {
-    fn get_public_key(&self) -> Result<PublicKey, Error> {
-        Ok(self.public_key(SECP256K1))
+    fn get_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<PublicKey, Error> {
+        Ok(self.public_key(secp))
     }
 
     fn get_secret_key(&self) -> Result<SecretKey, Error> {

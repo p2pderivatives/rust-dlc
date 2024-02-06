@@ -88,6 +88,7 @@ where
     let keys_id = signer_provider.derive_signer_key_id(true, id);
     let signer = signer_provider.derive_contract_signer(keys_id)?;
     let (offer_params, funding_inputs_info) = crate::utils::get_party_params(
+        secp,
         contract.offer_collateral,
         contract.fee_rate,
         wallet,
@@ -157,6 +158,7 @@ where
 
     let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
     let (accept_params, funding_inputs) = crate::utils::get_party_params(
+        secp,
         total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
