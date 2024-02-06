@@ -318,6 +318,7 @@ where
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
     ) -> Result<OfferDlc, Error> {
         let (offered_contract, offer_msg) = crate::contract_updater::offer_contract(
+            &self.secp,
             contract_input,
             oracle_announcements,
             REFUND_DELAY,

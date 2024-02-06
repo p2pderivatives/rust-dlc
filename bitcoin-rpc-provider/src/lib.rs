@@ -195,13 +195,13 @@ impl ContractSignerProvider for BitcoinCoreProvider {
             // if not something has gone wrong
             assert_eq!(label_map.len(), 1);
 
-            let pk = self
+            let sk = self
                 .client
                 .lock()
                 .unwrap()
                 .dump_private_key(address)
                 .map_err(rpc_err_to_manager_err)?;
-            Ok(SimpleSigner::new(pk.inner))
+            Ok(SimpleSigner::new(sk.inner))
         } else {
             let sk = SecretKey::new(&mut thread_rng());
             let network = self.get_network()?;

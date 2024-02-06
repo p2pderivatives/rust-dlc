@@ -26,7 +26,8 @@ use crate::{
 
 /// Creates an [`OfferedContract`] and [`OfferDlc`] message from the provided
 /// contract and oracle information.
-pub fn offer_contract<W: Deref, B: Deref, T: Deref, X: ContractSigner, SP: Deref>(
+pub fn offer_contract<W: Deref, B: Deref, T: Deref, X: ContractSigner, SP: Deref, C: Signing>(
+    secp: &Secp256k1<C>,
     contract_input: &ContractInput,
     oracle_announcements: Vec<Vec<OracleAnnouncement>>,
     refund_delay: u32,
@@ -48,6 +49,7 @@ where
     let keys_id = signer_provider.derive_signer_key_id(true, id);
     let signer = signer_provider.derive_contract_signer(keys_id)?;
     let (party_params, funding_inputs_info) = crate::utils::get_party_params(
+        secp,
         contract_input.offer_collateral,
         contract_input.fee_rate,
         wallet,
@@ -90,6 +92,7 @@ where
 
     let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
     let (accept_params, funding_inputs) = crate::utils::get_party_params(
+        secp,
         total_collateral - offered_contract.offer_params.collateral,
         offered_contract.fee_rate_per_vb,
         wallet,
