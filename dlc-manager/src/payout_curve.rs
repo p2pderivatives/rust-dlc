@@ -409,9 +409,24 @@ impl Evaluable for PolynomialPayoutCurvePiece {
             else {
                 return Ok(());
             };
-            cur_range.count += (self.payout_points[1].event_outcome
-                - self.payout_points[0].event_outcome) as usize;
-            range_payouts.push(cur_range);
+            if cur_range.start + cur_range.count + 1 == self.payout_points[0].event_outcome as usize
+            {
+                cur_range.count += (self.payout_points[1].event_outcome
+                    - self.payout_points[0].event_outcome)
+                    as usize;
+                range_payouts.push(cur_range);
+            } else {
+                range_payouts.push(cur_range);
+                cur_range = RangePayout {
+                    start: self.payout_points[0].event_outcome as usize,
+                    count: (self.payout_points[1].event_outcome
+                        - self.payout_points[0].event_outcome) as usize,
+                    payout: Payout {
+                        offer: self.payout_points[0].outcome_payout,
+                        accept: total_collateral - self.payout_points[0].outcome_payout,
+                    },
+                };
+            }
             return Ok(());
         }
 
