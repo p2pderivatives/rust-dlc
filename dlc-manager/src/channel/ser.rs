@@ -62,7 +62,7 @@ impl_dlc_writeable_enum!(
     (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
     (10, RenewFinalized, {(contract_id, writeable), (prev_offer_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
     (9, Closing, {(buffer_transaction, writeable), (contract_id, writeable), (is_initiator, writeable)}),
-    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable) })
+    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable), (is_offer, writeable) })
     ;;
 );
 

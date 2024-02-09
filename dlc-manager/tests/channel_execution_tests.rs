@@ -91,7 +91,9 @@ enum TestPath {
     BufferCheat,
     RenewedClose,
     SettleCheat,
-    CollaborativeClose,
+    CollaborativeClose{
+        accept_own_offer: bool
+    },
     SettleRenewSettle,
     SettleOfferTimeout,
     SettleAcceptTimeout,
@@ -170,7 +172,16 @@ fn channel_settle_cheat_test() {
 fn channel_collaborative_close_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
-        TestPath::CollaborativeClose,
+        TestPath::CollaborativeClose{ accept_own_offer: false},
+    );
+}
+
+#[test]
+#[ignore]
+fn channel_collaborative_close_own_offer_test() {
+    channel_execution_test(
+        get_enum_test_params(1, 1, None),
+        TestPath::CollaborativeClose{ accept_own_offer: true},
     );
 }
 
@@ -578,7 +589,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                 TestPath::Close => {
                     close_established_channel(first, second, channel_id, &generate_blocks);
                 }
-                TestPath::CollaborativeClose => {
+                TestPath::CollaborativeClose { accept_own_offer } => {
                     collaborative_close(
                         first,
                         first_send,
@@ -586,6 +597,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         channel_id,
                         second_receive,
                         &generate_blocks,
+                        accept_own_offer
                     );
                 }
                 TestPath::SettleOfferTimeout
@@ -1204,6 +1216,7 @@ fn collaborative_close<F: Fn(u64)>(
     channel_id: DlcChannelId,
     sync_receive: &Receiver<()>,
     generate_blocks: &F,
+    accept_own_offer: bool
 ) {
     let contract_id = get_established_channel_contract_id(&first, &channel_id);
     let close_offer = first
@@ -1220,6 +1233,17 @@ fn collaborative_close<F: Fn(u64)>(
 
     assert_channel_state!(first, channel_id, Signed, CollaborativeCloseOffered);
     assert_channel_state!(second, channel_id, Signed, CollaborativeCloseOffered);
+
+    if accept_own_offer {
+        if let Err(e) = first.lock().unwrap().accept_collaborative_close(&channel_id) {
+            assert_eq!("Invalid state: Cannot accept own collaborative close offer", e.to_string());
+        } else {
+            panic!("It should not be possible to accept own collaborative close offer");
+        }
+
+        return;
+    }
+
 
     second
         .lock()

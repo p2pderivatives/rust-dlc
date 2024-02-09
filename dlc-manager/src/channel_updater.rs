@@ -2227,6 +2227,7 @@ where
         offer_signature: close_signature,
         close_tx: close_tx.clone(),
         timeout: time.unix_time_now() + super::manager::PEER_TIMEOUT,
+        is_offer: true,
     };
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);
@@ -2285,6 +2286,7 @@ where
         offer_signature: close_offer.close_signature,
         close_tx,
         timeout: time.unix_time_now() + peer_timeout,
+        is_offer: false
     };
 
     std::mem::swap(&mut state, &mut signed_channel.state);
@@ -2303,11 +2305,17 @@ pub fn accept_collaborative_close_offer<C: Signing, S: Deref>(
 where
     S::Target: Signer,
 {
-    let (offer_signature, close_tx) = get_signed_channel_state!(
+    let (offer_signature, close_tx, is_offer) = get_signed_channel_state!(
         signed_channel,
         CollaborativeCloseOffered,
-        offer_signature | close_tx
+        offer_signature | close_tx, is_offer
     )?;
+
+    if *is_offer {
+        return Err(Error::InvalidState(
+            "Cannot accept own collaborative close offer".to_string(),
+        ));
+    }
 
     let fund_out_amount = signed_channel.fund_tx.output[signed_channel.fund_output_index].value;
 

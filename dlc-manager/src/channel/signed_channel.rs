@@ -309,6 +309,8 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
+            /// Indicates whether the local party offered the collaborative close or not.
+            is_offer: bool,
         },
     },
     /// Enum automatically generated associating a number to each signed channel
