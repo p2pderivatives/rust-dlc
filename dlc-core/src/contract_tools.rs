@@ -201,7 +201,7 @@ pub(crate) fn create_fund_transaction_with_fees(
             value: p.change_fee_value,
             script_pubkey: p.change_script_pubkey.clone(),
         }),
-        fee_party_params.map(|p| p.change_fee_value),
+        fee_party_params.map(|p| p.change_serial_id),
         fund_output_serial_id,
         fund_lock_time,
     );
