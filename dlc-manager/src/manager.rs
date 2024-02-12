@@ -129,7 +129,7 @@ macro_rules! check_for_timed_out_channels {
             if let SignedChannelState::$state { timeout, .. } = channel.state {
                 let is_timed_out = timeout < $manager.time.unix_time_now();
                 if is_timed_out {
-                    let sub_channel = if channel.is_sub_channel() {
+                    let sub_channel: Option<SubChannel> = if channel.is_sub_channel() {
                         log::info!(
                             "Skipping force-closure of subchannel {}: not supported",
                             bitcoin::hashes::hex::ToHex::to_hex(&channel.channel_id[..])
@@ -148,11 +148,18 @@ macro_rules! check_for_timed_out_channels {
                         None
                     };
 
-                    log::warn!("Force closing channel that timed out. {} < {}", timeout, $manager.time.unix_time_now());
-                    match $manager.force_close_channel_internal(channel, sub_channel, true) {
-                        Err(e) => error!("Error force closing channel {}", e),
-                        _ => {}
-                    }
+                    log::warn!(
+                            "Dlc channel timed out in State {:?}. Skipping force-closure of dlc channel {} while in beta.",
+                            channel.state,
+                            bitcoin::hashes::hex::ToHex::to_hex(&channel.channel_id[..])
+                        );
+
+                    // TODO(holzeis): Enable that logic once out of beta!
+                    // log::warn!("Force closing channel that timed out. {} < {}", timeout, $manager.time.unix_time_now());
+                    // match $manager.force_close_channel_internal(channel, sub_channel, true) {
+                    //     Err(e) => error!("Error force closing channel {}", e),
+                    //     _ => {}
+                    // }
                 }
             }
         }
