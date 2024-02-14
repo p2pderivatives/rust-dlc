@@ -476,12 +476,7 @@ pub(crate) fn create_cets_and_refund_tx(
         }
     });
 
-    let total_in_offer = payouts.iter().map(|p| checked_add!(p.offer, p.accept).unwrap_or(0)).collect::<Vec<u64>>().iter().sum::<u64>();
-    dbg!(total_in_offer);
-
     if !has_proper_outcomes {
-        dbg!(has_proper_outcomes);
-        dbg!(total_collateral);
         return Err(Error::InvalidArgument("payouts doe not have proper outcomes".to_string()));
     }
 
