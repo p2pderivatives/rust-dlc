@@ -1322,6 +1322,17 @@ where
             self.blockchain.get_network()?,
         ))?;
 
+        log::info!(
+            "Signed fund transaction {} for channel {} and contract {}",
+            signed_contract
+                .accepted_contract
+                .dlc_transactions
+                .fund
+                .txid(),
+            signed_channel.channel_id.to_hex(),
+            signed_contract.accepted_contract.get_contract_id().to_hex()
+        );
+
         self.store.upsert_channel(
             Channel::Signed(signed_channel),
             Some(Contract::Signed(signed_contract)),
@@ -1388,6 +1399,13 @@ where
         } else {
             unreachable!();
         }
+
+        log::info!(
+            "Broadcasting fund transaction {} for channel {} and contract {}",
+            signed_fund_tx.txid(),
+            sign_channel.channel_id.to_hex(),
+            signed_contract.accepted_contract.get_contract_id().to_hex()
+        );
 
         self.blockchain.send_transaction(&signed_fund_tx)?;
 
