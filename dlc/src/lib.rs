@@ -402,23 +402,36 @@ pub(crate) fn create_fund_transaction_with_fees(
 ) -> Result<(Transaction, Script), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
+    let (offer_extra_fee, accept_extra_fee) = {
+        let half = extra_fee / 2;
+        let remainder = extra_fee % 2;
+
+        // The offer party has to pay an extra sat if there is a remainder.
+        (half + remainder, half)
+    };
+
     let (offer_change_output, offer_fund_fee, offer_cet_fee) =
-        offer_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
+        offer_params.get_change_output_and_fees(fee_rate_per_vb, offer_extra_fee)?;
+
     let (accept_change_output, accept_fund_fee, accept_cet_fee) =
-        accept_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
+        accept_params.get_change_output_and_fees(fee_rate_per_vb, accept_extra_fee)?;
 
     let fund_output_value = checked_add!(offer_params.input_amount, accept_params.input_amount)?
         - offer_change_output.value
         - accept_change_output.value
         - offer_fund_fee
-        - accept_fund_fee
-        - extra_fee;
+        - accept_fund_fee;
 
+    // The fund output has to cover: the total collateral being wagered and the fee reserve to pay
+    // for all transaction fees beyond the funding transaction. In the worst case, this is a buffer
+    // transaction (for DLC channels) and a CET or refund transaction.
     assert_eq!(
-        total_collateral + offer_cet_fee + accept_cet_fee + extra_fee,
-        fund_output_value
+        fund_output_value,
+        total_collateral + offer_cet_fee + accept_cet_fee + offer_extra_fee + accept_extra_fee
     );
 
+    // The sum of the inputs provided by both parties have to cover: the fund output; all the change
+    // outputs; and the funding TX fee.
     assert_eq!(
         offer_params.input_amount + accept_params.input_amount,
         fund_output_value
@@ -426,7 +439,6 @@ pub(crate) fn create_fund_transaction_with_fees(
             + accept_change_output.value
             + offer_fund_fee
             + accept_fund_fee
-            + extra_fee
     );
 
     let fund_sequence = util::get_sequence(fund_lock_time);
