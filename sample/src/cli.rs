@@ -208,7 +208,7 @@ pub(crate) async fn poll_for_user_input(
                                 manager_clone
                                     .lock()
                                     .unwrap()
-                                    .offer_channel(&contract_input, pubkey)
+                                    .offer_channel(&contract_input, pubkey, None)
                                     .expect("Error sending offer channel"),
                             ))
                         }
@@ -356,7 +356,7 @@ pub(crate) async fn poll_for_user_input(
                     let (msg, node_id) = dlc_manager
                         .lock()
                         .unwrap()
-                        .settle_offer(&channel_id, counter_payout)
+                        .settle_offer(&channel_id, counter_payout, None)
                         .expect("Error getting settle offer message.");
                     dlc_message_handler.send_message(
                         node_id,
@@ -423,7 +423,7 @@ pub(crate) async fn poll_for_user_input(
                         manager_clone
                             .lock()
                             .unwrap()
-                            .renew_offer(&channel_id, counter_payout, &contract_input)
+                            .renew_offer(&channel_id, counter_payout, &contract_input, None)
                             .expect("Error sending offer")
                     })
                     .await

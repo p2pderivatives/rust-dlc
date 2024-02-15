@@ -4,7 +4,7 @@ use bitcoin::{Script, Transaction};
 use dlc_messages::channel::AcceptChannel;
 use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey};
 
-use crate::{contract::accepted_contract::AcceptedContract, ContractId, DlcChannelId};
+use crate::{contract::accepted_contract::AcceptedContract, ContractId, DlcChannelId, ReferenceId};
 
 use super::party_points::PartyBasePoints;
 
@@ -38,6 +38,8 @@ pub struct AcceptedChannel {
     pub accept_per_update_seed: PublicKey,
     /// The accept party adaptor signature for the buffer transaction.
     pub accept_buffer_adaptor_signature: EcdsaAdaptorSignature,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>
 }
 
 impl AcceptedChannel {
@@ -46,6 +48,7 @@ impl AcceptedChannel {
         contract: &AcceptedContract,
         buffer_adaptor_signature: &EcdsaAdaptorSignature,
         cet_adaptor_signatures: &[EcdsaAdaptorSignature],
+        reference_id: Option<ReferenceId>,
     ) -> AcceptChannel {
         AcceptChannel {
             temporary_channel_id: self.temporary_channel_id,
@@ -64,6 +67,7 @@ impl AcceptedChannel {
             own_basepoint: self.accept_base_points.own_basepoint,
             first_per_update_point: self.accept_per_update_point,
             buffer_adaptor_signature: *buffer_adaptor_signature,
+            reference_id
         }
     }
 }

@@ -18,7 +18,7 @@ use crate::error::Error;
 use crate::sub_channel_manager::get_sub_channel_in_state;
 use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
-use crate::{ContractId, DlcChannelId, Signer};
+use crate::{ContractId, DlcChannelId, ReferenceId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::{Address, OutPoint};
 use bitcoin::Transaction;
@@ -791,6 +791,7 @@ where
         &self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
+        reference_id: Option<ReferenceId>,
     ) -> Result<OfferChannel, Error> {
         let oracle_announcements = contract_input
             .contract_infos
@@ -810,9 +811,10 @@ where
             &self.time,
             crate::utils::get_new_temporary_id(),
             false,
+            reference_id
         )?;
 
-        let msg = offered_channel.get_offer_channel_msg(&offered_contract);
+        let msg = offered_channel.get_offer_channel_msg(&offered_contract, reference_id);
 
         self.store.upsert_channel(
             Channel::Offered(offered_channel),
@@ -828,10 +830,11 @@ where
         let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
         let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
 
+        let reference_id = offered_channel.reference_id;
         let counterparty = offered_channel.counter_party;
         self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
 
-        let msg = Reject{ channel_id: *channel_id, timestamp: get_unix_time_now() };
+        let msg = Reject{ channel_id: *channel_id, timestamp: get_unix_time_now(), reference_id };
         Ok((msg, counterparty))
     }
 
@@ -885,10 +888,10 @@ where
     }
 
     /// Force close the channel with given [`DlcChannelId`].
-    pub fn force_close_channel(&self, channel_id: &DlcChannelId) -> Result<(), Error> {
+    pub fn force_close_channel(&self, channel_id: &DlcChannelId, reference_id: Option<ReferenceId>) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
-        self.force_close_channel_internal(channel, None, true)
+        self.force_close_channel_internal(channel, None, true, reference_id)
     }
 
     /// Offer to settle the balance of a channel so that the counter party gets
@@ -898,6 +901,7 @@ where
         &self,
         channel_id: &DlcChannelId,
         counter_payout: u64,
+        reference_id: Option<ReferenceId>
     ) -> Result<(SettleOffer, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -909,6 +913,7 @@ where
             PEER_TIMEOUT,
             &self.wallet,
             &self.time,
+            reference_id,
         )?;
 
         let counter_party = signed_channel.counter_party;
@@ -971,6 +976,7 @@ where
         channel_id: &DlcChannelId,
         counter_payout: u64,
         contract_input: &ContractInput,
+        reference_id: Option<ReferenceId>
     ) -> Result<(RenewOffer, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -992,6 +998,7 @@ where
             CET_NSEQUENCE,
             &self.wallet,
             &self.time,
+            reference_id,
         )?;
 
         let counter_party = offered_contract.counter_party;
@@ -1106,6 +1113,7 @@ where
         &self,
         channel_id: &DlcChannelId,
         counter_payout: u64,
+        reference_id: Option<ReferenceId>
     ) -> Result<CollaborativeCloseOffer, Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1116,6 +1124,7 @@ where
             counter_payout,
             &self.wallet,
             &self.time,
+            reference_id
         )?;
 
         self.chain_monitor.lock().unwrap().add_tx(
@@ -1309,6 +1318,7 @@ where
                         error_message: format!("Error validating accept channel: {e}"),
                         accept_message: accept_channel.clone(),
                         counter_party: *peer_id,
+                        reference_id: accept_channel.reference_id
                     };
                     self.store
                         .upsert_channel(Channel::FailedAccept(channel), None)?;
@@ -1379,6 +1389,7 @@ where
                         error_message: format!("Error validating accept channel: {e}"),
                         sign_message: sign_channel.clone(),
                         counter_party: *peer_id,
+                        reference_id: accepted_channel.reference_id
                     };
                     self.store
                         .upsert_channel(Channel::FailedSign(channel), None)?;
@@ -1433,7 +1444,8 @@ where
         if let SignedChannelState::SettledOffered { .. } = signed_channel.state {
             return Ok(Some(Reject {
                 channel_id: settle_offer.channel_id,
-                timestamp: get_unix_time_now()
+                timestamp: get_unix_time_now(),
+                reference_id: settle_offer.reference_id
             }));
         }
 
@@ -1640,7 +1652,8 @@ where
             if is_offer {
                 return Ok(Some(Reject {
                     channel_id: renew_offer.channel_id,
-                    timestamp: get_unix_time_now()
+                    timestamp: get_unix_time_now(),
+                    reference_id: renew_offer.reference_id,
                 }));
             }
         }
@@ -2105,6 +2118,7 @@ where
                         buffer_transaction: tx.clone(),
                         is_initiator: false,
                         contract_id,
+                        reference_id: None
                     };
                     std::mem::swap(&mut signed_channel.state, &mut state);
 
@@ -2260,6 +2274,7 @@ where
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
                         punish_txid: signed_tx.txid(),
+                        reference_id: None
                     });
 
                     //TODO(tibo): should probably make sure the tx is confirmed somewhere before
@@ -2272,15 +2287,15 @@ where
                     true
                 }
                 TxType::CollaborativeClose => {
+                    let (counter_payout, reference_id) = get_signed_channel_state!(
+                            signed_channel,
+                            CollaborativeCloseOffered,
+                            counter_payout | reference_id
+                        )?;
                     if let Some(SignedChannelState::Established {
                         signed_contract_id, ..
                     }) = signed_channel.roll_back_state
                     {
-                        let counter_payout = get_signed_channel_state!(
-                            signed_channel,
-                            CollaborativeCloseOffered,
-                            counter_payout
-                        )?;
                         let closed_contract = self.get_collaboratively_closed_contract(
                             &signed_contract_id,
                             *counter_payout,
@@ -2289,10 +2304,12 @@ where
                         self.store
                             .update_contract(&Contract::Closed(closed_contract))?;
                     }
+
                     let closed_channel = Channel::CollaborativelyClosed(ClosedChannel {
                         counter_party: signed_channel.counter_party,
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
+                        reference_id: *reference_id
                     });
                     self.chain_monitor
                         .lock()
@@ -2306,6 +2323,7 @@ where
                         counter_party: signed_channel.counter_party,
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
+                        reference_id: None,
                     });
                     self.chain_monitor
                         .lock()
@@ -2318,18 +2336,20 @@ where
                     let contract_id = signed_channel.get_contract_id();
                     let closed_channel = {
                         match &signed_channel.state {
-                            SignedChannelState::Closing { is_initiator, .. } => {
+                            SignedChannelState::Closing { is_initiator, reference_id, .. } => {
                                 if *is_initiator {
                                     Channel::Closed(ClosedChannel {
                                         counter_party: signed_channel.counter_party,
                                         temporary_channel_id: signed_channel.temporary_channel_id,
                                         channel_id: signed_channel.channel_id,
+                                        reference_id: *reference_id
                                     })
                                 } else {
                                     Channel::CounterClosed(ClosedChannel {
                                         counter_party: signed_channel.counter_party,
                                         temporary_channel_id: signed_channel.temporary_channel_id,
                                         channel_id: signed_channel.channel_id,
+                                        reference_id: *reference_id
                                     })
                                 }
                             }
@@ -2339,6 +2359,7 @@ where
                                     counter_party: signed_channel.counter_party,
                                     temporary_channel_id: signed_channel.temporary_channel_id,
                                     channel_id: signed_channel.channel_id,
+                                    reference_id: None
                                 })
                             }
                         }
@@ -2398,11 +2419,11 @@ where
     pub(crate) fn force_close_sub_channel(
         &self,
         channel_id: &DlcChannelId,
-        sub_channel: (SubChannel, &ClosingSubChannel),
+        sub_channel: (SubChannel, &ClosingSubChannel)
     ) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
         let is_initiator = sub_channel.1.is_initiator;
-        self.force_close_channel_internal(channel, Some(sub_channel), is_initiator)
+        self.force_close_channel_internal(channel, Some(sub_channel), is_initiator, None)
     }
 
     fn force_close_channel_internal(
@@ -2410,6 +2431,7 @@ where
         mut channel: SignedChannel,
         sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
         is_initiator: bool,
+        reference_id: Option<ReferenceId>
     ) -> Result<(), Error> {
         match &channel.state {
             SignedChannelState::Established {
@@ -2427,13 +2449,16 @@ where
                     is_initiator,
                     counter_buffer_adaptor_signature,
                     buffer_transaction,
+                    reference_id
                 )
             }
             SignedChannelState::RenewFinalized {
                 buffer_transaction,
                 offer_buffer_adaptor_signature,
+                reference_id,
                 ..
             } => {
+                let reference_id = *reference_id;
                 warn!("Force closing renew finalized channel with id: {}", channel.channel_id.to_hex());
 
                 let offer_buffer_adaptor_signature = *offer_buffer_adaptor_signature;
@@ -2444,6 +2469,7 @@ where
                     is_initiator,
                     offer_buffer_adaptor_signature,
                     buffer_transaction,
+                    reference_id
                 )
             }
             SignedChannelState::Settled { .. } => {
@@ -2451,19 +2477,20 @@ where
 
                 self.close_settled_channel(channel, sub_channel, is_initiator)
             }
-            SignedChannelState::SettledOffered { .. }
-            | SignedChannelState::SettledReceived { .. }
-            | SignedChannelState::SettledAccepted { .. }
-            | SignedChannelState::SettledConfirmed { .. }
-            | SignedChannelState::RenewOffered { .. }
-            | SignedChannelState::RenewAccepted { .. }
-            | SignedChannelState::RenewConfirmed { .. }
-            | SignedChannelState::CollaborativeCloseOffered { .. } => {
+            SignedChannelState::SettledOffered { reference_id, .. }
+            | SignedChannelState::SettledReceived { reference_id, .. }
+            | SignedChannelState::SettledAccepted { reference_id, .. }
+            | SignedChannelState::SettledConfirmed { reference_id, .. }
+            | SignedChannelState::RenewOffered { reference_id, .. }
+            | SignedChannelState::RenewAccepted { reference_id, .. }
+            | SignedChannelState::RenewConfirmed { reference_id, .. }
+            | SignedChannelState::CollaborativeCloseOffered { reference_id, .. } => {
+                let reference_id = *reference_id;
                 channel.state = channel
                     .roll_back_state
                     .take()
                     .expect("to have a rollback state");
-                self.force_close_channel_internal(channel, sub_channel, is_initiator)
+                self.force_close_channel_internal(channel, sub_channel, is_initiator, reference_id)
             }
             SignedChannelState::Closing { .. } => Err(Error::InvalidState(
                 "Channel is already closing.".to_string(),
@@ -2479,6 +2506,7 @@ where
         is_initiator: bool,
         buffer_adaptor_signature: EcdsaAdaptorSignature,
         buffer_transaction: Transaction,
+        reference_id: Option<ReferenceId>
     ) -> Result<(), Error> {
         crate::channel_updater::initiate_unilateral_close_established_channel(
             &self.secp,
@@ -2488,6 +2516,7 @@ where
             &self.wallet,
             sub_channel,
             is_initiator,
+            reference_id
         )?;
 
         let buffer_transaction =
@@ -2573,6 +2602,7 @@ where
             counter_party: channel.counter_party,
             temporary_channel_id: channel.temporary_channel_id,
             channel_id,
+            reference_id: None
         });
 
         Ok((closed_channel, contract))

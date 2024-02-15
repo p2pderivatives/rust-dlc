@@ -4,7 +4,8 @@ use bitcoin::{hashes::Hash, Transaction, Txid};
 use dlc_messages::channel::{AcceptChannel, SignChannel};
 use secp256k1_zkp::PublicKey;
 
-use crate::{ContractId, DlcChannelId};
+use crate::{ContractId, DlcChannelId, ReferenceId};
+use crate::channel::signed_channel::SignedChannelState;
 
 use self::{
     accepted_channel::AcceptedChannel, offered_channel::OfferedChannel,
@@ -91,6 +92,36 @@ impl Channel {
             Channel::Cancelled(o) => o.counter_party
         }
     }
+
+    /// Returns the reference id associated with the channel
+    pub fn get_reference_id(&self) -> Option<ReferenceId> {
+        match self {
+            Channel::Offered(o) => o.reference_id,
+            Channel::Accepted(a) => a.reference_id,
+            Channel::Signed(s) => match s.state {
+                SignedChannelState::Established { reference_id, .. } => reference_id,
+                SignedChannelState::SettledOffered { reference_id, .. } => reference_id,
+                SignedChannelState::SettledReceived { reference_id, .. } => reference_id,
+                SignedChannelState::SettledAccepted { reference_id, .. } => reference_id,
+                SignedChannelState::SettledConfirmed { reference_id, .. } => reference_id,
+                SignedChannelState::Settled { reference_id, .. } => reference_id,
+                SignedChannelState::RenewOffered { reference_id, .. } => reference_id,
+                SignedChannelState::RenewAccepted { reference_id, .. } => reference_id,
+                SignedChannelState::RenewConfirmed { reference_id, .. } => reference_id,
+                SignedChannelState::RenewFinalized { reference_id, .. } => reference_id,
+                SignedChannelState::Closing { reference_id, .. } => reference_id,
+                SignedChannelState::CollaborativeCloseOffered { reference_id, .. } => reference_id,
+            },
+            Channel::FailedAccept(f) => f.reference_id,
+            Channel::FailedSign(f) => f.reference_id,
+            Channel::Closing(c) => c.reference_id,
+            Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
+                c.reference_id
+            }
+            Channel::ClosedPunished(c) => c.reference_id,
+            Channel::Cancelled(o) => o.reference_id
+        }
+    }
 }
 
 /// A channel that failed when validating an
@@ -106,6 +137,8 @@ pub struct FailedAccept {
     pub error_message: String,
     /// The [`dlc_messages::channel::AcceptChannel`] that was received.
     pub accept_message: AcceptChannel,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 /// A channel that failed when validating an
@@ -121,6 +154,8 @@ pub struct FailedSign {
     pub error_message: String,
     /// The [`dlc_messages::channel::SignChannel`] that was received.
     pub sign_message: SignChannel,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 #[derive(Clone)]
@@ -142,6 +177,8 @@ pub struct ClosingChannel {
     pub contract_id: ContractId,
     /// Whether the local party initiated the closing of the channel.
     pub is_closer: bool,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 #[derive(Clone)]
@@ -153,6 +190,8 @@ pub struct ClosedChannel {
     pub temporary_channel_id: DlcChannelId,
     /// The [`DlcChannelId`] for the channel.
     pub channel_id: DlcChannelId,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 #[derive(Clone)]
@@ -167,6 +206,8 @@ pub struct ClosedPunishedChannel {
     pub channel_id: DlcChannelId,
     /// The transaction id of the punishment transaction that was broadcast.
     pub punish_txid: Txid,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 impl Channel {
