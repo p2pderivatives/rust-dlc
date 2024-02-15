@@ -6,10 +6,7 @@ use bdk::{
     FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
 };
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{
-    hashes::Hash, Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut,
-    Txid, Witness,
-};
+use bitcoin::{hashes::Hash, Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, OutPoint};
 use dlc_manager::{
     error::Error, Blockchain, ContractSignerProvider, KeysId, SimpleSigner, Utxo, Wallet,
 };
@@ -294,6 +291,14 @@ where
     }
 
     fn import_address(&self, _: &Address) -> Result<()> {
+        Ok(())
+    }
+
+    fn unreserve_utxos(&self, outputs: &[OutPoint]) -> std::result::Result<(), Error> {
+        for outpoint in outputs {
+            self.storage.unreserve_utxo(&outpoint.txid, outpoint.vout)?;
+        }
+
         Ok(())
     }
 

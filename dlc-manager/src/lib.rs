@@ -167,6 +167,8 @@ pub trait Wallet {
         psbt: &mut PartiallySignedTransaction,
         input_index: usize,
     ) -> Result<(), Error>;
+    /// Unlock reserved utxo
+    fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error>;
 }
 
 /// Blockchain trait provides access to the bitcoin blockchain.
