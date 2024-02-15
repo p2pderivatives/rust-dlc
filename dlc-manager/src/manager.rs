@@ -640,7 +640,7 @@ where
         contract_id: &ContractId,
         attestations: Vec<(usize, OracleAttestation)>,
     ) -> Result<Contract, Error> {
-        let contract = get_contract_in_state!(self, &contract_id, Confirmed, None::<PublicKey>)?;
+        let contract = get_contract_in_state!(self, contract_id, Confirmed, None::<PublicKey>)?;
         let contract_infos = &contract.accepted_contract.offered_contract.contract_info;
         let adaptor_infos = &contract.accepted_contract.adaptor_infos;
 
