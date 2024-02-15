@@ -405,6 +405,7 @@ where
             self.dlc_channel_manager.get_time(),
             temporary_channel_id,
             true,
+            None
         )?;
 
         // TODO(tibo): refactor properly.
@@ -1060,7 +1061,7 @@ where
 
         if let Err(e) = self
             .dlc_channel_manager
-            .force_close_sub_channel(&dlc_channel_id, (closing.clone(), &state))
+            .force_close_sub_channel(&dlc_channel_id, (closing.clone(), &state), None)
         {
             error!("Error force closing DLC subchannel {}", e);
         }
@@ -1687,6 +1688,7 @@ where
             cet_locktime: sub_channel_offer.cet_locktime,
             refund_locktime: sub_channel_offer.refund_locktime,
             cet_nsequence: sub_channel_offer.cet_nsequence,
+            reference_id: None
         };
 
         let (offered_channel, offered_contract) =
@@ -1890,6 +1892,7 @@ where
             refund_signature: sub_channel_accept.refund_signature,
             negotiation_fields: None,
             payout_spk: sub_channel_accept.payout_spk.clone(),
+            reference_id: None
         };
 
         let sub_channel_info = SubChannelSignVerifyInfo {
@@ -2079,6 +2082,7 @@ where
                     funding_signatures: FundingSignatures {
                         funding_signatures: vec![],
                     },
+                    reference_id: None
                 };
 
                 let offer_revoke_params = accepted_sub_channel
@@ -3309,6 +3313,7 @@ where
                                     is_offer_party: false,
                                     counter_party: dlc_channel.counter_party,
                                     cet_nsequence: CET_NSEQUENCE,
+                                    reference_id: None
                                 };
                                 self.dlc_channel_manager
                                     .get_store()
@@ -3384,6 +3389,7 @@ where
                                     counter_party: dlc_channel.counter_party,
                                     // TODO(tibo): use value from original offer
                                     cet_nsequence: CET_NSEQUENCE,
+                                    reference_id: None
                                 };
                                 self.ln_channel_manager.set_funding_outpoint(
                                     channel_lock,
@@ -3451,6 +3457,7 @@ where
                                             is_offer_party: false,
                                             counter_party: dlc_channel.counter_party,
                                             cet_nsequence: CET_NSEQUENCE,
+                                            reference_id: None
                                         };
                                         self.dlc_channel_manager
                                             .get_store()
@@ -3700,6 +3707,7 @@ where
             counter_party: channel.get_counter_party_id(),
             temporary_channel_id: channel.get_temporary_id(),
             channel_id: channel.get_id(),
+            reference_id: None
         };
         let closed_channel = if counter_closed {
             Channel::CounterClosed(closed_channel_data)

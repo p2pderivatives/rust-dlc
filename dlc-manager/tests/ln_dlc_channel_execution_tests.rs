@@ -2224,6 +2224,7 @@ fn settle(test_params: &LnDlcTestParams, channel_id: &DlcChannelId) {
         .settle_offer(
             channel_id,
             test_params.test_params.contract_input.accept_collateral,
+            None,
         )
         .unwrap();
 
@@ -2274,6 +2275,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &DlcChannelId) {
             dlc_channel_id,
             test_params.test_params.contract_input.accept_collateral,
             &test_params.test_params.contract_input,
+            None
         )
         .unwrap();
 

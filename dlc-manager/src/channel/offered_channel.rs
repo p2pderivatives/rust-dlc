@@ -6,10 +6,7 @@ use dlc_messages::channel::OfferChannel;
 // use dlc_messages::channel::OfferChannel;
 use secp256k1_zkp::PublicKey;
 
-use crate::{
-    contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos,
-    error::Error, ContractId, DlcChannelId,
-};
+use crate::{contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos, error::Error, ContractId, DlcChannelId, ReferenceId};
 
 use super::party_points::PartyBasePoints;
 
@@ -41,6 +38,8 @@ pub struct OfferedChannel {
     pub counter_party: PublicKey,
     /// The nSequence value to use for the CETs.
     pub cet_nsequence: u32,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>
 }
 
 impl OfferedChannel {
@@ -73,6 +72,7 @@ impl OfferedChannel {
             fee_rate_per_vb: offered_contract.fee_rate_per_vb,
             fund_output_serial_id: offered_contract.fund_output_serial_id,
             cet_nsequence: crate::manager::CET_NSEQUENCE,
+            reference_id: None
         }
     }
 
@@ -97,6 +97,7 @@ impl OfferedChannel {
             is_offer_party: false,
             counter_party,
             cet_nsequence: offer_channel.cet_nsequence,
+            reference_id: offer_channel.reference_id,
         };
 
         let (inputs, input_amount) = get_tx_input_infos(&offer_channel.funding_inputs)?;

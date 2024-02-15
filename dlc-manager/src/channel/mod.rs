@@ -4,7 +4,7 @@ use bitcoin::{hashes::Hash, Transaction, Txid};
 use dlc_messages::channel::{AcceptChannel, SignChannel};
 use secp256k1_zkp::PublicKey;
 
-use crate::{ContractId, DlcChannelId};
+use crate::{ContractId, DlcChannelId, ReferenceId};
 
 use self::{
     accepted_channel::AcceptedChannel, offered_channel::OfferedChannel,
@@ -106,6 +106,8 @@ pub struct FailedAccept {
     pub error_message: String,
     /// The [`dlc_messages::channel::AcceptChannel`] that was received.
     pub accept_message: AcceptChannel,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 /// A channel that failed when validating an
@@ -121,6 +123,8 @@ pub struct FailedSign {
     pub error_message: String,
     /// The [`dlc_messages::channel::SignChannel`] that was received.
     pub sign_message: SignChannel,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 #[derive(Clone)]
@@ -142,6 +146,8 @@ pub struct ClosingChannel {
     pub contract_id: ContractId,
     /// Whether the local party initiated the closing of the channel.
     pub is_closer: bool,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 #[derive(Clone)]
@@ -153,6 +159,8 @@ pub struct ClosedChannel {
     pub temporary_channel_id: DlcChannelId,
     /// The [`DlcChannelId`] for the channel.
     pub channel_id: DlcChannelId,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 #[derive(Clone)]
@@ -167,6 +175,8 @@ pub struct ClosedPunishedChannel {
     pub channel_id: DlcChannelId,
     /// The transaction id of the punishment transaction that was broadcast.
     pub punish_txid: Txid,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 impl Channel {

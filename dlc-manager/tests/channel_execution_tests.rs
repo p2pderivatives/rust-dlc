@@ -485,6 +485,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
                 .parse()
                 .unwrap(),
+            None
         )
         .expect("Send offer error");
 
@@ -685,7 +686,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                             closer
                                 .lock()
                                 .unwrap()
-                                .force_close_channel(&channel_id)
+                                .force_close_channel(&channel_id, None)
                                 .expect("to be able to unilaterally close the channel.");
                         }
                         TestPath::BufferCheat => {
@@ -815,7 +816,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .force_close_channel(&channel_id)
+        .force_close_channel(&channel_id, None)
         .expect("to be able to unilaterally close.");
     assert_channel_state!(first, channel_id, Signed, Closing);
 
@@ -873,13 +874,13 @@ fn cheat_punish<F: Fn(u64)>(
         first
             .lock()
             .unwrap()
-            .force_close_channel(&channel_id)
+            .force_close_channel(&channel_id, None)
             .expect("the cheater to be able to close on established");
     } else {
         first
             .lock()
             .unwrap()
-            .force_close_channel(&channel_id)
+            .force_close_channel(&channel_id, None)
             .expect("the cheater to be able to close on settled");
     }
 
@@ -902,7 +903,7 @@ fn settle_channel(
     let (settle_offer, _) = first
         .lock()
         .unwrap()
-        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
+        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, None)
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
@@ -953,7 +954,7 @@ fn settle_reject(
     let (settle_offer, _) = first
         .lock()
         .unwrap()
-        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
+        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, None)
         .expect("to be able to reject a settlement of the contract.");
 
     first_send
@@ -999,13 +1000,13 @@ fn settle_race(
     let (settle_offer, _) = first
         .lock()
         .unwrap()
-        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
+        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, None)
         .expect("to be able to offer a settlement of the contract.");
 
     let (settle_offer_2, _) = second
         .lock()
         .unwrap()
-        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
+        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, None)
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
@@ -1059,7 +1060,7 @@ fn renew_channel(
     let (renew_offer, _) = first
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input)
+        .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input, None)
         .expect("to be able to renew channel contract");
 
     first_send
@@ -1122,7 +1123,7 @@ fn renew_reject(
     let (renew_offer, _) = first
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input)
+        .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input, None)
         .expect("to be able to renew channel contract");
 
     first_send
@@ -1166,7 +1167,7 @@ fn renew_race(
     let (renew_offer, _) = first
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, contract_input)
+        .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, contract_input, None)
         .expect("to be able to renew channel contract");
 
     let mut contract_input_2 = contract_input.clone();
@@ -1176,7 +1177,7 @@ fn renew_race(
     let (renew_offer_2, _) = second
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, &contract_input_2)
+        .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, &contract_input_2, None)
         .expect("to be able to renew channel contract");
 
     first_send
@@ -1222,7 +1223,7 @@ fn collaborative_close<F: Fn(u64)>(
     let close_offer = first
         .lock()
         .unwrap()
-        .offer_collaborative_close(&channel_id, test_utils::ACCEPT_COLLATERAL)
+        .offer_collaborative_close(&channel_id, test_utils::ACCEPT_COLLATERAL, None)
         .expect("to be able to propose a collaborative close");
     first_send
         .send(Some(Message::Channel(
@@ -1278,7 +1279,7 @@ fn renew_timeout<F: Fn(u64)>(
         let (renew_offer, _) = first
             .lock()
             .unwrap()
-            .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input)
+            .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input, None)
             .expect("to be able to offer a settlement of the contract.");
 
         first_send
@@ -1359,7 +1360,7 @@ fn settle_timeout(
     let (settle_offer, _) = first
         .lock()
         .unwrap()
-        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
+        .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, None)
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
