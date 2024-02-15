@@ -6,9 +6,7 @@ use bdk::{
     FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
 };
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{
-    Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-};
+use bitcoin::{Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, OutPoint};
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use rust_bitcoin_coin_selection::select_coins;
@@ -283,6 +281,14 @@ where
     }
 
     fn import_address(&self, _: &Address) -> Result<()> {
+        Ok(())
+    }
+
+    fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> std::result::Result<(), Error> {
+        for outpoint in outpoints {
+            self.storage.unreserve_utxo(&outpoint.txid, outpoint.vout)?;
+        }
+
         Ok(())
     }
 }

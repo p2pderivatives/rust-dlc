@@ -20,7 +20,7 @@ use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
 use crate::{ContractId, DlcChannelId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
-use bitcoin::Address;
+use bitcoin::{Address, OutPoint};
 use bitcoin::Transaction;
 use bitcoin::hashes::hex::ToHex;
 use dlc_messages::channel::{
@@ -43,6 +43,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
 use std::sync::Mutex;
+use bitcoin::consensus::Decodable;
 
 /// The number of confirmations required before moving the the confirmed state.
 pub const NB_CONFIRMATIONS: u32 = 1;
@@ -826,6 +827,19 @@ where
     pub fn reject_channel(&self, channel_id: &DlcChannelId) -> Result<(Reject, PublicKey), Error> {
         let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
         let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
+
+        if offered_channel.is_offer_party {
+            let utxos = offered_contract.funding_inputs_info.iter().map(|funding_input_info| {
+                let txid = Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
+                    .expect("Transaction Decode Error")
+                    .txid();
+                let vout = funding_input_info.funding_input.prev_tx_vout;
+                OutPoint{txid, vout}
+            }).collect::<Vec<_>>();
+
+            self.wallet.unreserve_utxos(&utxos)?;
+        }
+
         let counterparty = offered_channel.counter_party;
         self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
 
