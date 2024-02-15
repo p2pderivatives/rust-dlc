@@ -825,8 +825,9 @@ where
     /// message to be sent as well as the public key of the offering node.
     pub fn reject_channel(&self, channel_id: &DlcChannelId) -> Result<(Reject, PublicKey), Error> {
         let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
+        let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
         let counterparty = offered_channel.counter_party;
-        self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+        self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
 
         let msg = Reject{ channel_id: *channel_id, timestamp: get_unix_time_now() };
         Ok((msg, counterparty))
@@ -2003,8 +2004,10 @@ where
             }
             match channel {
                 Channel::Offered(offered_channel) => {
+                    let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
+
                     // remove rejected channel, since nothing has been confirmed on chain yet.
-                    self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+                    self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
                 },
                 Channel::Signed(mut signed_channel) => {
                     crate::channel_updater::on_reject(&mut signed_channel)?;
