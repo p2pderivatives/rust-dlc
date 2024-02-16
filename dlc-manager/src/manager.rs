@@ -20,7 +20,7 @@ use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
 use crate::{ContractId, DlcChannelId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
-use bitcoin::Address;
+use bitcoin::{Address, OutPoint};
 use bitcoin::Transaction;
 use bitcoin::hashes::hex::ToHex;
 use dlc_messages::channel::{
@@ -43,6 +43,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
 use std::sync::Mutex;
+use bitcoin::consensus::Decodable;
 
 /// The number of confirmations required before moving the the confirmed state.
 pub const NB_CONFIRMATIONS: u32 = 1;
@@ -825,8 +826,10 @@ where
     /// message to be sent as well as the public key of the offering node.
     pub fn reject_channel(&self, channel_id: &DlcChannelId) -> Result<(Reject, PublicKey), Error> {
         let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
+        let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
+
         let counterparty = offered_channel.counter_party;
-        self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+        self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
 
         let msg = Reject{ channel_id: *channel_id, timestamp: get_unix_time_now() };
         Ok((msg, counterparty))
@@ -2003,8 +2006,20 @@ where
             }
             match channel {
                 Channel::Offered(offered_channel) => {
+                    let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
+
+                    let utxos = offered_contract.funding_inputs_info.iter().map(|funding_input_info| {
+                        let txid = Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
+                            .expect("Transaction Decode Error")
+                            .txid();
+                        let vout = funding_input_info.funding_input.prev_tx_vout;
+                        OutPoint{txid, vout}
+                    }).collect::<Vec<_>>();
+
+                    self.wallet.unreserve_utxos(&utxos)?;
+
                     // remove rejected channel, since nothing has been confirmed on chain yet.
-                    self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+                    self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
                 },
                 Channel::Signed(mut signed_channel) => {
                     crate::channel_updater::on_reject(&mut signed_channel)?;

@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{Address, PackedLockTime, Script, Transaction, TxOut};
+use bitcoin::{Address, OutPoint, PackedLockTime, Script, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
 use lightning::chain::chaininterface::BroadcasterInterface;
 use secp256k1_zkp::{rand::seq::SliceRandom, SecretKey};
@@ -109,6 +109,10 @@ impl Wallet for MockWallet {
     }
 
     fn import_address(&self, _address: &Address) -> Result<(), dlc_manager::error::Error> {
+        Ok(())
+    }
+
+    fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error> {
         Ok(())
     }
 }
