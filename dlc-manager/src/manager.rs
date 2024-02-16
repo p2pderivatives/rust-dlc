@@ -932,18 +932,6 @@ where
         let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
         let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
 
-        if offered_channel.is_offer_party {
-            let utxos = offered_contract.funding_inputs_info.iter().map(|funding_input_info| {
-                let txid = Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
-                    .expect("Transaction Decode Error")
-                    .txid();
-                let vout = funding_input_info.funding_input.prev_tx_vout;
-                OutPoint{txid, vout}
-            }).collect::<Vec<_>>();
-
-            self.wallet.unreserve_utxos(&utxos)?;
-        }
-
         let counterparty = offered_channel.counter_party;
         self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
 
@@ -2028,6 +2016,16 @@ where
             match channel {
                 Channel::Offered(offered_channel) => {
                     let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
+                    let utxos = offered_contract.funding_inputs_info.iter().map(|funding_input_info| {
+                        let txid = Transaction::consensus_decode(&mut funding_input_info.funding_input.prev_tx.as_slice())
+                            .expect("Transaction Decode Error")
+                            .txid();
+                        let vout = funding_input_info.funding_input.prev_tx_vout;
+                        OutPoint{txid, vout}
+                    }).collect::<Vec<_>>();
+
+                    self.wallet.unreserve_utxos(&utxos)?;
+
                     // remove rejected channel, since nothing has been confirmed on chain yet.
                     self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
                 },
