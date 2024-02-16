@@ -2027,8 +2027,9 @@ where
             }
             match channel {
                 Channel::Offered(offered_channel) => {
+                    let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
                     // remove rejected channel, since nothing has been confirmed on chain yet.
-                    self.store.upsert_channel(Channel::Cancelled(offered_channel), None)?;
+                    self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
                 },
                 Channel::Signed(mut signed_channel) => {
                     crate::channel_updater::on_reject(&mut signed_channel)?;
