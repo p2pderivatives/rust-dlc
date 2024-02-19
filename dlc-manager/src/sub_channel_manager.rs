@@ -631,7 +631,7 @@ where
                 let ln_output_value = split_tx.transaction.output[0].value;
 
                 let glue_tx_output_value = ln_output_value
-                    - dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)
+                    - dlc::util::tx_weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)
                         .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
 
                 let ln_glue_tx = dlc::channel::sub_channel::create_ln_glue_tx(
@@ -1812,7 +1812,7 @@ where
         );
 
         let glue_tx_output_value = ln_output_value
-            - dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)
+            - dlc::util::tx_weight_to_fee(LN_GLUE_TX_WEIGHT, offered_contract.fee_rate_per_vb)
                 .map_err(|e| APIError::ExternalError { err: e.to_string() })?;
 
         let ln_glue_tx = dlc::channel::sub_channel::create_ln_glue_tx(
@@ -4202,7 +4202,7 @@ fn validate_and_get_ln_values_per_party(
 // if total fee is not even.
 fn per_party_fee(fee_rate: u64) -> Result<(u64, u64), Error> {
     let total_fee = (dlc::channel::sub_channel::dlc_channel_and_split_fee(fee_rate)?
-        + dlc::util::weight_to_fee(LN_GLUE_TX_WEIGHT, fee_rate)?) as f64;
+        + dlc::util::tx_weight_to_fee(LN_GLUE_TX_WEIGHT, fee_rate)?) as f64;
     Ok((
         (total_fee / 2.0).ceil() as u64,
         (total_fee / 2.0).floor() as u64,

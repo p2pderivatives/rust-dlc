@@ -302,7 +302,7 @@ impl PartyParams {
             change_weight,
             36
         )?;
-        let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
+        let fund_fee = util::tx_weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
@@ -315,7 +315,7 @@ impl PartyParams {
             .checked_mul(4)
             .ok_or(Error::InvalidArgument("failed to multiply 4 to payout script pubkey length".to_string()))?;
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
-        let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
+        let cet_or_refund_fee = util::tx_weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
         let required_input_funds =
             checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {

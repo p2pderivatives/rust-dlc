@@ -43,11 +43,11 @@ pub const LN_GLUE_TX_WEIGHT: usize = BUFFER_TX_WEIGHT;
 /// Returns an error if the given `fee_rate_per_vb` is too large resulting in an overflow during
 /// the computation.
 pub fn dlc_channel_and_split_fee(fee_rate_per_vb: u64) -> Result<u64, Error> {
-    Ok(crate::util::weight_to_fee(
+    Ok(crate::util::tx_weight_to_fee(
         crate::channel::sub_channel::SPLIT_TX_WEIGHT,
         fee_rate_per_vb,
-    )? + crate::util::weight_to_fee(crate::channel::BUFFER_TX_WEIGHT, fee_rate_per_vb)?
-        + crate::util::weight_to_fee(
+    )? + crate::util::tx_weight_to_fee(crate::channel::BUFFER_TX_WEIGHT, fee_rate_per_vb)?
+        + crate::util::tx_weight_to_fee(
             crate::channel::CET_EXTRA_WEIGHT
                 + crate::CET_BASE_WEIGHT
                 + crate::P2WPKH_WITNESS_SIZE * 2
@@ -79,8 +79,8 @@ pub fn create_split_tx(
 ) -> Result<SplitTx, Error> {
     let output_desc = buffer_descriptor(offer_revoke_params, accept_revoke_params);
 
-    let dlc_fee = crate::util::weight_to_fee(super::BUFFER_TX_WEIGHT, fee_rate_per_vb)?
-        + crate::util::weight_to_fee(
+    let dlc_fee = crate::util::tx_weight_to_fee(super::BUFFER_TX_WEIGHT, fee_rate_per_vb)?
+        + crate::util::tx_weight_to_fee(
             super::CET_EXTRA_WEIGHT + crate::CET_BASE_WEIGHT + 2 * crate::P2WPKH_WITNESS_SIZE + 18,
             fee_rate_per_vb,
         )?;
@@ -99,7 +99,7 @@ pub fn create_split_tx(
 
     let ln_output_value = channel_value
         - dlc_output_value
-        - crate::util::weight_to_fee(SPLIT_TX_WEIGHT, fee_rate_per_vb)?;
+        - crate::util::tx_weight_to_fee(SPLIT_TX_WEIGHT, fee_rate_per_vb)?;
 
     let output_values = [ln_output_value, dlc_output_value];
 
@@ -193,7 +193,7 @@ pub fn create_and_sign_punish_split_transaction<C: Signing>(
     let dest_script_pk_len = dest_address.script_pubkey().len();
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
     let output_weight = super::N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
-    let tx_fee = crate::util::weight_to_fee(
+    let tx_fee = crate::util::tx_weight_to_fee(
         super::PUNISH_BUFFER_INPUT_WEIGHT * 2 + output_weight,
         fee_rate_per_vb,
     )?;

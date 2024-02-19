@@ -98,7 +98,7 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
 
 /// Computes the required fee for a transaction based on the given weight and fee
 /// rate per vbyte.
-pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
+pub fn tx_weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
     Ok(u64::max(
         (f64::ceil((weight as f64) / 4.0) as u64)
             .checked_mul(fee_rate)
