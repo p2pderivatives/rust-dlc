@@ -287,22 +287,15 @@ impl PartyParams {
             )?;
         }
 
-        // Value size + script length var_int + ouput script pubkey size
-        let change_size = self.change_script_pubkey.len();
-        // Change size is scaled by 4 from vBytes to weight units
-        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument("failed to multiply 4 to change size".to_string()))?;
-
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
         let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT / 2;
 
-        let total_fund_weight = checked_add!(
+        let fund_weight_without_change = checked_add!(
             this_party_fund_base_weight,
-            inputs_weight,
-            change_weight,
-            36
+            inputs_weight
         )?;
-        let fund_fee = util::tx_weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
+        let fund_fee_without_change = util::tx_weight_to_fee(fund_weight_without_change, fee_rate_per_vb)?;
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
@@ -317,13 +310,40 @@ impl PartyParams {
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
         let cet_or_refund_fee = util::tx_weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
         let required_input_funds =
-            checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
+            checked_add!(self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
-            return Err(Error::InvalidArgument(format!("input amount: {} smaller than required input funds: {} (collateral: {}, fund_fee: {}, cet_or_refund_fee: {}, extra_fee: {})", self.input_amount, required_input_funds, self.collateral, fund_fee, cet_or_refund_fee, extra_fee)));
+            return Err(Error::InvalidArgument(format!("input amount: {} smaller than required input funds: {} (collateral: {}, fund_fee: {}, cet_or_refund_fee: {}, extra_fee: {})", self.input_amount, required_input_funds, self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)));
         }
 
+        let (change_amount, change_fee) = {
+            let leftover = self.input_amount - required_input_funds;
+
+            // Value size + script length var_int + ouput script pubkey size
+            let change_script_size = self.change_script_pubkey.len();
+            // Change size is scaled by 4 from vBytes to weight units
+            let change_script_weight =
+                change_script_size
+                    .checked_mul(4)
+                    .ok_or(Error::InvalidArgument(
+                        "failed to multiply 4 to change size".to_string(),
+                    ))?;
+            let change_weight = 36 + change_script_weight;
+
+            let change_fee = util::weight_to_fee(change_weight, fee_rate_per_vb)?;
+
+            let change_amount = leftover
+                .checked_sub(change_fee)
+                .ok_or_else(|| {
+                    Error::InvalidArgument("Change output value is lower than cost".to_string())
+                })?;
+
+            (change_amount, change_fee)
+        };
+
+        let fund_fee = fund_fee_without_change + change_fee;
+
         let change_output = TxOut {
-            value: self.input_amount - required_input_funds,
+            value: change_amount,
             script_pubkey: self.change_script_pubkey.clone(),
         };
 
