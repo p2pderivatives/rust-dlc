@@ -102,6 +102,7 @@ pub(crate) fn get_party_params<C: Signing, W: Deref, B: Deref>(
     wallet: &W,
     blockchain: &B,
     needs_utxo: bool,
+    extra_fee: u64,
 ) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
 where
     W::Target: Wallet,
@@ -122,7 +123,11 @@ where
     let mut total_input = 0;
 
     if needs_utxo {
-        let appr_required_amount = own_collateral + get_half_common_fee(fee_rate);
+        // The extra fee is split evenly between both parties. For simplicity, we allow overshooting
+        // by 1 sat during coin selection
+        let extra_fee_half = extra_fee.div_ceil(2);
+
+        let appr_required_amount = own_collateral + get_half_common_fee(fee_rate) + extra_fee_half;
         let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
         for utxo in utxos {
             let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;

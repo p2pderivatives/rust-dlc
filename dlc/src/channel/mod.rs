@@ -244,8 +244,7 @@ pub fn create_channel_transactions(
     fund_output_serial_id: u64,
     cet_nsequence: Sequence,
 ) -> Result<DlcChannelTransactions, Error> {
-    let extra_fee =
-        super::util::tx_weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
+    let extra_fee = super::util::dlc_channel_extra_fee(fee_rate_per_vb)?;
     let (fund, funding_script_pubkey) = super::create_fund_transaction_with_fees(
         offer_params,
         accept_params,
@@ -289,8 +288,7 @@ pub fn create_renewal_channel_transactions(
     fund_vout: Option<usize>,
     buffer_nsequence: Option<Sequence>,
 ) -> Result<DlcChannelTransactions, Error> {
-    let extra_fee =
-        super::util::tx_weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
+    let extra_fee = super::util::dlc_channel_extra_fee(fee_rate_per_vb)?;
 
     let (fund_vout, fund_output) = {
         if let Some(fund_vout) = fund_vout {

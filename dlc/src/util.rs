@@ -8,6 +8,7 @@ use bitcoin::{
 use bitcoin::{Sequence, Witness};
 use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
+use crate::channel::{BUFFER_TX_WEIGHT, CET_EXTRA_WEIGHT};
 use crate::Error;
 
 // Setting the nSequence for every input of a transaction to this value disables
@@ -115,6 +116,13 @@ pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
         )))?;
 
     Ok(fee)
+}
+
+/// Calculate the extra transaction fees that need to be reserved when opening a DLC channel.
+///
+/// These fees apply to the entire channel and will need to be divided between the two parties.
+pub fn dlc_channel_extra_fee(fee_rate: u64) -> Result<u64, Error> {
+    tx_weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate)
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {
