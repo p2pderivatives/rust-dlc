@@ -111,6 +111,10 @@ pub trait Wallet: Signer {
         &self,
         amount: u64,
         fee_rate: Option<u64>,
+        // The base weight of the transaction that we are collecting the UTXOs for.
+        //
+        // In this case, the base weight excludes inputs and change outputs.
+        base_weight_wu: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, Error>;
     /// Import the provided address.

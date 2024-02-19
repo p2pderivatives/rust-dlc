@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
-use dlc::{PartyParams, TxInputInfo};
+use dlc::{PartyParams, TxInputInfo, FUND_TX_BASE_WEIGHT};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,
@@ -128,7 +128,12 @@ where
         let extra_fee_half = extra_fee.div_ceil(2);
 
         let appr_required_amount = own_collateral + get_half_common_fee(fee_rate) + extra_fee_half;
-        let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+        let utxos = wallet.get_utxos_for_amount(
+            appr_required_amount,
+            Some(fee_rate),
+            (FUND_TX_BASE_WEIGHT / 2) as u64,
+            true
+        )?;
         for utxo in utxos {
             let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;
             let mut writer = Vec::new();

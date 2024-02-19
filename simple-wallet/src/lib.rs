@@ -252,6 +252,9 @@ where
         &self,
         amount: u64,
         _: Option<u64>,
+        // TODO: We should probably use this argument. Unfortunately, it also affects LN-DLC, which
+        // we don't really want to touch at the moment.
+        _base_weight_wu: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>> {
         let mut utxos = self

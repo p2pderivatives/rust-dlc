@@ -53,7 +53,7 @@ const TX_VERSION: i32 = 2;
 
 /// The base weight of a fund transaction
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
-const FUND_TX_BASE_WEIGHT: usize = 214;
+pub const FUND_TX_BASE_WEIGHT: usize = 214;
 
 /// The weight of a CET excluding payout outputs
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
