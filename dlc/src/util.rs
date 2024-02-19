@@ -118,11 +118,33 @@ pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
     Ok(fee)
 }
 
+/// Calculate the base transaction fee for a CET or refund transaction, for the given fee rate.
+pub fn cet_or_refund_base_fee(fee_rate: u64) -> Result<u64, Error> {
+    let base_weight = crate::CET_BASE_WEIGHT;
+    tx_weight_to_fee(base_weight, fee_rate)
+}
+
 /// Calculate the extra transaction fees that need to be reserved when opening a DLC channel.
 ///
 /// These fees apply to the entire channel and will need to be divided between the two parties.
 pub fn dlc_channel_extra_fee(fee_rate: u64) -> Result<u64, Error> {
     tx_weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate)
+}
+
+/// Calculate the fraction of a transaction fee that must be included to pay for the given payout
+/// output script pubkey.
+///
+/// Payout outputs are included in CETs and refund transactions.
+pub fn dlc_payout_spk_fee(payout_spk: &Script, fee_rate_sats_per_vb: u64) -> u64 {
+    // Numbers come from
+    // https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#expected-weight-of-the-contract-execution-or-refund-transaction.
+
+    let value_vb = 8;
+    let var_int_vb = 1;
+
+    let payout_spk_vb = payout_spk.len() as u64;
+
+    (value_vb + var_int_vb + payout_spk_vb) * fee_rate_sats_per_vb
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {

@@ -38,6 +38,8 @@ use secp256k1_zkp::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::util::dlc_payout_spk_fee;
+
 pub mod channel;
 pub mod secp_utils;
 pub mod util;
@@ -301,14 +303,12 @@ impl PartyParams {
         // among parties independently of output types
         let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
 
-        // size of the payout script pubkey scaled by 4 from vBytes to weight units
-        let output_spk_weight = self
-            .payout_script_pubkey
-            .len()
-            .checked_mul(4)
-            .ok_or(Error::InvalidArgument("failed to multiply 4 to payout script pubkey length".to_string()))?;
-        let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
-        let cet_or_refund_fee = util::tx_weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
+        let output_spk_fee = dlc_payout_spk_fee(
+            &self.payout_script_pubkey,
+            fee_rate_per_vb,
+        );
+        let cet_or_refund_base_fee = util::weight_to_fee(this_party_cet_base_weight, fee_rate_per_vb)?;
+        let cet_or_refund_fee = checked_add!(cet_or_refund_base_fee, output_spk_fee)?;
         let required_input_funds =
             checked_add!(self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
