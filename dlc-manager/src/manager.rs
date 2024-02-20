@@ -130,7 +130,7 @@ macro_rules! check_for_timed_out_channels {
             if let SignedChannelState::$state { timeout, .. } = channel.state {
                 let is_timed_out = timeout < $manager.time.unix_time_now();
                 if is_timed_out {
-                    let sub_channel: Option<SubChannel> = if channel.is_sub_channel() {
+                    let _sub_channel: Option<SubChannel> = if channel.is_sub_channel() {
                         log::info!(
                             "Skipping force-closure of subchannel {}: not supported",
                             bitcoin::hashes::hex::ToHex::to_hex(&channel.channel_id[..])

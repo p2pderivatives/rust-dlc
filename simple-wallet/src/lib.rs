@@ -1,10 +1,5 @@
 use std::ops::Deref;
 
-use bdk::{
-    database::{BatchOperations, Database},
-    wallet::coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
-    FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
-};
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::{Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, OutPoint};
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
