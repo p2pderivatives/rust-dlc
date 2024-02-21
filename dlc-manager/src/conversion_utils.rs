@@ -3,7 +3,7 @@ use crate::contract::{
     enum_descriptor::EnumDescriptor,
     numerical_descriptor::{DifferenceParams, NumericalDescriptor},
     offered_contract::OfferedContract,
-    ContractDescriptor, FundingInputInfo,
+    ContractDescriptor,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
@@ -506,21 +506,6 @@ impl From<&SerPolynomialPayoutCurvePiece> for PolynomialPayoutCurvePiece {
     fn from(piece: &SerPolynomialPayoutCurvePiece) -> PolynomialPayoutCurvePiece {
         PolynomialPayoutCurvePiece {
             payout_points: piece.payout_points.iter().map(|x| x.into()).collect(),
-        }
-    }
-}
-
-impl From<&FundingInputInfo> for FundingInput {
-    fn from(info: &FundingInputInfo) -> FundingInput {
-        info.funding_input.clone()
-    }
-}
-
-impl From<&FundingInput> for FundingInputInfo {
-    fn from(input: &FundingInput) -> FundingInputInfo {
-        FundingInputInfo {
-            funding_input: input.clone(),
-            address: None,
         }
     }
 }

@@ -13,8 +13,8 @@ use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, Party
 
 use super::Error;
 use bitcoin::{
-    Address, EcdsaSig, OutPoint, PackedLockTime, PublicKey, Script, Sequence, Transaction, TxIn,
-    TxOut, Witness,
+    absolute::LockTime, ecdsa::Signature, sighash::EcdsaSighashType, Address, OutPoint, PublicKey,
+    Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use miniscript::Descriptor;
 use secp256k1_zkp::{
@@ -110,7 +110,7 @@ pub struct DlcChannelTransactions {
     /// The buffer transaction enabling revocation of the contract.
     pub buffer_transaction: Transaction,
     /// Script pubkey of the buffer transaction.
-    pub buffer_script_pubkey: Script,
+    pub buffer_script_pubkey: ScriptBuf,
 }
 
 /// Creates a buffer transaction using the given descriptor.
@@ -122,7 +122,7 @@ pub fn create_buffer_transaction(
 ) -> Transaction {
     Transaction {
         version: super::TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output: vec![TxOut {
             value: total_collateral,
@@ -225,7 +225,7 @@ pub fn create_settle_transaction(
 
     Ok(Transaction {
         version: super::TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
     })
@@ -301,7 +301,7 @@ pub fn create_renewal_channel_transactions(
     let tx_in = TxIn {
         previous_output: outpoint,
         sequence: super::util::get_sequence(cet_lock_time),
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         witness: Witness::default(),
     };
 
@@ -334,7 +334,7 @@ pub fn create_renewal_channel_transactions(
             fund: fund_tx.clone(),
             cets,
             refund,
-            funding_script_pubkey: funding_script_pubkey.clone(),
+            funding_script_pubkey: funding_script_pubkey.to_owned(),
         },
         buffer_transaction,
         buffer_script_pubkey: buffer_descriptor.script_code()?,
@@ -373,9 +373,18 @@ pub fn sign_cet<C: Signing>(
                 inner: own_pk,
                 compressed: true,
             },
-            EcdsaSig::sighash_all(own_sig),
+            bitcoin::ecdsa::Signature {
+                sig: own_sig,
+                hash_ty: EcdsaSighashType::All,
+            },
         ),
-        (*counter_pubkey, EcdsaSig::sighash_all(adapted_sig)),
+        (
+            *counter_pubkey,
+            bitcoin::ecdsa::Signature {
+                sig: adapted_sig,
+                hash_ty: EcdsaSighashType::All,
+            },
+        ),
     ]);
 
     descriptor
@@ -407,7 +416,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
             vout: 0,
         },
         sequence: Sequence::ZERO,
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         witness: Witness::default(),
     };
 
@@ -421,7 +430,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
             value: output_value,
@@ -437,19 +446,22 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
             compressed: true,
         };
 
-        let pkh = pk.pubkey_hash().as_hash();
+        let pkh = pk.pubkey_hash().to_raw_hash();
         sigs.insert(
             pkh,
             (
                 pk,
-                EcdsaSig::sighash_all(super::util::get_raw_sig_for_tx_input(
-                    secp,
-                    &tx,
-                    0,
-                    &descriptor.script_code()?,
-                    prev_tx.output[0].value,
-                    sk,
-                )?),
+                bitcoin::ecdsa::Signature {
+                    sig: super::util::get_raw_sig_for_tx_input(
+                        secp,
+                        &tx,
+                        0,
+                        &descriptor.script_code()?,
+                        prev_tx.output[0].value,
+                        sk,
+                    )?,
+                    hash_ty: EcdsaSighashType::All,
+                },
             ),
         );
     }
@@ -492,7 +504,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
             vout,
         },
         sequence: Sequence::ZERO,
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         witness: Witness::default(),
     };
 
@@ -506,7 +518,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
             value: input_value - tx_fee,
@@ -523,7 +535,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         };
         sigs.insert(
             pk,
-            EcdsaSig::sighash_all(super::util::get_raw_sig_for_tx_input(
+            Signature::sighash_all(super::util::get_raw_sig_for_tx_input(
                 secp,
                 &tx,
                 0,
@@ -553,7 +565,7 @@ pub fn create_collaborative_close_transaction(
     let input = TxIn {
         previous_output: fund_outpoint,
         witness: Witness::default(),
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         sequence: crate::util::DISABLE_LOCKTIME,
     };
 
@@ -578,7 +590,7 @@ pub fn create_collaborative_close_transaction(
 
     Transaction {
         version: crate::TX_VERSION,
-        lock_time: PackedLockTime::ZERO,
+        lock_time: LockTime::ZERO,
         input: vec![input],
         output,
     }
@@ -768,8 +780,8 @@ mod tests {
         let descriptor = buffer_descriptor(&offer_params, &accept_params);
 
         // Use random signature as it doesn't matter.
-        let sig = bitcoin::EcdsaSig::sighash_all(
-            secp256k1_zkp::ecdsa::Signature::from_str(
+        let sig = bitcoin::ecdsa::Signature {
+            sig: secp256k1_zkp::ecdsa::Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -777,7 +789,8 @@ mod tests {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
             )
             .unwrap(),
-        );
+            hash_ty: EcdsaSighashType::All,
+        };
 
         let satisfier = HashMap::from_iter(vec![
             (offer_params.own_pk, sig),
@@ -897,8 +910,8 @@ mod tests {
         let descriptor = settle_descriptor(&offer_params, &accept_params.own_pk, csv);
 
         // Use random signature as it doesn't matter.
-        let sig = bitcoin::EcdsaSig::sighash_all(
-            secp256k1_zkp::ecdsa::Signature::from_str(
+        let sig = bitcoin::ecdsa::Signature {
+            sig: secp256k1_zkp::ecdsa::Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -906,7 +919,8 @@ mod tests {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
             )
             .unwrap(),
-        );
+            hash_ty: EcdsaSighashType::All,
+        };
 
         let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig)]);
 

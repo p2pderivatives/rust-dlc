@@ -14,7 +14,7 @@ use secp256k1_zkp::{PublicKey, Secp256k1, Signing};
 
 use crate::{
     channel::party_points::PartyBasePoints,
-    contract::{contract_info::ContractInfo, AdaptorInfo, FundingInputInfo},
+    contract::{contract_info::ContractInfo, AdaptorInfo},
     error::Error,
     Blockchain, ContractSigner, ContractSignerProvider, Wallet,
 };
@@ -66,7 +66,7 @@ pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner, C: Signing
     wallet: &W,
     signer: &X,
     blockchain: &B,
-) -> Result<(PartyParams, Vec<FundingInputInfo>), Error>
+) -> Result<(PartyParams, Vec<FundingInput>), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
@@ -85,7 +85,7 @@ where
         own_collateral + get_half_common_fee(fee_rate)? + dlc::util::weight_to_fee(124, fee_rate)?;
     let utxos = wallet.get_utxos_for_amount(appr_required_amount, fee_rate, true)?;
 
-    let mut funding_inputs_info: Vec<FundingInputInfo> = Vec::new();
+    let mut funding_inputs: Vec<FundingInput> = Vec::new();
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
     let mut total_input = 0;
     for utxo in utxos {
@@ -106,11 +106,7 @@ where
         };
         total_input += prev_tx.output[prev_tx_vout as usize].value;
         funding_tx_info.push((&funding_input).into());
-        let funding_input_info = FundingInputInfo {
-            funding_input,
-            address: Some(utxo.address.clone()),
-        };
-        funding_inputs_info.push(funding_input_info);
+        funding_inputs.push(funding_input);
     }
 
     let party_params = PartyParams {
@@ -124,7 +120,7 @@ where
         input_amount: total_input,
     };
 
-    Ok((party_params, funding_inputs_info))
+    Ok((party_params, funding_inputs))
 }
 
 pub(crate) fn get_party_base_points<C: Signing, SP: Deref>(

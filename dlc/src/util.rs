@@ -1,11 +1,12 @@
 //! Utility functions not uniquely related to DLC
 
-use bitcoin::util::sighash::SighashCache;
+use bitcoin::address::{WitnessProgram, WitnessVersion};
+use bitcoin::script::PushBytesBuf;
+use bitcoin::sighash::SighashCache;
 use bitcoin::{
-    blockdata::script::Builder, hash_types::PubkeyHash, util::address::Payload, EcdsaSighashType,
-    Script, Transaction, TxOut,
+    address::Payload, hash_types::PubkeyHash, sighash::EcdsaSighashType, Script, Transaction, TxOut,
 };
-use bitcoin::{Sequence, Witness};
+use bitcoin::{ScriptBuf, Sequence, Witness};
 use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::Error;
@@ -32,7 +33,7 @@ pub(crate) fn get_sig_hash_msg(
         value,
         EcdsaSighashType::All,
     )?;
-    Ok(Message::from_slice(&sig_hash).unwrap())
+    Ok(Message::from_slice(sig_hash.as_ref()).unwrap())
 }
 
 /// Convert a raw signature to DER encoded and append the sighash type, to use
@@ -107,7 +108,7 @@ pub fn get_common_fee(fee_rate: u64) -> Result<u64, Error> {
     weight_to_fee(base_weight, fee_rate)
 }
 
-fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {
+fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> ScriptBuf {
     use bitcoin::hashes::*;
     let pk = bitcoin::PublicKey {
         compressed: true,
@@ -145,7 +146,7 @@ pub fn get_witness_for_p2wpkh_input<C: Signing>(
     value: u64,
 ) -> Result<Witness, Error> {
     let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type)?;
-    Ok(Witness::from_vec(vec![
+    Ok(Witness::from_slice(&[
         full_sig,
         PublicKey::from_secret_key(secp, sk).serialize().to_vec(),
     ]))
@@ -180,14 +181,14 @@ pub fn sign_multi_sig_input<C: Signing>(
     let other_finalized_sig = finalize_sig(other_sig, EcdsaSighashType::All);
 
     transaction.input[input_index].witness = if own_pk < other_pk {
-        Witness::from_vec(vec![
+        Witness::from_slice(&[
             Vec::new(),
             own_sig,
             other_finalized_sig,
             script_pubkey.to_bytes(),
         ])
     } else {
-        Witness::from_vec(vec![
+        Witness::from_slice(&[
             Vec::new(),
             other_finalized_sig,
             own_sig,
@@ -199,10 +200,14 @@ pub fn sign_multi_sig_input<C: Signing>(
 }
 
 /// Transforms a redeem script for a p2sh-p2w* output to a script signature.
-pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> Script {
+pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> ScriptBuf {
     match redeem.len() {
-        0 => Script::new(),
-        _ => Builder::new().push_slice(redeem.as_bytes()).into_script(),
+        0 => ScriptBuf::new(),
+        _ => {
+            let mut bytes = PushBytesBuf::new();
+            bytes.extend_from_slice(redeem.as_bytes()).unwrap();
+            ScriptBuf::new_witness_program(&WitnessProgram::new(WitnessVersion::V0, bytes).unwrap())
+        }
     }
 }
 

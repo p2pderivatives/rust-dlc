@@ -5,8 +5,11 @@ use bdk::{
     wallet::coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
     FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
 };
-use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{hashes::Hash, Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, OutPoint};
+use bitcoin::{
+    hashes::Hash, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid,
+    Witness,
+};
+use bitcoin::{psbt::PartiallySignedTransaction, ScriptBuf};
 use dlc_manager::{
     error::Error, Blockchain, ContractSignerProvider, KeysId, SimpleSigner, Utxo, Wallet,
 };
@@ -130,7 +133,7 @@ where
                 total_value += x.tx_out.value;
                 TxIn {
                     previous_output: x.outpoint,
-                    script_sig: Script::default(),
+                    script_sig: ScriptBuf::default(),
                     sequence: Sequence::MAX,
                     witness: Witness::default(),
                 }
@@ -142,12 +145,12 @@ where
         }];
         let mut tx = Transaction {
             version: 2,
-            lock_time: PackedLockTime::ZERO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
             input,
             output,
         };
         // Signature + pubkey size assuming P2WPKH.
-        let weight = (tx.weight() + tx.input.len() * (74 + 33)) as u64;
+        let weight = tx.weight().to_wu() + tx.input.len() as u64 * (74 + 33);
         let fee_rate = self
             .blockchain
             .get_est_sat_per_1000_weight(ConfirmationTarget::NonAnchorChannelFee)
@@ -262,7 +265,7 @@ where
                 .parse()
                 .unwrap();
         let dummy_drain =
-            Script::new_v0_p2wpkh(&bitcoin::WPubkeyHash::hash(&dummy_pubkey.serialize()));
+            ScriptBuf::new_v0_p2wpkh(&bitcoin::WPubkeyHash::hash(&dummy_pubkey.serialize()));
         let fee_rate = FeeRate::from_sat_per_vb(fee_rate as f32);
         let selection = coin_selection
             .coin_select(self, Vec::new(), utxos, fee_rate, amount, &dummy_drain)
@@ -338,7 +341,7 @@ where
             &seckey,
             &mut tx,
             input_index,
-            bitcoin::EcdsaSighashType::All,
+            bitcoin::sighash::EcdsaSighashType::All,
             tx_out.value,
         )?;
 
@@ -391,7 +394,7 @@ where
         &mut self,
         _: bdk::KeychainKind,
         _: u32,
-    ) -> std::result::Result<Option<Script>, bdk::Error> {
+    ) -> std::result::Result<Option<ScriptBuf>, bdk::Error> {
         Ok(None)
     }
 
@@ -451,7 +454,7 @@ where
     fn iter_script_pubkeys(
         &self,
         _: Option<bdk::KeychainKind>,
-    ) -> std::result::Result<Vec<Script>, bdk::Error> {
+    ) -> std::result::Result<Vec<ScriptBuf>, bdk::Error> {
         Ok(Vec::new())
     }
 
@@ -471,7 +474,7 @@ where
         &self,
         _: bdk::KeychainKind,
         _: u32,
-    ) -> std::result::Result<Option<Script>, bdk::Error> {
+    ) -> std::result::Result<Option<ScriptBuf>, bdk::Error> {
         Ok(None)
     }
 

@@ -15,6 +15,7 @@ pub mod offered_channel;
 pub mod party_points;
 pub mod ser;
 pub mod signed_channel;
+mod utils;
 
 /// Enumeration containing the possible state a DLC channel can be in.
 #[derive(Clone)]
