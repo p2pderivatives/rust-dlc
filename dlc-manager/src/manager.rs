@@ -828,6 +828,13 @@ where
     /// message to be sent as well as the public key of the offering node.
     pub fn reject_channel(&self, channel_id: &DlcChannelId) -> Result<(Reject, PublicKey), Error> {
         let offered_channel = get_channel_in_state!(self, channel_id, Offered, None as Option<PublicKey>)?;
+
+        if offered_channel.is_offer_party {
+            return Err(Error::InvalidState(
+                "Cannot reject channel initiated by us.".to_string(),
+            ));
+        }
+
         let offered_contract = get_contract_in_state!(self, &offered_channel.offered_contract_id, Offered, None as Option<PublicKey>)?;
 
         let reference_id = offered_channel.reference_id;
