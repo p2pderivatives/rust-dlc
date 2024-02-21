@@ -2035,10 +2035,19 @@ where
                     self.store.upsert_channel(Channel::Cancelled(offered_channel), Some(Contract::Rejected(offered_contract)))?;
                 },
                 Channel::Signed(mut signed_channel) => {
+                    let contract = match signed_channel.state {
+                        SignedChannelState::RenewOffered { offered_contract_id, .. } => {
+                            let offered_contract = get_contract_in_state!(self, &offered_contract_id, Offered, None::<PublicKey>)?;
+                            Some(Contract::Rejected(offered_contract))
+
+                        }
+                        _ => None
+                    };
+
                     crate::channel_updater::on_reject(&mut signed_channel)?;
 
                     self.store
-                        .upsert_channel(Channel::Signed(signed_channel), None)?;
+                        .upsert_channel(Channel::Signed(signed_channel), contract)?;
                 },
                 channel => {
                     return Err(Error::InvalidState(
