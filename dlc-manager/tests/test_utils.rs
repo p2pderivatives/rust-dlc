@@ -168,6 +168,7 @@ macro_rules! assert_channel_state {
                 Some(Channel::Signed(_)) => "signed",
                 Some(Channel::FailedAccept(_)) => "failed accept",
                 Some(Channel::FailedSign(_)) => "failed sign",
+                Some(Channel::Cancelled(_)) => "cancelled",
                 None => "none",
             };
             panic!("Unexpected channel state {}", state);

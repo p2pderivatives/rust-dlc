@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::PublicKey;
-use bitcoin::{Address, PackedLockTime, Script, Transaction, TxOut};
+use bitcoin::{Address, OutPoint, PackedLockTime, Script, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
 use secp256k1_zkp::{rand::seq::SliceRandom, SecretKey};
 
@@ -113,6 +113,10 @@ impl Wallet for MockWallet {
     }
 
     fn sign_psbt_input(&self, _: &mut PartiallySignedTransaction, _: usize) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn unreserve_utxos(&self, _outpoints: &[OutPoint]) -> Result<(), Error> {
         Ok(())
     }
 }
