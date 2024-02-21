@@ -553,6 +553,28 @@ pub enum ChannelMessage {
     Reject(Reject),
 }
 
+impl ChannelMessage {
+    /// Gets the reference id of a channel message
+    pub fn get_reference_id(&self) -> Option<[u8; 32]> {
+        match self {
+            ChannelMessage::Offer(o) => o.reference_id,
+            ChannelMessage::Accept(a) => a.reference_id,
+            ChannelMessage::Sign(s) => s.reference_id,
+            ChannelMessage::SettleOffer(s) => s.reference_id,
+            ChannelMessage::SettleAccept(s) => s.reference_id,
+            ChannelMessage::SettleConfirm(s) => s.reference_id,
+            ChannelMessage::SettleFinalize(s) => s.reference_id,
+            ChannelMessage::RenewOffer(r) => r.reference_id,
+            ChannelMessage::RenewAccept(r) => r.reference_id,
+            ChannelMessage::RenewConfirm(r) => r.reference_id,
+            ChannelMessage::RenewFinalize(r) => r.reference_id,
+            ChannelMessage::RenewRevoke(r) => r.reference_id,
+            ChannelMessage::CollaborativeCloseOffer(c) => c.reference_id,
+            ChannelMessage::Reject(r) => r.reference_id,
+        }
+    }
+}
+
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum SubChannelMessage {

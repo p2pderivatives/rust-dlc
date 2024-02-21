@@ -65,6 +65,9 @@ pub type ContractId = [u8; 32];
 /// Type alias for a DLC channel ID.
 pub type DlcChannelId = [u8; 32];
 
+/// The reference id struct for a user provided id to refer to the rust dlc data and messages
+pub type ReferenceId = [u8; 32];
+
 /// Time trait to provide current unix time. Mainly defined to facilitate testing.
 pub trait Time {
     /// Must return the unix epoch corresponding to the current time.

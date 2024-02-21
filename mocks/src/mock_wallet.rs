@@ -112,7 +112,7 @@ impl Wallet for MockWallet {
         Ok(())
     }
 
-    fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error> {
+    fn unreserve_utxos(&self, _outpoints: &[OutPoint]) -> Result<(), Error> {
         Ok(())
     }
 }

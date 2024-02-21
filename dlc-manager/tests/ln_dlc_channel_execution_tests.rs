@@ -14,8 +14,8 @@ use crate::test_utils::{
     get_enum_test_params_custom_collateral, refresh_wallet, TestParams, EVENT_MATURITY,
 };
 use bitcoin::{
-    hashes::Hash, Address, Amount, Network, PackedLockTime, Script, Sequence, Transaction, TxIn,
-    TxOut, Witness,
+    hashes::Hash, Address, Amount, Network, PackedLockTime, Transaction, TxIn,
+    TxOut,
 };
 use bitcoin_bech32::WitnessProgram;
 use bitcoin_test_utils::rpc_helpers::init_clients;
@@ -24,7 +24,7 @@ use console_logger::ConsoleLogger;
 use custom_signer::{CustomKeysManager, CustomSigner};
 use dlc_manager::{
     channel::Channel, contract::Contract, manager::Manager, sub_channel_manager::SubChannelManager,
-    subchannel::SubChannelState, Blockchain, DlcChannelId, Oracle, Signer, Storage, Utxo, Wallet,
+    subchannel::SubChannelState, Blockchain, DlcChannelId, Oracle, Storage, Utxo, Wallet,
 };
 use dlc_messages::{
     sub_channel::{SubChannelAccept, SubChannelOffer},
@@ -289,8 +289,8 @@ impl EventHandler for LnDlcParty {
     fn handle_event(&self, event: lightning::events::Event) {
         match event {
             Event::FundingGenerationReady {
-                temporary_channel_id,
-                counterparty_node_id,
+                temporary_channel_id: _,
+                counterparty_node_id: _,
                 channel_value_satoshis,
                 output_script,
                 ..
@@ -339,9 +339,9 @@ impl EventHandler for LnDlcParty {
                 todo!();
 
                 // Give the funding transaction back to LDK for opening the channel.
-                self.channel_manager
-                    .funding_transaction_generated(&temporary_channel_id, &counterparty_node_id, tx)
-                    .unwrap();
+                // self.channel_manager
+                //     .funding_transaction_generated(&temporary_channel_id, &counterparty_node_id, tx)
+                //     .unwrap();
             }
             Event::PendingHTLCsForwardable { .. } => {
                 self.channel_manager.process_pending_htlc_forwards();
@@ -2224,6 +2224,7 @@ fn settle(test_params: &LnDlcTestParams, channel_id: &DlcChannelId) {
         .settle_offer(
             channel_id,
             test_params.test_params.contract_input.accept_collateral,
+            None,
         )
         .unwrap();
 
@@ -2274,6 +2275,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &DlcChannelId) {
             dlc_channel_id,
             test_params.test_params.contract_input.accept_collateral,
             &test_params.test_params.contract_input,
+            None
         )
         .unwrap();
 
