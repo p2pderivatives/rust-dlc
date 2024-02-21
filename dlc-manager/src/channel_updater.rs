@@ -2140,8 +2140,8 @@ pub fn renew_channel_on_revoke(
 
     signed_channel.state = SignedChannelState::Established {
         signed_contract_id: *contract_id,
-        counter_buffer_adaptor_signature: *accept_buffer_adaptor_signature,
-        own_buffer_adaptor_signature: *offer_buffer_adaptor_signature,
+        counter_buffer_adaptor_signature: *offer_buffer_adaptor_signature,
+        own_buffer_adaptor_signature: *accept_buffer_adaptor_signature,
         buffer_transaction: buffer_transaction.clone(),
         is_offer: true,
         total_collateral: *total_collateral,
