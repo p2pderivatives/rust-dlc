@@ -109,8 +109,6 @@ typed_enum!(
             is_offer: bool,
             /// The total amount of collateral in the channel
             total_collateral: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `SettledOffered` state when the local party
         /// has sent a [`dlc_messages::channel::SettleOffer`] message.
@@ -123,8 +121,6 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `SettledReceived` state when the local party
         /// has received a [`dlc_messages::channel::SettleOffer`] message.
@@ -136,8 +132,6 @@ typed_enum!(
             /// The per update point to be used by the counter party for the setup
             /// of the next channel state.
             counter_next_per_update_point: PublicKey,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `SettledAccepted` state when the local party
         /// has sent a [`dlc_messages::channel::SettleAccept`] message.
@@ -160,8 +154,6 @@ typed_enum!(
             own_payout: u64,
             /// The payout that was proposed to the counter party.
             counter_payout: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `SettledConfirmed` state when the local party
         /// has sent a [`dlc_messages::channel::SettleConfirm`] message.
@@ -187,8 +179,6 @@ typed_enum!(
             own_payout: u64,
             /// The payout that was proposed to the counter party.
             counter_payout: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `Settled` state when the local party
         /// has all the necessary information to close the channel with the last
@@ -206,8 +196,6 @@ typed_enum!(
             own_payout: u64,
             /// The amount the counter party holds in the channel.
             counter_payout: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `RenewOffered` state when the local party
         /// has sent or received a [`dlc_messages::channel::RenewOffer`] message.
@@ -224,8 +212,6 @@ typed_enum!(
             /// The UNIX epoch at which the counter party will be considered
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `RenewAccepted` state when the local party
         /// has sent a [`dlc_messages::channel::RenewAccept`] message.
@@ -247,8 +233,6 @@ typed_enum!(
             timeout: u64,
             /// The payout to the local party attributed for closing the previous state.
             own_payout: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `RenewConfirmed` state when the local party
         /// has sent a [`dlc_messages::channel::RenewConfirm`] message.
@@ -275,8 +259,6 @@ typed_enum!(
             own_payout: u64,
             /// The total amount of collateral in the channel.
             total_collateral: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// Finalize the renewal of the contract within a DLC channel.
         RenewFinalized {
@@ -302,8 +284,6 @@ typed_enum!(
             own_payout: u64,
             /// The total amount of collateral in the channel.
             total_collateral: u64,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `Closing` state when the local party
         /// has broadcast a buffer transaction and is waiting to finalize the
@@ -316,8 +296,6 @@ typed_enum!(
             contract_id: ContractId,
             /// Whether the local party initiated the closing of the channel.
             is_initiator: bool,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
         /// A [`SignedChannel`] is in `CollaborativeCloseOffered` state when the local party
         /// has sent a [`dlc_messages::channel::CollaborativeCloseOffer`] message.
@@ -333,8 +311,6 @@ typed_enum!(
             timeout: u64,
             /// Indicates whether the local party offered the collaborative close or not.
             is_offer: bool,
-            /// The reference id set by the api user.
-            reference_id: Option<ReferenceId>,
         },
     },
     /// Enum automatically generated associating a number to each signed channel
@@ -412,6 +388,8 @@ pub struct SignedChannel {
     pub fee_rate_per_vb: u64,
     /// Whether this channel is embedded within a Lightning Network channel.
     pub sub_channel_id: Option<ChannelId>,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
 }
 
 impl SignedChannel {

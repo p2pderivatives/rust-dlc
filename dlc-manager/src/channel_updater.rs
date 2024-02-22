@@ -602,7 +602,6 @@ where
             buffer_transaction,
             is_offer: true,
             total_collateral,
-            reference_id: accept_channel.reference_id
         },
         update_idx: INITIAL_UPDATE_NUMBER,
         channel_id,
@@ -622,6 +621,7 @@ where
             .offered_contract
             .fee_rate_per_vb,
         sub_channel_id,
+        reference_id: accept_channel.reference_id
     };
 
     let sign_channel = SignChannel {
@@ -768,7 +768,6 @@ where
             buffer_transaction: accepted_channel.buffer_transaction.clone(),
             is_offer: false,
             total_collateral: accepted_contract.offered_contract.total_collateral,
-            reference_id: accepted_channel.reference_id,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
         fund_tx: signed_contract
@@ -788,6 +787,7 @@ where
             .offered_contract
             .fee_rate_per_vb,
         sub_channel_id,
+        reference_id: accepted_channel.reference_id,
     };
 
     Ok((signed_channel, signed_contract, signed_fund_tx))
@@ -831,7 +831,6 @@ where
         counter_payout,
         next_per_update_point,
         timeout: time.unix_time_now() + peer_timeout,
-        reference_id
     };
 
     std::mem::swap(&mut channel.state, &mut state);
@@ -875,7 +874,6 @@ pub fn on_settle_offer(
         own_payout: settle_offer.counter_payout,
         counter_next_per_update_point: settle_offer.next_per_update_point,
         counter_payout: total_collateral - settle_offer.counter_payout,
-        reference_id: settle_offer.reference_id,
     };
 
     std::mem::swap(&mut signed_channel.state, &mut new_state);
@@ -929,15 +927,14 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
-    let (own_payout, counter_next_per_update_point, counter_payout, reference_id) =
+    let (own_payout, counter_next_per_update_point, counter_payout) =
         if let SignedChannelState::SettledReceived {
             own_payout,
             counter_next_per_update_point,
             counter_payout,
-            reference_id
         } = channel.state
         {
-            (own_payout, counter_next_per_update_point, counter_payout, reference_id)
+            (own_payout, counter_next_per_update_point, counter_payout)
         } else {
             return Err(Error::InvalidState(
                 "Signed channel was not in SettledReceived state as expected.".to_string(),
@@ -1007,15 +1004,14 @@ where
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
-        counter_payout,
-        reference_id
+        counter_payout
     };
 
     let msg = SettleAccept {
         channel_id: channel.channel_id,
         next_per_update_point: own_next_per_update_point,
         settle_adaptor_signature,
-        reference_id
+        reference_id: channel.reference_id,
     };
 
     Ok(msg)
@@ -1072,13 +1068,12 @@ where
     T::Target: Time,
     S::Target: Signer,
 {
-    let (counter_payout, next_per_update_point, reference_id) = match channel.state {
+    let (counter_payout, next_per_update_point) = match channel.state {
         SignedChannelState::SettledOffered {
             counter_payout,
             next_per_update_point,
-            reference_id,
             ..
-        } => (counter_payout, next_per_update_point, reference_id),
+        } => (counter_payout, next_per_update_point),
         _ => {
             return Err(Error::InvalidState(
                 "Signed channel was not in SettledOffered state as expected.".to_string(),
@@ -1153,7 +1148,6 @@ where
         timeout: time.unix_time_now() + peer_timeout,
         own_payout: final_offer_payout,
         counter_payout: final_accept_payout,
-        reference_id
     };
 
     channel.state = state;
@@ -1162,7 +1156,7 @@ where
         channel_id: channel.channel_id,
         prev_per_update_secret,
         settle_adaptor_signature,
-        reference_id
+        reference_id: channel.reference_id
     };
 
     Ok(msg)
@@ -1201,7 +1195,6 @@ where
         own_settle_adaptor_signature,
         own_payout,
         counter_payout,
-        reference_id
     ) = match &channel.state {
         SignedChannelState::SettledAccepted {
             counter_next_per_update_point,
@@ -1210,7 +1203,6 @@ where
             own_settle_adaptor_signature,
             own_payout,
             counter_payout,
-            reference_id,
             ..
         } => (
             own_next_per_update_point,
@@ -1218,8 +1210,7 @@ where
             settle_tx,
             own_settle_adaptor_signature,
             *own_payout,
-            *counter_payout,
-            *reference_id
+            *counter_payout
         ),
         _ => {
             return Err(Error::InvalidState(
@@ -1278,8 +1269,7 @@ where
         counter_settle_adaptor_signature: settle_channel_confirm.settle_adaptor_signature,
         own_settle_adaptor_signature: *own_settle_adaptor_signature,
         own_payout,
-        counter_payout,
-        reference_id
+        counter_payout
     };
 
     channel.own_per_update_point = *own_next_per_update_point;
@@ -1291,7 +1281,7 @@ where
     let msg = SettleFinalize {
         channel_id: channel.channel_id,
         prev_per_update_secret,
-        reference_id
+        reference_id: channel.reference_id,
     };
 
     Ok(msg)
@@ -1313,8 +1303,7 @@ pub fn settle_channel_on_finalize<C: Signing>(
         own_next_per_update_point,
         own_settle_adaptor_signature,
         own_payout,
-        counter_payout,
-        reference_id
+        counter_payout
     ) = match &channel.state {
         SignedChannelState::SettledConfirmed {
             settle_tx,
@@ -1324,7 +1313,6 @@ pub fn settle_channel_on_finalize<C: Signing>(
             own_settle_adaptor_signature,
             own_payout,
             counter_payout,
-            reference_id,
             ..
         } => (
             settle_tx.clone(),
@@ -1334,7 +1322,6 @@ pub fn settle_channel_on_finalize<C: Signing>(
             *own_settle_adaptor_signature,
             *own_payout,
             *counter_payout,
-            *reference_id
         ),
         _ => {
             return Err(Error::InvalidState(
@@ -1366,8 +1353,7 @@ pub fn settle_channel_on_finalize<C: Signing>(
         counter_settle_adaptor_signature,
         own_settle_adaptor_signature,
         own_payout,
-        counter_payout,
-        reference_id
+        counter_payout
     };
     channel.roll_back_state = None;
 
@@ -1381,17 +1367,17 @@ pub fn settle_channel_on_finalize<C: Signing>(
 /// Creates a [`Reject`] message and rolls back the state of the channel. Expects
 /// the channel to be in [`SignedChannelState::SettledOffered`] state.
 pub fn reject_settle_offer(signed_channel: &mut SignedChannel) -> Result<Reject, Error> {
+    get_signed_channel_state!(signed_channel, SettledReceived, )?;
+
     signed_channel.state = signed_channel
         .roll_back_state
         .take()
         .expect("to have a rollback state");
 
-    let reference_id = get_signed_channel_state!(signed_channel, SettledReceived, reference_id)?;
-
     Ok(Reject {
         channel_id: signed_channel.channel_id,
         timestamp: get_unix_time_now(),
-        reference_id: *reference_id
+        reference_id: signed_channel.reference_id
     })
 }
 
@@ -1485,7 +1471,6 @@ where
         is_offer: true,
         counter_payout,
         timeout: time.unix_time_now() + peer_timeout,
-        reference_id
     };
 
     std::mem::swap(&mut signed_channel.state, &mut state);
@@ -1553,7 +1538,6 @@ pub fn on_renew_offer<T: Deref>(
         offer_next_per_update_point: renew_offer.next_per_update_point,
         is_offer: false,
         timeout: time.unix_time_now() + peer_timeout,
-        reference_id: renew_offer.reference_id
     };
 
     std::mem::swap(&mut signed_channel.state, &mut state);
@@ -1604,13 +1588,12 @@ where
     S::Target: Signer,
     T::Target: Time,
 {
-    let (offer_next_per_update_point, own_payout, reference_id) = match signed_channel.state {
+    let (offer_next_per_update_point, own_payout) = match signed_channel.state {
         SignedChannelState::RenewOffered {
             offer_next_per_update_point,
             counter_payout,
-            reference_id,
             ..
-        } => (offer_next_per_update_point, counter_payout, reference_id),
+        } => (offer_next_per_update_point, counter_payout),
         _ => {
             return Err(Error::InvalidState(
                 "Signed channel was not in SettledOffered state as expected.".to_string(),
@@ -1690,7 +1673,6 @@ where
         buffer_script_pubkey,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
-        reference_id
     };
 
     signed_channel.state = state;
@@ -1700,7 +1682,7 @@ where
         next_per_update_point: accept_per_update_point,
         cet_adaptor_signatures: (&adaptor_sigs as &[_]).into(),
         refund_signature: accepted_contract.accept_refund_signature,
-        reference_id
+        reference_id: signed_channel.reference_id,
     };
 
     Ok((accepted_contract, renew_accept))
@@ -1836,8 +1818,6 @@ where
         &accept_revoke_params.publish_pk.inner,
     )?;
 
-    let reference_id = *get_signed_channel_state!(signed_channel, RenewOffered, reference_id)?;
-
     let state = SignedChannelState::RenewConfirmed {
         contract_id: signed_contract.accepted_contract.get_contract_id(),
         offer_per_update_point: *offer_per_update_point,
@@ -1848,7 +1828,6 @@ where
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
         total_collateral: offered_contract.total_collateral,
-        reference_id
     };
 
     signed_channel.state = state;
@@ -1858,7 +1837,7 @@ where
         buffer_adaptor_signature: own_buffer_adaptor_signature,
         cet_adaptor_signatures: (&cet_adaptor_signatures as &[_]).into(),
         refund_signature: signed_contract.offer_refund_signature,
-        reference_id
+        reference_id: signed_channel.reference_id,
     };
 
     Ok((signed_contract, renew_confirm))
@@ -1917,15 +1896,14 @@ where
         &accept_per_update_point,
         own_payout,
         buffer_transaction,
-        buffer_script_pubkey,
-        reference_id
+        buffer_script_pubkey
     ) = get_signed_channel_state!(
         signed_channel,
         RenewAccepted,
         offer_per_update_point,
         accept_per_update_point,
         own_payout | buffer_transaction,
-        buffer_script_pubkey, reference_id
+        buffer_script_pubkey
     )?;
 
     let own_publish_pk = signed_channel
@@ -2010,8 +1988,6 @@ where
         },
     );
 
-    let reference_id = *reference_id;
-
     signed_channel.state = SignedChannelState::RenewFinalized {
         contract_id: signed_contract.accepted_contract.get_contract_id(),
         prev_offer_per_update_point,
@@ -2022,14 +1998,13 @@ where
         timeout: time.unix_time_now() + peer_timeout,
         own_payout: *own_payout,
         total_collateral,
-        reference_id
     };
 
     let renew_finalize = RenewFinalize {
         channel_id: signed_channel.channel_id,
         per_update_secret: prev_per_update_secret,
         buffer_adaptor_signature,
-        reference_id
+        reference_id: signed_channel.reference_id
     };
 
     Ok((signed_contract, renew_finalize))
@@ -2052,8 +2027,7 @@ where
         offer_per_update_point,
         accept_per_update_point,
         offer_buffer_adaptor_signature,
-        buffer_transaction,
-        reference_id
+        buffer_transaction
     ) = get_signed_channel_state!(
         signed_channel,
         RenewConfirmed,
@@ -2061,7 +2035,7 @@ where
         total_collateral,
         offer_per_update_point,
         accept_per_update_point,
-        offer_buffer_adaptor_signature | buffer_transaction, reference_id
+        offer_buffer_adaptor_signature | buffer_transaction
     )?;
 
     let offer_revoke_params = signed_channel.own_points.get_revokable_params(
@@ -2096,7 +2070,6 @@ where
         buffer_transaction: buffer_transaction.clone(),
         is_offer: true,
         total_collateral: *total_collateral,
-        reference_id: *reference_id
     };
 
     if PublicKey::from_secret_key(secp, &renew_finalize.per_update_secret)
@@ -2122,8 +2095,6 @@ where
         signed_channel.update_idx,
     ))?;
 
-    let reference_id= *reference_id;
-
     signed_channel.own_per_update_point = *offer_per_update_point;
     signed_channel.counter_per_update_point = *accept_per_update_point;
 
@@ -2134,7 +2105,7 @@ where
     let msg = RenewRevoke {
         channel_id: signed_channel.channel_id,
         per_update_secret: prev_per_update_secret,
-        reference_id
+        reference_id: signed_channel.reference_id,
     };
 
     Ok(msg)
@@ -2152,8 +2123,7 @@ pub fn renew_channel_on_revoke(
         prev_offer_per_update_point,
         offer_buffer_adaptor_signature,
         accept_buffer_adaptor_signature,
-        buffer_transaction,
-        reference_id
+        buffer_transaction
     ) = get_signed_channel_state!(
         signed_channel,
         RenewFinalized,
@@ -2161,7 +2131,7 @@ pub fn renew_channel_on_revoke(
         total_collateral,
         prev_offer_per_update_point,
         offer_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature | buffer_transaction, reference_id
+        accept_buffer_adaptor_signature | buffer_transaction
     )?;
 
     if PublicKey::from_secret_key(secp, &renew_revoke.per_update_secret)
@@ -2189,7 +2159,6 @@ pub fn renew_channel_on_revoke(
         buffer_transaction: buffer_transaction.clone(),
         is_offer: true,
         total_collateral: *total_collateral,
-        reference_id: *reference_id
     };
 
     Ok(())
@@ -2199,15 +2168,13 @@ pub fn renew_channel_on_revoke(
 /// the channel to be in [`SignedChannelState::RenewOffered`] state and the local
 /// party not to be the offer party.
 pub fn reject_renew_offer(signed_channel: &mut SignedChannel) -> Result<Reject, Error> {
-    let (is_offer, reference_id) = get_signed_channel_state!(signed_channel, RenewOffered, is_offer | reference_id)?;
+    let is_offer = get_signed_channel_state!(signed_channel, RenewOffered, is_offer)?;
 
     if *is_offer {
         return Err(Error::InvalidState(
             "Cannot reject own renew offer.".to_string(),
         ));
     }
-
-    let reference_id = *reference_id;
 
     signed_channel.state = signed_channel
         .roll_back_state
@@ -2217,7 +2184,7 @@ pub fn reject_renew_offer(signed_channel: &mut SignedChannel) -> Result<Reject, 
     Ok(Reject {
         channel_id: signed_channel.channel_id,
         timestamp: get_unix_time_now(),
-        reference_id
+        reference_id: signed_channel.reference_id
     })
 }
 
@@ -2276,8 +2243,7 @@ where
         offer_signature: close_signature,
         close_tx: close_tx.clone(),
         timeout: time.unix_time_now() + super::manager::PEER_TIMEOUT,
-        is_offer: true,
-        reference_id
+        is_offer: true
     };
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);
@@ -2338,7 +2304,6 @@ where
         close_tx,
         timeout: time.unix_time_now() + peer_timeout,
         is_offer: false,
-        reference_id: close_offer.reference_id
     };
 
     std::mem::swap(&mut state, &mut signed_channel.state);
@@ -2357,10 +2322,10 @@ pub fn accept_collaborative_close_offer<C: Signing, S: Deref>(
 where
     S::Target: Signer,
 {
-    let (offer_signature, close_tx, is_offer, reference_id) = get_signed_channel_state!(
+    let (offer_signature, close_tx, is_offer) = get_signed_channel_state!(
         signed_channel,
         CollaborativeCloseOffered,
-        offer_signature | close_tx, is_offer, reference_id
+        offer_signature | close_tx, is_offer
     )?;
 
     if *is_offer {
@@ -2391,7 +2356,7 @@ where
         counter_party: signed_channel.counter_party,
         temporary_channel_id: signed_channel.temporary_channel_id,
         channel_id: signed_channel.channel_id,
-        reference_id: *reference_id
+        reference_id: signed_channel.reference_id
     });
     Ok((close_tx, channel))
 }
@@ -2618,8 +2583,9 @@ where
         buffer_transaction,
         contract_id,
         is_initiator,
-        reference_id,
     };
+
+    signed_channel.reference_id = reference_id;
 
     Ok(())
 }
@@ -2638,8 +2604,8 @@ pub fn finalize_unilateral_close_settled_channel<S: Deref>(
 where
     S::Target: Signer,
 {
-    let (buffer_transaction, reference_id) =
-        get_signed_channel_state!(signed_channel, Closing, buffer_transaction | reference_id)?;
+    let buffer_transaction =
+        get_signed_channel_state!(signed_channel, Closing, buffer_transaction)?;
 
     let (range_info, oracle_sigs) =
         crate::utils::get_range_info_and_oracle_sigs(contract_info, adaptor_info, attestations)?;
@@ -2722,7 +2688,7 @@ where
         counter_party: signed_channel.counter_party,
         temporary_channel_id: signed_channel.temporary_channel_id,
         channel_id: signed_channel.channel_id,
-        reference_id: *reference_id
+        reference_id: signed_channel.reference_id
     };
     let channel = if is_initiator {
         Channel::Closed(closed_channel)
@@ -2756,10 +2722,10 @@ pub(crate) fn close_settled_channel_internal<S: Deref>(
 where
     S::Target: Signer,
 {
-    let (counter_settle_adaptor_signature, settle_tx, reference_id) = get_signed_channel_state!(
+    let (counter_settle_adaptor_signature, settle_tx) = get_signed_channel_state!(
         signed_channel,
         Settled,
-        counter_settle_adaptor_signature | settle_tx, reference_id
+        counter_settle_adaptor_signature | settle_tx
     )?;
 
     let mut settle_tx = settle_tx.clone();
@@ -2858,14 +2824,14 @@ where
             counter_party: signed_channel.counter_party,
             temporary_channel_id: signed_channel.temporary_channel_id,
             channel_id: signed_channel.channel_id,
-            reference_id: *reference_id
+            reference_id: signed_channel.reference_id
         })
     } else {
         Channel::CounterClosed(ClosedChannel {
             counter_party: signed_channel.counter_party,
             temporary_channel_id: signed_channel.temporary_channel_id,
             channel_id: signed_channel.channel_id,
-            reference_id: *reference_id
+            reference_id: signed_channel.reference_id
         })
     };
     Ok((settle_tx, channel))
