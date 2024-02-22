@@ -621,7 +621,7 @@ where
             .offered_contract
             .fee_rate_per_vb,
         sub_channel_id,
-        reference_id: accept_channel.reference_id
+        reference_id: offered_channel.reference_id
     };
 
     let sign_channel = SignChannel {
@@ -630,7 +630,7 @@ where
         buffer_adaptor_signature: own_buffer_adaptor_signature,
         refund_signature: signed_contract.offer_refund_signature,
         funding_signatures: signed_contract.funding_signatures.clone(),
-        reference_id: accept_channel.reference_id
+        reference_id: offered_channel.reference_id
     };
 
     Ok((signed_channel, signed_contract, sign_channel))
@@ -836,6 +836,7 @@ where
     std::mem::swap(&mut channel.state, &mut state);
 
     channel.roll_back_state = Some(state);
+    channel.reference_id = reference_id;
 
     let settle_channel_offer = SettleOffer {
         channel_id: channel.channel_id,
@@ -878,6 +879,7 @@ pub fn on_settle_offer(
 
     std::mem::swap(&mut signed_channel.state, &mut new_state);
     signed_channel.roll_back_state = Some(new_state);
+    signed_channel.reference_id = settle_offer.reference_id;
 
     Ok(())
 }
@@ -1475,6 +1477,7 @@ where
 
     std::mem::swap(&mut signed_channel.state, &mut state);
     signed_channel.roll_back_state = Some(state);
+    signed_channel.reference_id = reference_id;
 
     let msg = RenewOffer {
         channel_id: signed_channel.channel_id,
@@ -1543,6 +1546,7 @@ pub fn on_renew_offer<T: Deref>(
     std::mem::swap(&mut signed_channel.state, &mut state);
 
     signed_channel.roll_back_state = Some(state);
+    signed_channel.reference_id = renew_offer.reference_id;
 
     Ok(offered_contract)
 }
@@ -2247,6 +2251,7 @@ where
     };
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);
+    signed_channel.reference_id = reference_id;
 
     Ok((
         CollaborativeCloseOffer {
@@ -2308,6 +2313,7 @@ where
 
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);
+    signed_channel.reference_id = close_offer.reference_id;
 
     Ok(())
 }
