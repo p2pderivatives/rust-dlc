@@ -2362,7 +2362,8 @@ where
         counter_party: signed_channel.counter_party,
         temporary_channel_id: signed_channel.temporary_channel_id,
         channel_id: signed_channel.channel_id,
-        reference_id: signed_channel.reference_id
+        reference_id: signed_channel.reference_id,
+        closing_txid: close_tx.txid()
     });
     Ok((close_tx, channel))
 }
@@ -2694,7 +2695,8 @@ where
         counter_party: signed_channel.counter_party,
         temporary_channel_id: signed_channel.temporary_channel_id,
         channel_id: signed_channel.channel_id,
-        reference_id: signed_channel.reference_id
+        reference_id: signed_channel.reference_id,
+        closing_txid: cet.txid()
     };
     let channel = if is_initiator {
         Channel::Closed(closed_channel)
@@ -2830,14 +2832,16 @@ where
             counter_party: signed_channel.counter_party,
             temporary_channel_id: signed_channel.temporary_channel_id,
             channel_id: signed_channel.channel_id,
-            reference_id: signed_channel.reference_id
+            reference_id: signed_channel.reference_id,
+            closing_txid: settle_tx.txid()
         })
     } else {
         Channel::CounterClosed(ClosedChannel {
             counter_party: signed_channel.counter_party,
             temporary_channel_id: signed_channel.temporary_channel_id,
             channel_id: signed_channel.channel_id,
-            reference_id: signed_channel.reference_id
+            reference_id: signed_channel.reference_id,
+            closing_txid: settle_tx.txid()
         })
     };
     Ok((settle_tx, channel))

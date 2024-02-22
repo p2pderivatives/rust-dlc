@@ -20,7 +20,7 @@ use crate::subchannel::{ClosingSubChannel, SubChannel, SubChannelState};
 use crate::utils::get_object_in_state;
 use crate::{ContractId, DlcChannelId, ReferenceId, Signer};
 use bitcoin::consensus::encode::serialize_hex;
-use bitcoin::{Address, OutPoint};
+use bitcoin::{Address, OutPoint, Txid};
 use bitcoin::Transaction;
 use bitcoin::hashes::hex::ToHex;
 use dlc_messages::channel::{
@@ -44,6 +44,7 @@ use std::ops::Deref;
 use std::string::ToString;
 use std::sync::Mutex;
 use bitcoin::consensus::Decodable;
+use bitcoin::hashes::Hash;
 
 /// The number of confirmations required before moving the the confirmed state.
 pub const NB_CONFIRMATIONS: u32 = 1;
@@ -2324,7 +2325,8 @@ where
                         counter_party: signed_channel.counter_party,
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
-                        reference_id: signed_channel.reference_id
+                        reference_id: signed_channel.reference_id,
+                        closing_txid: tx.txid()
                     });
                     self.chain_monitor
                         .lock()
@@ -2339,6 +2341,7 @@ where
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
                         reference_id: None,
+                        closing_txid: tx.txid(),
                     });
                     self.chain_monitor
                         .lock()
@@ -2357,14 +2360,16 @@ where
                                         counter_party: signed_channel.counter_party,
                                         temporary_channel_id: signed_channel.temporary_channel_id,
                                         channel_id: signed_channel.channel_id,
-                                        reference_id: signed_channel.reference_id
+                                        reference_id: signed_channel.reference_id,
+                                        closing_txid: tx.txid()
                                     })
                                 } else {
                                     Channel::CounterClosed(ClosedChannel {
                                         counter_party: signed_channel.counter_party,
                                         temporary_channel_id: signed_channel.temporary_channel_id,
                                         channel_id: signed_channel.channel_id,
-                                        reference_id: signed_channel.reference_id
+                                        reference_id: signed_channel.reference_id,
+                                        closing_txid: tx.txid()
                                     })
                                 }
                             }
@@ -2374,7 +2379,8 @@ where
                                     counter_party: signed_channel.counter_party,
                                     temporary_channel_id: signed_channel.temporary_channel_id,
                                     channel_id: signed_channel.channel_id,
-                                    reference_id: None
+                                    reference_id: None,
+                                    closing_txid: tx.txid()
                                 })
                             }
                         }
@@ -2614,7 +2620,9 @@ where
             counter_party: channel.counter_party,
             temporary_channel_id: channel.temporary_channel_id,
             channel_id,
-            reference_id: None
+            reference_id: None,
+            // TODO(holzeis): Ignoring closing txid on dlc channels for sub channels
+            closing_txid: Txid::all_zeros()
         });
 
         Ok((closed_channel, contract))
