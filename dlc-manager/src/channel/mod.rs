@@ -5,7 +5,6 @@ use dlc_messages::channel::{AcceptChannel, SignChannel};
 use secp256k1_zkp::PublicKey;
 
 use crate::{ContractId, DlcChannelId, ReferenceId};
-use crate::channel::signed_channel::SignedChannelState;
 
 use self::{
     accepted_channel::AcceptedChannel, offered_channel::OfferedChannel,
@@ -98,20 +97,7 @@ impl Channel {
         match self {
             Channel::Offered(o) => o.reference_id,
             Channel::Accepted(a) => a.reference_id,
-            Channel::Signed(s) => match s.state {
-                SignedChannelState::Established { reference_id, .. } => reference_id,
-                SignedChannelState::SettledOffered { reference_id, .. } => reference_id,
-                SignedChannelState::SettledReceived { reference_id, .. } => reference_id,
-                SignedChannelState::SettledAccepted { reference_id, .. } => reference_id,
-                SignedChannelState::SettledConfirmed { reference_id, .. } => reference_id,
-                SignedChannelState::Settled { reference_id, .. } => reference_id,
-                SignedChannelState::RenewOffered { reference_id, .. } => reference_id,
-                SignedChannelState::RenewAccepted { reference_id, .. } => reference_id,
-                SignedChannelState::RenewConfirmed { reference_id, .. } => reference_id,
-                SignedChannelState::RenewFinalized { reference_id, .. } => reference_id,
-                SignedChannelState::Closing { reference_id, .. } => reference_id,
-                SignedChannelState::CollaborativeCloseOffered { reference_id, .. } => reference_id,
-            },
+            Channel::Signed(s) => s.reference_id,
             Channel::FailedAccept(f) => f.reference_id,
             Channel::FailedSign(f) => f.reference_id,
             Channel::Closing(c) => c.reference_id,

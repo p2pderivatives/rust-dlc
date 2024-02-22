@@ -2134,7 +2134,6 @@ where
                         buffer_transaction: tx.clone(),
                         is_initiator: false,
                         contract_id,
-                        reference_id: None
                     };
                     std::mem::swap(&mut signed_channel.state, &mut state);
 
@@ -2303,10 +2302,10 @@ where
                     true
                 }
                 TxType::CollaborativeClose => {
-                    let (counter_payout, reference_id) = get_signed_channel_state!(
+                    let counter_payout = get_signed_channel_state!(
                             signed_channel,
                             CollaborativeCloseOffered,
-                            counter_payout | reference_id
+                            counter_payout
                         )?;
                     if let Some(SignedChannelState::Established {
                         signed_contract_id, ..
@@ -2325,7 +2324,7 @@ where
                         counter_party: signed_channel.counter_party,
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
-                        reference_id: *reference_id
+                        reference_id: signed_channel.reference_id
                     });
                     self.chain_monitor
                         .lock()
@@ -2352,20 +2351,20 @@ where
                     let contract_id = signed_channel.get_contract_id();
                     let closed_channel = {
                         match &signed_channel.state {
-                            SignedChannelState::Closing { is_initiator, reference_id, .. } => {
+                            SignedChannelState::Closing { is_initiator, .. } => {
                                 if *is_initiator {
                                     Channel::Closed(ClosedChannel {
                                         counter_party: signed_channel.counter_party,
                                         temporary_channel_id: signed_channel.temporary_channel_id,
                                         channel_id: signed_channel.channel_id,
-                                        reference_id: *reference_id
+                                        reference_id: signed_channel.reference_id
                                     })
                                 } else {
                                     Channel::CounterClosed(ClosedChannel {
                                         counter_party: signed_channel.counter_party,
                                         temporary_channel_id: signed_channel.temporary_channel_id,
                                         channel_id: signed_channel.channel_id,
-                                        reference_id: *reference_id
+                                        reference_id: signed_channel.reference_id
                                     })
                                 }
                             }
@@ -2471,10 +2470,8 @@ where
             SignedChannelState::RenewFinalized {
                 buffer_transaction,
                 offer_buffer_adaptor_signature,
-                reference_id,
                 ..
             } => {
-                let reference_id = *reference_id;
                 warn!("Force closing renew finalized channel with id: {}", channel.channel_id.to_hex());
 
                 let offer_buffer_adaptor_signature = *offer_buffer_adaptor_signature;
@@ -2493,15 +2490,14 @@ where
 
                 self.close_settled_channel(channel, sub_channel, is_initiator)
             }
-            SignedChannelState::SettledOffered { reference_id, .. }
-            | SignedChannelState::SettledReceived { reference_id, .. }
-            | SignedChannelState::SettledAccepted { reference_id, .. }
-            | SignedChannelState::SettledConfirmed { reference_id, .. }
-            | SignedChannelState::RenewOffered { reference_id, .. }
-            | SignedChannelState::RenewAccepted { reference_id, .. }
-            | SignedChannelState::RenewConfirmed { reference_id, .. }
-            | SignedChannelState::CollaborativeCloseOffered { reference_id, .. } => {
-                let reference_id = *reference_id;
+            SignedChannelState::SettledOffered { .. }
+            | SignedChannelState::SettledReceived { .. }
+            | SignedChannelState::SettledAccepted { .. }
+            | SignedChannelState::SettledConfirmed { .. }
+            | SignedChannelState::RenewOffered { .. }
+            | SignedChannelState::RenewAccepted { .. }
+            | SignedChannelState::RenewConfirmed { .. }
+            | SignedChannelState::CollaborativeCloseOffered { .. } => {
                 channel.state = channel
                     .roll_back_state
                     .take()
