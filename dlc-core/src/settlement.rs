@@ -186,20 +186,17 @@ fn get_range_info_and_oracle_sigs(
         .map(|(i, x)| (*i, &x.outcomes))
         .collect::<Vec<(usize, &Vec<String>)>>();
     let info_opt = contract_info.get_range_info_for_outcome(adaptor_info, &outcomes, 0);
-    if let Some((sig_infos, range_info)) = info_opt {
-        let sigs: Box<[Vec<_>]> = attestations
-            .iter()
-            .filter_map(|(i, a)| {
-                let sig_info = sig_infos.iter().find(|x| x.0 == *i)?;
-                Some(a.signatures.iter().take(sig_info.1).cloned().collect())
-            })
-            .collect();
-        return Ok((range_info, sigs));
-    }
-
-    Err(FromDlcError::Manager(managerError::InvalidState(
-        "Could not find closing info for given outcomes".to_string(),
-    )))
+    let (sig_infos, range_info) = info_opt.ok_or(managerError::InvalidState(
+        "Could not find closing info for given outcomes, you may not be allowed to settle with this attestation".to_string(),
+    ))?;
+    let sigs: Box<[Vec<_>]> = attestations
+        .iter()
+        .filter_map(|(i, a)| {
+            let sig_info = sig_infos.iter().find(|x| x.0 == *i)?;
+            Some(a.signatures.iter().take(sig_info.1).cloned().collect())
+        })
+        .collect();
+    return Ok((range_info, sigs));
 }
 
 fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey> {

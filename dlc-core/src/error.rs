@@ -12,7 +12,7 @@ pub enum FromDlcError {
     // #[error("{0}")]
     Secp(#[from] secpError),
     // #[error("{0}")]
-    Manager(managerError),
+    Manager(#[from] managerError),
     // #[error("{0}")]
     BitcoinEncoding(#[from] bitcoin::consensus::encode::Error),
     // #[error("{0}")]
