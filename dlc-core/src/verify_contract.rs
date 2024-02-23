@@ -9,10 +9,10 @@ use crate::{
     ContractParams, DlcSide, SideSign,
 };
 
-pub fn check_all_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
+pub fn check_all_signed_dlc(
     contract_params: &ContractParams,
-    offer_side: &SideSign<E>,
-    accept_side: &SideSign<E>,
+    offer_side: &SideSign,
+    accept_side: &SideSign,
     fee_party_params: Option<&FeePartyParams>,
     anchors_params: Option<&[AnchorParams]>,
 ) -> Result<Transaction> {

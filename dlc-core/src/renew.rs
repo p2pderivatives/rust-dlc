@@ -17,15 +17,15 @@ pub struct RenewInfos {
     pub value: u64,
 }
 
-pub fn renew<E: AsRef<[EcdsaAdaptorSignature]>>(
+pub fn renew(
     old_contract_params: &ContractParams,
     old_offer_params: &PartyParams,
     old_accept_params: &PartyParams,
     old_fee_party_params: Option<&FeePartyParams>,
     old_anchors_params: Option<&[AnchorParams]>,
     contract_params: &ContractParams,
-    offer_side: &SideSign<E>,
-    accept_side: &SideSign<E>,
+    offer_side: &SideSign,
+    accept_side: &SideSign,
     fee_party_params: Option<&FeePartyParams>,
     anchors_params: Option<&[AnchorParams]>,
 ) -> Result<RenewInfos> {

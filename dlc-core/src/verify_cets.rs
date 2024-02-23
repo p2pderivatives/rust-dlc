@@ -8,13 +8,13 @@ use crate::{
     get_dlc_transactions, validate_presigned_without_infos, ContractParams, DlcSide,
 };
 
-pub fn check_signed_dlc<E: AsRef<[EcdsaAdaptorSignature]>>(
+pub fn check_signed_dlc(
     contract_params: &ContractParams,
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_party_params: Option<&FeePartyParams>,
     anchors_params: Option<&[AnchorParams]>,
-    adaptor_sig: &[E],
+    adaptor_sig: &[EcdsaAdaptorSignature],
     refund_sig: &Signature,
 ) -> Result<(Vec<AdaptorInfo>, bool)> {
     let dlc_transactions = get_dlc_transactions(
