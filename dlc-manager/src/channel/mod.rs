@@ -178,6 +178,8 @@ pub struct ClosedChannel {
     pub channel_id: DlcChannelId,
     /// The reference id set by the api user.
     pub reference_id: Option<ReferenceId>,
+    /// The txid that closed that channel
+    pub closing_txid: Txid,
 }
 
 #[derive(Clone)]

@@ -3,7 +3,8 @@
 
 use std::{collections::HashMap, marker::PhantomData, ops::Deref, sync::Mutex};
 
-use bitcoin::{hashes::hex::ToHex, OutPoint, PackedLockTime, Script, Sequence, Transaction};
+use bitcoin::{hashes::hex::ToHex, OutPoint, PackedLockTime, Script, Sequence, Transaction, Txid};
+use bitcoin::hashes::Hash;
 use dlc::{channel::sub_channel::LN_GLUE_TX_WEIGHT, PartyParams};
 use dlc_messages::{
     channel::{AcceptChannel, OfferChannel},
@@ -3703,11 +3704,14 @@ where
                 "No such channel {:?}",
                 channel_id
             )))?;
+
         let closed_channel_data = ClosedChannel {
             counter_party: channel.get_counter_party_id(),
             temporary_channel_id: channel.get_temporary_id(),
             channel_id: channel.get_id(),
-            reference_id: None
+            reference_id: None,
+            // TODO(holzeis): Ignoring closing txid on dlc channels for sub channels
+            closing_txid: Txid::all_zeros()
         };
         let closed_channel = if counter_closed {
             Channel::CounterClosed(closed_channel_data)

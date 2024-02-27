@@ -81,5 +81,5 @@ impl_dlc_writeable!(ClosingChannel, {
     (is_closer, writeable),
     (reference_id, option)
 });
-impl_dlc_writeable!(ClosedChannel, {(channel_id, writeable), (counter_party, writeable), (temporary_channel_id, writeable), (reference_id, option)});
+impl_dlc_writeable!(ClosedChannel, {(channel_id, writeable), (counter_party, writeable), (temporary_channel_id, writeable), (reference_id, option), (closing_txid, writeable)});
 impl_dlc_writeable!(ClosedPunishedChannel, {(channel_id, writeable), (counter_party, writeable), (temporary_channel_id, writeable), (punish_txid, writeable), (reference_id, option)});
