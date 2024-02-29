@@ -2,7 +2,7 @@ use bitcoin::{Script, Transaction};
 use dlc::PartyParams;
 
 use dlc::util::get_output_for_script_pubkey;
-use secp256k1_zkp::{EcdsaAdaptorSignature, Secp256k1};
+use secp256k1_zkp::Secp256k1;
 
 use crate::contract_tools::{AnchorParams, FeePartyParams};
 use crate::{error::*, ContractParams, DlcSide, SideSign};

@@ -1,6 +1,6 @@
 use bitcoin::Transaction;
 
-use secp256k1_zkp::{EcdsaAdaptorSignature, Secp256k1};
+use secp256k1_zkp::Secp256k1;
 
 use crate::{
     contract_tools::{AnchorParams, FeePartyParams},

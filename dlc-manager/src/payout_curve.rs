@@ -591,9 +591,17 @@ impl Evaluable for NoPayoutCurvePiece {
     fn to_range_payouts(
         &self,
         _rounding_intervals: &RoundingIntervals,
-        _total_collateral: u64,
-        _range_payouts: &mut Vec<RangePayout>,
+        total_collateral: u64,
+        range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
+        range_payouts.push(RangePayout {
+            start: self.get_last_outcome() as usize,
+            count: 1,
+            payout: Payout {
+                offer: self.right_end_point.outcome_payout,
+                accept: total_collateral - self.right_end_point.outcome_payout,
+            },
+        });
         Ok(())
     }
 }
