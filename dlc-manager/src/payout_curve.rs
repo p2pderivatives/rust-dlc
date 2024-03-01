@@ -117,11 +117,13 @@ impl PayoutFunction {
         self.payout_function_pieces
             .iter()
             .find_map(|piece| {
-                (piece.get_last_point().event_outcome >= outcome).then_some(match piece {
-                    PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.evaluate(outcome),
-                    PayoutFunctionPiece::HyperbolaPayoutCurvePiece(h) => h.evaluate(outcome),
-                    PayoutFunctionPiece::NoPayoutCurvePiece(_) => None,
-                })
+                (piece.get_last_point().event_outcome >= outcome
+                    && piece.get_first_point().event_outcome <= outcome)
+                    .then_some(match piece {
+                        PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.evaluate(outcome),
+                        PayoutFunctionPiece::HyperbolaPayoutCurvePiece(p) => p.evaluate(outcome),
+                        PayoutFunctionPiece::NoPayoutCurvePiece(p) => p.evaluate(outcome),
+                    })
             })
             .ok_or(Error::InvalidParameters(format!(
                 "Payout function doesn't cover outcome {}",
