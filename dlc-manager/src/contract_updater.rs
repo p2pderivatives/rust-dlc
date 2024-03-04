@@ -50,6 +50,7 @@ where
         wallet,
         blockchain,
         true,
+        0,
     )?;
 
     let offered_contract = OfferedContract::new(
@@ -89,6 +90,7 @@ where
         wallet,
         blockchain,
         true,
+        0,
     )?;
 
     let dlc_transactions = dlc::create_dlc_transactions(

@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
-use dlc::{PartyParams, TxInputInfo};
+use dlc::{util::{cet_or_refund_base_fee, dlc_payout_spk_fee}, PartyParams, TxInputInfo, FUND_TX_BASE_WEIGHT};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,
@@ -17,9 +17,6 @@ use crate::{
     error::Error,
     Blockchain, Wallet,
 };
-
-const APPROXIMATE_CET_VBYTES: u64 = 190;
-const APPROXIMATE_CLOSING_VBYTES: u64 = 168;
 
 macro_rules! get_object_in_state {
     ($manager: expr, $id: expr, $state: ident, $peer_id: expr, $object_type: ident, $get_call: ident) => {{
@@ -50,10 +47,6 @@ macro_rules! get_object_in_state {
 }
 
 pub(crate) use get_object_in_state;
-
-pub fn get_common_fee(fee_rate: u64) -> u64 {
-    (APPROXIMATE_CET_VBYTES + APPROXIMATE_CLOSING_VBYTES) * fee_rate
-}
 
 #[cfg(not(feature = "fuzztarget"))]
 pub(crate) fn get_new_serial_id() -> u64 {
@@ -102,6 +95,7 @@ pub(crate) fn get_party_params<C: Signing, W: Deref, B: Deref>(
     wallet: &W,
     blockchain: &B,
     needs_utxo: bool,
+    extra_fee: u64,
 ) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
 where
     W::Target: Wallet,
@@ -122,8 +116,23 @@ where
     let mut total_input = 0;
 
     if needs_utxo {
-        let appr_required_amount = own_collateral + get_half_common_fee(fee_rate);
-        let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+        let payout_spk_fee = dlc_payout_spk_fee(&payout_spk, fee_rate);
+
+        // The extra fee is split evenly between both parties. For simplicity, we allow overshooting
+        // by 1 sat during coin selection
+        let extra_fee_half = extra_fee.div_ceil(2);
+
+        let appr_required_amount = own_collateral
+            + get_half_cet_or_refund_fee(fee_rate)?
+            + payout_spk_fee
+            + extra_fee_half;
+
+        let utxos = wallet.get_utxos_for_amount(
+            appr_required_amount,
+            Some(fee_rate),
+            (FUND_TX_BASE_WEIGHT / 2) as u64,
+            true,
+        )?;
         for utxo in utxos {
             let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;
             let mut writer = Vec::new();
@@ -178,9 +187,10 @@ where
     })
 }
 
-fn get_half_common_fee(fee_rate: u64) -> u64 {
-    let common_fee = get_common_fee(fee_rate);
-    (common_fee as f64 / 2_f64).ceil() as u64
+fn get_half_cet_or_refund_fee(fee_rate: u64) -> Result<u64, Error> {
+    let common_fee = cet_or_refund_base_fee(fee_rate)?;
+
+    Ok((common_fee as f64 / 2_f64).ceil() as u64)
 }
 
 pub(crate) fn get_range_info_and_oracle_sigs(

@@ -249,6 +249,7 @@ impl Wallet for BitcoinCoreProvider {
         &self,
         amount: u64,
         _fee_rate: Option<u64>,
+        _base_weight_wu: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, ManagerError> {
         let client = self.client.lock().unwrap();

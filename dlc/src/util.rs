@@ -8,6 +8,7 @@ use bitcoin::{
 use bitcoin::{Sequence, Witness};
 use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
+use crate::channel::{BUFFER_TX_WEIGHT, CET_EXTRA_WEIGHT};
 use crate::Error;
 
 // Setting the nSequence for every input of a transaction to this value disables
@@ -98,13 +99,52 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
 
 /// Computes the required fee for a transaction based on the given weight and fee
 /// rate per vbyte.
+pub fn tx_weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
+    let fee = weight_to_fee(weight, fee_rate)?;
+
+    Ok(u64::max(fee, MIN_FEE))
+}
+
+/// Computes the required fee for the given weight in weight units and fee rate in sats per vbyte.
 pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
-    Ok(u64::max(
-        (f64::ceil((weight as f64) / 4.0) as u64)
-            .checked_mul(fee_rate)
-            .ok_or(Error::InvalidArgument(format!("Failed to multiply fee rate: {} to weight", fee_rate )))?,
-        MIN_FEE,
-    ))
+    let vbytes = f64::ceil((weight as f64) / 4.0) as u64;
+    let fee = vbytes
+        .checked_mul(fee_rate)
+        .ok_or(Error::InvalidArgument(format!(
+            "Failed to multiply fee rate: {} to weight",
+            fee_rate
+        )))?;
+
+    Ok(fee)
+}
+
+/// Calculate the base transaction fee for a CET or refund transaction, for the given fee rate.
+pub fn cet_or_refund_base_fee(fee_rate: u64) -> Result<u64, Error> {
+    let base_weight = crate::CET_BASE_WEIGHT;
+    tx_weight_to_fee(base_weight, fee_rate)
+}
+
+/// Calculate the extra transaction fees that need to be reserved when opening a DLC channel.
+///
+/// These fees apply to the entire channel and will need to be divided between the two parties.
+pub fn dlc_channel_extra_fee(fee_rate: u64) -> Result<u64, Error> {
+    tx_weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate)
+}
+
+/// Calculate the fraction of a transaction fee that must be included to pay for the given payout
+/// output script pubkey.
+///
+/// Payout outputs are included in CETs and refund transactions.
+pub fn dlc_payout_spk_fee(payout_spk: &Script, fee_rate_sats_per_vb: u64) -> u64 {
+    // Numbers come from
+    // https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#expected-weight-of-the-contract-execution-or-refund-transaction.
+
+    let value_vb = 8;
+    let var_int_vb = 1;
+
+    let payout_spk_vb = payout_spk.len() as u64;
+
+    (value_vb + var_int_vb + payout_spk_vb) * fee_rate_sats_per_vb
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> Script {

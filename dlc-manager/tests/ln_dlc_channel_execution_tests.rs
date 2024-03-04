@@ -324,7 +324,7 @@ impl EventHandler for LnDlcParty {
 
                 let utxos: Vec<Utxo> = self
                     .wallet
-                    .get_utxos_for_amount(required_amount, None, false)
+                    .get_utxos_for_amount(required_amount, None, 0, false)
                     .unwrap();
 
                 tx.input = Vec::new();

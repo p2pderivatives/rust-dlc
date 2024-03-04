@@ -26,14 +26,14 @@ pub mod sub_channel;
  * scriptSig -> 0
  * nSequence -> 4 * 4
  * Witness item count -> 1
- * Witness -> 366
+ * Witness -> 220
  * OUTPUT:
  * nValue -> 8 * 4
  * scriptPubkeyLen -> 1 * 4
  * scriptPubkey -> 34 * 4
  * TOTAL: 599
 */
-pub const BUFFER_TX_WEIGHT: usize = 748;
+pub const BUFFER_TX_WEIGHT: usize = 599;
 
 /**
  * Due to the buffer output script being more complex than the funding output
@@ -91,7 +91,7 @@ pub struct RevokeParams {
     /// Key used to restrict the transaction output path.
     pub own_pk: PublicKey,
     /// Key used to restrict the transaction output path and for generating
-    /// an adaptor signature, that gets revealed when using the transaction.  
+    /// an adaptor signature, that gets revealed when using the transaction.
     pub publish_pk: PublicKey,
     /// Key used to revoke the transaction.
     pub revoke_pk: PublicKey,
@@ -205,7 +205,7 @@ pub fn create_settle_transaction(
     let remaining_fee = (fund_output_value
         - offer_payout
         - accept_payout
-        - crate::util::weight_to_fee(
+        - crate::util::tx_weight_to_fee(
             SETTLE_INPUT_WEIGHT + output.len() * SETTLE_OUTPUT_WEIGHT + 148,
             fee_rate_per_vb,
         )?)
@@ -244,8 +244,7 @@ pub fn create_channel_transactions(
     fund_output_serial_id: u64,
     cet_nsequence: Sequence,
 ) -> Result<DlcChannelTransactions, Error> {
-    let extra_fee =
-        super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
+    let extra_fee = super::util::dlc_channel_extra_fee(fee_rate_per_vb)?;
     let (fund, funding_script_pubkey) = super::create_fund_transaction_with_fees(
         offer_params,
         accept_params,
@@ -289,8 +288,7 @@ pub fn create_renewal_channel_transactions(
     fund_vout: Option<usize>,
     buffer_nsequence: Option<Sequence>,
 ) -> Result<DlcChannelTransactions, Error> {
-    let extra_fee =
-        super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
+    let extra_fee = super::util::dlc_channel_extra_fee(fee_rate_per_vb)?;
 
     let (fund_vout, fund_output) = {
         if let Some(fund_vout) = fund_vout {
@@ -457,7 +455,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
     let output_weight = N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
     let tx_fee =
-        crate::util::weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
+        crate::util::tx_weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
     let output_value = prev_tx.output[0].value - tx_fee;
 
@@ -544,7 +542,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
     let output_weight = N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
     let tx_fee =
-        crate::util::weight_to_fee(PUNISH_SETTLE_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
+        crate::util::tx_weight_to_fee(PUNISH_SETTLE_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
     let mut tx = Transaction {
         version: super::TX_VERSION,

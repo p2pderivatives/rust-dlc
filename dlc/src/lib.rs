@@ -38,6 +38,8 @@ use secp256k1_zkp::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::util::dlc_payout_spk_fee;
+
 pub mod channel;
 pub mod secp_utils;
 pub mod util;
@@ -53,11 +55,11 @@ const TX_VERSION: i32 = 2;
 
 /// The base weight of a fund transaction
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
-const FUND_TX_BASE_WEIGHT: usize = 214;
+pub const FUND_TX_BASE_WEIGHT: usize = 214;
 
 /// The weight of a CET excluding payout outputs
 /// See: https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees
-const CET_BASE_WEIGHT: usize = 500;
+pub const CET_BASE_WEIGHT: usize = 500;
 
 /// The base weight of a transaction input computed as: (outpoint(36) + sequence(4) + scriptPubKeySize(1)) * 4
 /// See: <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Transactions.md#fees>
@@ -287,43 +289,61 @@ impl PartyParams {
             )?;
         }
 
-        // Value size + script length var_int + ouput script pubkey size
-        let change_size = self.change_script_pubkey.len();
-        // Change size is scaled by 4 from vBytes to weight units
-        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument("failed to multiply 4 to change size".to_string()))?;
-
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
         let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT / 2;
 
-        let total_fund_weight = checked_add!(
+        let fund_weight_without_change = checked_add!(
             this_party_fund_base_weight,
-            inputs_weight,
-            change_weight,
-            36
+            inputs_weight
         )?;
-        let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
+        let fund_fee_without_change = util::tx_weight_to_fee(fund_weight_without_change, fee_rate_per_vb)?;
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
         let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
 
-        // size of the payout script pubkey scaled by 4 from vBytes to weight units
-        let output_spk_weight = self
-            .payout_script_pubkey
-            .len()
-            .checked_mul(4)
-            .ok_or(Error::InvalidArgument("failed to multiply 4 to payout script pubkey length".to_string()))?;
-        let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
-        let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
+        let output_spk_fee = dlc_payout_spk_fee(
+            &self.payout_script_pubkey,
+            fee_rate_per_vb,
+        );
+        let cet_or_refund_base_fee = util::weight_to_fee(this_party_cet_base_weight, fee_rate_per_vb)?;
+        let cet_or_refund_fee = checked_add!(cet_or_refund_base_fee, output_spk_fee)?;
         let required_input_funds =
-            checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
+            checked_add!(self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
-            return Err(Error::InvalidArgument(format!("input amount: {} smaller than required input funds: {} (collateral: {}, fund_fee: {}, cet_or_refund_fee: {}, extra_fee: {})", self.input_amount, required_input_funds, self.collateral, fund_fee, cet_or_refund_fee, extra_fee)));
+            return Err(Error::InvalidArgument(format!("input amount: {} smaller than required input funds: {} (collateral: {}, fund_fee: {}, cet_or_refund_fee: {}, extra_fee: {})", self.input_amount, required_input_funds, self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)));
         }
 
+        let (change_amount, change_fee) = {
+            let leftover = self.input_amount - required_input_funds;
+
+            // Value size + script length var_int + ouput script pubkey size
+            let change_script_size = self.change_script_pubkey.len();
+            // Change size is scaled by 4 from vBytes to weight units
+            let change_script_weight =
+                change_script_size
+                    .checked_mul(4)
+                    .ok_or(Error::InvalidArgument(
+                        "failed to multiply 4 to change size".to_string(),
+                    ))?;
+            let change_weight = 36 + change_script_weight;
+
+            let change_fee = util::weight_to_fee(change_weight, fee_rate_per_vb)?;
+
+            let change_amount = leftover
+                .checked_sub(change_fee)
+                .ok_or_else(|| {
+                    Error::InvalidArgument("Change output value is lower than cost".to_string())
+                })?;
+
+            (change_amount, change_fee)
+        };
+
+        let fund_fee = fund_fee_without_change + change_fee;
+
         let change_output = TxOut {
-            value: self.input_amount - required_input_funds,
+            value: change_amount,
             script_pubkey: self.change_script_pubkey.clone(),
         };
 
