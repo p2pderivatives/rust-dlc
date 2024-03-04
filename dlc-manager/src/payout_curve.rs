@@ -1,5 +1,4 @@
 //! #PayoutFunction
-
 use std::ops::Deref;
 
 use crate::error::Error;
@@ -116,14 +115,22 @@ impl PayoutFunction {
     pub fn evaluate(&self, outcome: u64) -> Result<Option<f64>, Error> {
         self.payout_function_pieces
             .iter()
-            .find_map(|piece| {
-                (piece.get_last_point().event_outcome >= outcome
-                    && piece.get_first_point().event_outcome <= outcome)
-                    .then_some(match piece {
-                        PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.evaluate(outcome),
-                        PayoutFunctionPiece::HyperbolaPayoutCurvePiece(p) => p.evaluate(outcome),
-                        PayoutFunctionPiece::NoPayoutCurvePiece(p) => p.evaluate(outcome),
-                    })
+            .enumerate()
+            .find_map(|(index, piece)| {
+                (piece.get_last_point().event_outcome >= outcome).then_some(match piece {
+                    PayoutFunctionPiece::PolynomialPayoutCurvePiece(p) => p.evaluate(outcome),
+                    PayoutFunctionPiece::HyperbolaPayoutCurvePiece(p) => p.evaluate(outcome),
+                    PayoutFunctionPiece::NoPayoutCurvePiece(p) =>
+                    // Evaluating the Payout Curve in a NoPayout piece is obvious inside the piece (it is None) but not at the edges because of how ranges are computed
+                    // A meaningful value for the left edge is already returned by previous piece if there is one, otherwise None is appropriate
+                    // However for the right edge, we must return the payout of right end point but
+                    // only if there is a curve piece after this one so we need to know where we are in our iteration using index !
+                    {
+                        (outcome == p.right_end_point.event_outcome
+                            && index + 1 != self.payout_function_pieces.len())
+                        .then_some(p.right_end_point.outcome_payout as f64)
+                    }
+                })
             })
             .ok_or(Error::InvalidParameters(format!(
                 "Payout function doesn't cover outcome {}",
@@ -591,17 +598,9 @@ impl Evaluable for NoPayoutCurvePiece {
     fn to_range_payouts(
         &self,
         _rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
-        range_payouts: &mut Vec<RangePayout>,
+        _total_collateral: u64,
+        _range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
-        range_payouts.push(RangePayout {
-            start: self.get_last_outcome() as usize,
-            count: 1,
-            payout: Payout {
-                offer: self.right_end_point.outcome_payout,
-                accept: total_collateral - self.right_end_point.outcome_payout,
-            },
-        });
         Ok(())
     }
 }
