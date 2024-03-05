@@ -5,9 +5,10 @@ use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{All, PublicKey, Secp256k1, SecretKey};
 
 use crate::{
-    contract_tools::{create_cets, AnchorParams, FeePartyParams},
     error::*,
-    get_dlc_transactions, CetSignatures, ContractParams, DlcSide,
+    get_dlc_transactions,
+    mini_dlc_manager::contract_tools::{create_cets, AnchorParams, FeePartyParams},
+    CetSignatures, ContractParams, DlcSide,
 };
 
 pub fn sign_cets(

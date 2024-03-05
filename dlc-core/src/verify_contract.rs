@@ -3,10 +3,11 @@ use bitcoin::Transaction;
 use secp256k1_zkp::Secp256k1;
 
 use crate::{
-    contract_tools::{AnchorParams, FeePartyParams},
     error::*,
-    get_dlc_transactions, validate_presigned_with_infos, validate_presigned_without_infos,
-    ContractParams, DlcSide, SideSign,
+    get_dlc_transactions,
+    mini_dlc_manager::contract_tools::{AnchorParams, FeePartyParams},
+    validate_presigned_with_infos, validate_presigned_without_infos, ContractParams, DlcSide,
+    SideSign,
 };
 
 pub fn check_all_signed_dlc(

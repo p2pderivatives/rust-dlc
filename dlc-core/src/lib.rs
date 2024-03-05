@@ -1,19 +1,19 @@
 use bitcoin::TxOut;
-use contract_tools::{create_cets, create_dlc_transactions, AnchorParams, FeePartyParams};
 use dlc::{DlcTransactions, PartyParams, Payout};
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
+use mini_dlc_manager::contract_tools::{
+    create_cets, create_dlc_transactions, AnchorParams, FeePartyParams,
+};
 
 use secp256k1_zkp::{ecdsa::Signature, All, EcdsaAdaptorSignature, Secp256k1};
 
 pub mod create_contract;
 pub mod error;
-pub mod renew;
+pub mod mini_dlc_manager;
 pub mod settlement;
 pub mod sign_cets;
 pub mod verify_cets;
 pub mod verify_contract;
-
-pub mod contract_tools;
 
 use crate::error::*;
 #[cfg(feature = "serde")]

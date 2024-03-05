@@ -1,19 +1,5 @@
 [workspace]
 
-members = [
-  "bitcoin-test-utils",
-  "bitcoin-rpc-provider",
-  "p2pd-oracle-client",
-  "dlc",
-  "dlc-core",
-  "dlc-messages",
-  "dlc-trie",
-  "dlc-manager",
-  "mocks",
-  "sample",
-  "simple-wallet",
-  "dlc-sled-storage-provider",
-  "electrs-blockchain-provider",
-]
+members = ["dlc-core"]
 
 resolver = "2"

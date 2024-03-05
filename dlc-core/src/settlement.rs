@@ -11,9 +11,10 @@ use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
 
 use crate::{
-    contract_tools::{create_cets, AnchorParams, FeePartyParams},
     error::*,
-    get_dlc_transactions, validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
+    get_dlc_transactions,
+    mini_dlc_manager::contract_tools::{create_cets, AnchorParams, FeePartyParams},
+    validate_presigned_without_infos, ContractParams, DlcSide, SideSign,
 };
 
 #[cfg(feature = "serde")]
@@ -196,7 +197,7 @@ fn get_range_info_and_oracle_sigs(
             Some(a.signatures.iter().take(sig_info.1).cloned().collect())
         })
         .collect();
-    return Ok((range_info, sigs));
+    Ok((range_info, sigs))
 }
 
 fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey> {

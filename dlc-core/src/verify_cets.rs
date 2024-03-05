@@ -3,9 +3,10 @@ use dlc_manager::contract::AdaptorInfo;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, Secp256k1};
 
 use crate::{
-    contract_tools::{AnchorParams, FeePartyParams},
     error::*,
-    get_dlc_transactions, validate_presigned_without_infos, ContractParams, DlcSide,
+    get_dlc_transactions,
+    mini_dlc_manager::contract_tools::{AnchorParams, FeePartyParams},
+    validate_presigned_without_infos, ContractParams, DlcSide,
 };
 
 pub fn check_signed_dlc(
