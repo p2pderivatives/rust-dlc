@@ -15,7 +15,7 @@ extern crate dlc_manager;
 extern crate sled;
 
 #[cfg(feature = "wallet")]
-use bitcoin::{Address, Txid};
+use bitcoin::{address::NetworkUnchecked, Address, Txid};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::accepted_channel::AcceptedChannel;
 use dlc_manager::channel::offered_channel::OfferedChannel;
@@ -34,7 +34,7 @@ use dlc_manager::{error::Error, ContractId, Storage};
 #[cfg(feature = "wallet")]
 use lightning::util::ser::{Readable, Writeable};
 #[cfg(feature = "wallet")]
-use secp256k1_zkp::{PublicKey, SecretKey};
+use secp256k1_zkp::SecretKey;
 #[cfg(feature = "wallet")]
 use simple_wallet::WalletStorage;
 use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
@@ -121,7 +121,8 @@ convertible_enum!(
         Accepted,
         Signed,
         FailedAccept,
-        FailedSign,;
+        FailedSign,
+        Cancelled,;
     },
     Channel
 );
@@ -429,8 +430,9 @@ impl WalletStorage for SledStorageProvider {
             .map(|x| {
                 Ok(String::from_utf8(x.map_err(to_storage_error)?.to_vec())
                     .map_err(|e| Error::InvalidState(format!("Could not read address key {}", e)))?
-                    .parse()
-                    .expect("to have a valid address as key"))
+                    .parse::<Address<NetworkUnchecked>>()
+                    .expect("to have a valid address as key")
+                    .assume_checked())
             })
             .collect::<Result<Vec<Address>, Error>>()
     }
@@ -448,17 +450,16 @@ impl WalletStorage for SledStorageProvider {
         ))
     }
 
-    fn upsert_key_pair(&self, public_key: &PublicKey, privkey: &SecretKey) -> Result<(), Error> {
+    fn upsert_key(&self, identifier: &[u8], privkey: &SecretKey) -> Result<(), Error> {
         self.key_pair_tree()?
-            .insert(public_key.serialize(), &privkey.secret_bytes())
+            .insert(identifier, &privkey.secret_bytes())
             .map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_priv_key_for_pubkey(&self, public_key: &PublicKey) -> Result<Option<SecretKey>, Error> {
+    fn get_priv_key(&self, identifier: &[u8]) -> Result<Option<SecretKey>, Error> {
         let db = self.key_pair_tree()?;
-        let key = public_key.serialize();
-        let raw_key = match db.get(key).map_err(to_storage_error)? {
+        let raw_key = match db.get(identifier).map_err(to_storage_error)? {
             Some(res) => res,
             None => return Ok(None),
         };
@@ -605,6 +606,7 @@ fn serialize_channel(channel: &Channel) -> Result<Vec<u8>, ::std::io::Error> {
         Channel::Signed(s) => s.serialize(),
         Channel::FailedAccept(f) => f.serialize(),
         Channel::FailedSign(f) => f.serialize(),
+        Channel::Cancelled(o) => o.serialize(),
     };
     let mut serialized = serialized?;
     let mut res = Vec::with_capacity(serialized.len() + 1);
@@ -639,6 +641,9 @@ fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
         ChannelPrefix::FailedSign => {
             Channel::FailedSign(FailedSign::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
+        ChannelPrefix::Cancelled => {
+            Channel::Cancelled(OfferedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
     };
     Ok(channel)
 }
@@ -650,8 +655,9 @@ fn get_address_key(address: &Address) -> Vec<u8> {
 
 #[cfg(feature = "wallet")]
 fn get_utxo_key(txid: &Txid, vout: u32) -> Vec<u8> {
-    let res: Result<Vec<_>, _> = txid.bytes().collect();
-    let mut key = res.expect("a valid txid");
+    use bitcoin::hashes::Hash;
+
+    let mut key = txid.to_byte_array().to_vec();
     key.extend_from_slice(&vout.to_be_bytes());
     key
 }
@@ -667,6 +673,7 @@ mod tests {
                 let path = format!("{}{}", "test_files/sleddb/", std::stringify!($name));
                 {
                     let storage = SledStorageProvider::new(&path).expect("Error opening sled DB");
+                    #[allow(clippy::redundant_closure_call)]
                     $body(storage);
                 }
                 std::fs::remove_dir_all(path).unwrap();

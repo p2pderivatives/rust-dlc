@@ -37,7 +37,7 @@ impl fmt::Display for Error {
             Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
             Error::BlockchainError(ref s) => write!(f, "Blockchain error {}", s),
             Error::StorageError(ref s) => write!(f, "Storage error {}", s),
-            Error::DlcError(_) => write!(f, "Dlc error"),
+            Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
             Error::SecpError(_) => write!(f, "Secp error"),
         }

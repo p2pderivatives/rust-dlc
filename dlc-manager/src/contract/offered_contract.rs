@@ -7,10 +7,11 @@ use crate::utils::get_new_serial_id;
 
 use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
-use super::{ContractDescriptor, FundingInputInfo};
+use super::ContractDescriptor;
+use crate::KeysId;
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
-use dlc_messages::OfferDlc;
+use dlc_messages::{FundingInput, OfferDlc};
 use secp256k1_zkp::PublicKey;
 
 /// Contains information about a contract that was offered.
@@ -35,7 +36,7 @@ pub struct OfferedContract {
     /// The sum of both parties collateral.
     pub total_collateral: u64,
     /// Information about the offering party's funding inputs.
-    pub funding_inputs_info: Vec<FundingInputInfo>,
+    pub funding_inputs: Vec<FundingInput>,
     /// The serial id of the fund output used for output ordering.
     pub fund_output_serial_id: u64,
     /// The fee rate to be used to construct the DLC transactions.
@@ -44,6 +45,8 @@ pub struct OfferedContract {
     pub cet_locktime: u32,
     /// The time at which the contract becomes refundable.
     pub refund_locktime: u32,
+    /// Keys Id for generating the signers
+    pub(crate) keys_id: KeysId,
 }
 
 impl OfferedContract {
@@ -75,13 +78,15 @@ impl OfferedContract {
 
     /// Creates a new [`OfferedContract`] from the given parameters.
     pub fn new(
+        id: [u8; 32],
         contract: &ContractInput,
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
         offer_params: &PartyParams,
-        funding_inputs_info: &[FundingInputInfo],
+        funding_inputs: &[FundingInput],
         counter_party: &PublicKey,
         refund_delay: u32,
         cet_locktime: u32,
+        keys_id: KeysId,
     ) -> Self {
         let total_collateral = contract.offer_collateral + contract.accept_collateral;
 
@@ -102,17 +107,18 @@ impl OfferedContract {
             })
             .collect::<Vec<ContractInfo>>();
         OfferedContract {
-            id: crate::utils::get_new_temporary_id(),
+            id,
             is_offer_party: true,
             contract_info,
             offer_params: offer_params.clone(),
             total_collateral,
-            funding_inputs_info: funding_inputs_info.to_vec(),
+            funding_inputs: funding_inputs.to_vec(),
             fund_output_serial_id,
             fee_rate_per_vb: contract.fee_rate,
             cet_locktime,
             refund_locktime: latest_maturity + refund_delay,
             counter_party: *counter_party,
+            keys_id,
         }
     }
 
@@ -120,6 +126,7 @@ impl OfferedContract {
     pub fn try_from_offer_dlc(
         offer_dlc: &OfferDlc,
         counter_party: PublicKey,
+        keys_id: KeysId,
     ) -> Result<OfferedContract, crate::conversion_utils::Error> {
         let contract_info = get_contract_info_and_announcements(&offer_dlc.contract_info)?;
 
@@ -143,9 +150,10 @@ impl OfferedContract {
             refund_locktime: offer_dlc.refund_locktime,
             fee_rate_per_vb: offer_dlc.fee_rate_per_vb,
             fund_output_serial_id: offer_dlc.fund_output_serial_id,
-            funding_inputs_info: offer_dlc.funding_inputs.iter().map(|x| x.into()).collect(),
+            funding_inputs: offer_dlc.funding_inputs.clone(),
             total_collateral: offer_dlc.contract_info.get_total_collateral(),
             counter_party,
+            keys_id,
         })
     }
 }
@@ -162,11 +170,7 @@ impl From<&OfferedContract> for OfferDlc {
             payout_spk: offered_contract.offer_params.payout_script_pubkey.clone(),
             payout_serial_id: offered_contract.offer_params.payout_serial_id,
             offer_collateral: offered_contract.offer_params.collateral,
-            funding_inputs: offered_contract
-                .funding_inputs_info
-                .iter()
-                .map(|x| x.into())
-                .collect(),
+            funding_inputs: offered_contract.funding_inputs.clone(),
             change_spk: offered_contract.offer_params.change_script_pubkey.clone(),
             change_serial_id: offered_contract.offer_params.change_serial_id,
             cet_locktime: offered_contract.cet_locktime,

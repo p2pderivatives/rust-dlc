@@ -10,13 +10,13 @@ use dlc_messages::{
 use dlc_trie::RangeInfo;
 #[cfg(not(feature = "fuzztarget"))]
 use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
-use secp256k1_zkp::{PublicKey, Secp256k1, SecretKey, Signing};
+use secp256k1_zkp::{PublicKey, Secp256k1, Signing};
 
 use crate::{
     channel::party_points::PartyBasePoints,
-    contract::{contract_info::ContractInfo, AdaptorInfo, FundingInputInfo},
+    contract::{contract_info::ContractInfo, AdaptorInfo},
     error::Error,
-    Blockchain, Wallet,
+    Blockchain, ContractSigner, ContractSignerProvider, Wallet,
 };
 
 #[cfg(not(feature = "fuzztarget"))]
@@ -59,33 +59,33 @@ pub(crate) fn compute_id(
     res
 }
 
-pub(crate) fn get_party_params<C: Signing, W: Deref, B: Deref>(
+pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner, C: Signing>(
     secp: &Secp256k1<C>,
     own_collateral: u64,
     fee_rate: u64,
     wallet: &W,
+    signer: &X,
     blockchain: &B,
-) -> Result<(PartyParams, SecretKey, Vec<FundingInputInfo>), Error>
+) -> Result<(PartyParams, Vec<FundingInput>), Error>
 where
     W::Target: Wallet,
     B::Target: Blockchain,
 {
-    let funding_privkey = wallet.get_new_secret_key()?;
-    let funding_pubkey = PublicKey::from_secret_key(secp, &funding_privkey);
+    let funding_pubkey = signer.get_public_key(secp)?;
 
     let payout_addr = wallet.get_new_address()?;
     let payout_spk = payout_addr.script_pubkey();
     let payout_serial_id = get_new_serial_id();
-    let change_addr = wallet.get_new_address()?;
+    let change_addr = wallet.get_new_change_address()?;
     let change_spk = change_addr.script_pubkey();
     let change_serial_id = get_new_serial_id();
 
     // Add base cost of fund tx + CET / 2 and a CET output to the collateral.
     let appr_required_amount =
         own_collateral + get_half_common_fee(fee_rate)? + dlc::util::weight_to_fee(124, fee_rate)?;
-    let utxos = wallet.get_utxos_for_amount(appr_required_amount, Some(fee_rate), true)?;
+    let utxos = wallet.get_utxos_for_amount(appr_required_amount, fee_rate, true)?;
 
-    let mut funding_inputs_info: Vec<FundingInputInfo> = Vec::new();
+    let mut funding_inputs: Vec<FundingInput> = Vec::new();
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
     let mut total_input = 0;
     for utxo in utxos {
@@ -106,11 +106,7 @@ where
         };
         total_input += prev_tx.output[prev_tx_vout as usize].value;
         funding_tx_info.push((&funding_input).into());
-        let funding_input_info = FundingInputInfo {
-            funding_input,
-            address: Some(utxo.address.clone()),
-        };
-        funding_inputs_info.push(funding_input_info);
+        funding_inputs.push(funding_input);
     }
 
     let party_params = PartyParams {
@@ -124,20 +120,23 @@ where
         input_amount: total_input,
     };
 
-    Ok((party_params, funding_privkey, funding_inputs_info))
+    Ok((party_params, funding_inputs))
 }
 
-pub(crate) fn get_party_base_points<C: Signing, W: Deref>(
+pub(crate) fn get_party_base_points<C: Signing, SP: Deref>(
     secp: &Secp256k1<C>,
-    wallet: &W,
+    signer_provider: &SP,
 ) -> Result<PartyBasePoints, Error>
 where
-    W::Target: Wallet,
+    SP::Target: ContractSignerProvider,
 {
     Ok(PartyBasePoints {
-        own_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-        publish_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
-        revocation_basepoint: PublicKey::from_secret_key(secp, &wallet.get_new_secret_key()?),
+        own_basepoint: PublicKey::from_secret_key(secp, &signer_provider.get_new_secret_key()?),
+        publish_basepoint: PublicKey::from_secret_key(secp, &signer_provider.get_new_secret_key()?),
+        revocation_basepoint: PublicKey::from_secret_key(
+            secp,
+            &signer_provider.get_new_secret_key()?,
+        ),
     })
 }
 

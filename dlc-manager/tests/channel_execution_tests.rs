@@ -9,7 +9,7 @@ use dlc_manager::manager::Manager;
 use dlc_manager::{
     channel::{signed_channel::SignedChannelState, Channel},
     contract::Contract,
-    Blockchain, Oracle, Storage, Wallet,
+    Blockchain, CachedContractSignerProvider, Oracle, SimpleSigner, Storage, Wallet,
 };
 use dlc_manager::{ChannelId, ContractId};
 use dlc_messages::Message;
@@ -41,11 +41,18 @@ type DlcParty = Arc<
     Mutex<
         Manager<
             Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
+            Arc<
+                CachedContractSignerProvider<
+                    Arc<SimpleWallet<Arc<ElectrsBlockchainProvider>, Arc<MemoryStorage>>>,
+                    SimpleSigner,
+                >,
+            >,
             Arc<ElectrsBlockchainProvider>,
             Arc<MemoryStorage>,
             Arc<MockOracle>,
             Arc<MockTime>,
             Arc<ElectrsBlockchainProvider>,
+            SimpleSigner,
         >,
     >,
 >;
@@ -94,6 +101,7 @@ enum TestPath {
     RenewReject,
     RenewRace,
     RenewEstablishedClose,
+    CancelOffer,
 }
 
 #[test]
@@ -249,6 +257,12 @@ fn channel_renew_race_test() {
     channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewRace);
 }
 
+#[test]
+#[ignore]
+fn channel_offer_reject_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::CancelOffer);
+}
+
 fn channel_execution_test(test_params: TestParams, path: TestPath) {
     env_logger::init();
     let (alice_send, bob_receive) = channel::<Option<Message>>();
@@ -321,7 +335,10 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let generate_blocks = |nb_blocks: u64| {
         let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
 
-        let sink_address = sink_rpc.get_new_address(None, None).expect("RPC Error");
+        let sink_address = sink_rpc
+            .get_new_address(None, None)
+            .expect("RPC Error")
+            .assume_checked();
         sink_rpc
             .generate_to_address(nb_blocks, &sink_address)
             .expect("RPC Error");
@@ -342,6 +359,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&alice_wallet),
+            Arc::clone(&alice_wallet),
             Arc::clone(&electrs),
             alice_store,
             alice_oracles,
@@ -356,6 +374,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
     let bob_manager = Arc::new(Mutex::new(
         Manager::new(
+            Arc::clone(&bob_wallet),
             Arc::clone(&bob_wallet),
             Arc::clone(&electrs),
             Arc::clone(&bob_store),
@@ -457,6 +476,18 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
     assert_channel_state!(alice_manager_send, temporary_channel_id, Offered);
 
+    if let TestPath::CancelOffer = path {
+        let (reject_msg, _) = alice_manager_send.lock().unwrap().reject_channel(&temporary_channel_id).expect("Error rejecting contract offer");
+        assert_channel_state!(alice_manager_send, temporary_channel_id, Cancelled);
+        alice_send
+            .send(Some(Message::Reject(reject_msg)))
+            .unwrap();
+
+        sync_receive.recv().expect("Error synchronizing");
+        assert_channel_state!(bob_manager_send, temporary_channel_id, Cancelled);
+        return;
+    }
+
     let (mut accept_msg, channel_id, contract_id, _) = alice_manager_send
         .lock()
         .unwrap()
@@ -505,13 +536,13 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             alice_manager_send
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("to be able to do the periodic check");
 
             bob_manager_send
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("to be able to do the periodic check");
 
             assert_contract_state!(alice_manager_send, contract_id, Confirmed);
@@ -736,7 +767,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     let wait = dlc_manager::manager::CET_NSEQUENCE;
@@ -746,7 +777,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     // Should not have changed state before the CET is spendable.
@@ -757,7 +788,7 @@ fn close_established_channel<F>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     //
@@ -768,7 +799,7 @@ fn close_established_channel<F>(
     second
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("to be able to do the periodic check");
 
     assert_channel_state!(second, channel_id, Signed, CounterClosed);
@@ -776,8 +807,8 @@ fn close_established_channel<F>(
 
     generate_blocks(6);
 
-    first.lock().unwrap().periodic_check().unwrap();
-    second.lock().unwrap().periodic_check().unwrap();
+    first.lock().unwrap().periodic_check(true).unwrap();
+    second.lock().unwrap().periodic_check(true).unwrap();
 
     assert_contract_state!(first, contract_id, Closed);
     assert_contract_state!(second, contract_id, Closed);
@@ -811,7 +842,7 @@ fn cheat_punish<F: Fn(u64)>(
     second
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("the check to succeed");
 
     assert_channel_state!(second, channel_id, Signed, ClosedPunished);
@@ -1127,7 +1158,7 @@ fn collaborative_close<F: Fn(u64)>(
     first
         .lock()
         .unwrap()
-        .periodic_check()
+        .periodic_check(true)
         .expect("the check to succeed");
 
     assert_channel_state!(first, channel_id, Signed, CollaborativelyClosed);
@@ -1164,7 +1195,7 @@ fn renew_timeout(
             first
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("not to error");
 
             assert_channel_state!(first, channel_id, Signed, Closed);
@@ -1189,7 +1220,7 @@ fn renew_timeout(
                 second
                     .lock()
                     .unwrap()
-                    .periodic_check()
+                    .periodic_check(true)
                     .expect("not to error");
 
                 assert_channel_state!(second, channel_id, Signed, Closed);
@@ -1202,7 +1233,7 @@ fn renew_timeout(
                 first
                     .lock()
                     .unwrap()
-                    .periodic_check()
+                    .periodic_check(true)
                     .expect("not to error");
 
                 assert_channel_state!(first, channel_id, Signed, Closed);
@@ -1239,7 +1270,7 @@ fn settle_timeout(
         first
             .lock()
             .unwrap()
-            .periodic_check()
+            .periodic_check(true)
             .expect("not to error");
 
         assert_channel_state!(first, channel_id, Signed, Closing);
@@ -1264,7 +1295,7 @@ fn settle_timeout(
             second
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("not to error");
 
             assert_channel_state!(second, channel_id, Signed, Closing);
@@ -1277,7 +1308,7 @@ fn settle_timeout(
             first
                 .lock()
                 .unwrap()
-                .periodic_check()
+                .periodic_check(true)
                 .expect("not to error");
 
             assert_channel_state!(first, channel_id, Signed, Closing);

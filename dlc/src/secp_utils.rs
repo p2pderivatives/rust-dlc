@@ -25,7 +25,7 @@ sha256t_hash_newtype!(
     BIP340_MIDSTATE,
     64,
     doc = "bip340 hash",
-    true
+    backward
 );
 
 /// Create a Schnorr signature using the provided nonce instead of generating one.
@@ -42,11 +42,11 @@ pub fn schnorrsig_sign_with_nonce<S: Signing>(
         assert_eq!(
             1,
             secp256k1_sys::secp256k1_schnorrsig_sign_custom(
-                *secp.ctx(),
+                secp.ctx().as_ref(),
                 sig.as_mut_c_ptr(),
-                msg.as_ptr(),
+                msg.as_c_ptr(),
                 32_usize,
-                keypair.as_ptr(),
+                keypair.as_c_ptr(),
                 &extra_params,
             )
         );
@@ -99,7 +99,7 @@ fn create_schnorr_hash(msg: &Message, nonce: &XOnlyPublicKey, pubkey: &XOnlyPubl
     buf.extend(nonce.serialize());
     buf.extend(pubkey.serialize());
     buf.extend(msg.as_ref().to_vec());
-    BIP340Hash::hash(&buf).into_inner()
+    BIP340Hash::hash(&buf).to_byte_array()
 }
 
 fn schnorr_pubkey_to_pubkey(schnorr_pubkey: &XOnlyPublicKey) -> Result<PublicKey, Error> {

@@ -1,10 +1,10 @@
 //! # AcceptedContract
 
 use super::offered_contract::OfferedContract;
-use super::{AdaptorInfo, FundingInputInfo};
+use super::AdaptorInfo;
 use bitcoin::Transaction;
 use dlc::{DlcTransactions, PartyParams};
-use dlc_messages::AcceptDlc;
+use dlc_messages::{AcceptDlc, FundingInput};
 use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 
@@ -18,7 +18,7 @@ pub struct AcceptedContract {
     /// The parameters of the accepting party.
     pub accept_params: PartyParams,
     /// The funding inputs provided by the accepting party.
-    pub funding_inputs: Vec<FundingInputInfo>,
+    pub funding_inputs: Vec<FundingInput>,
     /// The adaptor information for the contract storing information about
     /// the relation between adaptor signatures and outcomes.
     pub adaptor_infos: Vec<AdaptorInfo>,
@@ -65,7 +65,7 @@ impl AcceptedContract {
             funding_pubkey: self.accept_params.fund_pubkey,
             payout_spk: self.accept_params.payout_script_pubkey.clone(),
             payout_serial_id: self.accept_params.payout_serial_id,
-            funding_inputs: self.funding_inputs.iter().map(|x| x.into()).collect(),
+            funding_inputs: self.funding_inputs.clone(),
             change_spk: self.accept_params.change_script_pubkey.clone(),
             change_serial_id: self.accept_params.change_serial_id,
             cet_adaptor_signatures: ecdsa_adaptor_signatures.into(),
@@ -109,13 +109,13 @@ mod tests {
 
     #[test]
     fn pnl_compute_test() {
-        let buf = include_bytes!("../../test_inputs/Accepted");
+        let buf = include_bytes!("../../../dlc-sled-storage-provider/test_files/Accepted");
         let accepted_contract: AcceptedContract = Readable::read(&mut Cursor::new(&buf)).unwrap();
         let cets = &accepted_contract.dlc_transactions.cets;
-        assert_eq!(accepted_contract.compute_pnl(&cets[0]), 100000000);
+        assert_eq!(accepted_contract.compute_pnl(&cets[0]), 90000000);
         assert_eq!(
             accepted_contract.compute_pnl(&cets[cets.len() - 1]),
-            -100000000
+            -11000000
         );
     }
 }

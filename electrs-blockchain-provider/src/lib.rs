@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bitcoin::consensus::Decodable;
-use bitcoin::hashes::hex::FromHex;
-use bitcoin::util::uint::Uint256;
-use bitcoin::{Block, BlockHash, BlockHeader, Network, OutPoint, Script, Transaction, TxOut, Txid};
+use bitcoin::{
+    block::Header, Block, BlockHash, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
+};
 use bitcoin_test_utils::tx_to_string;
 use dlc_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
@@ -186,7 +186,7 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
                             })?,
                         vout: x.vout,
                     },
-                    redeem_script: Script::default(),
+                    redeem_script: ScriptBuf::default(),
                     reserved: false,
                     tx_out: TxOut {
                         value: x.value,
@@ -206,22 +206,29 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
 impl FeeEstimator for ElectrsBlockchainProvider {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
         let est = match confirmation_target {
-            ConfirmationTarget::MempoolMinimum => self
+            ConfirmationTarget::MinAllowedAnchorChannelRemoteFee => self
                 .fees
                 .get(&Target::Minimum)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::Background => self
+            ConfirmationTarget::AnchorChannelFee | ConfirmationTarget::ChannelCloseMinimum => self
                 .fees
                 .get(&Target::Background)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::Normal => self
+            ConfirmationTarget::MinAllowedNonAnchorChannelRemoteFee => {
+                self.fees
+                    .get(&Target::Background)
+                    .unwrap()
+                    .load(Ordering::Acquire)
+                    - 250
+            }
+            ConfirmationTarget::NonAnchorChannelFee => self
                 .fees
                 .get(&Target::Normal)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::HighPriority => self
+            ConfirmationTarget::OnChainSweep => self
                 .fees
                 .get(&Target::HighPriority)
                 .unwrap()
@@ -254,14 +261,14 @@ impl BlockSource for ElectrsBlockchainProvider {
                 .await
                 .map_err(BlockSourceError::transient)?;
             let header_hex = bitcoin_test_utils::str_to_hex(&header_hex_str);
-            let header = BlockHeader::consensus_decode(&mut std::io::Cursor::new(&*header_hex))
+            let header = Header::consensus_decode(&mut std::io::Cursor::new(&*header_hex))
                 .expect("to have a valid header");
-            header.validate_pow(&header.target()).unwrap();
+            header.validate_pow(header.target()).unwrap();
             Ok(BlockHeaderData {
                 header,
                 height: block_info.height,
                 // Electrs doesn't seem to make this available.
-                chainwork: Uint256::from_u64(10).unwrap(),
+                chainwork: bitcoin::pow::Work::MAINNET_MIN,
             })
         })
     }
@@ -305,7 +312,7 @@ impl BlockSource for ElectrsBlockchainProvider {
                 .parse()
                 .map_err(BlockSourceError::transient)?;
             Ok((
-                BlockHash::from_hex(&block_tip_hash).map_err(BlockSourceError::transient)?,
+                BlockHash::from_str(&block_tip_hash).map_err(BlockSourceError::transient)?,
                 Some(block_tip_height),
             ))
         })

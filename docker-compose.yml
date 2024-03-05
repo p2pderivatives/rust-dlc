@@ -16,13 +16,55 @@ services:
       - bitcoind-data:/home/bitcoin/.bitcoin
       - ./testconfig/config:/config
   electrs:
-    image: cryptogarageinc/electrs:v0.4.8-bitcoin
+    image: ghcr.io/cryptogarageinc/electrs:v0.4.12-bitcoin
     command: |
       sh -c "electrs -vv --daemon-rpc-addr bitcoind:18443 --daemon-dir /home/bitcoin/.bitcoin --network regtest --http-addr 0.0.0.0:3004"
     volumes:
       - bitcoind-data:/home/bitcoin/.bitcoin
     ports:
       - 3004:3004
+  oracle-server:
+    image: ghcr.io/p2pderivatives/oracle:v0.2.3
+    container_name: oracle-server
+    profiles: [oracle]
+    command: |
+      -config /config
+      -appname p2pdoracle
+      -e integration
+      -migrate
+    environment:
+      - P2PDORACLE_DATABASE_HOST=oracle-db
+      - P2PDORACLE_ORACLE_KEYFILE=/key/key.pem
+      - P2PDORACLE_ORACLE_KEYPASS_FILE=/key/pass.txt
+    restart: always
+    depends_on:
+      - oracle-db
+    ports:
+      - 8080:8080
+    volumes:
+      - ./testconfig/oracle:/config
+      - ./testconfig/oracle/certs/oracle:/key
+
+  oracle-db:
+    image: "postgres:12.2"
+    profiles: [oracle]
+    command: |
+      -c log_statement=all
+      -c ssl=on
+      -c ssl_cert_file=/certs/db.crt
+      -c ssl_key_file=/certs/db.key
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1234
+      - POSTGRES_DB=db
+    volumes:
+      - oracle-db-data:/var/lib/postgresql/data/ # persist data even if container shuts down
+      - ./testconfig/oracle/certs/db:/certs
+
 
 volumes:
   bitcoind-data:
+  oracle-db-data:

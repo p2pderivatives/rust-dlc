@@ -15,6 +15,7 @@ pub mod offered_channel;
 pub mod party_points;
 pub mod ser;
 pub mod signed_channel;
+mod utils;
 
 /// Enumeration containing the possible state a DLC channel can be in.
 #[derive(Clone)]
@@ -32,6 +33,8 @@ pub enum Channel {
     /// A channel that failed when validating an
     /// [`dlc_messages::channel::SignChannel`] message.
     FailedSign(FailedSign),
+    /// A [`OfferedChannel`] that got rejected by the counterparty.
+    Cancelled(OfferedChannel),
 }
 
 impl std::fmt::Debug for Channel {
@@ -42,6 +45,7 @@ impl std::fmt::Debug for Channel {
             Channel::Signed(_) => "signed",
             Channel::FailedAccept(_) => "failed accept",
             Channel::FailedSign(_) => "failed sign",
+            Channel::Cancelled(_) => "cancelled"
         };
         f.debug_struct("Contract").field("state", &state).finish()
     }
@@ -56,6 +60,7 @@ impl Channel {
             Channel::Signed(s) => s.counter_party,
             Channel::FailedAccept(f) => f.counter_party,
             Channel::FailedSign(f) => f.counter_party,
+            Channel::Cancelled(o) => o.counter_party,
         }
     }
 }
@@ -98,6 +103,7 @@ impl Channel {
             Channel::Accepted(a) => a.temporary_channel_id,
             Channel::Signed(s) => s.temporary_channel_id,
             Channel::FailedAccept(f) => f.temporary_channel_id,
+            Channel::Cancelled(o) => o.temporary_channel_id,
             _ => unimplemented!(),
         }
     }
@@ -110,6 +116,7 @@ impl Channel {
             Channel::Signed(s) => s.channel_id,
             Channel::FailedAccept(f) => f.temporary_channel_id,
             Channel::FailedSign(f) => f.channel_id,
+            Channel::Cancelled(o) => o.temporary_channel_id,
         }
     }
 }

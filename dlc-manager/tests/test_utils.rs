@@ -62,6 +62,7 @@ macro_rules! receive_loop {
                             Some(msg) => {
                                 let msg_opt = $rcv_callback(msg);
                                 if let Some(msg) = msg_opt {
+                                    #[allow(clippy::redundant_closure_call)]
                                     $msg_callback(&msg);
                                     (&$send).send(Some(msg)).expect("Error sending");
                                 }
@@ -167,6 +168,7 @@ macro_rules! assert_channel_state {
                 Some(Channel::Signed(_)) => "signed",
                 Some(Channel::FailedAccept(_)) => "failed accept",
                 Some(Channel::FailedSign(_)) => "failed sign",
+                Some(Channel::Cancelled(_)) => "cancelled",
                 None => "none",
             };
             panic!("Unexpected channel state {}", state);
@@ -547,10 +549,7 @@ pub fn get_enum_and_numerical_test_params(
     };
 
     TestParams {
-        oracles: enum_oracles
-            .into_iter()
-            .chain(numerical_oracles.into_iter())
-            .collect(),
+        oracles: enum_oracles.into_iter().chain(numerical_oracles).collect(),
         contract_input,
     }
 }

@@ -10,7 +10,7 @@ use dlc_manager::contract::{
 };
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
-use secp256k1_zkp::{PublicKey, SecretKey};
+use secp256k1_zkp::SecretKey;
 use simple_wallet::WalletStorage;
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
@@ -22,7 +22,7 @@ pub struct MemoryStorage {
     channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
     addresses: RwLock<HashMap<Address, SecretKey>>,
     utxos: RwLock<HashMap<OutPoint, Utxo>>,
-    key_pairs: RwLock<HashMap<PublicKey, SecretKey>>,
+    key_pairs: RwLock<HashMap<Vec<u8>, SecretKey>>,
 }
 
 impl MemoryStorage {
@@ -299,28 +299,28 @@ impl WalletStorage for MemoryStorage {
             .cloned())
     }
 
-    fn upsert_key_pair(
+    fn upsert_key(
         &self,
-        public_key: &secp256k1_zkp::PublicKey,
+        identifier: &[u8],
         privkey: &secp256k1_zkp::SecretKey,
     ) -> Result<(), DaemonError> {
         self.key_pairs
             .write()
             .expect("Could not get write lock")
-            .insert(*public_key, *privkey);
+            .insert(identifier.to_vec(), *privkey);
 
         Ok(())
     }
 
-    fn get_priv_key_for_pubkey(
+    fn get_priv_key(
         &self,
-        public_key: &secp256k1_zkp::PublicKey,
+        identifier: &[u8],
     ) -> Result<Option<secp256k1_zkp::SecretKey>, DaemonError> {
         Ok(self
             .key_pairs
             .read()
             .expect("Could not get read lock")
-            .get(public_key)
+            .get(identifier)
             .cloned())
     }
 

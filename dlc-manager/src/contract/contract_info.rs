@@ -3,6 +3,7 @@
 use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
+use crate::ContractSigner;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
@@ -11,6 +12,7 @@ use secp256k1_zkp::{
     hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
     Verification,
 };
+use std::ops::Deref;
 
 pub(super) type OracleIndexAndPrefixLength = Vec<(usize, usize)>;
 
@@ -61,15 +63,19 @@ impl ContractInfo {
 
     /// Uses the provided AdaptorInfo and SecretKey to generate the set of
     /// adaptor signatures for the contract.
-    pub fn get_adaptor_signatures(
+    pub fn get_adaptor_signatures<S: Deref>(
         &self,
         secp: &Secp256k1<All>,
         adaptor_info: &AdaptorInfo,
-        fund_privkey: &SecretKey,
+        signer: &S,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
         cets: &[Transaction],
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+    ) -> Result<Vec<EcdsaAdaptorSignature>, Error>
+    where
+        S::Target: ContractSigner,
+    {
+        let fund_privkey = signer.get_secret_key()?;
         match adaptor_info {
             AdaptorInfo::Enum => match &self.contract_descriptor {
                 ContractDescriptor::Enum(e) => e.get_adaptor_signatures(
@@ -77,7 +83,7 @@ impl ContractInfo {
                     &self.get_oracle_infos(),
                     self.threshold,
                     cets,
-                    fund_privkey,
+                    &fund_privkey,
                     funding_script_pubkey,
                     fund_output_value,
                 ),
@@ -85,7 +91,7 @@ impl ContractInfo {
             },
             AdaptorInfo::Numerical(trie) => Ok(trie.sign(
                 secp,
-                fund_privkey,
+                &fund_privkey,
                 funding_script_pubkey,
                 fund_output_value,
                 cets,
@@ -93,7 +99,7 @@ impl ContractInfo {
             )?),
             AdaptorInfo::NumericalWithDifference(trie) => Ok(trie.sign(
                 secp,
-                fund_privkey,
+                &fund_privkey,
                 funding_script_pubkey,
                 fund_output_value,
                 cets,

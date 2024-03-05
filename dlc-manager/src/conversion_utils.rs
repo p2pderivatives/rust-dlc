@@ -3,7 +3,7 @@ use crate::contract::{
     enum_descriptor::EnumDescriptor,
     numerical_descriptor::{DifferenceParams, NumericalDescriptor},
     offered_contract::OfferedContract,
-    ContractDescriptor, FundingInputInfo,
+    ContractDescriptor,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, NoPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece,
@@ -54,7 +54,7 @@ impl fmt::Display for Error {
     }
 }
 
-#[cfg(not(feature = "no-std"))]
+#[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn cause(&self) -> Option<&dyn std::error::Error> {
         match *self {
@@ -524,21 +524,6 @@ impl From<&SerPolynomialPayoutCurvePiece> for PolynomialPayoutCurvePiece {
     fn from(piece: &SerPolynomialPayoutCurvePiece) -> PolynomialPayoutCurvePiece {
         PolynomialPayoutCurvePiece {
             payout_points: piece.payout_points.iter().map(|x| x.into()).collect(),
-        }
-    }
-}
-
-impl From<&FundingInputInfo> for FundingInput {
-    fn from(info: &FundingInputInfo) -> FundingInput {
-        info.funding_input.clone()
-    }
-}
-
-impl From<&FundingInput> for FundingInputInfo {
-    fn from(input: &FundingInput) -> FundingInputInfo {
-        FundingInputInfo {
-            funding_input: input.clone(),
-            address: None,
         }
     }
 }

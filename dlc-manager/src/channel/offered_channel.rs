@@ -8,7 +8,7 @@ use secp256k1_zkp::PublicKey;
 
 use crate::{
     contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos,
-    error::Error, ChannelId, ContractId,
+    error::Error, ChannelId, ContractId, KeysId,
 };
 
 use super::party_points::PartyBasePoints;
@@ -61,11 +61,7 @@ impl OfferedChannel {
             payout_spk: offered_contract.offer_params.payout_script_pubkey.clone(),
             payout_serial_id: offered_contract.offer_params.payout_serial_id,
             offer_collateral: offered_contract.offer_params.collateral,
-            funding_inputs: offered_contract
-                .funding_inputs_info
-                .iter()
-                .map(|x| x.into())
-                .collect(),
+            funding_inputs: offered_contract.funding_inputs.clone(),
             change_spk: offered_contract.offer_params.change_script_pubkey.clone(),
             change_serial_id: offered_contract.offer_params.change_serial_id,
             cet_locktime: offered_contract.cet_locktime,
@@ -83,6 +79,7 @@ impl OfferedChannel {
     pub fn from_offer_channel(
         offer_channel: &OfferChannel,
         counter_party: PublicKey,
+        keys_id: KeysId,
     ) -> Result<(OfferedChannel, OfferedContract), Error> {
         let channel = OfferedChannel {
             offered_contract_id: offer_channel.temporary_contract_id,
@@ -122,12 +119,9 @@ impl OfferedChannel {
             refund_locktime: offer_channel.refund_locktime,
             fee_rate_per_vb: offer_channel.fee_rate_per_vb,
             fund_output_serial_id: offer_channel.fund_output_serial_id,
-            funding_inputs_info: offer_channel
-                .funding_inputs
-                .iter()
-                .map(|x| x.into())
-                .collect(),
+            funding_inputs: offer_channel.funding_inputs.clone(),
             total_collateral: offer_channel.contract_info.get_total_collateral(),
+            keys_id,
         };
 
         Ok((channel, contract))

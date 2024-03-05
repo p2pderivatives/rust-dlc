@@ -40,6 +40,12 @@ impl OracleInput {
             ));
         }
 
+        if self.threshold == 0 {
+            return Err(Error::InvalidParameters(
+                "Threshold cannot be zero.".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
@@ -98,7 +104,7 @@ impl ContractInput {
 #[cfg(test)]
 mod tests {
     use dlc::{EnumerationPayout, Payout};
-    use secp256k1_zkp::{KeyPair, SECP256K1};
+    use secp256k1_zkp::{KeyPair, SecretKey, SECP256K1};
 
     use crate::contract::enum_descriptor::EnumDescriptor;
 
@@ -132,7 +138,7 @@ mod tests {
                     public_keys: vec![
                         XOnlyPublicKey::from_keypair(&KeyPair::from_secret_key(
                             SECP256K1,
-                            &secp256k1_zkp::ONE_KEY,
+                            &SecretKey::from_slice(&secp256k1_zkp::constants::ONE).unwrap(),
                         ))
                         .0,
                     ],
@@ -180,6 +186,15 @@ mod tests {
     fn invalid_oracle_info_threshold_oracle_input_contract_input_is_not_valid() {
         let mut input = get_base_input();
         input.contract_infos[0].oracles.threshold = 2;
+        input
+            .validate()
+            .expect_err("the contract input to be invalid.");
+    }
+
+    #[test]
+    fn invalid_oracle_info_threshold_zero() {
+        let mut input = get_base_input();
+        input.contract_infos[0].oracles.threshold = 0;
         input
             .validate()
             .expect_err("the contract input to be invalid.");

@@ -9,8 +9,7 @@ use crate::contract::offered_contract::OfferedContract;
 use crate::contract::signed_contract::SignedContract;
 use crate::contract::AdaptorInfo;
 use crate::contract::{
-    ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, FundingInputInfo,
-    PreClosedContract,
+    ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, NoPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece,
@@ -86,7 +85,6 @@ impl_dlc_writeable!(NoPayoutCurvePiece, {
 });
 impl_dlc_writeable_enum!(ContractDescriptor, (0, Enum), (1, Numerical);;;);
 impl_dlc_writeable!(ContractInfo, { (contract_descriptor, writeable), (oracle_announcements, vec), (threshold, usize)});
-impl_dlc_writeable!(FundingInputInfo, { (funding_input, writeable), (address, {option_cb, dlc_messages::ser_impls::write_address, dlc_messages::ser_impls::read_address}) });
 impl_dlc_writeable!(EnumDescriptor, {
     (
         outcome_payouts,
@@ -99,12 +97,13 @@ impl_dlc_writeable!(OfferedContract, {
     (contract_info, vec),
     (offer_params, { cb_writeable, dlc_messages::ser_impls::party_params::write, dlc_messages::ser_impls::party_params::read }),
     (total_collateral, writeable),
-    (funding_inputs_info, vec),
+    (funding_inputs, vec),
     (fund_output_serial_id, writeable),
     (fee_rate_per_vb, writeable),
     (cet_locktime, writeable),
     (refund_locktime, writeable),
-    (counter_party, writeable)
+    (counter_party, writeable),
+    (keys_id, writeable)
 });
 impl_dlc_writeable_external!(RangeInfo, range_info, { (cet_index, usize), (adaptor_index, usize)});
 impl_dlc_writeable_enum!(AdaptorInfo,;; (0, Numerical, write_multi_oracle_trie, read_multi_oracle_trie), (1, NumericalWithDifference, write_multi_oracle_trie_with_diff, read_multi_oracle_trie_with_diff); (2, Enum));

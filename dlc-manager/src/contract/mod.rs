@@ -2,10 +2,10 @@
 
 use crate::error::Error;
 use crate::ContractId;
-use bitcoin::{Address, Transaction};
+use bitcoin::Transaction;
 use dlc_messages::{
     oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation},
-    AcceptDlc, FundingInput, SignDlc,
+    AcceptDlc, SignDlc,
 };
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
@@ -120,20 +120,6 @@ impl Contract {
             Contract::FailedSign(f) => f.accepted_contract.offered_contract.counter_party,
         }
     }
-}
-
-/// Information about a funding input.
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
-pub struct FundingInputInfo {
-    /// The funding input as used in messages.
-    pub funding_input: FundingInput,
-    /// The address corresponding to the input if it belongs to us.
-    pub address: Option<Address>,
 }
 
 /// Information about a contract that failed while verifying an accept message.

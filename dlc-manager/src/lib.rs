@@ -36,7 +36,8 @@ pub mod manager;
 pub mod payout_curve;
 mod utils;
 
-use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
+use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::{Address, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
 use channel::signed_channel::{SignedChannel, SignedChannelStateType};
@@ -48,11 +49,17 @@ use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::XOnlyPublicKey;
-use secp256k1_zkp::{PublicKey, SecretKey};
+use secp256k1_zkp::{PublicKey, SecretKey, Signing};
+use secp256k1_zkp::{Secp256k1, XOnlyPublicKey};
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::RwLock;
 
 /// Type alias for a contract id.
 pub type ContractId = [u8; 32];
+
+/// Type alias for a keys id.
+pub type KeysId = [u8; 32];
 
 /// Type alias for a channel id.
 pub type ChannelId = [u8; 32];
@@ -76,36 +83,92 @@ impl Time for SystemTimeProvider {
 }
 
 /// Provides signing related functionalities.
-pub trait Signer {
-    /// Signs a transaction input
-    fn sign_tx_input(
-        &self,
-        tx: &mut Transaction,
-        input_index: usize,
-        tx_out: &TxOut,
-        redeem_script: Option<Script>,
-    ) -> Result<(), Error>;
+pub trait ContractSigner: Clone {
+    /// Get the public key associated with the [`ContractSigner`].
+    fn get_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<PublicKey, Error>;
+    /// Returns the secret key associated with the [`ContractSigner`].
+    // todo: remove this method and add create_adaptor_signature to the trait
+    fn get_secret_key(&self) -> Result<SecretKey, Error>;
+}
+
+/// Simple sample implementation of [`ContractSigner`].
+#[derive(Debug, Copy, Clone)]
+pub struct SimpleSigner {
+    secret_key: SecretKey,
+}
+
+impl SimpleSigner {
+    /// Creates a new [`SimpleSigner`] from the provided secret key.
+    pub fn new(secret_key: SecretKey) -> Self {
+        Self { secret_key }
+    }
+}
+
+impl ContractSigner for SimpleSigner {
+    fn get_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<PublicKey, Error> {
+        Ok(self.secret_key.public_key(secp))
+    }
+
+    fn get_secret_key(&self) -> Result<SecretKey, Error> {
+        Ok(self.secret_key)
+    }
+}
+
+impl ContractSigner for SecretKey {
+    fn get_public_key<C: Signing>(&self, secp: &Secp256k1<C>) -> Result<PublicKey, Error> {
+        Ok(self.public_key(secp))
+    }
+
+    fn get_secret_key(&self) -> Result<SecretKey, Error> {
+        Ok(*self)
+    }
+}
+
+/// Derives a [`ContractSigner`] from a [`ContractSignerProvider`] and a `contract_keys_id`.
+pub trait ContractSignerProvider {
+    /// A type which implements [`ContractSigner`]
+    type Signer: ContractSigner;
+
+    /// Create a keys id for deriving a `Signer`.
+    fn derive_signer_key_id(&self, is_offer_party: bool, temp_id: [u8; 32]) -> [u8; 32];
+
+    /// Derives the private key material backing a `Signer`.
+    fn derive_contract_signer(&self, key_id: [u8; 32]) -> Result<Self::Signer, Error>;
+
     /// Get the secret key associated with the provided public key.
+    ///
+    /// Only used for Channels.
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, Error>;
+    /// Generate a new secret key and store it in the wallet so that it can later be retrieved.
+    ///
+    /// Only used for Channels.
+    fn get_new_secret_key(&self) -> Result<SecretKey, Error>;
 }
 
 /// Wallet trait to provide functionalities related to generating, storing and
 /// managing bitcoin addresses and UTXOs.
-pub trait Wallet: Signer {
+pub trait Wallet {
     /// Returns a new (unused) address.
     fn get_new_address(&self) -> Result<Address, Error>;
-    /// Generate a new secret key and store it in the wallet so that it can later
-    /// be retrieved.
-    fn get_new_secret_key(&self) -> Result<SecretKey, Error>;
+    /// Returns a new (unused) change address.
+    fn get_new_change_address(&self) -> Result<Address, Error>;
     /// Get a set of UTXOs to fund the given amount.
     fn get_utxos_for_amount(
         &self,
         amount: u64,
-        fee_rate: Option<u64>,
+        fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, Error>;
     /// Import the provided address.
     fn import_address(&self, address: &Address) -> Result<(), Error>;
+    /// Signs a transaction input
+    fn sign_psbt_input(
+        &self,
+        psbt: &mut PartiallySignedTransaction,
+        input_index: usize,
+    ) -> Result<(), Error>;
+    /// Unlock reserved utxo
+    fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error>;
 }
 
 /// Blockchain trait provides access to the bitcoin blockchain.
@@ -186,7 +249,7 @@ pub struct Utxo {
     /// The address associated with the referenced output.
     pub address: Address,
     /// The redeem script for the referenced output.
-    pub redeem_script: Script,
+    pub redeem_script: ScriptBuf,
     /// Whether this Utxo has been reserved (and so should not be used to fund
     /// a DLC).
     pub reserved: bool,
@@ -199,3 +262,52 @@ impl_dlc_writeable!(Utxo, {
     (redeem_script, writeable),
     (reserved, writeable)
 });
+
+/// A ContractSignerProvider that caches the signers
+pub struct CachedContractSignerProvider<SP: Deref, X>
+where
+    SP::Target: ContractSignerProvider<Signer = X>,
+{
+    pub(crate) signer_provider: SP,
+    pub(crate) cache: RwLock<HashMap<KeysId, X>>,
+}
+
+impl<SP: Deref, X> CachedContractSignerProvider<SP, X>
+where
+    SP::Target: ContractSignerProvider<Signer = X>,
+{
+    /// Create a new [`ContractSignerProvider`]
+    pub fn new(signer_provider: SP) -> Self {
+        Self {
+            signer_provider,
+            cache: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+impl<SP: Deref, X: ContractSigner> ContractSignerProvider for CachedContractSignerProvider<SP, X>
+where
+    SP::Target: ContractSignerProvider<Signer = X>,
+{
+    type Signer = X;
+
+    fn derive_signer_key_id(&self, is_offer_party: bool, temp_id: [u8; 32]) -> KeysId {
+        self.signer_provider
+            .derive_signer_key_id(is_offer_party, temp_id)
+    }
+
+    fn derive_contract_signer(&self, key_id: KeysId) -> Result<Self::Signer, Error> {
+        match self.cache.try_read().unwrap().get(&key_id) {
+            Some(signer) => Ok(signer.clone()),
+            None => self.signer_provider.derive_contract_signer(key_id),
+        }
+    }
+
+    fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, Error> {
+        self.signer_provider.get_secret_key_for_pubkey(pubkey)
+    }
+
+    fn get_new_secret_key(&self) -> Result<SecretKey, Error> {
+        self.signer_provider.get_new_secret_key()
+    }
+}

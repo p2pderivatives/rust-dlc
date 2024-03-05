@@ -8,10 +8,10 @@ Example configurations and contract input are available in the [examples](./exam
 
 ## Quick run
 
-To give a quick try to this sample, run the following set of commands (assuming that the working directory is the one in which this readme is located and that docker or podman is available on your machine):
+To give a quick try to this sample, run the following set of commands (assuming that the working directory is the one in which this readme is located and that docker and docker-compose is available on your machine):
 
 ```bash
-../scripts/start_node.sh
+docker-compose --profile oracle up -d
 ../scripts/create_wallets.sh
 cargo run ./examples/configurations/alice.yml
 ```
@@ -20,6 +20,8 @@ In a different terminal:
 ```bash
 cargo run ./examples/configurations/bob.yml
 ```
+
+Update the [example contract](./examples/contracts/numerical_contract_input.json#L82) replacing the number after `btcusd` with a unix timestamp some time in the future (this will correspond to the contract maturity date).
 
 ### On chain DLC
 

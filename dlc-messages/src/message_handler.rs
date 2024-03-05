@@ -94,7 +94,8 @@ macro_rules! handle_read_dlc_messages {
     }};
 }
 
-fn read_dlc_message<R: ::lightning::io::Read>(
+/// Parses a DLC message from a buffer.
+pub fn read_dlc_message<R: ::lightning::io::Read>(
     msg_type: u16,
     mut buffer: &mut R,
 ) -> Result<Option<WireMessage>, DecodeError> {
@@ -115,7 +116,8 @@ fn read_dlc_message<R: ::lightning::io::Read>(
         (RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept),
         (RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm),
         (RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize),
-        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer)
+        (COLLABORATIVE_CLOSE_OFFER_TYPE, CollaborativeCloseOffer),
+        (REJECT, Reject)
     )
 }
 
@@ -227,7 +229,7 @@ fn to_ln_error<T: Display>(e: T, msg: &str) -> LightningError {
 
 #[cfg(test)]
 mod tests {
-    use secp256k1_zkp::SECP256K1;
+    use secp256k1_zkp::{SecretKey, SECP256K1};
 
     use crate::{
         segmentation::{SegmentChunk, SegmentStart},
@@ -237,7 +239,10 @@ mod tests {
     use super::*;
 
     fn some_pk() -> PublicKey {
-        PublicKey::from_secret_key(SECP256K1, &secp256k1_zkp::ONE_KEY)
+        PublicKey::from_secret_key(
+            SECP256K1,
+            &SecretKey::from_slice(&secp256k1_zkp::constants::ONE).unwrap(),
+        )
     }
 
     macro_rules! read_test {
