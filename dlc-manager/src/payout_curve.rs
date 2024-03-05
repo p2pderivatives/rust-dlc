@@ -1390,8 +1390,8 @@ mod test {
             ],
         };
 
-        assert_eq!(polynomial.evaluate(0), 1.0);
-        assert_eq!(polynomial.evaluate(2), 5.0);
+        assert_eq!(polynomial.evaluate(0), Some(1.0));
+        assert_eq!(polynomial.evaluate(2), Some(5.0));
     }
 
     #[test]
@@ -1411,7 +1411,7 @@ mod test {
             ],
         };
 
-        assert_eq!(polynomial.evaluate(0), 10.0);
-        assert_eq!(polynomial.evaluate(1), 8.0);
+        assert_eq!(polynomial.evaluate(0), Some(10.0));
+        assert_eq!(polynomial.evaluate(1), Some(8.0));
     }
 }

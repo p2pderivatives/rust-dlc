@@ -244,14 +244,14 @@ fn sign_multisig_input(
     let raw_sig_recv = finalize_sig(sig_recv, EcdsaSighashType::All);
 
     cet.input[0].witness = if pubkey_offer < pubkey_recv {
-        Witness::from_vec(vec![
+        Witness::from_slice(&[
             Vec::new(),
             raw_sig_offer,
             raw_sig_recv,
             script_pubkey.to_bytes(),
         ])
     } else {
-        Witness::from_vec(vec![
+        Witness::from_slice(&[
             Vec::new(),
             raw_sig_recv,
             raw_sig_offer,
