@@ -117,7 +117,7 @@ fn sign(
             anchors_outputs.as_deref(),
             anchors_serials_ids.as_deref(),
             &payouts,
-            cets[0].lock_time.0,
+            cets[0].lock_time.to_consensus_u32(),
         );
 
         let (adaptor_info, adaptor_sig) = contract_info

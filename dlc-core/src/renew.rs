@@ -1,4 +1,4 @@
-use bitcoin::{Script, Transaction};
+use bitcoin::{ScriptBuf, Transaction};
 use dlc::PartyParams;
 
 use dlc::util::get_output_for_script_pubkey;
@@ -13,7 +13,7 @@ use crate::{
 pub struct RenewInfos {
     pub funding: Transaction,
     pub index_input: usize,
-    pub witness_script: Script,
+    pub witness_script: ScriptBuf,
     pub value: u64,
 }
 

@@ -186,7 +186,7 @@ fn validate_presigned_without_infos(
             anchors_outputs.as_deref(),
             anchors_serials_ids.as_deref(),
             &payouts,
-            cets[0].lock_time.0,
+            cets[0].lock_time.to_consensus_u32(),
         );
 
         (adaptor_info, adaptor_sig_start) = contract_info
@@ -290,7 +290,7 @@ fn validate_presigned_with_infos(
             anchors_outputs.as_deref(),
             anchors_serials_ids.as_deref(),
             &payouts,
-            dlc_transactions.cets[0].lock_time.0,
+            dlc_transactions.cets[0].lock_time.to_consensus_u32(),
         );
         adaptor_sig_start = contract_info
             .verify_adaptor_info(

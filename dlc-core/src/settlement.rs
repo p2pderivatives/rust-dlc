@@ -5,7 +5,7 @@ use secp256k1_zkp::{
     Secp256k1,
 };
 
-use bitcoin::{EcdsaSighashType, Script, Transaction, TxOut, Witness};
+use bitcoin::{sighash::EcdsaSighashType, Script, Transaction, TxOut, Witness};
 use dlc::secp_utils;
 use dlc_manager::contract::{contract_info::ContractInfo, AdaptorInfo};
 use secp256k1_zkp::{ecdsa::Signature, PublicKey, Scalar, SecretKey};
@@ -139,7 +139,7 @@ pub fn get_signed_cet(
         anchors_outputs.as_deref(),
         anchors_serials_ids.as_deref(),
         &payouts,
-        dlc_transactions.cets[0].lock_time.0,
+        dlc_transactions.cets[0].lock_time.to_consensus_u32(),
     );
 
     let (range_info, sigs) =
@@ -240,8 +240,8 @@ fn sign_multisig_input(
     let (sig_offer, pubkey_offer) = offer_witness_info;
     let (sig_recv, pubkey_recv) = recv_witness_info;
 
-    let raw_sig_offer = finalize_sig(sig_offer, bitcoin::EcdsaSighashType::All);
-    let raw_sig_recv = finalize_sig(sig_recv, bitcoin::EcdsaSighashType::All);
+    let raw_sig_offer = finalize_sig(sig_offer, EcdsaSighashType::All);
+    let raw_sig_recv = finalize_sig(sig_recv, EcdsaSighashType::All);
 
     cet.input[0].witness = if pubkey_offer < pubkey_recv {
         Witness::from_vec(vec![

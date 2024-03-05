@@ -1,4 +1,6 @@
-use bitcoin::{OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Witness};
+use bitcoin::{
+    absolute::LockTime, OutPoint, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+};
 use dlc::{checked_add, make_funding_redeemscript, util, DlcTransactions, PartyParams, Payout};
 
 #[cfg(feature = "serde")]
@@ -19,10 +21,10 @@ type Error = FromDlcError;
 pub struct FeePartyParams {
     /// The amount of fee to be paid in funding transaction
     pub change_fee_value: u64,
-    /// An address to receive fees in funding
-    pub change_script_pubkey: Script,
     /// Id used to order fund outputs
     pub change_serial_id: u64,
+    /// An address to receive fees in funding
+    pub change_script_pubkey: ScriptBuf,
 }
 
 /// Contains the parameters to add an anchor output
@@ -36,10 +38,10 @@ pub struct FeePartyParams {
 pub struct AnchorParams {
     /// The amount of fee to be paid in cet transaction
     pub payout_fee_value: u64,
-    /// An address to receive the outcome amount
-    pub payout_script_pubkey: Script,
     /// Id used to order CET outputs
     pub payout_serial_id: u64,
+    /// An address to receive the outcome amount
+    pub payout_script_pubkey: ScriptBuf,
 }
 
 /// Create the transactions for a DLC contract based on the provided parameters
@@ -112,7 +114,7 @@ pub(crate) fn create_fund_transaction_with_fees(
     fund_lock_time: u32,
     fund_output_serial_id: u64,
     extra_fee: u64,
-) -> Result<(Transaction, Script), Error> {
+) -> Result<(Transaction, ScriptBuf), Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
     let total_extra_coordinator_fee = fee_party_params
@@ -260,7 +262,7 @@ pub fn create_funding_transaction(
 
     Transaction {
         version: dlc::TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input,
         output,
     }
@@ -296,7 +298,7 @@ pub fn create_cets_and_refund_tx(
     let cet_input = TxIn {
         previous_output: prev_outpoint,
         witness: Witness::default(),
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         sequence: cet_nsequence.unwrap_or_else(|| util::get_sequence(cet_lock_time)),
     };
 
@@ -325,7 +327,7 @@ pub fn create_cets_and_refund_tx(
     let refund_input = TxIn {
         previous_output: prev_outpoint,
         witness: Witness::default(),
-        script_sig: Script::default(),
+        script_sig: ScriptBuf::default(),
         sequence: util::ENABLE_LOCKTIME,
     };
 
@@ -374,7 +376,7 @@ pub fn create_cet(
 
     Transaction {
         version: dlc::TX_VERSION,
-        lock_time: PackedLockTime(lock_time),
+        lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output,
     }
@@ -396,11 +398,11 @@ pub fn create_cets(
     for payout in payouts {
         let offer_output = TxOut {
             value: payout.offer,
-            script_pubkey: offer_payout_script_pubkey.clone(),
+            script_pubkey: offer_payout_script_pubkey.to_owned(),
         };
         let accept_output = TxOut {
             value: payout.accept,
-            script_pubkey: accept_payout_script_pubkey.clone(),
+            script_pubkey: accept_payout_script_pubkey.to_owned(),
         };
         let tx = create_cet(
             offer_output,
@@ -450,7 +452,7 @@ pub fn create_refund_transaction(
 
     Transaction {
         version: dlc::TX_VERSION,
-        lock_time: PackedLockTime(locktime),
+        lock_time: LockTime::from_consensus(locktime),
         input: vec![funding_input],
         output,
     }
