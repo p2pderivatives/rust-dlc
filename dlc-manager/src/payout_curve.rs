@@ -365,8 +365,10 @@ impl Evaluable for PolynomialPayoutCurvePiece {
             } else {
                 let slope = (right_point.outcome_payout as f64 - left_point.outcome_payout as f64)
                     / (right_point.event_outcome - left_point.event_outcome) as f64;
-                (outcome - left_point.event_outcome) as f64 * slope
-                    + left_point.outcome_payout as f64
+                Some(
+                    (outcome - left_point.event_outcome) as f64 * slope
+                        + left_point.outcome_payout as f64,
+                )
             };
         }
 
