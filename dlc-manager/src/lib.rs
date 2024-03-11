@@ -135,8 +135,13 @@ pub trait Blockchain {
     fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
     /// Get the transaction with given id.
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
-    /// Get the number of confirmation for the transaction with given id.
+    /// Get the number of confirmations for the transaction with given id.
     fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
+    /// Get the number of confirmations for the given transaction output.
+    ///
+    /// Also returns the [`Txid`] of the transaction where the transaction output is used as an
+    /// input.
+    fn get_txo_confirmations(&self, txo: &OutPoint) -> Result<Option<(u32, Txid)>, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.

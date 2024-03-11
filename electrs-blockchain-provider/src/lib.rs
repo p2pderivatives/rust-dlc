@@ -156,6 +156,12 @@ impl Blockchain for ElectrsBlockchainProvider {
 
         Ok(0)
     }
+
+    fn get_txo_confirmations(&self, _txo: &OutPoint) -> Result<Option<(u32, Txid)>, Error> {
+        // TODO: We might need to get rid of this method if we want to keep supporting Electrs
+        // as a `Blockchain`. See https://bitcoin.stackexchange.com/questions/48504/how-to-check-if-an-output-has-been-spent.
+        unimplemented!()
+    }
 }
 
 impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {

@@ -391,6 +391,12 @@ impl Blockchain for BitcoinCoreProvider {
             },
         }
     }
+
+    fn get_txo_confirmations(&self, _txo: &OutPoint) -> Result<Option<(u32, Txid)>, ManagerError> {
+        // TODO: We might need to get rid of this method if we want to keep supporting Bitcoin core
+        // as a `Blockchain`. See https://bitcoin.stackexchange.com/questions/48504/how-to-check-if-an-output-has-been-spent.
+        unimplemented!()
+    }
 }
 
 impl FeeEstimator for BitcoinCoreProvider {

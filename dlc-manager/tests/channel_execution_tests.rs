@@ -78,7 +78,6 @@ fn alter_adaptor_sig(input: &EcdsaAdaptorSignature) -> EcdsaAdaptorSignature {
 fn periodic_check(dlc_party: DlcParty) {
     let dlc_manager = dlc_party.lock().unwrap();
 
-    dlc_manager.periodic_chain_monitor().unwrap();
     dlc_manager.periodic_check().unwrap();
 }
 
