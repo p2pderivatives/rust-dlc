@@ -1,6 +1,6 @@
 use std::{ops::Deref, sync::Mutex};
 
-use bitcoin::{Transaction, Txid};
+use bitcoin::{hashes::Hash, OutPoint, Transaction, Txid};
 use dlc_manager::error::Error;
 use lightning::chain::chaininterface::BroadcasterInterface;
 use simple_wallet::WalletBlockchainProvider;
@@ -122,5 +122,8 @@ where
     }
     fn get_transaction_confirmations(&self, _tx_id: &Txid) -> Result<u32, Error> {
         Ok(6)
+    }
+    fn get_txo_confirmations(&self, _txo: &OutPoint) -> Result<Option<(u32, Txid)>, Error> {
+        Ok(Some((6, Txid::all_zeros())))
     }
 }

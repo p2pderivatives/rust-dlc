@@ -374,38 +374,14 @@ where
         Ok((contract_id, counter_party, accept_msg))
     }
 
-    /// Function to update the state of the [`ChainMonitor`] with new
-    /// blocks.
-    ///
-    /// Consumers **MUST** call this periodically in order to
-    /// determine when pending transactions reach confirmation.
-    pub fn periodic_chain_monitor(&self) -> Result<(), Error> {
-        let cur_height = self.blockchain.get_blockchain_height()?;
-        let last_height = self.chain_monitor.lock().unwrap().last_height;
-
-        // TODO(luckysori): We could end up reprocessing a block at
-        // the same height if there is a reorg.
-        if cur_height < last_height {
-            return Err(Error::InvalidState(
-                "Current height is lower than last height.".to_string(),
-            ));
-        }
-
-        for height in last_height + 1..=cur_height {
-            let block = self.blockchain.get_block_at_height(height)?;
-
-            self.chain_monitor
-                .lock()
-                .unwrap()
-                .process_block(&block, height);
-        }
-
-        Ok(())
-    }
-
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
     pub fn periodic_check(&self) -> Result<(), Error> {
+        {
+            let mut chain_monitor = self.chain_monitor.lock().unwrap();
+            chain_monitor.check_transactions(&self.blockchain);
+        }
+
         self.check_signed_contracts()?;
         self.check_confirmed_contracts()?;
         self.check_preclosed_contracts()?;

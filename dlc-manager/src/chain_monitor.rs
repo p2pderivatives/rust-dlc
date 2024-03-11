@@ -2,14 +2,17 @@
 //! transactions of interest in the context of DLC.
 
 use std::collections::HashMap;
+use std::ops::Deref;
 
-use bitcoin::{Block, OutPoint, Transaction, Txid};
+use bitcoin::{OutPoint, Transaction, Txid};
 use dlc_messages::ser_impls::{
     read_ecdsa_adaptor_signature, read_hash_map, write_ecdsa_adaptor_signature, write_hash_map,
 };
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::EcdsaAdaptorSignature;
+
+use crate::Blockchain;
 
 /// A `ChainMonitor` keeps a list of transaction ids to watch for in the blockchain,
 /// and some associated information used to apply an action when the id is seen.
@@ -125,27 +128,56 @@ impl ChainMonitor {
         self.watched_tx.remove(txid);
     }
 
-    /// Check if any watched transactions are part of the block, confirming them if so.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the new block's height is not exactly one more than the last processed height.
-    pub(crate) fn process_block(&mut self, block: &Block, height: u64) {
-        assert_eq!(self.last_height + 1, height);
-
-        for tx in block.txdata.iter() {
-            if let Some(state) = self.watched_tx.get_mut(&tx.txid()) {
-                state.confirm(tx.clone());
-            }
-
-            for txin in tx.input.iter() {
-                if let Some(state) = self.watched_txo.get_mut(&txin.previous_output) {
-                    state.confirm(tx.clone())
+    /// Check if any watched transactions have been confirmed.
+    pub(crate) fn check_transactions<B>(&mut self, blockchain: &B)
+    where
+        B: Deref,
+        B::Target: Blockchain,
+    {
+        for (txid, state) in self.watched_tx.iter_mut() {
+            let confirmations = match blockchain.get_transaction_confirmations(txid) {
+                Ok(confirmations) => confirmations,
+                Err(e) => {
+                    log::error!("Failed to get transaction confirmations for {txid}: {e}");
+                    continue;
                 }
+            };
+
+            if confirmations > 0 {
+                let tx = match blockchain.get_transaction(txid) {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        log::error!("Failed to get transaction for {txid}: {e}");
+                        continue;
+                    }
+                };
+
+                state.confirm(tx.clone());
             }
         }
 
-        self.last_height += 1;
+        for (txo, state) in self.watched_txo.iter_mut() {
+            let (confirmations, txid) = match blockchain.get_txo_confirmations(txo) {
+                Ok(Some((confirmations, txid))) => (confirmations, txid),
+                Ok(None) => continue,
+                Err(e) => {
+                    log::error!("Failed to get transaction confirmations for {txo}: {e}");
+                    continue;
+                }
+            };
+
+            if confirmations > 0 {
+                let tx = match blockchain.get_transaction(&txid) {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        log::error!("Failed to get transaction for {txid}: {e}");
+                        continue;
+                    }
+                };
+
+                state.confirm(tx.clone());
+            }
+        }
     }
 
     /// All the currently watched transactions which have been confirmed.
