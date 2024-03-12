@@ -1202,7 +1202,7 @@ where
                 })?;
 
             let (signed_cet, closed_channel) =
-                channel_updater::finalize_unilateral_close_settled_channel(
+                channel_updater::finalize_unilateral_close_established_channel(
                     &self.secp,
                     &signed_channel,
                     &confirmed_contract,

@@ -2603,7 +2603,7 @@ where
 }
 
 /// Extract the CET and computes the signature for it, and marks the channel as closed.
-pub fn finalize_unilateral_close_settled_channel<S: Deref>(
+pub fn finalize_unilateral_close_established_channel<S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &SignedChannel,
     confirmed_contract: &SignedContract,
