@@ -31,6 +31,10 @@ pub enum Channel {
     /// has broadcast a buffer transaction and is waiting to finalize the
     /// closing of the channel by broadcasting a CET.
     Closing(ClosingChannel),
+    /// A [`Channel`] is in `SettledClosing` state when the local party
+    /// has broadcast a settle transaction and is waiting to finalize the
+    /// closing of the channel by claiming their output.
+    SettledClosing(SettledClosingChannel),
     /// A [`Channel`] is in `Closed` state when it was force closed by
     /// the local party.
     Closed(ClosedChannel),
@@ -64,6 +68,7 @@ impl std::fmt::Debug for Channel {
             Channel::FailedAccept(_) => "failed accept",
             Channel::FailedSign(_) => "failed sign",
             Channel::Closing(_) => "closing",
+            Channel::SettledClosing(_) => "settled closing",
             Channel::Closed(_) => "closed",
             Channel::CounterClosed(_) => "counter closed",
             Channel::ClosedPunished(_) => "closed punished",
@@ -84,6 +89,7 @@ impl Channel {
             Channel::FailedAccept(f) => f.counter_party,
             Channel::FailedSign(f) => f.counter_party,
             Channel::Closing(c) => c.counter_party,
+            Channel::SettledClosing(c) => c.counter_party,
             Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
                 c.counter_party
             }
@@ -101,6 +107,7 @@ impl Channel {
             Channel::FailedAccept(f) => f.reference_id,
             Channel::FailedSign(f) => f.reference_id,
             Channel::Closing(c) => c.reference_id,
+            Channel::SettledClosing(c) => c.reference_id,
             Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
                 c.reference_id
             }
@@ -168,6 +175,28 @@ pub struct ClosingChannel {
 }
 
 #[derive(Clone)]
+/// A channel is closing when its buffer transaction was broadcast or detected on chain.
+pub struct SettledClosingChannel {
+    /// The [`secp256k1_zkp::PublicKey`] of the counter party.
+    pub counter_party: PublicKey,
+    /// The temporary [`DlcChannelId`] of the channel.
+    pub temporary_channel_id: DlcChannelId,
+    /// The [`DlcChannelId`] for the channel.
+    pub channel_id: DlcChannelId,
+    /// The previous state the channel was before being closed, if that state was the `Signed` one,
+    /// otherwise is `None`.
+    pub rollback_state: Option<SignedChannel>,
+    /// The settle transaction that was broadcast.
+    pub settle_transaction: Transaction,
+    /// The claim transaction that was broadcast.
+    pub claim_transaction: Transaction,
+    /// Whether the local party initiated the closing of the channel.
+    pub is_closer: bool,
+    /// The reference id set by the api user.
+    pub reference_id: Option<ReferenceId>,
+}
+
+#[derive(Clone)]
 /// A channel is closed when its buffer transaction has been spent.
 pub struct ClosedChannel {
     /// The [`secp256k1_zkp::PublicKey`] of the counter party.
@@ -223,6 +252,7 @@ impl Channel {
             Channel::FailedAccept(f) => f.temporary_channel_id,
             Channel::FailedSign(f) => f.channel_id,
             Channel::Closing(c) => c.channel_id,
+            Channel::SettledClosing(c) => c.channel_id,
             Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
                 c.channel_id
             }

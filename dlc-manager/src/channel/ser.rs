@@ -3,7 +3,7 @@ use super::accepted_channel::AcceptedChannel;
 use super::offered_channel::OfferedChannel;
 use super::party_points::PartyBasePoints;
 use super::signed_channel::{SignedChannel, SignedChannelState};
-use super::{ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign};
+use super::{ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign, SettledClosingChannel};
 
 use dlc_messages::ser_impls::{
     read_ecdsa_adaptor_signature, read_string, write_ecdsa_adaptor_signature, write_string,
@@ -64,7 +64,8 @@ impl_dlc_writeable_enum!(
     (8, RenewConfirmed, {(contract_id, writeable), (offer_per_update_point, writeable), (accept_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
     (10, RenewFinalized, {(contract_id, writeable), (prev_offer_per_update_point, writeable), (buffer_transaction, writeable), (buffer_script_pubkey, writeable), (offer_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (accept_buffer_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}), (timeout, writeable), (own_payout, writeable), (total_collateral, writeable)}),
     (9, Closing, {(buffer_transaction, writeable), (contract_id, writeable), (is_initiator, writeable)}),
-    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable), (is_offer, writeable) })
+    (11, CollaborativeCloseOffered, { (counter_payout, writeable), (offer_signature, writeable), (close_tx, writeable), (timeout, writeable), (is_offer, writeable) }),
+    (12, SettledClosing, {(settle_transaction, writeable), (is_offer, writeable), (is_initiator, writeable)})
     ;;
 );
 
@@ -78,6 +79,16 @@ impl_dlc_writeable!(ClosingChannel, {
     (rollback_state, option),
     (buffer_transaction, writeable),
     (contract_id, writeable),
+    (is_closer, writeable),
+    (reference_id, option)
+});
+impl_dlc_writeable!(SettledClosingChannel, {
+    (channel_id, writeable),
+    (counter_party, writeable),
+    (temporary_channel_id, writeable),
+    (rollback_state, option),
+    (settle_transaction, writeable),
+    (claim_transaction, writeable),
     (is_closer, writeable),
     (reference_id, option)
 });

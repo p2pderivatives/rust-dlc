@@ -297,6 +297,17 @@ typed_enum!(
             /// Whether the local party initiated the closing of the channel.
             is_initiator: bool,
         },
+        /// A [`SignedChannel`] is in `SettledClosing` state when a settle transaction has been
+        /// broadcast, and we are waiting to finalize the closing of the channel by claiming one of
+        /// its outputs.
+        SettledClosing {
+            /// The settle transaction that was broadcast.
+            settle_transaction: Transaction,
+            /// Indicates whether the local party originally offered to settle the channel or not.
+            is_offer: bool,
+            /// Whether the local party initiated the closing of the channel.
+            is_initiator: bool,
+        },
         /// A [`SignedChannel`] is in `CollaborativeCloseOffered` state when the local party
         /// has sent a [`dlc_messages::channel::CollaborativeCloseOffer`] message.
         CollaborativeCloseOffered {

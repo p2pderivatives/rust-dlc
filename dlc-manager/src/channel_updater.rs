@@ -7,7 +7,7 @@ use crate::{chain_monitor::{ChainMonitor, ChannelInfo, TxType}, channel::{
     offered_channel::OfferedChannel,
     party_points::PartyBasePoints,
     signed_channel::{SignedChannel, SignedChannelState},
-    Channel, ClosedChannel,
+    Channel, ClosedChannel, SettledClosingChannel,
 }, contract::{
     accepted_contract::AcceptedContract, contract_info::ContractInfo,
     contract_input::ContractInput, offered_contract::OfferedContract,
@@ -15,8 +15,8 @@ use crate::{chain_monitor::{ChainMonitor, ChannelInfo, TxType}, channel::{
 }, contract_updater::{
     accept_contract_internal, verify_accepted_and_sign_contract_internal,
     verify_signed_contract_internal,
-}, error::Error, subchannel::{ClosingSubChannel, SubChannel}, Blockchain, ContractId, DlcChannelId, Signer, Time, Wallet, ReferenceId};
-use bitcoin::{OutPoint, Script, Sequence, Transaction};
+}, error::Error, subchannel::{ClosingSubChannel, SubChannel}, Blockchain, ContractId, DlcChannelId, Signer, Time, Wallet, ReferenceId, manager::CET_NSEQUENCE};
+use bitcoin::{OutPoint, Script, Sequence, Transaction, Address};
 use dlc::{
     channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions}, util::dlc_channel_extra_fee, PartyParams
 };
@@ -1000,7 +1000,7 @@ where
         settle_tx.txid(),
         ChannelInfo {
             channel_id: channel.channel_id,
-            tx_type: TxType::SettleTx,
+            tx_type: TxType::SettleTx2 { is_offer: false },
         },
     );
 
@@ -1134,7 +1134,7 @@ where
         settle_tx.txid(),
         ChannelInfo {
             channel_id: channel.channel_id,
-            tx_type: TxType::SettleTx,
+            tx_type: TxType::SettleTx2 { is_offer: true },
         },
     );
 
@@ -2712,26 +2712,15 @@ where
     Ok((cet, channel))
 }
 
-/// Sign the settlement transaction and update the state of the channel.
-pub fn close_settled_channel<S: Deref>(
+pub(crate) fn initiate_unilateral_close_settled_channel<S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     signer: &S,
-    is_initiator: bool,
-) -> Result<(Transaction, Channel), Error>
-where
-    S::Target: Signer,
-{
-    close_settled_channel_internal(secp, signed_channel, signer, None, is_initiator)
-}
-
-pub(crate) fn close_settled_channel_internal<S: Deref>(
-    secp: &Secp256k1<All>,
-    signed_channel: &SignedChannel,
-    signer: &S,
     sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
+    is_settle_offer: bool,
     is_initiator: bool,
-) -> Result<(Transaction, Channel), Error>
+    reference_id: Option<ReferenceId>
+) -> Result<(), Error>
 where
     S::Target: Signer,
 {
@@ -2832,24 +2821,80 @@ where
         )?;
     }
 
-    let channel = if is_initiator {
-        Channel::Closed(ClosedChannel {
-            counter_party: signed_channel.counter_party,
-            temporary_channel_id: signed_channel.temporary_channel_id,
-            channel_id: signed_channel.channel_id,
-            reference_id: signed_channel.reference_id,
-            closing_txid: settle_tx.txid()
-        })
-    } else {
-        Channel::CounterClosed(ClosedChannel {
-            counter_party: signed_channel.counter_party,
-            temporary_channel_id: signed_channel.temporary_channel_id,
-            channel_id: signed_channel.channel_id,
-            reference_id: signed_channel.reference_id,
-            closing_txid: settle_tx.txid()
-        })
+
+
+    signed_channel.state = SignedChannelState::SettledClosing {
+        settle_transaction: settle_tx,
+        is_offer: is_settle_offer,
+        is_initiator,
     };
-    Ok((settle_tx, channel))
+
+    signed_channel.reference_id = reference_id;
+
+    Ok(())
+}
+
+/// Spend the settle transaction output owned by us.
+pub fn finalize_unilateral_close_settled_channel<S: Deref>(
+    secp: &Secp256k1<All>,
+    signed_channel: &SignedChannel,
+    destination_address: &Address,
+    fee_rate_per_vb: u64,
+    signer: &S,
+    is_offer: bool,
+    is_initiator: bool,
+) -> Result<(Transaction, Channel), Error>
+where
+    S::Target: Signer,
+{
+    let settle_transaction =
+        get_signed_channel_state!(signed_channel, SettledClosing, settle_transaction)?;
+
+    let own_revoke_params = signed_channel.own_points.get_revokable_params(
+        secp,
+        &signed_channel.counter_points.revocation_basepoint,
+        &signed_channel.own_per_update_point,
+    );
+
+    let counter_revoke_params = signed_channel.counter_points.get_revokable_params(
+        secp,
+        &signed_channel.own_points.revocation_basepoint,
+        &signed_channel.counter_per_update_point,
+    );
+
+    let own_basepoint = signed_channel.own_points.own_basepoint;
+    let own_per_update_point = signed_channel.own_per_update_point;
+
+    let base_secret = signer.get_secret_key_for_pubkey(&own_basepoint)?;
+    let own_sk = derive_private_key(secp, &own_per_update_point, &base_secret);
+
+    let claim_tx = dlc::channel::create_and_sign_claim_settle_transaction(
+        secp,
+        &own_revoke_params,
+        &counter_revoke_params,
+        &own_sk,
+        settle_transaction,
+        destination_address,
+        CET_NSEQUENCE,
+        0,
+        fee_rate_per_vb,
+        is_offer,
+    )?;
+
+    let closing_channel = SettledClosingChannel {
+        counter_party: signed_channel.counter_party,
+        temporary_channel_id: signed_channel.temporary_channel_id,
+        channel_id: signed_channel.channel_id,
+        rollback_state: Some(signed_channel.clone()),
+        settle_transaction: settle_transaction.clone(),
+        claim_transaction: claim_tx.clone(),
+        is_closer: is_initiator,
+        reference_id: signed_channel.reference_id,
+    };
+
+    let channel = Channel::SettledClosing(closing_channel);
+
+    Ok((claim_tx, channel))
 }
 
 /// Returns the current time as unix time (in seconds)

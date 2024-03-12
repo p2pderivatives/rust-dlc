@@ -4,6 +4,7 @@ use dlc_manager::channel::{
     offered_channel::OfferedChannel,
     signed_channel::{SignedChannel, SignedChannelStateType},
     Channel,
+    SettledClosingChannel,
 };
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
@@ -262,6 +263,20 @@ impl Storage for MemoryStorage {
 
         for (_, val) in map.iter() {
             if let Channel::Offered(c) = val {
+                res.push(c.clone())
+            }
+        }
+
+        Ok(res)
+    }
+
+    fn get_settled_closing_channels(&self) -> Result<Vec<SettledClosingChannel>, DaemonError> {
+        let map = self.channels.read().expect("Could not get read lock");
+
+        let mut res: Vec<SettledClosingChannel> = Vec::new();
+
+        for (_, val) in map.iter() {
+            if let Channel::SettledClosing(c) = val {
                 res.push(c.clone())
             }
         }
