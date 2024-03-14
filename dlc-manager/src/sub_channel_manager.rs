@@ -2919,13 +2919,6 @@ where
             }
         }
 
-        if let Err(e) = self.dlc_channel_manager.periodic_check() {
-            error!(
-                "Error performing periodic check of the channel manager: {}",
-                e
-            );
-        }
-
         msgs
     }
 
