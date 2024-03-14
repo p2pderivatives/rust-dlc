@@ -47,6 +47,10 @@ pub(crate) enum TxType {
     SplitTx,
     SettleTx,
     Cet,
+    // Introduced new variant to maintain backwards-compatibility.
+    SettleTx2 {
+        is_offer: bool,
+    },
 }
 
 impl_dlc_writeable_enum!(TxType,;
@@ -55,6 +59,9 @@ impl_dlc_writeable_enum!(TxType,;
         (own_adaptor_signature, {cb_writeable, write_ecdsa_adaptor_signature, read_ecdsa_adaptor_signature}),
         (is_offer, writeable),
         (revoked_tx_type, writeable)
+    }),
+    (6, SettleTx2, {
+        (is_offer, writeable)
     });;
     (1, BufferTx), (2, CollaborativeClose), (3, SplitTx), (4, SettleTx), (5, Cet)
 );
@@ -178,6 +185,43 @@ impl ChainMonitor {
                 state.confirm(tx.clone());
             }
         }
+    }
+
+    /// Heuristic to figure out if we sent the last settle offer.
+    pub(crate) fn did_we_offer_last_channel_settlement(
+        &self,
+        channel_id: &[u8; 32],
+    ) -> Option<bool> {
+        let mut watched_txs = self.watched_tx.iter();
+
+        watched_txs.find_map(|(_, state)| match state {
+            WatchState::Registered {
+                channel_info:
+                    ChannelInfo {
+                        channel_id: cid,
+                        tx_type:
+                            TxType::Revoked {
+                                revoked_tx_type: RevokedTxType::Buffer,
+                                is_offer,
+                                ..
+                            },
+                    },
+            }
+            | WatchState::Confirmed {
+                channel_info:
+                    ChannelInfo {
+                        channel_id: cid,
+                        tx_type:
+                            TxType::Revoked {
+                                revoked_tx_type: RevokedTxType::Buffer,
+                                is_offer,
+                                ..
+                            },
+                    },
+                ..
+            } if channel_id == cid => Some(*is_offer),
+            _ => None,
+        })
     }
 
     /// All the currently watched transactions which have been confirmed.

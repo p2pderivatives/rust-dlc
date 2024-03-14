@@ -70,6 +70,8 @@ const SETTLE_OUTPUT_WEIGHT: usize = 172;
  */
 const PUNISH_BUFFER_INPUT_WEIGHT: usize = 758;
 
+// TODO: I think this weight applies to the settle transaction in general, not just when we spend
+// it via punish.
 /**
  * In the worst case the witness input is (+1 is added to each witness for size
  * parameter):
@@ -300,7 +302,12 @@ pub fn create_renewal_channel_transactions(
     };
 
     if fund_output.value <= extra_fee + super::DUST_LIMIT {
-        return Err(Error::InvalidArgument(format!("Fund output: {} smaller or equal to extra fee: {} + dust limit: {}", fund_output.value, extra_fee, super::DUST_LIMIT)));
+        return Err(Error::InvalidArgument(format!(
+            "Fund output: {} smaller or equal to extra fee: {} + dust limit: {}",
+            fund_output.value,
+            extra_fee,
+            super::DUST_LIMIT
+        )));
     }
 
     let outpoint = OutPoint {
@@ -393,6 +400,81 @@ pub fn sign_cet<C: Signing>(
         .map_err(|e| Error::InvalidArgument(format!("{e:#}")))?;
 
     Ok(())
+}
+
+/// Create and sign a transaction claiming a settle transaction output.
+pub fn create_and_sign_claim_settle_transaction<C: Signing>(
+    secp: &Secp256k1<C>,
+    own_params: &RevokeParams,
+    counter_params: &RevokeParams,
+    own_sk: &SecretKey,
+    settle_tx: &Transaction,
+    dest_address: &Address,
+    csv_timelock: u32,
+    lock_time: u32,
+    fee_rate_per_vb: u64,
+    is_offer: bool,
+) -> Result<Transaction, Error> {
+    let own_descriptor = settle_descriptor(own_params, &counter_params.own_pk, csv_timelock);
+
+    let vout = if is_offer {
+        0
+    } else {
+        1
+    };
+
+    let tx_in = TxIn {
+        previous_output: OutPoint {
+            txid: settle_tx.txid(),
+            vout,
+        },
+        sequence: Sequence::from_height(csv_timelock as u16),
+        script_sig: Script::default(),
+        witness: Witness::default(),
+    };
+
+    let input_value = settle_tx.output[vout as usize].value;
+
+    let dest_script_pk_len = dest_address.script_pubkey().len();
+    let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
+    let output_weight = N_VALUE_WEIGHT + var_int_prefix_len + dest_script_pk_len * 4;
+    let tx_fee =
+        crate::util::tx_weight_to_fee(PUNISH_SETTLE_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
+
+    let mut tx = Transaction {
+        version: super::TX_VERSION,
+        lock_time: PackedLockTime(lock_time),
+        input: vec![tx_in],
+        output: vec![TxOut {
+            value: input_value - tx_fee,
+            script_pubkey: dest_address.script_pubkey(),
+        }],
+    };
+
+    let mut sigs = HashMap::new();
+
+    let own_pk = PublicKey {
+        inner: SecpPublicKey::from_secret_key(secp, own_sk),
+        compressed: true,
+    };
+    sigs.insert(
+        own_pk,
+        EcdsaSig::sighash_all(super::util::get_raw_sig_for_tx_input(
+            secp,
+            &tx,
+            0,
+            &own_descriptor.script_code()?,
+            input_value,
+            own_sk,
+        )?),
+    );
+
+    let satisfier = (sigs, Sequence::from_height(csv_timelock as u16));
+
+    own_descriptor
+        .satisfy(&mut tx.input[0], satisfier)?;
+
+    Ok(tx)
 }
 
 /// Use the given parameters to build the descriptor of the given buffer transaction and inserts

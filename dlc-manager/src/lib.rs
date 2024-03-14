@@ -45,7 +45,7 @@ use bitcoin::{Address, Block, OutPoint, Script, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
 use channel::signed_channel::{SignedChannel, SignedChannelStateType};
-use channel::Channel;
+use channel::{Channel, SettledClosingChannel};
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
@@ -182,6 +182,8 @@ pub trait Storage {
     ) -> Result<Vec<SignedChannel>, Error>;
     /// Returns the set of channels in offer state.
     fn get_offered_channels(&self) -> Result<Vec<OfferedChannel>, Error>;
+    /// Returns the set of channels in settled closing state.
+    fn get_settled_closing_channels(&self) -> Result<Vec<SettledClosingChannel>, Error>;
     /// Writes the [`ChainMonitor`] data to the store.
     fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error>;
     /// Returns the latest [`ChainMonitor`] in the store if any.

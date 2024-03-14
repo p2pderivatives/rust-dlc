@@ -4,7 +4,7 @@ use super::{Blockchain, Oracle, Storage, Time, Wallet};
 use crate::chain_monitor::{ChainMonitor, ChannelInfo, RevokedTxType, TxType};
 use crate::channel::offered_channel::OfferedChannel;
 use crate::channel::signed_channel::{SignedChannel, SignedChannelState, SignedChannelStateType};
-use crate::channel::{Channel, ClosedChannel, ClosedPunishedChannel};
+use crate::channel::{Channel, ClosedChannel, ClosedPunishedChannel, SettledClosingChannel};
 use crate::channel_updater::{get_unix_time_now, verify_signed_channel};
 use crate::channel_updater::{self, get_signed_channel_state};
 use crate::contract::{
@@ -32,7 +32,7 @@ use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::{
     AcceptDlc, ChannelMessage, Message as DlcMessage, OfferDlc, OnChainMessage, SignDlc,
 };
-use lightning::chain::chaininterface::FeeEstimator;
+use lightning::chain::chaininterface::{FeeEstimator, ConfirmationTarget};
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
 };
@@ -1202,7 +1202,7 @@ where
                 })?;
 
             let (signed_cet, closed_channel) =
-                channel_updater::finalize_unilateral_close_settled_channel(
+                channel_updater::finalize_unilateral_close_established_channel(
                     &self.secp,
                     &signed_channel,
                     &confirmed_contract,
@@ -1226,6 +1226,117 @@ where
 
             self.store
                 .upsert_channel(closed_channel, Some(closed_contract))?;
+        }
+
+        Ok(())
+    }
+
+    fn try_finalize_settled_closing_channel(
+        &self,
+        signed_channel: SignedChannel,
+    ) -> Result<(), Error> {
+        let (settle_tx, &is_offer, &is_initiator) = get_signed_channel_state!(
+            signed_channel,
+            SettledClosing,
+            settle_transaction,
+            is_offer,
+            is_initiator
+        )?;
+
+        if self
+            .blockchain
+            .get_transaction_confirmations(&settle_tx.txid())?
+            >= CET_NSEQUENCE
+        {
+            log::info!(
+                "Settle transaction {} for channel {} has enough confirmations to spend from it",
+                settle_tx.txid(),
+                serialize_hex(&signed_channel.channel_id)
+            );
+
+            let fee_rate_per_vb: u64 = {
+                let fee_rate = self
+                    .fee_estimator
+                    .get_est_sat_per_1000_weight(
+                        ConfirmationTarget::HighPriority,
+                    );
+
+                let fee_rate = fee_rate / 250;
+
+                fee_rate.into()
+            };
+
+            let (claim_tx, settled_closing_channel) =
+                channel_updater::finalize_unilateral_close_settled_channel(
+                    &self.secp,
+                    &signed_channel,
+                    &self.wallet.get_new_address()?,
+                    fee_rate_per_vb,
+                    &self.wallet,
+                    is_offer,
+                    is_initiator,
+                )?;
+
+            let confirmations = self
+                .blockchain
+                .get_transaction_confirmations(&claim_tx.txid())?;
+
+            if confirmations < 1 {
+                self.blockchain.send_transaction(&claim_tx)?;
+            }
+
+            self.store
+                .upsert_channel(settled_closing_channel, None)?;
+        }
+
+        Ok(())
+    }
+
+    fn try_confirm_claim_tx(&self, channel: &SettledClosingChannel) -> Result<(), Error> {
+        let claim_tx = &channel.claim_transaction;
+
+        let confirmations = self
+            .blockchain
+            .get_transaction_confirmations(&claim_tx.txid())?;
+
+        // TODO(lucas): No need to send it again if it is in mempool, unless we want to bump the
+        // fee.
+        if confirmations < 1 {
+            self.blockchain.send_transaction(claim_tx)?;
+        } else if confirmations >= NB_CONFIRMATIONS {
+            self.chain_monitor
+                .lock()
+                .unwrap()
+                .cleanup_channel(channel.channel_id);
+
+            let closed_channel = if channel.is_closer {
+                Channel::Closed(ClosedChannel {
+                    counter_party: channel.counter_party,
+                    temporary_channel_id: channel.temporary_channel_id,
+                    channel_id: channel.channel_id,
+                    reference_id: channel.reference_id,
+                    // TODO(lucas): We are losing the context of the settle transaction here, but it
+                    // can always be found based on the claim transaction. We could introduce a
+                    // dedicated `SettledClosed` state to fix this.
+                    closing_txid: channel.claim_transaction.txid()
+                })
+            } else {
+                Channel::CounterClosed(ClosedChannel {
+                    counter_party: channel.counter_party,
+                    temporary_channel_id: channel.temporary_channel_id,
+                    channel_id: channel.channel_id,
+                    reference_id: channel.reference_id,
+                    closing_txid: channel.claim_transaction.txid()
+                })
+            };
+
+            self.chain_monitor
+                .lock()
+                .unwrap()
+                .cleanup_channel(channel.channel_id);
+
+            self.store
+                .upsert_channel(closed_channel, None)?;
         }
 
         Ok(())
@@ -2057,6 +2168,26 @@ where
             }
         }
 
+        let signed_settled_closing_channels = self
+            .store
+            .get_signed_channels(Some(SignedChannelStateType::SettledClosing))?;
+
+        for channel in signed_settled_closing_channels {
+            if let Err(e) = self.try_finalize_settled_closing_channel(channel) {
+                error!("Error trying to close settled channel: {}", e);
+            }
+        }
+
+        let settled_closing_channels = self
+            .store
+            .get_settled_closing_channels()?;
+
+        for channel in settled_closing_channels {
+            if let Err(e) = self.try_confirm_claim_tx(&channel) {
+                error!("Error trying to confirm claim TX of settled channel: {}", e);
+            }
+        }
+
         if let Err(e) = self.check_for_timed_out_channels() {
             error!("Error checking timed out channels {}", e);
         }
@@ -2312,19 +2443,59 @@ where
                     true
                 }
                 TxType::SettleTx => {
-                    let closed_channel = Channel::CounterClosed(ClosedChannel {
-                        counter_party: signed_channel.counter_party,
-                        temporary_channel_id: signed_channel.temporary_channel_id,
-                        channel_id: signed_channel.channel_id,
-                        reference_id: None,
-                        closing_txid: tx.txid(),
-                    });
-                    self.chain_monitor
-                        .lock()
-                        .unwrap()
-                        .cleanup_channel(signed_channel.channel_id);
-                    self.store.upsert_channel(closed_channel, None)?;
-                    true
+                    // TODO(tibo): should only considered closed after some confirmations.
+                    // Ideally should save previous state, and maybe restore in
+                    // case of reorg, though if the counter party has sent the
+                    // tx to close the channel it is unlikely that the tx will
+                    // not be part of a future block.
+
+                    let is_settle_offer = {
+                        let chain_monitor = self.chain_monitor.lock().unwrap();
+                        chain_monitor.did_we_offer_last_channel_settlement(&signed_channel.channel_id)
+                    };
+
+                    let is_settle_offer = match is_settle_offer {
+                        Some(is_settle_offer) => is_settle_offer,
+                        None => {
+                            log::error!("Cannot force close settled channel without knowledge of who offered settlement");
+                            continue;
+                        },
+                    };
+
+                    let mut state = SignedChannelState::SettledClosing {
+                        settle_transaction: tx.clone(),
+                        is_offer: is_settle_offer,
+                        is_initiator: false,
+                    };
+                    std::mem::swap(&mut signed_channel.state, &mut state);
+
+                    signed_channel.roll_back_state = Some(state);
+
+                    self.store
+                        .upsert_channel(Channel::Signed(signed_channel), None)?;
+
+                    false
+                }
+                TxType::SettleTx2 { is_offer } => {
+                    // TODO(tibo): should only considered closed after some confirmations.
+                    // Ideally should save previous state, and maybe restore in
+                    // case of reorg, though if the counter party has sent the
+                    // tx to close the channel it is unlikely that the tx will
+                    // not be part of a future block.
+
+                    let mut state = SignedChannelState::SettledClosing {
+                        settle_transaction: tx.clone(),
+                        is_offer,
+                        is_initiator: false,
+                    };
+                    std::mem::swap(&mut signed_channel.state, &mut state);
+
+                    signed_channel.roll_back_state = Some(state);
+
+                    self.store
+                        .upsert_channel(Channel::Signed(signed_channel), None)?;
+
+                    false
                 }
                 TxType::Cet => {
                     let contract_id = signed_channel.get_contract_id();
@@ -2470,7 +2641,7 @@ where
             SignedChannelState::Settled { .. } => {
                 warn!("Force closing settled channel with id: {}", channel.channel_id.to_hex());
 
-                self.close_settled_channel(channel, sub_channel, is_initiator)
+                self.initiate_unilateral_close_settled_channel(channel, sub_channel, is_initiator, reference_id)
             }
             SignedChannelState::SettledOffered { .. }
             | SignedChannelState::SettledReceived { .. }
@@ -2486,7 +2657,7 @@ where
                     .expect("to have a rollback state");
                 self.force_close_channel_internal(channel, sub_channel, is_initiator, reference_id)
             }
-            SignedChannelState::Closing { .. } => Err(Error::InvalidState(
+            SignedChannelState::Closing { .. } | SignedChannelState::SettledClosing { .. } => Err(Error::InvalidState(
                 "Channel is already closing.".to_string(),
             )),
         }
@@ -2540,19 +2711,35 @@ where
     }
 
     /// Unilaterally close a channel that has been settled.
-    fn close_settled_channel(
+    fn initiate_unilateral_close_settled_channel(
         &self,
-        signed_channel: SignedChannel,
+        mut signed_channel: SignedChannel,
         sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
         is_initiator: bool,
+        reference_id: Option<ReferenceId>
     ) -> Result<(), Error> {
-        let (settle_tx, closed_channel) = crate::channel_updater::close_settled_channel_internal(
+        let is_settle_offer = {
+            let chain_monitor = self.chain_monitor.lock().unwrap();
+            chain_monitor.did_we_offer_last_channel_settlement(&signed_channel.channel_id)
+        }.ok_or_else(
+            || Error::InvalidState(
+                "Cannot force close settled channel without knowledge of who offered settlement"
+                    .to_string()
+            )
+        )?;
+
+        crate::channel_updater::initiate_unilateral_close_settled_channel(
             &self.secp,
-            &signed_channel,
+            &mut signed_channel,
             &self.wallet,
             sub_channel,
+            is_settle_offer,
             is_initiator,
+            reference_id,
         )?;
+
+        let settle_tx =
+            get_signed_channel_state!(signed_channel, SettledClosing, ref settle_transaction)?;
 
         if self
             .blockchain
@@ -2560,7 +2747,7 @@ where
             .unwrap_or(0)
             == 0
         {
-            self.blockchain.send_transaction(&settle_tx)?;
+            self.blockchain.send_transaction(settle_tx)?;
         }
 
         self.chain_monitor
@@ -2568,7 +2755,7 @@ where
             .unwrap()
             .cleanup_channel(signed_channel.channel_id);
 
-        self.store.upsert_channel(closed_channel, None)?;
+        self.store.upsert_channel(Channel::Signed(signed_channel), None)?;
 
         Ok(())
     }
