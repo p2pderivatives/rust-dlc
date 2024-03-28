@@ -46,7 +46,10 @@ services:
       - ./testconfig/oracle/certs/oracle:/key
 
   oracle-db:
-    image: "postgres:12.2"
+    image: oracledb:latest
+    build:
+      context: .
+      dockerfile: ./testconfig/oracle/oracledb.dockerfile
     profiles: [oracle]
     command: |
       -c log_statement=all
@@ -62,7 +65,6 @@ services:
       - POSTGRES_DB=db
     volumes:
       - oracle-db-data:/var/lib/postgresql/data/ # persist data even if container shuts down
-      - ./testconfig/oracle/certs/db:/certs
 
 
 volumes:
