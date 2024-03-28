@@ -38,6 +38,7 @@ use secp256k1_zkp::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use util::{get_change_weight, get_inputs_weight};
 
 pub mod channel;
 pub mod secp_utils;
@@ -79,6 +80,8 @@ macro_rules! checked_add {
         checked_add!(checked_add!($a, $b, $c)?, $d)
     };
 }
+
+pub(crate) use checked_add;
 
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
@@ -282,25 +285,15 @@ impl PartyParams {
         fee_rate_per_vb: u64,
         extra_fee: u64,
     ) -> Result<(TxOut, u64, u64), Error> {
-        let mut inputs_weight: usize = 0;
+        let inputs_weight = get_inputs_weight(
+            &self
+                .inputs
+                .iter()
+                .map(|x| (x.redeem_script.as_ref(), x.max_witness_len))
+                .collect::<Vec<_>>(),
+        )?;
 
-        for w in &self.inputs {
-            let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
-                .len()
-                .checked_mul(4)
-                .ok_or(Error::InvalidArgument)?;
-            inputs_weight = checked_add!(
-                inputs_weight,
-                TX_INPUT_BASE_WEIGHT,
-                script_weight,
-                w.max_witness_len
-            )?;
-        }
-
-        // Value size + script length var_int + ouput script pubkey size
-        let change_size = self.change_script_pubkey.len();
-        // Change size is scaled by 4 from vBytes to weight units
-        let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument)?;
+        let change_weight = get_change_weight(&self.change_script_pubkey)?;
 
         // Base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
