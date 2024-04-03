@@ -1,4 +1,4 @@
-FROM postgres:16.2
+FROM postgres:12.2
 
 RUN mkdir certs
 COPY ./testconfig/oracle/certs/db/db.crt /certs/
