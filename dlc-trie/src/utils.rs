@@ -18,7 +18,9 @@ pub(crate) fn get_adaptor_point_for_indexed_paths(
     debug_assert!(indexes.len() == paths.len());
     debug_assert!(precomputed_points.len() >= indexes.len());
     if indexes.is_empty() {
-        return Err(super::Error::InvalidArgument("Indexes is empty".to_string()));
+        return Err(super::Error::InvalidArgument(
+            "Indexes is empty".to_string(),
+        ));
     }
 
     let mut keys = Vec::new();

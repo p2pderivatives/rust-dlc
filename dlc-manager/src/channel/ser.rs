@@ -3,7 +3,10 @@ use super::accepted_channel::AcceptedChannel;
 use super::offered_channel::OfferedChannel;
 use super::party_points::PartyBasePoints;
 use super::signed_channel::{SignedChannel, SignedChannelState};
-use super::{ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign, SettledClosingChannel};
+use super::{
+    ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign,
+    SettledClosingChannel,
+};
 
 use dlc_messages::ser_impls::{
     read_ecdsa_adaptor_signature, read_string, write_ecdsa_adaptor_signature, write_string,

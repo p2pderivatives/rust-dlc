@@ -1,7 +1,10 @@
 use std::ops::Deref;
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{Address, Network, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid, Witness, OutPoint};
+use bitcoin::{
+    Address, Network, OutPoint, PackedLockTime, Script, Sequence, Transaction, TxIn, TxOut, Txid,
+    Witness,
+};
 use dlc_manager::{error::Error, Blockchain, Signer, Utxo, Wallet};
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use rust_bitcoin_coin_selection::select_coins;

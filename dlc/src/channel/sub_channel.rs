@@ -87,14 +87,22 @@ pub fn create_split_tx(
 
     let dlc_output_value = dlc_collateral
         .checked_add(dlc_fee)
-        .ok_or(Error::InvalidArgument("Failed to checked add dlc fee to dlc collateral".to_string()))?;
+        .ok_or(Error::InvalidArgument(
+            "Failed to checked add dlc fee to dlc collateral".to_string(),
+        ))?;
 
     if dlc_output_value
         > channel_value
             .checked_add(crate::DUST_LIMIT)
-            .ok_or(Error::InvalidArgument("Failed to checked add dust limit to channel value".to_string()))?
+            .ok_or(Error::InvalidArgument(
+                "Failed to checked add dust limit to channel value".to_string(),
+            ))?
     {
-        return Err(Error::InvalidArgument(format!("Dlc output value greater than channel value: {} + dust limit: {}", channel_value, crate::DUST_LIMIT)));
+        return Err(Error::InvalidArgument(format!(
+            "Dlc output value greater than channel value: {} + dust limit: {}",
+            channel_value,
+            crate::DUST_LIMIT
+        )));
     }
 
     let ln_output_value = channel_value

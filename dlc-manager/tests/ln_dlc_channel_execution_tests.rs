@@ -13,10 +13,7 @@ use std::{
 use crate::test_utils::{
     get_enum_test_params_custom_collateral, refresh_wallet, TestParams, EVENT_MATURITY,
 };
-use bitcoin::{
-    hashes::Hash, Address, Amount, Network, PackedLockTime, Transaction, TxIn,
-    TxOut,
-};
+use bitcoin::{hashes::Hash, Address, Amount, Network, PackedLockTime, Transaction, TxIn, TxOut};
 use bitcoin_bech32::WitnessProgram;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::{Client, RpcApi};
@@ -2274,7 +2271,7 @@ fn renew(test_params: &LnDlcTestParams, dlc_channel_id: &DlcChannelId) {
             dlc_channel_id,
             test_params.test_params.contract_input.accept_collateral,
             &test_params.test_params.contract_input,
-            None
+            None,
         )
         .unwrap();
 

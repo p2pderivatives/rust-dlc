@@ -6,7 +6,10 @@ use dlc_messages::channel::OfferChannel;
 // use dlc_messages::channel::OfferChannel;
 use secp256k1_zkp::PublicKey;
 
-use crate::{contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos, error::Error, ContractId, DlcChannelId, ReferenceId};
+use crate::{
+    contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos,
+    error::Error, ContractId, DlcChannelId, ReferenceId,
+};
 
 use super::party_points::PartyBasePoints;
 
@@ -39,11 +42,15 @@ pub struct OfferedChannel {
     /// The nSequence value to use for the CETs.
     pub cet_nsequence: u32,
     /// The reference id set by the api user.
-    pub reference_id: Option<ReferenceId>
+    pub reference_id: Option<ReferenceId>,
 }
 
 impl OfferedChannel {
-    pub(crate) fn get_offer_channel_msg(&self, offered_contract: &OfferedContract, reference_id: Option<ReferenceId>) -> OfferChannel {
+    pub(crate) fn get_offer_channel_msg(
+        &self,
+        offered_contract: &OfferedContract,
+        reference_id: Option<ReferenceId>,
+    ) -> OfferChannel {
         let party_points = &self.party_points;
         OfferChannel {
             protocol_version: crate::conversion_utils::PROTOCOL_VERSION,
@@ -72,7 +79,7 @@ impl OfferedChannel {
             fee_rate_per_vb: offered_contract.fee_rate_per_vb,
             fund_output_serial_id: offered_contract.fund_output_serial_id,
             cet_nsequence: crate::manager::CET_NSEQUENCE,
-            reference_id
+            reference_id,
         }
     }
 

@@ -417,11 +417,7 @@ pub fn create_and_sign_claim_settle_transaction<C: Signing>(
 ) -> Result<Transaction, Error> {
     let own_descriptor = settle_descriptor(own_params, &counter_params.own_pk, csv_timelock);
 
-    let vout = if is_offer {
-        0
-    } else {
-        1
-    };
+    let vout = if is_offer { 0 } else { 1 };
 
     let tx_in = TxIn {
         previous_output: OutPoint {
@@ -471,8 +467,7 @@ pub fn create_and_sign_claim_settle_transaction<C: Signing>(
 
     let satisfier = (sigs, Sequence::from_height(csv_timelock as u16));
 
-    own_descriptor
-        .satisfy(&mut tx.input[0], satisfier)?;
+    own_descriptor.satisfy(&mut tx.input[0], satisfier)?;
 
     Ok(tx)
 }

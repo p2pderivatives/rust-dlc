@@ -52,8 +52,8 @@ use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
-use serde::{Deserialize, Serialize};
 use segmentation::{SegmentChunk, SegmentStart};
+use serde::{Deserialize, Serialize};
 use sub_channel::{
     Reject as SubChannelReject, SubChannelAccept, SubChannelCloseAccept, SubChannelCloseConfirm,
     SubChannelCloseFinalize, SubChannelCloseOffer, SubChannelConfirm, SubChannelFinalize,
@@ -383,7 +383,9 @@ impl OfferDlc {
             ContractInfo::SingleContractInfo(s) => s.contract_info.oracle_info.validate(secp)?,
             ContractInfo::DisjointContractInfo(d) => {
                 if d.contract_infos.len() < 2 {
-                    return Err(Error::InvalidArgument("Contract infos length smaller than 2".to_string()));
+                    return Err(Error::InvalidArgument(
+                        "Contract infos length smaller than 2".to_string(),
+                    ));
                 }
 
                 for c in &d.contract_infos {

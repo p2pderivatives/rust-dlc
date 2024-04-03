@@ -90,9 +90,7 @@ enum TestPath {
     BufferCheat,
     RenewedClose,
     SettleCheat,
-    CollaborativeClose{
-        accept_own_offer: bool
-    },
+    CollaborativeClose { accept_own_offer: bool },
     SettleRenewSettle,
     SettleOfferTimeout,
     SettleAcceptTimeout,
@@ -171,7 +169,9 @@ fn channel_settle_cheat_test() {
 fn channel_collaborative_close_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
-        TestPath::CollaborativeClose{ accept_own_offer: false},
+        TestPath::CollaborativeClose {
+            accept_own_offer: false,
+        },
     );
 }
 
@@ -180,7 +180,9 @@ fn channel_collaborative_close_test() {
 fn channel_collaborative_close_own_offer_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
-        TestPath::CollaborativeClose{ accept_own_offer: true},
+        TestPath::CollaborativeClose {
+            accept_own_offer: true,
+        },
     );
 }
 
@@ -484,7 +486,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
                 .parse()
                 .unwrap(),
-            None
+            None,
         )
         .expect("Send offer error");
 
@@ -500,7 +502,11 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     assert_channel_state!(alice_manager_send, temporary_channel_id, Offered);
 
     if let TestPath::CancelOffer = path {
-        let (reject_msg, _) = alice_manager_send.lock().unwrap().reject_channel(&temporary_channel_id).expect("Error rejecting contract offer");
+        let (reject_msg, _) = alice_manager_send
+            .lock()
+            .unwrap()
+            .reject_channel(&temporary_channel_id)
+            .expect("Error rejecting contract offer");
         assert_channel_state!(alice_manager_send, temporary_channel_id, Cancelled);
         alice_send
             .send(Some(Message::Channel(ChannelMessage::Reject(reject_msg))))
@@ -597,7 +603,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         channel_id,
                         second_receive,
                         &generate_blocks,
-                        accept_own_offer
+                        accept_own_offer,
                     );
                 }
                 TestPath::SettleOfferTimeout
@@ -1059,7 +1065,12 @@ fn renew_channel(
     let (renew_offer, _) = first
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input, None)
+        .renew_offer(
+            &channel_id,
+            test_utils::ACCEPT_COLLATERAL,
+            contract_input,
+            None,
+        )
         .expect("to be able to renew channel contract");
 
     first_send
@@ -1122,7 +1133,12 @@ fn renew_reject(
     let (renew_offer, _) = first
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input, None)
+        .renew_offer(
+            &channel_id,
+            test_utils::ACCEPT_COLLATERAL,
+            contract_input,
+            None,
+        )
         .expect("to be able to renew channel contract");
 
     first_send
@@ -1166,7 +1182,12 @@ fn renew_race(
     let (renew_offer, _) = first
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, contract_input, None)
+        .renew_offer(
+            &channel_id,
+            test_utils::OFFER_COLLATERAL,
+            contract_input,
+            None,
+        )
         .expect("to be able to renew channel contract");
 
     let mut contract_input_2 = contract_input.clone();
@@ -1176,7 +1197,12 @@ fn renew_race(
     let (renew_offer_2, _) = second
         .lock()
         .unwrap()
-        .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, &contract_input_2, None)
+        .renew_offer(
+            &channel_id,
+            test_utils::OFFER_COLLATERAL,
+            &contract_input_2,
+            None,
+        )
         .expect("to be able to renew channel contract");
 
     first_send
@@ -1216,7 +1242,7 @@ fn collaborative_close<F: Fn(u64)>(
     channel_id: DlcChannelId,
     sync_receive: &Receiver<()>,
     generate_blocks: &F,
-    accept_own_offer: bool
+    accept_own_offer: bool,
 ) {
     let contract_id = get_established_channel_contract_id(&first, &channel_id);
     let close_offer = first
@@ -1235,15 +1261,21 @@ fn collaborative_close<F: Fn(u64)>(
     assert_channel_state!(second, channel_id, Signed, CollaborativeCloseOffered);
 
     if accept_own_offer {
-        if let Err(e) = first.lock().unwrap().accept_collaborative_close(&channel_id) {
-            assert_eq!("Invalid state: Cannot accept own collaborative close offer", e.to_string());
+        if let Err(e) = first
+            .lock()
+            .unwrap()
+            .accept_collaborative_close(&channel_id)
+        {
+            assert_eq!(
+                "Invalid state: Cannot accept own collaborative close offer",
+                e.to_string()
+            );
         } else {
             panic!("It should not be possible to accept own collaborative close offer");
         }
 
         return;
     }
-
 
     second
         .lock()
@@ -1278,7 +1310,12 @@ fn renew_timeout<F: Fn(u64)>(
         let (renew_offer, _) = first
             .lock()
             .unwrap()
-            .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input, None)
+            .renew_offer(
+                &channel_id,
+                test_utils::ACCEPT_COLLATERAL,
+                contract_input,
+                None,
+            )
             .expect("to be able to offer a settlement of the contract.");
 
         first_send

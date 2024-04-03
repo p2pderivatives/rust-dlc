@@ -3,8 +3,7 @@ use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::{
     offered_channel::OfferedChannel,
     signed_channel::{SignedChannel, SignedChannelStateType},
-    Channel,
-    SettledClosingChannel,
+    Channel, SettledClosingChannel,
 };
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,

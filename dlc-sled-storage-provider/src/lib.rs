@@ -21,7 +21,8 @@ use dlc_manager::channel::accepted_channel::AcceptedChannel;
 use dlc_manager::channel::offered_channel::OfferedChannel;
 use dlc_manager::channel::signed_channel::{SignedChannel, SignedChannelStateType};
 use dlc_manager::channel::{
-    Channel, ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign, SettledClosingChannel,
+    Channel, ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign,
+    SettledClosingChannel,
 };
 use dlc_manager::contract::accepted_contract::AcceptedContract;
 use dlc_manager::contract::offered_contract::OfferedContract;
@@ -782,9 +783,9 @@ fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
         ChannelPrefix::Closing => {
             Channel::Closing(ClosingChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
-        ChannelPrefix::SettledClosing => {
-            Channel::SettledClosing(SettledClosingChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
+        ChannelPrefix::SettledClosing => Channel::SettledClosing(
+            SettledClosingChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
+        ),
         ChannelPrefix::Closed => {
             Channel::Closed(ClosedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
@@ -797,9 +798,9 @@ fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
         ChannelPrefix::ClosedPunished => Channel::ClosedPunished(
             ClosedPunishedChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
         ),
-        ChannelPrefix::Cancelled => Channel::Cancelled(
-            OfferedChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        )
+        ChannelPrefix::Cancelled => {
+            Channel::Cancelled(OfferedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
+        }
     };
     Ok(channel)
 }

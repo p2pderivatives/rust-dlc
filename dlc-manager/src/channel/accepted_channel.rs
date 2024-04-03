@@ -39,7 +39,7 @@ pub struct AcceptedChannel {
     /// The accept party adaptor signature for the buffer transaction.
     pub accept_buffer_adaptor_signature: EcdsaAdaptorSignature,
     /// The reference id set by the api user.
-    pub reference_id: Option<ReferenceId>
+    pub reference_id: Option<ReferenceId>,
 }
 
 impl AcceptedChannel {
@@ -67,7 +67,7 @@ impl AcceptedChannel {
             own_basepoint: self.accept_base_points.own_basepoint,
             first_per_update_point: self.accept_per_update_point,
             buffer_adaptor_signature: *buffer_adaptor_signature,
-            reference_id
+            reference_id,
         }
     }
 }

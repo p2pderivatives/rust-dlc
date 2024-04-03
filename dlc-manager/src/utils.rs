@@ -1,7 +1,10 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Txid};
-use dlc::{util::{cet_or_refund_base_fee, dlc_payout_spk_fee}, PartyParams, TxInputInfo, FUND_TX_BASE_WEIGHT};
+use dlc::{
+    util::{cet_or_refund_base_fee, dlc_payout_spk_fee},
+    PartyParams, TxInputInfo, FUND_TX_BASE_WEIGHT,
+};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,

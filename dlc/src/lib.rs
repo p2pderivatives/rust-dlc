@@ -71,7 +71,8 @@ pub const P2WPKH_WITNESS_SIZE: usize = 107;
 
 macro_rules! checked_add {
     ($a: expr, $b: expr) => {
-        $a.checked_add($b).ok_or(Error::InvalidArgument("Failed to checked add".to_string()))
+        $a.checked_add($b)
+            .ok_or(Error::InvalidArgument("Failed to checked add".to_string()))
     };
     ($a: expr, $b: expr, $c: expr) => {
         checked_add!(checked_add!($a, $b)?, $c)
@@ -280,7 +281,9 @@ impl PartyParams {
             let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
                 .len()
                 .checked_mul(4)
-                .ok_or(Error::InvalidArgument("Failed to multiple 4 to script weight".to_string()))?;
+                .ok_or(Error::InvalidArgument(
+                    "Failed to multiple 4 to script weight".to_string(),
+                ))?;
             inputs_weight = checked_add!(
                 inputs_weight,
                 TX_INPUT_BASE_WEIGHT,
@@ -293,24 +296,24 @@ impl PartyParams {
         // independently of inputs contributed
         let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT / 2;
 
-        let fund_weight_without_change = checked_add!(
-            this_party_fund_base_weight,
-            inputs_weight
-        )?;
-        let fund_fee_without_change = util::tx_weight_to_fee(fund_weight_without_change, fee_rate_per_vb)?;
+        let fund_weight_without_change = checked_add!(this_party_fund_base_weight, inputs_weight)?;
+        let fund_fee_without_change =
+            util::tx_weight_to_fee(fund_weight_without_change, fee_rate_per_vb)?;
 
         // Base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
         let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
 
-        let output_spk_fee = dlc_payout_spk_fee(
-            &self.payout_script_pubkey,
-            fee_rate_per_vb,
-        );
-        let cet_or_refund_base_fee = util::weight_to_fee(this_party_cet_base_weight, fee_rate_per_vb)?;
+        let output_spk_fee = dlc_payout_spk_fee(&self.payout_script_pubkey, fee_rate_per_vb);
+        let cet_or_refund_base_fee =
+            util::weight_to_fee(this_party_cet_base_weight, fee_rate_per_vb)?;
         let cet_or_refund_fee = checked_add!(cet_or_refund_base_fee, output_spk_fee)?;
-        let required_input_funds =
-            checked_add!(self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)?;
+        let required_input_funds = checked_add!(
+            self.collateral,
+            fund_fee_without_change,
+            cet_or_refund_fee,
+            extra_fee
+        )?;
         if self.input_amount < required_input_funds {
             return Err(Error::InvalidArgument(format!("input amount: {} smaller than required input funds: {} (collateral: {}, fund_fee: {}, cet_or_refund_fee: {}, extra_fee: {})", self.input_amount, required_input_funds, self.collateral, fund_fee_without_change, cet_or_refund_fee, extra_fee)));
         }
@@ -331,11 +334,9 @@ impl PartyParams {
 
             let change_fee = util::weight_to_fee(change_weight, fee_rate_per_vb)?;
 
-            let change_amount = leftover
-                .checked_sub(change_fee)
-                .ok_or_else(|| {
-                    Error::InvalidArgument("Change output value is lower than cost".to_string())
-                })?;
+            let change_amount = leftover.checked_sub(change_fee).ok_or_else(|| {
+                Error::InvalidArgument("Change output value is lower than cost".to_string())
+            })?;
 
             (change_amount, change_fee)
         };
@@ -509,7 +510,9 @@ pub(crate) fn create_cets_and_refund_tx(
     });
 
     if !has_proper_outcomes {
-        return Err(Error::InvalidArgument("payouts doe not have proper outcomes".to_string()));
+        return Err(Error::InvalidArgument(
+            "payouts doe not have proper outcomes".to_string(),
+        ));
     }
 
     let cet_input = TxIn {
@@ -699,7 +702,9 @@ fn get_oracle_sig_point<C: secp256k1_zkp::Verification>(
     msgs: &[Message],
 ) -> Result<PublicKey, Error> {
     if oracle_info.nonces.len() < msgs.len() {
-        return Err(Error::InvalidArgument("length of oracle info nonces is smaller than msgs length".to_string()));
+        return Err(Error::InvalidArgument(
+            "length of oracle info nonces is smaller than msgs length".to_string(),
+        ));
     }
 
     let sig_points: Vec<PublicKey> = oracle_info
@@ -722,7 +727,9 @@ pub fn get_adaptor_point_from_oracle_info<C: Verification>(
     msgs: &[Vec<Message>],
 ) -> Result<PublicKey, Error> {
     if oracle_infos.is_empty() || msgs.is_empty() {
-        return Err(Error::InvalidArgument("empty oracle infos or msgs".to_string()));
+        return Err(Error::InvalidArgument(
+            "empty oracle infos or msgs".to_string(),
+        ));
     }
 
     let mut oracle_sigpoints = Vec::with_capacity(msgs[0].len());
@@ -808,7 +815,9 @@ pub fn create_cet_adaptor_sigs_from_oracle_info(
     msgs: &[Vec<Vec<Message>>],
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
     if msgs.len() != cets.len() {
-        return Err(Error::InvalidArgument("length of msgs is not equal to length of cets".to_string()));
+        return Err(Error::InvalidArgument(
+            "length of msgs is not equal to length of cets".to_string(),
+        ));
     }
 
     cets.iter()

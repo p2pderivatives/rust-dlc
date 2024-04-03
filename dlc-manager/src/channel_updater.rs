@@ -2,23 +2,34 @@
 
 use std::{ops::Deref, sync::Mutex};
 
-use crate::{chain_monitor::{ChainMonitor, ChannelInfo, TxType}, channel::{
-    accepted_channel::AcceptedChannel,
-    offered_channel::OfferedChannel,
-    party_points::PartyBasePoints,
-    signed_channel::{SignedChannel, SignedChannelState},
-    Channel, ClosedChannel, SettledClosingChannel,
-}, contract::{
-    accepted_contract::AcceptedContract, contract_info::ContractInfo,
-    contract_input::ContractInput, offered_contract::OfferedContract,
-    signed_contract::SignedContract, AdaptorInfo,
-}, contract_updater::{
-    accept_contract_internal, verify_accepted_and_sign_contract_internal,
-    verify_signed_contract_internal,
-}, error::Error, subchannel::{ClosingSubChannel, SubChannel}, Blockchain, ContractId, DlcChannelId, Signer, Time, Wallet, ReferenceId, manager::CET_NSEQUENCE};
-use bitcoin::{OutPoint, Script, Sequence, Transaction, Address};
+use crate::{
+    chain_monitor::{ChainMonitor, ChannelInfo, TxType},
+    channel::{
+        accepted_channel::AcceptedChannel,
+        offered_channel::OfferedChannel,
+        party_points::PartyBasePoints,
+        signed_channel::{SignedChannel, SignedChannelState},
+        Channel, ClosedChannel, SettledClosingChannel,
+    },
+    contract::{
+        accepted_contract::AcceptedContract, contract_info::ContractInfo,
+        contract_input::ContractInput, offered_contract::OfferedContract,
+        signed_contract::SignedContract, AdaptorInfo,
+    },
+    contract_updater::{
+        accept_contract_internal, verify_accepted_and_sign_contract_internal,
+        verify_signed_contract_internal,
+    },
+    error::Error,
+    manager::CET_NSEQUENCE,
+    subchannel::{ClosingSubChannel, SubChannel},
+    Blockchain, ContractId, DlcChannelId, ReferenceId, Signer, Time, Wallet,
+};
+use bitcoin::{Address, OutPoint, Script, Sequence, Transaction};
 use dlc::{
-    channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions}, util::dlc_channel_extra_fee, PartyParams
+    channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions},
+    util::dlc_channel_extra_fee,
+    PartyParams,
 };
 use dlc_messages::{
     channel::{
@@ -101,7 +112,7 @@ pub fn offer_channel<C: Signing, W: Deref, B: Deref, T: Deref>(
     time: &T,
     temporary_channel_id: DlcChannelId,
     is_sub_channel: bool,
-    reference_id: Option<ReferenceId>
+    reference_id: Option<ReferenceId>,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where
     W::Target: Wallet,
@@ -155,7 +166,7 @@ where
         is_offer_party: true,
         counter_party: *counter_party,
         cet_nsequence,
-        reference_id
+        reference_id,
     };
 
     Ok((offered_channel, offered_contract))
@@ -204,7 +215,6 @@ where
     W::Target: Wallet,
     B::Target: Blockchain,
 {
-
     assert_eq!(offered_channel.offered_contract_id, offered_contract.id);
 
     let (accept_params, funding_inputs, accept_points, per_update_seed) =
@@ -221,7 +231,7 @@ where
                 wallet,
                 blockchain,
                 sub_channel_info.is_none(),
-                extra_fee
+                extra_fee,
             )?;
             let accept_points = crate::utils::get_party_base_points(secp, wallet)?;
             let per_update_seed = wallet.get_new_secret_key()?;
@@ -626,7 +636,7 @@ where
             .offered_contract
             .fee_rate_per_vb,
         sub_channel_id,
-        reference_id: offered_channel.reference_id
+        reference_id: offered_channel.reference_id,
     };
 
     let sign_channel = SignChannel {
@@ -635,7 +645,7 @@ where
         buffer_adaptor_signature: own_buffer_adaptor_signature,
         refund_signature: signed_contract.offer_refund_signature,
         funding_signatures: signed_contract.funding_signatures.clone(),
-        reference_id: offered_channel.reference_id
+        reference_id: offered_channel.reference_id,
     };
 
     Ok((signed_channel, signed_contract, sign_channel))
@@ -808,7 +818,7 @@ pub fn settle_channel_offer<C: Signing, S: Deref, T: Deref>(
     peer_timeout: u64,
     signer: &S,
     time: &T,
-    reference_id: Option<ReferenceId>
+    reference_id: Option<ReferenceId>,
 ) -> Result<SettleOffer, Error>
 where
     S::Target: Signer,
@@ -848,7 +858,7 @@ where
         counter_payout,
         next_per_update_point,
         timestamp: get_unix_time_now(),
-        reference_id
+        reference_id,
     };
 
     Ok(settle_channel_offer)
@@ -1011,7 +1021,7 @@ where
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
-        counter_payout
+        counter_payout,
     };
 
     let msg = SettleAccept {
@@ -1163,7 +1173,7 @@ where
         channel_id: channel.channel_id,
         prev_per_update_secret,
         settle_adaptor_signature,
-        reference_id: channel.reference_id
+        reference_id: channel.reference_id,
     };
 
     Ok(msg)
@@ -1217,7 +1227,7 @@ where
             settle_tx,
             own_settle_adaptor_signature,
             *own_payout,
-            *counter_payout
+            *counter_payout,
         ),
         _ => {
             return Err(Error::InvalidState(
@@ -1276,7 +1286,7 @@ where
         counter_settle_adaptor_signature: settle_channel_confirm.settle_adaptor_signature,
         own_settle_adaptor_signature: *own_settle_adaptor_signature,
         own_payout,
-        counter_payout
+        counter_payout,
     };
 
     channel.own_per_update_point = *own_next_per_update_point;
@@ -1310,7 +1320,7 @@ pub fn settle_channel_on_finalize<C: Signing>(
         own_next_per_update_point,
         own_settle_adaptor_signature,
         own_payout,
-        counter_payout
+        counter_payout,
     ) = match &channel.state {
         SignedChannelState::SettledConfirmed {
             settle_tx,
@@ -1360,7 +1370,7 @@ pub fn settle_channel_on_finalize<C: Signing>(
         counter_settle_adaptor_signature,
         own_settle_adaptor_signature,
         own_payout,
-        counter_payout
+        counter_payout,
     };
     channel.roll_back_state = None;
 
@@ -1374,7 +1384,7 @@ pub fn settle_channel_on_finalize<C: Signing>(
 /// Creates a [`Reject`] message and rolls back the state of the channel. Expects
 /// the channel to be in [`SignedChannelState::SettledOffered`] state.
 pub fn reject_settle_offer(signed_channel: &mut SignedChannel) -> Result<Reject, Error> {
-    get_signed_channel_state!(signed_channel, SettledReceived, )?;
+    get_signed_channel_state!(signed_channel, SettledReceived,)?;
 
     signed_channel.state = signed_channel
         .roll_back_state
@@ -1384,7 +1394,7 @@ pub fn reject_settle_offer(signed_channel: &mut SignedChannel) -> Result<Reject,
     Ok(Reject {
         channel_id: signed_channel.channel_id,
         timestamp: get_unix_time_now(),
-        reference_id: signed_channel.reference_id
+        reference_id: signed_channel.reference_id,
     })
 }
 
@@ -1401,7 +1411,7 @@ pub fn renew_offer<C: Signing, S: Deref, T: Deref>(
     cet_nsequence: u32,
     signer: &S,
     time: &T,
-    reference_id: Option<ReferenceId>
+    reference_id: Option<ReferenceId>,
 ) -> Result<(RenewOffer, OfferedContract), Error>
 where
     S::Target: Signer,
@@ -1492,7 +1502,7 @@ where
         cet_locktime: offered_contract.cet_locktime,
         refund_locktime: offered_contract.refund_locktime,
         cet_nsequence,
-        reference_id
+        reference_id,
     };
 
     Ok((msg, offered_contract))
@@ -1506,7 +1516,8 @@ pub fn on_renew_offer<T: Deref>(
     renew_offer: &RenewOffer,
     peer_timeout: u64,
     time: &T,
-) -> Result<OfferedContract, Error> where
+) -> Result<OfferedContract, Error>
+where
     T::Target: Time,
 {
     if let SignedChannelState::Settled { .. } | SignedChannelState::Established { .. } =
@@ -1905,7 +1916,7 @@ where
         &accept_per_update_point,
         own_payout,
         buffer_transaction,
-        buffer_script_pubkey
+        buffer_script_pubkey,
     ) = get_signed_channel_state!(
         signed_channel,
         RenewAccepted,
@@ -2013,7 +2024,7 @@ where
         channel_id: signed_channel.channel_id,
         per_update_secret: prev_per_update_secret,
         buffer_adaptor_signature,
-        reference_id: signed_channel.reference_id
+        reference_id: signed_channel.reference_id,
     };
 
     Ok((signed_contract, renew_finalize))
@@ -2036,7 +2047,7 @@ where
         offer_per_update_point,
         accept_per_update_point,
         offer_buffer_adaptor_signature,
-        buffer_transaction
+        buffer_transaction,
     ) = get_signed_channel_state!(
         signed_channel,
         RenewConfirmed,
@@ -2132,7 +2143,7 @@ pub fn renew_channel_on_revoke(
         prev_offer_per_update_point,
         offer_buffer_adaptor_signature,
         accept_buffer_adaptor_signature,
-        buffer_transaction
+        buffer_transaction,
     ) = get_signed_channel_state!(
         signed_channel,
         RenewFinalized,
@@ -2193,7 +2204,7 @@ pub fn reject_renew_offer(signed_channel: &mut SignedChannel) -> Result<Reject, 
     Ok(Reject {
         channel_id: signed_channel.channel_id,
         timestamp: get_unix_time_now(),
-        reference_id: signed_channel.reference_id
+        reference_id: signed_channel.reference_id,
     })
 }
 
@@ -2205,7 +2216,7 @@ pub fn offer_collaborative_close<C: Signing, S: Deref, T: Deref>(
     counter_payout: u64,
     signer: &S,
     time: &T,
-    reference_id: Option<ReferenceId>
+    reference_id: Option<ReferenceId>,
 ) -> Result<(CollaborativeCloseOffer, Transaction), Error>
 where
     S::Target: Signer,
@@ -2252,7 +2263,7 @@ where
         offer_signature: close_signature,
         close_tx: close_tx.clone(),
         timeout: time.unix_time_now() + super::manager::PEER_TIMEOUT,
-        is_offer: true
+        is_offer: true,
     };
     std::mem::swap(&mut state, &mut signed_channel.state);
     signed_channel.roll_back_state = Some(state);
@@ -2263,7 +2274,7 @@ where
             channel_id: signed_channel.channel_id,
             counter_payout,
             close_signature,
-            reference_id
+            reference_id,
         },
         close_tx,
     ))
@@ -2336,7 +2347,8 @@ where
     let (offer_signature, close_tx, is_offer) = get_signed_channel_state!(
         signed_channel,
         CollaborativeCloseOffered,
-        offer_signature | close_tx, is_offer
+        offer_signature | close_tx,
+        is_offer
     )?;
 
     if *is_offer {
@@ -2368,7 +2380,7 @@ where
         temporary_channel_id: signed_channel.temporary_channel_id,
         channel_id: signed_channel.channel_id,
         reference_id: signed_channel.reference_id,
-        closing_txid: close_tx.txid()
+        closing_txid: close_tx.txid(),
     });
     Ok((close_tx, channel))
 }
@@ -2491,7 +2503,7 @@ pub fn initiate_unilateral_close_established_channel<S: Deref>(
     signer: &S,
     sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
     is_initiator: bool, //TODO(holzeis): Check what this flag is for. It kind of is in conflict with the function name.
-    reference_id: Option<ReferenceId>
+    reference_id: Option<ReferenceId>,
 ) -> Result<(), Error>
 where
     S::Target: Signer,
@@ -2701,7 +2713,7 @@ where
         temporary_channel_id: signed_channel.temporary_channel_id,
         channel_id: signed_channel.channel_id,
         reference_id: signed_channel.reference_id,
-        closing_txid: cet.txid()
+        closing_txid: cet.txid(),
     };
     let channel = if is_initiator {
         Channel::Closed(closed_channel)
@@ -2719,7 +2731,7 @@ pub(crate) fn initiate_unilateral_close_settled_channel<S: Deref>(
     sub_channel: Option<(SubChannel, &ClosingSubChannel)>,
     is_settle_offer: bool,
     is_initiator: bool,
-    reference_id: Option<ReferenceId>
+    reference_id: Option<ReferenceId>,
 ) -> Result<(), Error>
 where
     S::Target: Signer,
@@ -2820,8 +2832,6 @@ where
             0,
         )?;
     }
-
-
 
     signed_channel.state = SignedChannelState::SettledClosing {
         settle_transaction: settle_tx,
