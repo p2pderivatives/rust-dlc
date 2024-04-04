@@ -477,11 +477,13 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     assert_channel_state!(alice_manager_send, temporary_channel_id, Offered);
 
     if let TestPath::CancelOffer = path {
-        let (reject_msg, _) = alice_manager_send.lock().unwrap().reject_channel(&temporary_channel_id).expect("Error rejecting contract offer");
+        let (reject_msg, _) = alice_manager_send
+            .lock()
+            .unwrap()
+            .reject_channel(&temporary_channel_id)
+            .expect("Error rejecting contract offer");
         assert_channel_state!(alice_manager_send, temporary_channel_id, Cancelled);
-        alice_send
-            .send(Some(Message::Reject(reject_msg)))
-            .unwrap();
+        alice_send.send(Some(Message::Reject(reject_msg))).unwrap();
 
         sync_receive.recv().expect("Error synchronizing");
         assert_channel_state!(bob_manager_send, temporary_channel_id, Cancelled);
