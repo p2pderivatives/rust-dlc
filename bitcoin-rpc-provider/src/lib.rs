@@ -183,12 +183,12 @@ impl ContractSignerProvider for BitcoinCoreProvider {
                 "getaddressesbylabel",
                 &[Value::String(keys_id.to_lower_hex_string())],
             )
-            .map_err(rpc_err_to_manager_err)?;
+            .unwrap_or_default();
 
         if let Some(address) = label_map.keys().next() {
-            // we should only have one address per keys_id
-            // if not something has gone wrong
-            assert_eq!(label_map.len(), 1);
+            // note: importing a private key seem to generate three different addresses, we thus
+            // check that we have exactly three addresses for a single `keys_id`.
+            assert_eq!(label_map.len(), 3);
 
             let sk = self
                 .client
@@ -274,7 +274,7 @@ impl Wallet for BitcoinCoreProvider {
             .unwrap()
             .call::<Address<NetworkUnchecked>>(
                 "getrawchangeaddress",
-                &[Value::Null, opt_into_json(Some(AddressType::Bech32))?],
+                &[opt_into_json(Some(AddressType::Bech32))?],
             )
             .map_err(rpc_err_to_manager_err)?
             .assume_checked())
@@ -391,11 +391,18 @@ impl Wallet for BitcoinCoreProvider {
     }
 
     fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), ManagerError> {
-        match self.client.lock().unwrap().unlock_unspent(outpoints).map_err(rpc_err_to_manager_err)? {
+        match self
+            .client
+            .lock()
+            .unwrap()
+            .unlock_unspent(outpoints)
+            .map_err(rpc_err_to_manager_err)?
+        {
             true => Ok(()),
-            false => Err(ManagerError::StorageError(format!("Failed to unlock utxos: {outpoints:?}")))
+            false => Err(ManagerError::StorageError(format!(
+                "Failed to unlock utxos: {outpoints:?}"
+            ))),
         }
-
     }
 }
 
