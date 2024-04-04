@@ -1,4 +1,9 @@
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+      - 'testci/**'
+  pull_request:
 
 name: Continuous integration
 
@@ -8,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: install clippy
         run: rustup component add clippy
       - name: Run clippy
@@ -18,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: install clippy
         run: rustup component add clippy
       - name: Run clippy dlc
@@ -32,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Build
         run: cargo build --verbose
       - name: Test
@@ -44,13 +49,13 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         env:
           cache-name: test-cache
         with:
           path: target/debug/deps
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - id: set-matrix
         run: cargo test --no-run && echo "::set-output name=matrix::$(scripts/get_test_list.sh execution manager channel_execution)"
   integration_tests:
@@ -62,15 +67,15 @@ jobs:
       matrix:
         tests: ${{ fromJson(needs.integration_tests_prepare.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v3
         env:
           cache-name: test-cache
         with:
           path: target/debug/deps
           key: test-cache-${{ github.run_id }}-${{ github.run_number }}
       - name: Start bitcoin node
-        run: docker-compose up -d
+        run: docker compose up -d
       - name: Wait for container to run
         run: ./scripts/wait_for_container.sh bitcoin-node
       - name: Wait for electrs to be ready
@@ -84,11 +89,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
-      - name: Set permission
-        run: docker-compose run oracle-db bash -c "chown postgres:postgres /certs/db.key && chgrp postgres /certs/db.key && chmod 600 /certs/db.key"
+      - uses: actions/checkout@v4
       - name: Start environment
-        run: docker-compose --profile oracle up -d
+        run: docker compose --profile oracle up -d
       - name: Wait for container to run
         run: ./scripts/wait_for_container.sh oracle-server
       - name: Wait for electrs to be ready
