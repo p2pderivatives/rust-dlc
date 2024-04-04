@@ -93,5 +93,12 @@ jobs:
         run: ./scripts/wait_for_container.sh oracle-server
       - name: Wait for electrs to be ready
         run: ./scripts/wait_for_electrs.sh
+      - name: Create wallets
+        run: docker exec bitcoin-node /scripts/create_wallets.sh
       - name: Run test
-        run: cargo test -- --ignored sample
+        run: |
+          if ! cargo test -- --ignored sample; then
+            cat sample/dlc_sample_alice/.dlc/logs/logs.txt
+            cat sample/dlc_sample_bob/.dlc/logs/logs.txt
+            exit 1
+          fi

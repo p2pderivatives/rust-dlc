@@ -15,6 +15,7 @@ services:
     volumes:
       - bitcoind-data:/home/bitcoin/.bitcoin
       - ./testconfig/config:/config
+      - ./scripts:/scripts
   electrs:
     image: ghcr.io/cryptogarageinc/electrs:v0.4.12-bitcoin
     command: |
