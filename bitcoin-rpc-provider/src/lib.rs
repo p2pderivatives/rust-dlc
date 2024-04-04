@@ -391,11 +391,18 @@ impl Wallet for BitcoinCoreProvider {
     }
 
     fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), ManagerError> {
-        match self.client.lock().unwrap().unlock_unspent(outpoints).map_err(rpc_err_to_manager_err)? {
+        match self
+            .client
+            .lock()
+            .unwrap()
+            .unlock_unspent(outpoints)
+            .map_err(rpc_err_to_manager_err)?
+        {
             true => Ok(()),
-            false => Err(ManagerError::StorageError(format!("Failed to unlock utxos: {outpoints:?}")))
+            false => Err(ManagerError::StorageError(format!(
+                "Failed to unlock utxos: {outpoints:?}"
+            ))),
         }
-
     }
 }
 
