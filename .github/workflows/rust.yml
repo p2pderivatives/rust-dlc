@@ -18,6 +18,17 @@ jobs:
         run: rustup component add clippy
       - name: Run clippy
         run: cargo clippy -- -D warnings
+  fmt:
+    name: rustfmt-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+            components: rustfmt
+      - name: Check format
+        run: cargo fmt --all --check
   no-std:
     name: no-std lint
     runs-on: ubuntu-latest

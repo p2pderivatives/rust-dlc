@@ -45,7 +45,7 @@ impl std::fmt::Debug for Channel {
             Channel::Signed(_) => "signed",
             Channel::FailedAccept(_) => "failed accept",
             Channel::FailedSign(_) => "failed sign",
-            Channel::Cancelled(_) => "cancelled"
+            Channel::Cancelled(_) => "cancelled",
         };
         f.debug_struct("Contract").field("state", &state).finish()
     }
