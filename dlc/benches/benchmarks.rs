@@ -3,6 +3,7 @@
 extern crate bitcoin;
 extern crate bitcoin_test_utils;
 extern crate dlc;
+extern crate miniscript;
 extern crate rayon;
 extern crate secp256k1_zkp;
 #[cfg(all(test, feature = "unstable"))]
@@ -11,9 +12,10 @@ extern crate test;
 #[cfg(all(test, feature = "unstable"))]
 mod benches {
 
-    use bitcoin::{Script, Transaction};
+    use bitcoin::{ScriptBuf, Transaction};
     use bitcoin_test_utils::tx_from_string;
     use dlc::*;
+    use miniscript::ToPublicKey;
     use rayon::prelude::*;
     use secp256k1_zkp::{
         global::SECP256K1, rand::thread_rng, rand::RngCore, Message, PublicKey, SecretKey,
@@ -28,10 +30,18 @@ mod benches {
     const ALL_BASE: usize = 2;
 
     fn generate_oracle_info(nb_nonces: usize) -> OracleInfo {
-        let public_key = SECP256K1.generate_schnorrsig_keypair(&mut thread_rng()).1;
+        let public_key = SECP256K1
+            .generate_keypair(&mut thread_rng())
+            .1
+            .to_x_only_pubkey();
         let mut nonces = Vec::with_capacity(nb_nonces);
         for _ in 0..nb_nonces {
-            nonces.push(SECP256K1.generate_schnorrsig_keypair(&mut thread_rng()).1);
+            nonces.push(
+                SECP256K1
+                    .generate_keypair(&mut thread_rng())
+                    .1
+                    .to_x_only_pubkey(),
+            );
         }
 
         OracleInfo { public_key, nonces }
@@ -116,7 +126,7 @@ mod benches {
         tx_from_string("02000000019246862ea34db0833bd4bd9e657d61e2e5447d0438f6f6181d1cd329e8cf71c30000000000ffffffff02603bea0b000000001600145dedfbf9ea599dd4e3ca6a80b333c472fd0b3f69a0860100000000001600149652d86bedf43ad264362e6e6eba6eb76450812700000000")
     }
 
-    fn funding_script_pubkey() -> Script {
+    fn funding_script_pubkey() -> ScriptBuf {
         let seckey = SecretKey::new(&mut thread_rng());
         make_funding_redeemscript(
             &PublicKey::from_secret_key(SECP256K1, &seckey),
