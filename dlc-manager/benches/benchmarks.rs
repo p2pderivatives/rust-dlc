@@ -1,6 +1,6 @@
 use bitcoin::hashes::Hash;
 use bitcoin::OutPoint;
-use bitcoin::Script;
+use bitcoin::ScriptBuf;
 use bitcoin::WPubkeyHash;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dlc::create_dlc_transactions;
@@ -138,8 +138,8 @@ fn get_pubkey() -> secp256k1_zkp::PublicKey {
     secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &SecretKey::new(&mut thread_rng()))
 }
 
-fn get_p2wpkh_script_pubkey() -> Script {
-    Script::new_v0_p2wpkh(&WPubkeyHash::hash(&get_pubkey().serialize()))
+fn get_p2wpkh_script_pubkey() -> ScriptBuf {
+    ScriptBuf::new_v0_p2wpkh(&WPubkeyHash::hash(&get_pubkey().serialize()))
 }
 
 fn create_oracle_announcements() -> Vec<OracleAnnouncement> {
@@ -174,7 +174,7 @@ fn create_contract_info() -> ContractInfo {
 fn create_txinputinfo_vec() -> Vec<TxInputInfo> {
     let tx_input_info = TxInputInfo {
         outpoint: OutPoint::default(),
-        redeem_script: Script::new(),
+        redeem_script: ScriptBuf::new(),
         max_witness_len: 108,
         serial_id: 2,
     };
