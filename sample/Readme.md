@@ -51,7 +51,7 @@ Typing the same command in Alice's instance will make Alice broadcast the fund t
 
 Now in yet another terminal (still from the same location) run:
 ```bash
-../scripts/generate_blocks.sh
+docker compose exec bitcoind /scripts/generate_blocks.sh
 ```
 
 This will generate some blocks so that the fund transaction is confirmed.
@@ -88,7 +88,7 @@ Typing the same command in Alice's instance will make Alice broadcast the fund t
 
 Now in yet another terminal (still from the same location) run:
 ```bash
-../scripts/generate_blocks.sh
+docker compose exec bitcoind /scripts/generate_blocks.sh
 ```
 
 This will generate some blocks so that the fund transaction is confirmed.
