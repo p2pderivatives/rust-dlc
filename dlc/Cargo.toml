@@ -21,7 +21,7 @@ unstable = []
 default = ["std"]
 std = ["bitcoin/std", "miniscript/std", "secp256k1-zkp/rand-std"]
 no-std = ["dep:hashbrown", "miniscript/no-std", "bitcoin/no-std"]
-use-serde = ["serde", "secp256k1-zkp/serde"]
+use-serde = ["serde", "secp256k1-zkp/serde", "bitcoin/serde"]
 
 [dev-dependencies]
 bitcoin-test-utils = { path = "../bitcoin-test-utils" }
