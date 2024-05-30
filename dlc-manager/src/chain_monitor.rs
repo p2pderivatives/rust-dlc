@@ -1,4 +1,4 @@
-//!
+//! Implementation of a chain monitor to watch the blockchain for transactions of interest.
 
 use std::collections::HashMap;
 
