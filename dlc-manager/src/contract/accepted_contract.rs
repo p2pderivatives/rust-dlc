@@ -89,7 +89,7 @@ impl AcceptedContract {
             .iter()
             .find_map(|x| {
                 if &x.script_pubkey == v0_witness_payout_script {
-                    Some(x.value)
+                    Some(x.value.to_sat())
                 } else {
                     None
                 }

@@ -104,7 +104,7 @@ where
             max_witness_len,
             redeem_script: utxo.redeem_script,
         };
-        total_input += prev_tx.output[prev_tx_vout as usize].value;
+        total_input += prev_tx.output[prev_tx_vout as usize].value.to_sat();
         funding_tx_info.push((&funding_input).into());
         funding_inputs.push(funding_input);
     }

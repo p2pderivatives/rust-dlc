@@ -5,14 +5,14 @@ name = "sample"
 version = "0.1.0"
 
 [dependencies]
-bitcoin = {version = "0.30.2"}
+bitcoin = {version = "0.31.2"}
 bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
-dlc = {path = "../dlc", features = ["use-serde"]}
+dlc = {version = "0.4.0", path = "../dlc", features = ["use-serde"]}
 dlc-manager = {path = "../dlc-manager", features = ["use-serde", "parallel"]}
 dlc-messages = {path = "../dlc-messages"}
 dlc-sled-storage-provider = {path = "../dlc-sled-storage-provider"}
 futures = "0.3"
-lightning = {version = "0.0.121"}
+lightning = {version = "0.0.123"}
 lightning-net-tokio = {version = "0.0.121" }
 p2pd-oracle-client = {path = "../p2pd-oracle-client"}
 serde = "1.0"

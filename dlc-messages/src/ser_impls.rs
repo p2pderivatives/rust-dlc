@@ -1,6 +1,6 @@
 //! Set of utility functions to help with serialization.
 
-use bitcoin::network::constants::Network;
+use bitcoin::Network;
 use bitcoin::Address;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::io::Read;
@@ -478,7 +478,7 @@ pub fn write_address<W: Writer>(
     writer: &mut W,
 ) -> Result<(), ::lightning::io::Error> {
     address.script_pubkey().write(writer)?;
-    let net: u8 = match address.network {
+    let net: u8 = match address.network() {
         Network::Bitcoin => 0,
         Network::Testnet => 1,
         Network::Signet => 2,

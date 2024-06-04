@@ -17,15 +17,16 @@ use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde", "dlc-trie/use-serde
 
 [dependencies]
 async-trait = "0.1.50"
-bitcoin = { version = "0.30.2", default-features = false }
+bitcoin = { version = "0.31.2", default-features = false }
 dlc = { version = "0.4.0", default-features = false, path = "../dlc" }
 dlc-messages = { version = "0.4.0", default-features = false, path = "../dlc-messages" }
 dlc-trie = { version = "0.4.0", default-features = false, path = "../dlc-trie" }
 hex = { package = "hex-conservative", version = "0.1" }
-lightning = { version = "0.0.121", default-features = false, features = ["grind_signatures"] }
+# lightning = { version = "0.0.123", default-features = false, features = ["grind_signatures"] }
+lightning = { git = "https://github.com/lightningdevkit/rust-lightning", branch = "main", default-features = false, features = ["grind_signatures"] }
 log = "0.4.14"
 rand_chacha = {version = "0.3.1", optional = true}
-secp256k1-zkp = {version = "0.9.2"}
+secp256k1-zkp = {version = "0.10.1"}
 serde = {version = "1.0", optional = true}
 
 [dev-dependencies]
@@ -39,7 +40,7 @@ dlc-messages = { path = "../dlc-messages", default-features = false, features = 
 electrs-blockchain-provider = {path = "../electrs-blockchain-provider"}
 env_logger = "0.9.1"
 mocks = {path = "../mocks"}
-secp256k1-zkp = {version = "0.9.2", features = ["bitcoin_hashes", "rand", "rand-std", "global-context", "serde"]}
+secp256k1-zkp = {version = "0.10.1", features = ["rand", "rand-std", "global-context", "serde"]}
 serde = "1.0"
 serde_json = "1.0"
 simple-wallet = {path = "../simple-wallet"}
