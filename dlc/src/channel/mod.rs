@@ -13,8 +13,7 @@ use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, Party
 
 use super::Error;
 use bitcoin::{
-    absolute::LockTime, ecdsa::Signature, sighash::EcdsaSighashType, Address, OutPoint, PublicKey,
-    Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    absolute::LockTime, ecdsa::Signature, sighash::EcdsaSighashType, Address, Amount, OutPoint, PublicKey, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness
 };
 use miniscript::Descriptor;
 use secp256k1_zkp::{
@@ -125,7 +124,7 @@ pub fn create_buffer_transaction(
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output: vec![TxOut {
-            value: total_collateral,
+            value: Amount::from_sat(total_collateral),
             script_pubkey: descriptor.script_pubkey(),
         }],
     }
@@ -197,11 +196,11 @@ pub fn create_settle_transaction(
     let mut output = crate::util::discard_dust(
         vec![
             TxOut {
-                value: offer_payout,
+                value: Amount::from_sat(offer_payout),
                 script_pubkey: offer_descriptor.script_pubkey(),
             },
             TxOut {
-                value: accept_payout,
+                value: Amount::from_sat(accept_payout),
                 script_pubkey: accept_descriptor.script_pubkey(),
             },
         ],
@@ -220,7 +219,7 @@ pub fn create_settle_transaction(
         / (output.len() as u64);
 
     for o in &mut output {
-        o.value += remaining_fee;
+        o.value += Amount::from_sat(remaining_fee);
     }
 
     Ok(Transaction {
@@ -290,7 +289,7 @@ pub fn create_renewal_channel_transactions(
         super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
 
     let (fund_vout, fund_output) =
-        super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_v0_p2wsh())
+        super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_p2wsh())
             .expect("to find the funding script pubkey");
 
     let outpoint = OutPoint {
@@ -310,7 +309,7 @@ pub fn create_renewal_channel_transactions(
     let buffer_transaction = create_buffer_transaction(
         &tx_in,
         &buffer_descriptor,
-        fund_output.value - extra_fee,
+        fund_output.value.to_sat() - extra_fee,
         cet_lock_time,
     );
 
@@ -426,14 +425,14 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
     let tx_fee =
         crate::util::weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
-    let output_value = prev_tx.output[0].value - tx_fee;
+    let output_value = prev_tx.output[0].value.to_sat() - tx_fee;
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
-            value: output_value,
+            value: Amount::from_sat(output_value),
             script_pubkey: dest_address.script_pubkey(),
         }],
     };
@@ -457,7 +456,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
                         &tx,
                         0,
                         &descriptor.script_code()?,
-                        prev_tx.output[0].value,
+                        prev_tx.output[0].value.to_sat(),
                         sk,
                     )?,
                     hash_ty: EcdsaSighashType::All,
@@ -508,7 +507,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         witness: Witness::default(),
     };
 
-    let input_value = prev_tx.output[vout as usize].value;
+    let input_value = prev_tx.output[vout as usize].value.to_sat();
 
     let dest_script_pk_len = dest_address.script_pubkey().len();
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
@@ -521,7 +520,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
-            value: input_value - tx_fee,
+            value: Amount::from_sat(input_value - tx_fee),
             script_pubkey: dest_address.script_pubkey(),
         }],
     };
@@ -571,12 +570,12 @@ pub fn create_collaborative_close_transaction(
 
     //TODO(tibo): add fee re-payment
     let offer_output = TxOut {
-        value: offer_payout,
+        value: Amount::from_sat(offer_payout),
         script_pubkey: offer_params.payout_script_pubkey.clone(),
     };
 
     let accept_output = TxOut {
-        value: accept_payout,
+        value: Amount::from_sat(accept_payout),
         script_pubkey: accept_params.payout_script_pubkey.clone(),
     };
 

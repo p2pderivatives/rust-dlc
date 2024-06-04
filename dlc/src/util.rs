@@ -1,12 +1,14 @@
 //! Utility functions not uniquely related to DLC
 
-use bitcoin::address::{WitnessProgram, WitnessVersion};
+use bitcoin::blockdata::script::witness_program::WitnessProgram;
+use bitcoin::blockdata::script::witness_version::WitnessVersion;
+use bitcoin::hashes::Hash;
 use bitcoin::script::PushBytesBuf;
 use bitcoin::sighash::SighashCache;
 use bitcoin::{
-    address::Payload, hash_types::PubkeyHash, sighash::EcdsaSighashType, Script, Transaction, TxOut,
+    address::Payload, sighash::EcdsaSighashType, Script, Transaction, TxOut, Amount,
 };
-use bitcoin::{ScriptBuf, Sequence, Witness};
+use bitcoin::{PubkeyHash, ScriptBuf, Sequence, Witness};
 use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::Error;
@@ -27,13 +29,14 @@ pub(crate) fn get_sig_hash_msg(
     script_pubkey: &Script,
     value: u64,
 ) -> Result<Message, Error> {
-    let sig_hash = SighashCache::new(tx).segwit_signature_hash(
-        input_index,
-        script_pubkey,
-        value,
-        EcdsaSighashType::All,
-    )?;
-    Ok(Message::from_slice(sig_hash.as_ref()).unwrap())
+    let sig_hash = SighashCache::new(tx).p2wsh_signature_hash(input_index, script_pubkey, Amount::from_sat(value), EcdsaSighashType::All)?;
+    // let sig_hash = SighashCache::new(tx).segwit_signature_hash(
+    //     input_index,
+    //     script_pubkey,
+    //     value,
+    //     EcdsaSighashType::All,
+    // )?;
+    Ok(Message::from_digest_slice(sig_hash.as_ref())?)
 }
 
 /// Convert a raw signature to DER encoded and append the sighash type, to use
@@ -97,9 +100,10 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
 
 /// Returns the fee for the given weight at given fee rate.
 pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
-    (f64::ceil((weight as f64) / 4.0) as u64)
+    let fee = (f64::ceil((weight as f64) / 4.0) as u64)
         .checked_mul(fee_rate)
-        .ok_or(Error::InvalidArgument)
+        .ok_or(Error::InvalidArgument)?;
+    Ok(fee)
 }
 
 /// Return the common base fee for a DLC for the given fee rate.
@@ -109,7 +113,7 @@ pub fn get_common_fee(fee_rate: u64) -> Result<u64, Error> {
 }
 
 fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey) -> ScriptBuf {
-    use bitcoin::hashes::*;
+    // use bitcoin::hashes::*;
     let pk = bitcoin::PublicKey {
         compressed: true,
         inner: PublicKey::from_secret_key(secp, sk),
@@ -233,7 +237,7 @@ pub fn get_output_for_script_pubkey<'a>(
 
 /// Filters the outputs that have a value lower than the given `dust_limit`.
 pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
-    txs.into_iter().filter(|x| x.value >= dust_limit).collect()
+    txs.into_iter().filter(|x| x.value.to_sat() >= dust_limit).collect()
 }
 
 pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
@@ -245,7 +249,7 @@ pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
 }
 
 pub(crate) fn compute_var_int_prefix_size(len: usize) -> usize {
-    bitcoin::VarInt(len as u64).len()
+    bitcoin::VarInt(len as u64).size()
 }
 
 /// Validate that the fee rate is not too high

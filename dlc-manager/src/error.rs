@@ -25,6 +25,8 @@ pub enum Error {
     DlcError(dlc::Error),
     /// An error occurred in the Secp library.
     SecpError(secp256k1_zkp::Error),
+    /// An error occured extracting a PSBT.
+    ExtractPsbt(bitcoin::psbt::ExtractTxError)
 }
 
 impl fmt::Display for Error {
@@ -40,6 +42,7 @@ impl fmt::Display for Error {
             Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
             Error::SecpError(_) => write!(f, "Secp error"),
+            Error::ExtractPsbt(_) => write!(f, "PSBT error"),
         }
     }
 }
@@ -74,6 +77,12 @@ impl From<secp256k1_zkp::UpstreamError> for Error {
     }
 }
 
+impl From<bitcoin::psbt::ExtractTxError> for Error {
+    fn from(e: bitcoin::psbt::ExtractTxError) -> Self {
+        Error::ExtractPsbt(e)
+    }
+}
+
 #[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -88,6 +97,7 @@ impl std::error::Error for Error {
             Error::OracleError(_) => None,
             Error::DlcError(e) => Some(e),
             Error::SecpError(e) => Some(e),
+            Error::ExtractPsbt(e) => Some(e)
         }
     }
 }

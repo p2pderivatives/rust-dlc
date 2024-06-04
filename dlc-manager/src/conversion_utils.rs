@@ -82,7 +82,7 @@ pub fn get_tx_input_infos(
             .output
             .get(vout as usize)
             .ok_or(Error::InvalidParameters)?;
-        input_amount += tx_out.value;
+        input_amount += tx_out.value.to_sat();
         inputs.push(TxInputInfo {
             outpoint: OutPoint {
                 txid: tx.txid(),

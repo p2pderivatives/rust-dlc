@@ -5,12 +5,12 @@ name = "bitcoin-rpc-provider"
 version = "0.1.0"
 
 [dependencies]
-bitcoin = {version = "0.30.2"}
-bitcoincore-rpc = {version = "0.17.0"}
-bitcoincore-rpc-json = {version = "0.17.0"}
+bitcoin = {version = "0.31.2"}
+bitcoincore-rpc = {version = "0.19.0"}
+bitcoincore-rpc-json = {version = "0.19.0"}
 dlc-manager = {path = "../dlc-manager"}
 hex = { package = "hex-conservative", version = "0.1" }
-lightning = { version = "0.0.121" }
+lightning = { version = "0.0.123" }
 log = "0.4.14"
 rust-bitcoin-coin-selection = { version = "0.1.0", git = "https://github.com/p2pderivatives/rust-bitcoin-coin-selection", rev = "405451929568422f7df809e35d6ad8f36fccce90", features = ["rand"] }
 simple-wallet = {path = "../simple-wallet"}
