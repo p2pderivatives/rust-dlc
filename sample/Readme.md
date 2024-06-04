@@ -12,7 +12,7 @@ To give a quick try to this sample, run the following set of commands (assuming 
 
 ```bash
 docker-compose --profile oracle up -d
-../scripts/create_wallets.sh
+docker compose exec bitcoind /scripts/create_wallets.sh
 cargo run ./examples/configurations/alice.yml
 ```
 
