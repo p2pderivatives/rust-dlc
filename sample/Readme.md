@@ -5,6 +5,9 @@ Example of combining the various components of the rust-dlc library together wit
 Originally based on the code from the [ldk sample](https://github.com/lightningdevkit/ldk-sample).
 
 Example configurations and contract input are available in the [examples](./examples) folder.
+In order to use the [example contract](./examples/contracts/numerical_contract_input.json) you will need to update the `event_id`.
+Replace the part after `btcusd` with a UNIX timestamp in the future.
+
 
 ## Quick run
 
