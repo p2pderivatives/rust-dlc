@@ -22,6 +22,7 @@ use crate::{
     utils::get_new_temporary_id,
     Blockchain, ContractSigner, ContractSignerProvider, Time, Wallet,
 };
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::{OutPoint, Script, ScriptBuf, Sequence, Transaction, TxIn, Witness};
 use dlc::{
     channel::{get_tx_adaptor_signature, verify_tx_adaptor_signature, DlcChannelTransactions},
@@ -38,7 +39,7 @@ use dlc_messages::{
 use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, CounterpartyCommitmentSecrets,
 };
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 
 const INITIAL_UPDATE_NUMBER: u64 = (1 << 48) - 1;
 

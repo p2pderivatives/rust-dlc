@@ -4,14 +4,13 @@ use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
 use crate::ContractSigner;
+use bitcoin::hashes::sha256;
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Verification};
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::{DlcTrie, RangeInfo};
-use secp256k1_zkp::{
-    hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
-    Verification,
-};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 use std::ops::Deref;
 
 pub(super) type OracleIndexAndPrefixLength = Vec<(usize, usize)>;

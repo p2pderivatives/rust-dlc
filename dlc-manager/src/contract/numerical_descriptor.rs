@@ -3,12 +3,13 @@
 use super::AdaptorInfo;
 use crate::error::Error;
 use crate::payout_curve::{PayoutFunction, RoundingIntervals};
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{Script, Transaction};
 use dlc::{Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::{DlcTrie, OracleNumericInfo};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

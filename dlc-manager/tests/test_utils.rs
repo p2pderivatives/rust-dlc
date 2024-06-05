@@ -8,6 +8,7 @@ extern crate dlc_manager;
 
 use std::ops::Deref;
 
+use bitcoin::secp256k1::rand::{seq::SliceRandom, thread_rng, RngCore};
 use dlc::{EnumerationPayout, Payout};
 use dlc_manager::payout_curve::{
     PayoutFunction, PayoutFunctionPiece, PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval,
@@ -28,7 +29,6 @@ use dlc_messages::oracle_msgs::{
 };
 use dlc_trie::{digit_decomposition::decompose_value, OracleNumericInfo};
 use mocks::mock_oracle_provider::MockOracle;
-use secp256k1_zkp::rand::{seq::SliceRandom, thread_rng, RngCore};
 use simple_wallet::{WalletBlockchainProvider, WalletStorage};
 
 pub const NB_DIGITS: u32 = 10;

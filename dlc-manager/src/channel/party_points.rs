@@ -3,9 +3,9 @@
 //! useful for derivation.
 
 use super::utils::{derive_public_key, derive_public_revocation_key};
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, Signing, Verification};
 use bitcoin::PublicKey as BitcoinPublicKey;
 use dlc::channel::RevokeParams;
-use secp256k1_zkp::{All, PublicKey, Secp256k1, Signing, Verification};
 
 /// Base points used by a party of a DLC channel to derive public and private
 /// values necessary for state update throughout the lifetime of the channel.

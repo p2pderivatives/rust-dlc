@@ -1,4 +1,7 @@
 use bitcoin::hashes::Hash;
+use bitcoin::secp256k1::rand::thread_rng;
+use bitcoin::secp256k1::schnorr::Signature;
+use bitcoin::secp256k1::{KeyPair, SecretKey, XOnlyPublicKey, SECP256K1};
 use bitcoin::OutPoint;
 use bitcoin::ScriptBuf;
 use bitcoin::WPubkeyHash;
@@ -22,9 +25,6 @@ use dlc_messages::oracle_msgs::DigitDecompositionEventDescriptor;
 use dlc_messages::oracle_msgs::EventDescriptor;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::oracle_msgs::OracleEvent;
-use secp256k1_zkp::{
-    global::SECP256K1, rand::thread_rng, schnorr::Signature, KeyPair, SecretKey, XOnlyPublicKey,
-};
 use std::str::FromStr;
 
 /// The base in which the outcome values are decomposed.
@@ -134,8 +134,8 @@ fn get_schnorr_pubkey() -> XOnlyPublicKey {
     XOnlyPublicKey::from_keypair(&KeyPair::new(SECP256K1, &mut thread_rng())).0
 }
 
-fn get_pubkey() -> secp256k1_zkp::PublicKey {
-    secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &SecretKey::new(&mut thread_rng()))
+fn get_pubkey() -> bitcoin::secp256k1::PublicKey {
+    bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &SecretKey::new(&mut thread_rng()))
 }
 
 fn get_p2wpkh_script_pubkey() -> ScriptBuf {
@@ -183,7 +183,7 @@ fn create_txinputinfo_vec() -> Vec<TxInputInfo> {
 
 fn create_transactions(payouts: &[Payout]) -> DlcTransactions {
     let offer_params = PartyParams {
-        fund_pubkey: secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &offer_seckey()),
+        fund_pubkey: bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &offer_seckey()),
         change_script_pubkey: get_p2wpkh_script_pubkey(),
         change_serial_id: 4,
         payout_script_pubkey: get_p2wpkh_script_pubkey(),
@@ -194,7 +194,7 @@ fn create_transactions(payouts: &[Payout]) -> DlcTransactions {
     };
 
     let accept_params = PartyParams {
-        fund_pubkey: secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &accept_seckey()),
+        fund_pubkey: bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &accept_seckey()),
         change_script_pubkey: get_p2wpkh_script_pubkey(),
         change_serial_id: 4,
         payout_script_pubkey: get_p2wpkh_script_pubkey(),
@@ -251,7 +251,7 @@ pub fn verify_bench(c: &mut Criterion) {
     let fund_output_value = dlc_transactions.get_fund_output().value;
 
     let seckey = accept_seckey();
-    let pubkey = secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &seckey);
+    let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &seckey);
     let adaptor_info = contract_info
         .get_adaptor_info(
             SECP256K1,

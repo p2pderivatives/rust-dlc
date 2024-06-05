@@ -20,6 +20,8 @@ use crate::error::Error;
 use crate::{ChannelId, ContractId, ContractSignerProvider};
 use bitcoin::absolute::Height;
 use bitcoin::consensus::Decodable;
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, XOnlyPublicKey};
 use bitcoin::Address;
 use bitcoin::{OutPoint, Transaction};
 use dlc_messages::channel::{
@@ -35,8 +37,6 @@ use lightning::ln::chan_utils::{
     build_commitment_secret, derive_private_key, derive_private_revocation_key,
 };
 use log::{error, warn};
-use secp256k1_zkp::XOnlyPublicKey;
-use secp256k1_zkp::{ecdsa::Signature, All, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::string::ToString;
@@ -202,7 +202,7 @@ where
         let signer_provider = Arc::new(CachedContractSignerProvider::new(signer_provider));
 
         Ok(Manager {
-            secp: secp256k1_zkp::Secp256k1::new(),
+            secp: bitcoin::secp256k1::Secp256k1::new(),
             wallet,
             signer_provider,
             blockchain,
@@ -2478,6 +2478,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use bitcoin::secp256k1::{PublicKey, XOnlyPublicKey};
     use dlc_messages::Message;
     use mocks::{
         dlc_manager::{manager::Manager, CachedContractSignerProvider, Oracle, SimpleSigner},
@@ -2487,7 +2488,6 @@ mod test {
         mock_time::MockTime,
         mock_wallet::MockWallet,
     };
-    use secp256k1_zkp::{PublicKey, XOnlyPublicKey};
     use std::{collections::HashMap, rc::Rc, sync::Arc};
 
     type TestManager = Manager<

@@ -2,6 +2,7 @@
 
 use crate::error::Error;
 use crate::ContractId;
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::Transaction;
 use dlc_messages::{
     oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation},
@@ -9,7 +10,6 @@ use dlc_messages::{
 };
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
-use secp256k1_zkp::PublicKey;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use signed_contract::SignedContract;

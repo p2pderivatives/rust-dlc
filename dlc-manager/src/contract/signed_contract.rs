@@ -4,11 +4,11 @@ use crate::conversion_utils::PROTOCOL_VERSION;
 use crate::ChannelId;
 
 use super::accepted_contract::AcceptedContract;
+use bitcoin::secp256k1::ecdsa::Signature;
 use dlc_messages::CetAdaptorSignature;
 use dlc_messages::CetAdaptorSignatures;
 use dlc_messages::FundingSignatures;
 use dlc_messages::SignDlc;
-use secp256k1_zkp::ecdsa::Signature;
 use secp256k1_zkp::EcdsaAdaptorSignature;
 
 /// Contain information about a contract that was fully signed.

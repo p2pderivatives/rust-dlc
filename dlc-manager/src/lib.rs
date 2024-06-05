@@ -37,6 +37,7 @@ pub mod payout_curve;
 mod utils;
 
 use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Signing, XOnlyPublicKey};
 use bitcoin::{Address, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
@@ -49,8 +50,6 @@ use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::{PublicKey, SecretKey, Signing};
-use secp256k1_zkp::{Secp256k1, XOnlyPublicKey};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::RwLock;

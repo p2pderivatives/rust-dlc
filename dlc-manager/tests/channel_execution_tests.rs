@@ -1,6 +1,7 @@
 #[macro_use]
 mod test_utils;
 
+use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::Amount;
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
@@ -18,7 +19,6 @@ use lightning::util::ser::Writeable;
 use mocks::memory_storage_provider::MemoryStorage;
 use mocks::mock_oracle_provider::MockOracle;
 use mocks::mock_time::MockTime;
-use secp256k1_zkp::rand::{thread_rng, RngCore};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use simple_wallet::SimpleWallet;
 use test_utils::{get_enum_test_params, TestParams};
