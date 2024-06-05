@@ -3,6 +3,8 @@
 use std::ops::Deref;
 
 use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::FundingInput;
@@ -10,9 +12,7 @@ use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
 };
-use secp256k1_zkp::{
-    ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
-};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 
 use crate::{
     contract::{
@@ -758,8 +758,8 @@ where
 mod tests {
     use std::rc::Rc;
 
+    use bitcoin::secp256k1::PublicKey;
     use mocks::dlc_manager::contract::offered_contract::OfferedContract;
-    use secp256k1_zkp::PublicKey;
 
     #[test]
     fn accept_contract_test() {
@@ -782,7 +782,7 @@ mod tests {
         ));
 
         mocks::dlc_manager::contract_updater::accept_contract(
-            secp256k1_zkp::SECP256K1,
+            bitcoin::secp256k1::SECP256K1,
             &offered_contract,
             &wallet,
             &wallet,

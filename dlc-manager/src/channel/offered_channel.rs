@@ -4,7 +4,7 @@
 use dlc::PartyParams;
 use dlc_messages::channel::OfferChannel;
 // use dlc_messages::channel::OfferChannel;
-use secp256k1_zkp::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 
 use crate::{
     contract::offered_contract::OfferedContract, conversion_utils::get_tx_input_infos,
@@ -37,7 +37,7 @@ pub struct OfferedChannel {
     pub offer_per_update_seed: Option<PublicKey>,
     /// Whether the local party is the offer party or not.
     pub is_offer_party: bool,
-    /// The [`secp256k1_zkp::PublicKey`] of the counter party's node.
+    /// The [`bitcoin::secp256k1::PublicKey`] of the counter party's node.
     pub counter_party: PublicKey,
     /// The nSequence value to use for the CETs.
     pub cet_nsequence: u32,

@@ -11,18 +11,19 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
+extern crate bitcoin;
 extern crate chrono;
 extern crate dlc_manager;
 extern crate dlc_messages;
 extern crate reqwest;
-extern crate secp256k1_zkp;
 extern crate serde;
 
+use bitcoin::secp256k1::schnorr::Signature;
+use bitcoin::secp256k1::XOnlyPublicKey;
 use chrono::{DateTime, SecondsFormat, Utc};
 use dlc_manager::error::Error as DlcManagerError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
-use secp256k1_zkp::{schnorr::Signature, XOnlyPublicKey};
 
 /// Enables interacting with a DLC oracle.
 pub struct P2PDOracleClient {

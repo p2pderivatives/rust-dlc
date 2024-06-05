@@ -3,7 +3,7 @@
 use crate::error::Error;
 
 use super::ContractDescriptor;
-use secp256k1_zkp::XOnlyPublicKey;
+use bitcoin::secp256k1::XOnlyPublicKey;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -103,8 +103,8 @@ impl ContractInput {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::secp256k1::{KeyPair, SecretKey, SECP256K1};
     use dlc::{EnumerationPayout, Payout};
-    use secp256k1_zkp::{KeyPair, SecretKey, SECP256K1};
 
     use crate::contract::enum_descriptor::EnumDescriptor;
 
@@ -138,7 +138,7 @@ mod tests {
                     public_keys: vec![
                         XOnlyPublicKey::from_keypair(&KeyPair::from_secret_key(
                             SECP256K1,
-                            &SecretKey::from_slice(&secp256k1_zkp::constants::ONE).unwrap(),
+                            &SecretKey::from_slice(&bitcoin::secp256k1::constants::ONE).unwrap(),
                         ))
                         .0,
                     ],

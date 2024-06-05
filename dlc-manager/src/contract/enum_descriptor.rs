@@ -4,14 +4,13 @@ use super::contract_info::OracleIndexAndPrefixLength;
 use super::utils::{get_majority_combination, unordered_equal};
 use super::AdaptorInfo;
 use crate::error::Error;
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey, Verification};
 use bitcoin::{Script, Transaction};
 use dlc::OracleInfo;
 use dlc::{EnumerationPayout, Payout};
 use dlc_messages::oracle_msgs::EnumEventDescriptor;
 use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
-use secp256k1_zkp::{
-    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
-};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -240,9 +239,9 @@ impl EnumDescriptor {
             .outcome_payouts
             .iter()
             .map(|x| {
-                let message = vec![Message::from_hashed_data::<
-                    secp256k1_zkp::hashes::sha256::Hash,
-                >(x.outcome.as_bytes())];
+                let message = vec![Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(
+                    x.outcome.as_bytes(),
+                )];
                 std::iter::repeat(message).take(threshold).collect()
             })
             .collect();

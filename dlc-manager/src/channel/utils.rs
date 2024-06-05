@@ -2,14 +2,14 @@
 
 use bitcoin::hashes::HashEngine;
 use bitcoin::hashes::{sha256::Hash as Sha256, Hash};
-use secp256k1_zkp::{PublicKey, Scalar, Secp256k1, SecretKey};
+use bitcoin::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Signing, Verification};
 
 /// Derives a public key from a `base_point` and a `per_commitment_point` as described in BOLT-3
 /// (https://github.com/lightning/bolts/blob/master/03-transactions.md#localpubkey-local_htlcpubkey-remote_htlcpubkey-local_delayedpubkey-and-remote_delayedpubkey-derivation).
 ///
 /// Taken from a previous version of ldk as it was refactored into something less practical to use
 /// externally.
-pub(crate) fn derive_public_key<T: secp256k1_zkp::Signing>(
+pub(crate) fn derive_public_key<T: Signing>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,
     base_point: &PublicKey,
@@ -42,7 +42,7 @@ pub(crate) fn derive_public_key<T: secp256k1_zkp::Signing>(
 ///
 /// Taken from a previous version of ldk as it was refactored into something less practical to use
 /// externally.
-pub fn derive_public_revocation_key<T: secp256k1_zkp::Verification>(
+pub fn derive_public_revocation_key<T: Verification>(
     secp_ctx: &Secp256k1<T>,
     per_commitment_point: &PublicKey,
     countersignatory_revocation_base_point: &PublicKey,

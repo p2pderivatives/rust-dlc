@@ -5,6 +5,8 @@ use bdk::{
     wallet::coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
     FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
 };
+use bitcoin::secp256k1::rand::{thread_rng, RngCore};
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{
     hashes::Hash, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid,
     Witness,
@@ -14,8 +16,6 @@ use dlc_manager::{
     error::Error, Blockchain, ContractSignerProvider, KeysId, SimpleSigner, Utxo, Wallet,
 };
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
-use secp256k1_zkp::rand::RngCore;
-use secp256k1_zkp::{rand::thread_rng, All, PublicKey, Secp256k1, SecretKey};
 
 type Result<T> = core::result::Result<T, Error>;
 
@@ -524,10 +524,10 @@ where
 mod tests {
     use std::rc::Rc;
 
+    use bitcoin::secp256k1::{PublicKey, SECP256K1};
     use dlc_manager::ContractSignerProvider;
     use mocks::simple_wallet::SimpleWallet;
     use mocks::{memory_storage_provider::MemoryStorage, mock_blockchain::MockBlockchain};
-    use secp256k1_zkp::{PublicKey, SECP256K1};
 
     fn get_wallet() -> SimpleWallet<Rc<MockBlockchain>, Rc<MemoryStorage>> {
         let blockchain = Rc::new(MockBlockchain::new());

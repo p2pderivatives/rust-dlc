@@ -404,7 +404,7 @@ mod tests {
     use crate::test_utils::{
         get_variable_oracle_numeric_infos, same_num_digits_oracle_numeric_infos,
     };
-    use secp256k1_zkp::rand::{thread_rng, RngCore};
+    use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 
     type CoveringCetsMinMax = (Vec<(Vec<usize>, Vec<usize>)>, Vec<(Vec<usize>, Vec<usize>)>);
 

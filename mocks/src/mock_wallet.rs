@@ -1,9 +1,11 @@
 use std::rc::Rc;
 
 use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::secp256k1::rand::{rngs::mock::StepRng, seq::SliceRandom};
+use bitcoin::secp256k1::SECP256K1;
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{absolute::LockTime, Address, OutPoint, ScriptBuf, Transaction, TxOut};
 use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
-use secp256k1_zkp::{rand::seq::SliceRandom, PublicKey, SecretKey};
 
 use crate::mock_blockchain::MockBlockchain;
 
@@ -82,9 +84,7 @@ impl Wallet for MockWallet {
     ) -> Result<Vec<dlc_manager::Utxo>, Error> {
         let mut utxo_pool = self.utxos.clone();
         let seed = 1;
-        utxo_pool.shuffle(&mut secp256k1_zkp::rand::rngs::mock::StepRng::new(
-            seed, seed,
-        ));
+        utxo_pool.shuffle(&mut StepRng::new(seed, seed));
 
         let mut sum = 0;
 
@@ -123,7 +123,7 @@ impl Wallet for MockWallet {
 fn get_address() -> Address {
     Address::p2wpkh(
         &bitcoin::PublicKey::from_private_key(
-            secp256k1_zkp::SECP256K1,
+            SECP256K1,
             &bitcoin::PrivateKey::new(get_secret_key(), bitcoin::Network::Regtest),
         ),
         bitcoin::Network::Regtest,

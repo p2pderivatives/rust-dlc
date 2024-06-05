@@ -1,13 +1,11 @@
+use bitcoin::secp256k1::rand::thread_rng;
+use bitcoin::secp256k1::{All, KeyPair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
     EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent,
 };
 use lightning::util::ser::Writeable;
-use secp256k1_zkp::rand::thread_rng;
-use secp256k1_zkp::SecretKey;
-use secp256k1_zkp::{All, Message, Secp256k1};
-use secp256k1_zkp::{KeyPair, XOnlyPublicKey};
 
 use std::collections::HashMap;
 
@@ -117,7 +115,7 @@ impl MockOracle {
         oracle_event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+        let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&event_hex);
         let sig = self.secp.sign_schnorr(&msg, &self.key_pair);
         let announcement = OracleAnnouncement {
             oracle_event,
@@ -134,8 +132,7 @@ impl MockOracle {
             .iter()
             .zip(nonces.iter())
             .map(|(x, nonce)| {
-                let msg =
-                    Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(x.as_bytes());
+                let msg = Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(x.as_bytes());
                 dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &self.secp,
                     &msg,

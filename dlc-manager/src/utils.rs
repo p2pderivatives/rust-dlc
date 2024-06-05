@@ -1,6 +1,9 @@
 //! #Utils
 use std::ops::Deref;
 
+use bitcoin::secp256k1::rand::{thread_rng, Rng, RngCore};
+#[cfg(not(feature = "fuzztarget"))]
+use bitcoin::secp256k1::{PublicKey, Secp256k1, Signing};
 use bitcoin::{consensus::Encodable, Txid};
 use dlc::{PartyParams, TxInputInfo};
 use dlc_messages::{
@@ -8,9 +11,6 @@ use dlc_messages::{
     FundingInput,
 };
 use dlc_trie::RangeInfo;
-#[cfg(not(feature = "fuzztarget"))]
-use secp256k1_zkp::rand::{thread_rng, Rng, RngCore};
-use secp256k1_zkp::{PublicKey, Secp256k1, Signing};
 
 use crate::{
     channel::party_points::PartyBasePoints,
@@ -149,7 +149,7 @@ pub(crate) fn get_range_info_and_oracle_sigs(
     contract_info: &ContractInfo,
     adaptor_info: &AdaptorInfo,
     attestations: &[(usize, OracleAttestation)],
-) -> Result<(RangeInfo, Vec<Vec<secp256k1_zkp::schnorr::Signature>>), Error> {
+) -> Result<(RangeInfo, Vec<Vec<bitcoin::secp256k1::schnorr::Signature>>), Error> {
     let outcomes = attestations
         .iter()
         .map(|(i, x)| (*i, &x.outcomes))
@@ -188,12 +188,12 @@ pub(crate) fn get_latest_maturity_date(
 mod tests {
     use std::str::FromStr;
 
-    use dlc_messages::oracle_msgs::{EnumEventDescriptor, EventDescriptor, OracleEvent};
-    use secp256k1_zkp::{
+    use bitcoin::secp256k1::{
         rand::{thread_rng, RngCore},
         schnorr::Signature,
         XOnlyPublicKey,
     };
+    use dlc_messages::oracle_msgs::{EnumEventDescriptor, EventDescriptor, OracleEvent};
 
     use super::*;
 

@@ -1,7 +1,7 @@
 //! Utility functions when working with DLC trie
 
+use bitcoin::secp256k1::PublicKey;
 use dlc::Error;
-use secp256k1_zkp::PublicKey;
 
 use crate::{
     combination_iterator::CombinationIterator, OracleNumericInfo, RangeInfo, TrieIterInfo,

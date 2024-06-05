@@ -14,6 +14,8 @@ use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use simple_wallet::SimpleWallet;
 use test_utils::*;
 
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::{numerical_descriptor::DifferenceParams, Contract};
@@ -24,8 +26,7 @@ use dlc_messages::{AcceptDlc, OfferDlc, SignDlc};
 use dlc_messages::{CetAdaptorSignatures, Message};
 use lightning::ln::wire::Type;
 use lightning::util::ser::Writeable;
-use secp256k1_zkp::rand::{thread_rng, RngCore};
-use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 use serde_json::{from_str, to_writer_pretty};
 use std::collections::HashMap;
 use std::sync::{
@@ -525,7 +526,8 @@ fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
 
 fn alter_refund_sig(refund_signature: &Signature) -> Signature {
     let mut copy = refund_signature.serialize_compact();
-    let i = thread_rng().next_u32() as usize % secp256k1_zkp::constants::COMPACT_SIGNATURE_SIZE;
+    let i =
+        thread_rng().next_u32() as usize % bitcoin::secp256k1::constants::COMPACT_SIGNATURE_SIZE;
     copy[i] = copy[i].checked_add(1).unwrap_or(0);
     Signature::from_compact(&copy).unwrap()
 }

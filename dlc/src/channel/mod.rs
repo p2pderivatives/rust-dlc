@@ -12,15 +12,14 @@ use self::hashbrown::HashMap;
 use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, PartyParams, Payout};
 
 use super::Error;
+use bitcoin::secp256k1::schnorr::Signature as SchnorrSignature;
+use bitcoin::secp256k1::{PublicKey as SecpPublicKey, Secp256k1, SecretKey, Signing, Verification};
 use bitcoin::{
     absolute::LockTime, ecdsa::Signature, sighash::EcdsaSighashType, Address, OutPoint, PublicKey,
     Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use miniscript::Descriptor;
-use secp256k1_zkp::{
-    schnorr::Signature as SchnorrSignature, EcdsaAdaptorSignature, PublicKey as SecpPublicKey,
-    Secp256k1, SecretKey, Signing, Verification,
-};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 use std::iter::FromIterator;
 
 /**
@@ -648,8 +647,10 @@ pub fn settle_descriptor(
 mod tests {
     use std::{iter::FromIterator, str::FromStr};
 
+    use bitcoin::secp256k1::ecdsa::Signature;
+    use bitcoin::secp256k1::rand::thread_rng;
+    use bitcoin::secp256k1::SECP256K1;
     use bitcoin::{Network, PrivateKey};
-    use secp256k1_zkp::{rand::thread_rng, SECP256K1};
 
     use super::*;
 
@@ -781,7 +782,7 @@ mod tests {
 
         // Use random signature as it doesn't matter.
         let sig = bitcoin::ecdsa::Signature {
-            sig: secp256k1_zkp::ecdsa::Signature::from_str(
+            sig: Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -911,7 +912,7 @@ mod tests {
 
         // Use random signature as it doesn't matter.
         let sig = bitcoin::ecdsa::Signature {
-            sig: secp256k1_zkp::ecdsa::Signature::from_str(
+            sig: Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -967,7 +968,7 @@ mod tests {
             &buffer_tx,
             input_value,
             &descriptor.script_code().expect("a valid script code"),
-            &secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &adaptor_sec_key),
+            &bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &adaptor_sec_key),
             &accept_params.publish_pk.inner,
             &adaptor_sig,
         )

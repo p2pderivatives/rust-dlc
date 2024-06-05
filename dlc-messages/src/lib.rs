@@ -36,6 +36,8 @@ pub mod serde_utils;
 use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, Verification};
 use bitcoin::ScriptBuf;
 use bitcoin::{consensus::Decodable, OutPoint, Transaction};
 use channel::{
@@ -48,8 +50,7 @@ use dlc::{Error, TxInputInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::Verification;
-use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 use segmentation::{SegmentChunk, SegmentStart};
 
 macro_rules! impl_type {
@@ -586,7 +587,7 @@ impl_type_writeable_for_enum!(WireMessage, { Message, SegmentStart, SegmentChunk
 
 #[cfg(test)]
 mod tests {
-    use secp256k1_zkp::SECP256K1;
+    use bitcoin::secp256k1::SECP256K1;
 
     use super::*;
 

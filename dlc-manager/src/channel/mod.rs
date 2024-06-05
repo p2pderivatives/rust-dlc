@@ -1,7 +1,7 @@
 //! # Module containing structures and methods for working with DLC channels.
 
+use bitcoin::secp256k1::PublicKey;
 use dlc_messages::channel::{AcceptChannel, SignChannel};
-use secp256k1_zkp::PublicKey;
 
 use crate::ChannelId;
 
@@ -69,7 +69,7 @@ impl Channel {
 /// [`dlc_messages::channel::AcceptChannel`] message.
 #[derive(Clone)]
 pub struct FailedAccept {
-    /// The [`secp256k1_zkp::PublicKey`] of the counter party.
+    /// The [`bitcoin::secp256k1::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
     /// The temporary [`crate::ChannelId`] of the channel.
     pub temporary_channel_id: ChannelId,
@@ -84,7 +84,7 @@ pub struct FailedAccept {
 /// [`dlc_messages::channel::SignChannel`] message.
 #[derive(Clone)]
 pub struct FailedSign {
-    /// The [`secp256k1_zkp::PublicKey`] of the counter party.
+    /// The [`bitcoin::secp256k1::PublicKey`] of the counter party.
     pub counter_party: PublicKey,
     /// The [`crate::ChannelId`] of the channel.
     pub channel_id: ChannelId,

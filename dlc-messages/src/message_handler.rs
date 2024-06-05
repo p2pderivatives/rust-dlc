@@ -6,6 +6,7 @@ use std::{
     sync::Mutex,
 };
 
+use bitcoin::secp256k1::PublicKey;
 use lightning::ln::features::{InitFeatures, NodeFeatures};
 use lightning::{
     io::Cursor,
@@ -16,7 +17,6 @@ use lightning::{
     },
     util::ser::{Readable, Writeable, MAX_BUF_SIZE},
 };
-use secp256k1_zkp::PublicKey;
 
 use crate::{
     segmentation::{get_segments, segment_reader::SegmentReader},
@@ -229,20 +229,17 @@ fn to_ln_error<T: Display>(e: T, msg: &str) -> LightningError {
 
 #[cfg(test)]
 mod tests {
-    use secp256k1_zkp::{SecretKey, SECP256K1};
-
     use crate::{
         segmentation::{SegmentChunk, SegmentStart},
         AcceptDlc, OfferDlc, SignDlc,
     };
+    use bitcoin::secp256k1::constants::ONE;
+    use bitcoin::secp256k1::{SecretKey, SECP256K1};
 
     use super::*;
 
     fn some_pk() -> PublicKey {
-        PublicKey::from_secret_key(
-            SECP256K1,
-            &SecretKey::from_slice(&secp256k1_zkp::constants::ONE).unwrap(),
-        )
+        PublicKey::from_secret_key(SECP256K1, &SecretKey::from_slice(&ONE).unwrap())
     }
 
     macro_rules! read_test {

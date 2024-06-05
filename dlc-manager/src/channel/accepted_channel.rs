@@ -1,8 +1,9 @@
 //! # Structure and methods for channels that have been accepted.
 
+use bitcoin::secp256k1::PublicKey;
 use bitcoin::{ScriptBuf, Transaction};
 use dlc_messages::channel::AcceptChannel;
-use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 
 use crate::{contract::accepted_contract::AcceptedContract, ChannelId, ContractId};
 
@@ -12,7 +13,7 @@ use super::party_points::PartyBasePoints;
 /// accepts the [`super::offered_channel::OfferedChannel`].
 #[derive(Clone, Debug)]
 pub struct AcceptedChannel {
-    /// The [`secp256k1_zkp::PublicKey`] of the node of the offer party.
+    /// The [`bitcoin::secp256k1::PublicKey`] of the node of the offer party.
     pub counter_party: PublicKey,
     /// The id of the initial contract in the channel.
     pub accepted_contract_id: ContractId,

@@ -9,10 +9,10 @@ use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
 use super::ContractDescriptor;
 use crate::KeysId;
+use bitcoin::secp256k1::PublicKey;
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::{FundingInput, OfferDlc};
-use secp256k1_zkp::PublicKey;
 
 /// Contains information about a contract that was offered.
 #[derive(Clone, Debug)]

@@ -1,3 +1,4 @@
+use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, OutPoint, Txid};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::{
@@ -10,7 +11,6 @@ use dlc_manager::contract::{
 };
 use dlc_manager::Storage;
 use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
-use secp256k1_zkp::SecretKey;
 use simple_wallet::WalletStorage;
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
@@ -257,11 +257,7 @@ impl Storage for MemoryStorage {
 }
 
 impl WalletStorage for MemoryStorage {
-    fn upsert_address(
-        &self,
-        address: &Address,
-        privkey: &secp256k1_zkp::SecretKey,
-    ) -> Result<(), DaemonError> {
+    fn upsert_address(&self, address: &Address, privkey: &SecretKey) -> Result<(), DaemonError> {
         self.addresses
             .write()
             .expect("Could not get write lock")
@@ -290,7 +286,7 @@ impl WalletStorage for MemoryStorage {
     fn get_priv_key_for_address(
         &self,
         address: &Address,
-    ) -> Result<Option<secp256k1_zkp::SecretKey>, DaemonError> {
+    ) -> Result<Option<SecretKey>, DaemonError> {
         Ok(self
             .addresses
             .read()
@@ -299,11 +295,7 @@ impl WalletStorage for MemoryStorage {
             .cloned())
     }
 
-    fn upsert_key(
-        &self,
-        identifier: &[u8],
-        privkey: &secp256k1_zkp::SecretKey,
-    ) -> Result<(), DaemonError> {
+    fn upsert_key(&self, identifier: &[u8], privkey: &SecretKey) -> Result<(), DaemonError> {
         self.key_pairs
             .write()
             .expect("Could not get write lock")
@@ -312,10 +304,7 @@ impl WalletStorage for MemoryStorage {
         Ok(())
     }
 
-    fn get_priv_key(
-        &self,
-        identifier: &[u8],
-    ) -> Result<Option<secp256k1_zkp::SecretKey>, DaemonError> {
+    fn get_priv_key(&self, identifier: &[u8]) -> Result<Option<SecretKey>, DaemonError> {
         Ok(self
             .key_pairs
             .read()
