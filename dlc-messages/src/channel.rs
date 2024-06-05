@@ -1,12 +1,12 @@
 //! Contains messages used for the establishment and update of DLC channels.
 
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey, Verification};
 use bitcoin::ScriptBuf;
 use dlc::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use secp256k1_zkp::{
-    ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Verification,
-};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 
 use crate::FundingSignatures;
 use crate::{
