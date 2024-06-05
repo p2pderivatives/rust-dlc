@@ -20,11 +20,12 @@ extern crate secp256k1_zkp;
 #[cfg(feature = "use-serde")]
 extern crate serde;
 
+use bitcoin::secp256k1::{All, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{Script, Transaction};
 use dlc::{Error, RangePayout};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::EcdsaAdaptorSignature;
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
@@ -121,7 +122,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
     /// Generate the trie while verifying the provided adaptor signatures.
     fn generate_verify(
         &'a mut self,
-        secp: &Secp256k1<secp256k1_zkp::All>,
+        secp: &Secp256k1<All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
         fund_output_value: u64,
