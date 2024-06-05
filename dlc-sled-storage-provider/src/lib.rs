@@ -15,6 +15,8 @@ extern crate dlc_manager;
 extern crate sled;
 
 #[cfg(feature = "wallet")]
+use bitcoin::secp256k1::SecretKey;
+#[cfg(feature = "wallet")]
 use bitcoin::{address::NetworkUnchecked, Address, Txid};
 use dlc_manager::chain_monitor::ChainMonitor;
 use dlc_manager::channel::accepted_channel::AcceptedChannel;
@@ -33,8 +35,6 @@ use dlc_manager::Utxo;
 use dlc_manager::{error::Error, ContractId, Storage};
 #[cfg(feature = "wallet")]
 use lightning::util::ser::{Readable, Writeable};
-#[cfg(feature = "wallet")]
-use secp256k1_zkp::SecretKey;
 #[cfg(feature = "wallet")]
 use simple_wallet::WalletStorage;
 use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
