@@ -2,12 +2,13 @@
 
 use bitcoin::address::{WitnessProgram, WitnessVersion};
 use bitcoin::script::PushBytesBuf;
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey, Signing};
 use bitcoin::sighash::SighashCache;
 use bitcoin::{
     address::Payload, hash_types::PubkeyHash, sighash::EcdsaSighashType, Script, Transaction, TxOut,
 };
 use bitcoin::{ScriptBuf, Sequence, Witness};
-use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::Error;
 

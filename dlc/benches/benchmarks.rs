@@ -4,20 +4,19 @@ extern crate bitcoin;
 extern crate bitcoin_test_utils;
 extern crate dlc;
 extern crate rayon;
-extern crate secp256k1_zkp;
 #[cfg(all(test, feature = "unstable"))]
 extern crate test;
 
 #[cfg(all(test, feature = "unstable"))]
 mod benches {
 
+    use bitcoin::secp256k1::rand::{thread_rng, RngCore};
+    use bitcoin::secp256k1::SECP256K1;
+    use bitcoin::secp256k1::{KeyPair, Message, PublicKey, SecretKey};
     use bitcoin::{ScriptBuf, Transaction};
     use bitcoin_test_utils::tx_from_string;
     use dlc::*;
     use rayon::prelude::*;
-    use secp256k1_zkp::{
-        global::SECP256K1, rand::thread_rng, rand::RngCore, KeyPair, Message, PublicKey, SecretKey,
-    };
 
     use test::{black_box, Bencher};
 
@@ -77,9 +76,9 @@ mod benches {
                 tmp.push(
                     cur.iter()
                         .map(|x| {
-                            Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&[
-                                (*x) as u8,
-                            ])
+                            Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(
+                                &[(*x) as u8],
+                            )
                         })
                         .collect(),
                 );
@@ -111,9 +110,7 @@ mod benches {
         (0..base)
             .map(|i| {
                 (0..nb_nonces)
-                    .map(|_| {
-                        Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&[i as u8])
-                    })
+                    .map(|_| Message::from_hashed_data::<bitcoin::hashes::sha256::Hash>(&[i as u8]))
                     .collect()
             })
             .collect()
