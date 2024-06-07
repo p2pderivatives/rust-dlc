@@ -833,7 +833,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
                         let attestations = get_attestations(&test_params);
 
-                        let mut f = first.lock().unwrap();
+                        let f = first.lock().unwrap();
                         let contract = f
                             .close_confirmed_contract(&contract_id, attestations)
                             .expect("Error closing contract");
