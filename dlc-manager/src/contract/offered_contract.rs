@@ -8,7 +8,7 @@ use crate::utils::get_new_serial_id;
 use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
 use super::ContractDescriptor;
-use crate::KeysId;
+use crate::{ContractId, KeysId};
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::{FundingInput, OfferDlc};
@@ -78,7 +78,7 @@ impl OfferedContract {
 
     /// Creates a new [`OfferedContract`] from the given parameters.
     pub fn new(
-        id: [u8; 32],
+        id: ContractId,
         contract: &ContractInput,
         oracle_announcements: Vec<Vec<OracleAnnouncement>>,
         offer_params: &PartyParams,

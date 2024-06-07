@@ -40,8 +40,8 @@ use bitcoin::ScriptBuf;
 use bitcoin::{consensus::Decodable, OutPoint, Transaction};
 use channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
-    RenewFinalize, RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
-    SignChannel,
+    RenewFinalize, RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize,
+    SettleOffer, SignChannel,
 };
 use contract_msgs::ContractInfo;
 use dlc::{Error, TxInputInfo};
@@ -79,6 +79,7 @@ impl_type!(RENEW_CHANNEL_OFFER_TYPE, RenewOffer, 43014);
 impl_type!(RENEW_CHANNEL_ACCEPT_TYPE, RenewAccept, 43016);
 impl_type!(RENEW_CHANNEL_CONFIRM_TYPE, RenewConfirm, 43018);
 impl_type!(RENEW_CHANNEL_FINALIZE_TYPE, RenewFinalize, 43020);
+impl_type!(RENEW_CHANNEL_REVOKE_TYPE, RenewRevoke, 43026);
 impl_type!(
     COLLABORATIVE_CLOSE_OFFER_TYPE,
     CollaborativeCloseOffer,
@@ -516,6 +517,7 @@ pub enum Message {
     RenewAccept(RenewAccept),
     RenewConfirm(RenewConfirm),
     RenewFinalize(RenewFinalize),
+    RenewRevoke(RenewRevoke),
     CollaborativeCloseOffer(CollaborativeCloseOffer),
     Reject(Reject),
 }
@@ -556,6 +558,7 @@ impl_type_writeable_for_enum!(Message,
     RenewAccept,
     RenewConfirm,
     RenewFinalize,
+    RenewRevoke,
     CollaborativeCloseOffer,
     Reject
 });
