@@ -8,7 +8,7 @@ use secp256k1_zkp::XOnlyPublicKey;
 use serde::{Deserialize, Serialize};
 
 /// Oracle information required for the initial creation of a contract.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "use-serde",
     derive(Serialize, Deserialize),
@@ -51,7 +51,7 @@ impl OracleInput {
 }
 
 /// Represents the contract specifications.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "use-serde",
     derive(Serialize, Deserialize),
@@ -64,7 +64,7 @@ pub struct ContractInputInfo {
     pub oracles: OracleInput,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "use-serde",
     derive(Serialize, Deserialize),
