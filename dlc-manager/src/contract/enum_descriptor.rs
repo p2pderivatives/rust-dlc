@@ -12,13 +12,13 @@ use dlc_trie::{combination_iterator::CombinationIterator, RangeInfo};
 use secp256k1_zkp::{
     All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
 };
-#[cfg(feature = "serde")]
+#[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
 /// A descriptor for a contract whose outcomes are represented as an enumeration.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

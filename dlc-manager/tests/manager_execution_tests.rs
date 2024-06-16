@@ -39,7 +39,7 @@ use std::thread;
 struct TestVectorPart<T> {
     message: T,
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "dlc_messages::serde_utils::serialize_hex",
             deserialize_with = "dlc_messages::serde_utils::deserialize_hex_string"

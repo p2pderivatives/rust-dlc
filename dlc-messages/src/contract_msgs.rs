@@ -6,7 +6,7 @@ use oracle_msgs::OracleInfo;
 
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
-    any(test, feature = "serde"),
+    any(test, feature = "use-serde"),
     derive(serde::Deserialize, serde::Serialize),
     serde(rename_all = "camelCase")
 )]
@@ -23,7 +23,7 @@ impl_dlc_writeable!(ContractOutcome, {(outcome, string), (offer_payout, writeabl
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -67,7 +67,7 @@ impl ContractInfo {
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -84,7 +84,7 @@ impl_dlc_writeable!(SingleContractInfo, { (total_collateral, writeable), (contra
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -100,7 +100,7 @@ impl_dlc_writeable!(DisjointContractInfo, { (total_collateral, writeable), (cont
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -116,7 +116,7 @@ impl_dlc_writeable!(ContractInfoInner, { (contract_descriptor, writeable), (orac
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -134,7 +134,7 @@ impl_dlc_writeable_enum!(
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -149,7 +149,7 @@ impl_dlc_writeable!(EnumeratedContractDescriptor, { (payouts, vec) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -168,7 +168,7 @@ impl_dlc_writeable!(NumericOutcomeContractDescriptor, { (num_digits, writeable),
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -184,7 +184,7 @@ impl_dlc_writeable!(PayoutFunction, {(payout_function_pieces, vec), (last_endpoi
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -200,7 +200,7 @@ impl_dlc_writeable!(PayoutFunctionPiece, { (end_point, writeable), (payout_curve
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -219,7 +219,7 @@ impl_dlc_writeable_enum!(PayoutCurvePiece,
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -233,7 +233,7 @@ impl_dlc_writeable!(PolynomialPayoutCurvePiece, { (payout_points, vec) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -251,7 +251,7 @@ impl_dlc_writeable!(PayoutPoint, { (event_outcome, writeable), (outcome_payout, 
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -286,7 +286,7 @@ impl_dlc_writeable!(HyperbolaPayoutCurvePiece, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -303,7 +303,7 @@ impl_dlc_writeable!(RoundingInterval, { (begin_interval, writeable), (rounding_m
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

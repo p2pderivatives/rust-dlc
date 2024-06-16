@@ -15,7 +15,7 @@ use super::party_points::PartyBasePoints;
 
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

@@ -4,13 +4,13 @@ use std::ops::Deref;
 
 use crate::error::Error;
 use dlc::{Payout, RangePayout};
-#[cfg(feature = "serde")]
+#[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
 /// Contains information to compute the set of payouts based on the outcomes.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -112,7 +112,7 @@ impl PayoutFunction {
 /// A piece of a payout function.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -274,7 +274,7 @@ where
 /// A function piece represented by a polynomial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -373,7 +373,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
 /// A payout point representing a payout for a given outcome.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -395,7 +395,7 @@ impl PayoutPoint {
 /// A function piece represented by a hyperbola.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -487,7 +487,7 @@ impl Evaluable for HyperbolaPayoutCurvePiece {
 /// of 1 indicates that no rounding is performed.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -501,7 +501,7 @@ pub struct RoundingInterval {
 /// A set of rounding intervals.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

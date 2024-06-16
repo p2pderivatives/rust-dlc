@@ -19,7 +19,7 @@ pub(super) type OracleIndexAndPrefixLength = Vec<(usize, usize)>;
 /// Contains information about the contract conditions and oracles used.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

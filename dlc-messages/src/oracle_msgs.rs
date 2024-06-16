@@ -10,7 +10,7 @@ use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::Verification;
 use secp256k1_zkp::{schnorr::Signature, Message, Secp256k1, XOnlyPublicKey};
-#[cfg(feature = "serde")]
+#[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
 /// The type of the announcement struct.
@@ -20,7 +20,7 @@ pub const ATTESTATION_TYPE: u16 = 55400;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -79,7 +79,7 @@ impl_dlc_writeable_enum!(
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -96,7 +96,7 @@ impl_dlc_writeable!(SingleOracleInfo, {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -119,7 +119,7 @@ impl_dlc_writeable!(MultiOracleInfo, {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -144,7 +144,7 @@ impl_dlc_writeable!(OracleParams, {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -196,7 +196,7 @@ impl From<&OracleAnnouncement> for DlcOracleInfo {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -244,7 +244,7 @@ impl_dlc_writeable!(OracleEvent, {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -260,7 +260,7 @@ impl_dlc_writeable_enum_as_tlv!(EventDescriptor, (55302, EnumEvent), (55306, Dig
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -276,7 +276,7 @@ impl_dlc_writeable!(EnumEventDescriptor, {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -305,6 +305,11 @@ impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
 
 /// An attestation from an oracle providing signatures over an outcome value.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "use-serde",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct OracleAttestation {
     /// The public key of the oracle.
     pub oracle_public_key: XOnlyPublicKey,
