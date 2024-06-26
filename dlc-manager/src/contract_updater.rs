@@ -756,38 +756,52 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use mocks::dlc_manager::contract::offered_contract::OfferedContract;
+    use dlc_messages::OfferDlc;
+    use mocks::{
+        dlc_manager::contract::offered_contract::OfferedContract, mock_wallet::MockWallet,
+    };
     use secp256k1_zkp::PublicKey;
 
-    #[test]
-    fn accept_contract_test() {
-        let offer_dlc =
-            serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap();
+    fn fee_computation_test_common(offer_dlc: OfferDlc, utxo_values: &[u64]) -> MockWallet {
         let dummy_pubkey: PublicKey =
             "02e6642fd69bd211f93f7f1f36ca51a26a5290eb2dd1b0d8279a87bb0d480c8443"
                 .parse()
                 .unwrap();
         let offered_contract =
             OfferedContract::try_from_offer_dlc(&offer_dlc, dummy_pubkey, [0; 32]).unwrap();
-        let blockchain = Rc::new(mocks::mock_blockchain::MockBlockchain::new());
-        let fee_rate: u64 = offered_contract.fee_rate_per_vb;
-        let utxo_value: u64 = offered_contract.total_collateral
-            - offered_contract.offer_params.collateral
-            + crate::utils::get_half_common_fee(fee_rate).unwrap();
-        let wallet = Rc::new(mocks::mock_wallet::MockWallet::new(
-            &blockchain,
-            &[utxo_value, 10000],
-        ));
+        let blockchain = mocks::mock_blockchain::MockBlockchain::new();
+        let wallet = MockWallet::new(&blockchain, utxo_values);
 
         mocks::dlc_manager::contract_updater::accept_contract(
             secp256k1_zkp::SECP256K1,
             &offered_contract,
-            &wallet,
-            &wallet,
-            &blockchain,
+            &&wallet,
+            &&wallet,
+            &&blockchain,
         )
         .expect("Not to fail");
+        wallet
+    }
+
+    #[test]
+    fn with_exact_value_utxo_doesnt_fail() {
+        let offer_dlc: OfferDlc =
+            serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap();
+        let fee_rate: u64 = offer_dlc.fee_rate_per_vb;
+        let utxo_value: u64 = offer_dlc.contract_info.get_total_collateral()
+            - offer_dlc.offer_collateral
+            + crate::utils::get_half_common_fee(fee_rate).unwrap();
+        fee_computation_test_common(offer_dlc, &[utxo_value, 10000]);
+    }
+
+    #[test]
+    fn with_no_change_utxo_enforce_change_output() {
+        let offer_dlc: OfferDlc =
+            serde_json::from_str(include_str!("../test_inputs/offer_contract2.json")).unwrap();
+        let wallet = fee_computation_test_common(offer_dlc, &[136015, 40000]);
+        let utxos = wallet.utxos.lock().unwrap();
+        for utxo in utxos.iter() {
+            assert!(utxo.reserved);
+        }
     }
 }
