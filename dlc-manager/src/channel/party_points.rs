@@ -11,7 +11,7 @@ use secp256k1_zkp::{All, PublicKey, Secp256k1, Signing, Verification};
 /// values necessary for state update throughout the lifetime of the channel.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

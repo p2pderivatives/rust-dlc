@@ -24,7 +24,7 @@ const MAX_SEGMENTS: usize = 1000;
 pub mod segment_reader;
 
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -50,7 +50,7 @@ impl Type for SegmentStart {
 }
 
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

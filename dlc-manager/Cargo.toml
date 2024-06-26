@@ -13,7 +13,7 @@ default = ["std"]
 std = ["dlc/std", "dlc-messages/std", "dlc-trie/std", "bitcoin/std", "lightning/std"]
 fuzztarget = ["rand_chacha"]
 parallel = ["dlc-trie/parallel"]
-use-serde = ["serde", "dlc/use-serde", "dlc-messages/serde", "dlc-trie/use-serde"]
+use-serde = ["serde", "dlc/use-serde", "dlc-messages/use-serde", "dlc-trie/use-serde"]
 
 [dependencies]
 async-trait = "0.1.50"

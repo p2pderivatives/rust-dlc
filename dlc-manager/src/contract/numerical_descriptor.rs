@@ -9,13 +9,13 @@ use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::{DlcTrie, OracleNumericInfo};
 use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
-#[cfg(feature = "serde")]
+#[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
 /// Information about the allowed deviation in outcome value between the oracles.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -33,7 +33,7 @@ pub struct DifferenceParams {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

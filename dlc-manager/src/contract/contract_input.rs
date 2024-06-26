@@ -4,13 +4,13 @@ use crate::error::Error;
 
 use super::ContractDescriptor;
 use secp256k1_zkp::XOnlyPublicKey;
-#[cfg(feature = "serde")]
+#[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
 /// Oracle information required for the initial creation of a contract.
 #[derive(Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -53,7 +53,7 @@ impl OracleInput {
 /// Represents the contract specifications.
 #[derive(Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -66,7 +66,7 @@ pub struct ContractInputInfo {
 
 #[derive(Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

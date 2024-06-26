@@ -20,7 +20,7 @@ use crate::{
 /// to create a set of transactions representing the contract and its terms.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -31,7 +31,7 @@ pub struct OfferChannel {
     pub contract_flags: u8,
     /// The identifier of the chain on which the contract takes place.
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -146,13 +146,13 @@ impl OfferChannel {
 /// party that they can safely provide signatures for their funding input.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub struct AcceptChannel {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -214,14 +214,14 @@ impl_dlc_writeable!(AcceptChannel, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to finalize the setup of a DLC channel.
 pub struct SignChannel {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -250,14 +250,14 @@ impl_dlc_writeable!(SignChannel, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to offer a settlement of the channel by on of the parties.
 pub struct SettleOffer {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -280,14 +280,14 @@ impl_dlc_writeable!(SettleOffer, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to accept a previously received settlement offer.
 pub struct SettleAccept {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -311,14 +311,14 @@ impl_dlc_writeable!(SettleAccept, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to confirm the settlement of a channel.
 pub struct SettleConfirm {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -342,14 +342,14 @@ impl_dlc_writeable!(SettleConfirm, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to finalize the settlement of a channel.
 pub struct SettleFinalize {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -369,14 +369,14 @@ impl_dlc_writeable!(SettleFinalize, {
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to offer to establish a new contract within the channel.
 pub struct RenewOffer {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -415,14 +415,14 @@ impl_dlc_writeable!(RenewOffer, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to accept the establishment of a new contract within a channel.
 pub struct RenewAccept {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -452,14 +452,14 @@ impl_dlc_writeable!(RenewAccept, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to confirm the establishment of a new contract within a channel.
 pub struct RenewConfirm {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -489,14 +489,14 @@ impl_dlc_writeable!(RenewConfirm, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to finalize the establishment of a new contract within a channel.
 pub struct RenewFinalize {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -516,14 +516,14 @@ impl_dlc_writeable!(RenewFinalize, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Message used to offer to collaboratively close a channel.
 pub struct CollaborativeCloseOffer {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -545,7 +545,7 @@ impl_dlc_writeable!(CollaborativeCloseOffer, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -553,7 +553,7 @@ impl_dlc_writeable!(CollaborativeCloseOffer, {
 /// Message used to reject an received offer.
 pub struct Reject {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"

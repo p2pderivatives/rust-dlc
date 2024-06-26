@@ -18,7 +18,7 @@ extern crate secp256k1_zkp;
 pub mod ser_macros;
 pub mod ser_impls;
 
-#[cfg(any(test, feature = "serde"))]
+#[cfg(any(test, feature = "use-serde"))]
 extern crate serde;
 
 #[cfg(test)]
@@ -30,7 +30,7 @@ pub mod message_handler;
 pub mod oracle_msgs;
 pub mod segmentation;
 
-#[cfg(any(test, feature = "serde"))]
+#[cfg(any(test, feature = "use-serde"))]
 pub mod serde_utils;
 
 use std::fmt::Display;
@@ -88,7 +88,7 @@ impl_type!(REJECT, Reject, 43024);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -98,7 +98,7 @@ pub struct FundingInput {
     /// Serial id used for input ordering in the funding transaction.
     pub input_serial_id: u64,
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_string"
@@ -143,7 +143,7 @@ impl From<&FundingInput> for TxInputInfo {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -159,7 +159,7 @@ impl_dlc_writeable!(CetAdaptorSignature, {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -194,7 +194,7 @@ impl_dlc_writeable!(CetAdaptorSignatures, { (ecdsa_adaptor_signatures, vec) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -208,7 +208,7 @@ impl_dlc_writeable!(FundingSignature, { (witness_elements, vec) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -223,14 +223,14 @@ impl_dlc_writeable!(FundingSignatures, { (funding_signatures, vec) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 /// Contains serialized data representing a single witness stack element.
 pub struct WitnessElement {
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_string"
@@ -244,7 +244,7 @@ impl_dlc_writeable!(WitnessElement, { (witness, vec) });
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -260,7 +260,7 @@ impl_dlc_writeable_enum!(NegotiationFields, (0, Single), (1, Disjoint);;;);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -274,7 +274,7 @@ impl_dlc_writeable!(SingleNegotiationFields, { (rounding_intervals, writeable) }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -288,7 +288,7 @@ impl_dlc_writeable!(DisjointNegotiationFields, { (negotiation_fields, vec) });
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -301,7 +301,7 @@ pub struct OfferDlc {
     /// Feature flags to be used for the offered contract.
     pub contract_flags: u8,
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -310,7 +310,7 @@ pub struct OfferDlc {
     /// The identifier of the chain on which the contract will be settled.
     pub chain_hash: [u8; 32],
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -410,7 +410,7 @@ impl_dlc_writeable!(OfferDlc, {
 /// party that they can safely provide signatures for their funding input.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -418,7 +418,7 @@ pub struct AcceptDlc {
     /// The version of the protocol used by the peer.
     pub protocol_version: u32,
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"
@@ -467,7 +467,7 @@ impl_dlc_writeable!(AcceptDlc, {
 /// party.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -475,7 +475,7 @@ pub struct SignDlc {
     /// The version of the protocol used by the peer.
     pub protocol_version: u32,
     #[cfg_attr(
-        feature = "serde",
+        feature = "use-serde",
         serde(
             serialize_with = "crate::serde_utils::serialize_hex",
             deserialize_with = "crate::serde_utils::deserialize_hex_array"

@@ -10,7 +10,7 @@ use dlc_messages::{
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use secp256k1_zkp::PublicKey;
-#[cfg(feature = "serde")]
+#[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 use signed_contract::SignedContract;
 
@@ -188,7 +188,7 @@ pub enum AdaptorInfo {
 /// The descriptor of a contract.
 #[derive(Clone, Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "use-serde",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
