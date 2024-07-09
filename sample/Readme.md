@@ -8,7 +8,7 @@ Example configurations and contract input are available in the [examples](./exam
 In order to use the [example contract](./examples/contracts/numerical_contract_input.json) you will need to update the `event_id`.
 Replace the part after `btcusd` with a UNIX timestamp in the future.
 
-Use the [helper script](../scripts/gen-sample-offer.sh) to create update the example contract 1 hour in the future. This replaces the `event_id` after `btcusd` with a UNIX timestamp 1 hour in the futre. Manually update the value for a longer time period.
+Use the [helper script](../scripts/gen-sample-offer.sh) to create the example contract 1 hour in the future. This creates an `event_id` with a UNIX timestamp 1 hour in the future. Manually update the value for a longer time period.
 
 
 ## Quick run
