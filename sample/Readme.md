@@ -8,6 +8,8 @@ Example configurations and contract input are available in the [examples](./exam
 In order to use the [example contract](./examples/contracts/numerical_contract_input.json) you will need to update the `event_id`.
 Replace the part after `btcusd` with a UNIX timestamp in the future.
 
+Use the [helper script](../scripts/gen-sample-offer.sh) to create update the example contract 1 hour in the future. This replaces the `event_id` after `btcusd` with a UNIX timestamp 1 hour in the futre. Manually update the value for a longer time period.
+
 
 ## Quick run
 
@@ -24,13 +26,11 @@ In a different terminal:
 cargo run ./examples/configurations/bob.yml
 ```
 
-Update the [example contract](./examples/contracts/numerical_contract_input.json#L82) replacing the number after `btcusd` with a unix timestamp some time in the future (this will correspond to the contract maturity date).
-
 ### On chain DLC
 
 From the second instance (Bob), type:
 ```
-offercontract 02c84f8e151590e718d22e528c55f14c0042c66e68c3f793d7b3b8bf5ae630c648@127.0.0.1:9000 ./examples/contracts/numerical_contract_input.json
+offercontract 02c84f8e151590e718d22e528c55f14c0042c66e68c3f793d7b3b8bf5ae630c648@127.0.0.1:9000 ./examples/contracts/sample_contract.json
 ```
 Replacing the public key by the one that was displayed when starting the first instance.
 
@@ -67,7 +67,7 @@ Once the maturity of the contract is reached, typing `listcontracts` once more w
 
 From the second instance (Bob), type:
 ```
-offerchannel 02c84f8e151590e718d22e528c55f14c0042c66e68c3f793d7b3b8bf5ae630c648@127.0.0.1:9000 ./examples/contracts/numerical_contract_input.json
+offerchannel 02c84f8e151590e718d22e528c55f14c0042c66e68c3f793d7b3b8bf5ae630c648@127.0.0.1:9000 ./examples/contracts/sample_contract.json
 ```
 Replacing the public key by the one that was displayed when starting the first instance.
 
