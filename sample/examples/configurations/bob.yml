@@ -7,6 +7,5 @@ bitcoinInfo:
 storageDirPath: './dlc_sample_bob'
 networkConfiguration:
   peerListeningPort: 9001
-network: regtest
 oracleConfig:
   host: 'http://localhost:8080/'
