@@ -174,25 +174,22 @@ pub fn write_f64<W: lightning::util::ser::Writer>(
     input: f64,
     writer: &mut W,
 ) -> Result<(), ::lightning::io::Error> {
-    let sign = input >= 0.0;
-    sign.write(writer)?;
-    let input_abs = f64::abs(input);
-    let no_precision = f64::floor(input_abs);
-    (no_precision as u64).write(writer)?;
-    let extra_precision = f64::floor((input_abs - no_precision) * ((1 << 16) as f64)) as u16;
-    extra_precision.write(writer)
+    for b in input.to_be_bytes() {
+        b.write(writer)?;
+    }
+
+    Ok(())
 }
 
 /// Reads an `f64` value from the given reader.
 pub fn read_f64<R: ::lightning::io::Read>(
     reader: &mut R,
 ) -> Result<f64, lightning::ln::msgs::DecodeError> {
-    let sign: bool = Readable::read(reader)?;
-    let no_precision: u64 = Readable::read(reader)?;
-    let extra_precision: u16 = Readable::read(reader)?;
-    let mul_sign: f64 = if sign { 1.0 } else { -1.0 };
-
-    Ok(((no_precision as f64) + ((extra_precision as f64) / ((1 << 16) as f64))) * mul_sign)
+    let mut buf = [0u8; 8];
+    for b in &mut buf {
+        *b = Readable::read(reader)?;
+    }
+    Ok(f64::from_be_bytes(buf))
 }
 
 /// Writes a [`secp256k1_zkp::schnorrsig::Signature`] value to the given writer.
@@ -639,3 +636,20 @@ impl_dlc_writeable_external!(PartyParams, party_params, {
     (input_amount, writeable),
     (collateral, writeable)
 });
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::{read_f64, write_f64};
+
+    #[test]
+    fn f64_serialize_round_trip() {
+        let original = 2.3;
+        let mut ser = Vec::new();
+        write_f64(original, &mut ser).unwrap();
+        let deser = read_f64(&mut Cursor::new(&mut ser)).unwrap();
+
+        assert_eq!(original, deser);
+    }
+}
