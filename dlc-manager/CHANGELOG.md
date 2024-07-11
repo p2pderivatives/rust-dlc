@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2024-07-11
+
+### Added
+- support for `no-std`
+- option to skip channel checks
+- possibility to pass oracle announcements when offering a contract
+- possibility to manually close contract
+- possibility to manally handle counter party closing of contract
+- `get_new_change_address` for `Wallet` trait
+- ability to reject channel offers
+
+### Changed
+- reject contract and channel offers when the id already exists
+- implement `std::error::Error` for `Error` structs
+- update bitcoin, lightning and secp256k1_zkp dependencies
+- `fee_rate` parameter is not optional anymore in `get_utxo_for_amount` of `Wallet` trait
+- `Signer::sign_tx_input` changed to `Signer::sign_psbt_input`
+- Use a `ContractSignerProvider` for generating signers for contracts
+- Remove usage of `global-context` feature of secp256k1_zkp
+
+### Fixed
+- validation of hyperbola parameters
+- ensure that payouts are not rounded up above the collateral
+- load channel monitor from storage when it exists
+- floating point arithmetic triggering payout computation errors
+- overflow bug in payout curve
+- added timeout on `RenewOffer` state
+- issue with channel protocol
+
+
 ## [0.4.0] - 2023-02-06
 
 ### Added

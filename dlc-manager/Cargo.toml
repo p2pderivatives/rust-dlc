@@ -6,7 +6,7 @@ homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "dlc-manager"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-manager"
-version = "0.4.0"
+version = "0.5.0"
 
 [features]
 default = ["std"]
@@ -18,9 +18,9 @@ use-serde = ["serde", "dlc/use-serde", "dlc-messages/use-serde", "dlc-trie/use-s
 [dependencies]
 async-trait = "0.1.50"
 bitcoin = { version = "0.30.2", default-features = false }
-dlc = { version = "0.4.0", default-features = false, path = "../dlc" }
-dlc-messages = { version = "0.4.0", default-features = false, path = "../dlc-messages" }
-dlc-trie = { version = "0.4.0", default-features = false, path = "../dlc-trie" }
+dlc = { version = "0.5.0", default-features = false, path = "../dlc" }
+dlc-messages = { version = "0.5.0", default-features = false, path = "../dlc-messages" }
+dlc-trie = { version = "0.5.0", default-features = false, path = "../dlc-trie" }
 hex = { package = "hex-conservative", version = "0.1" }
 lightning = { version = "0.0.121", default-features = false, features = ["grind_signatures"] }
 log = "0.4.14"
