@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2024-07-11
+
+### Added
+- Implement `std::error::Error` for `dlc::Error`
+- Support for `no-std`
+- Re-export of `secp256k1_zkp`
+- `get_fund_outpoint` for `DlcTransactions`
+
+### Changed
+- Updated bitcoin and secp256k1 dependencies
+
+### Fixed
+- Issue with fee computation
+- Issue with the `use-serde` feature
+
 ## [0.4.0] - 2023-02-06
 
 ### Added
