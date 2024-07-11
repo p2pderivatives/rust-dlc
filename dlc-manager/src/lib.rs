@@ -37,7 +37,7 @@ pub mod payout_curve;
 mod utils;
 
 use bitcoin::psbt::PartiallySignedTransaction;
-use bitcoin::{Address, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
+use bitcoin::{Address, Block, OutPoint, Script, ScriptBuf, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
 use channel::signed_channel::{SignedChannel, SignedChannelStateType};
@@ -152,12 +152,16 @@ pub trait Wallet {
     fn get_new_address(&self) -> Result<Address, Error>;
     /// Returns a new (unused) change address.
     fn get_new_change_address(&self) -> Result<Address, Error>;
-    /// Get a set of UTXOs to fund the given amount.
+    /// Get a set of UTXOs to fund the given amount. The implementation is expected to take into
+    /// account the cost of the inputs that are selected. For the protocol to be secure, it is
+    /// required that each party has a change output on the funding transaction to be able to bump
+    /// the fee in case of network congestion.
     fn get_utxos_for_amount(
         &self,
         amount: u64,
         fee_rate: u64,
         lock_utxos: bool,
+        change_script: &Script,
     ) -> Result<Vec<Utxo>, Error>;
     /// Import the provided address.
     fn import_address(&self, address: &Address) -> Result<(), Error>;

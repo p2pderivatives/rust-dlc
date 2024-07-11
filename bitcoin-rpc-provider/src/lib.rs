@@ -14,7 +14,7 @@ use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{
     consensus::Decodable, network::constants::Network, Amount, PrivateKey, Transaction, Txid,
 };
-use bitcoin::{Address, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{Address, OutPoint, Script, ScriptBuf, TxOut};
 use bitcoincore_rpc::jsonrpc::serde_json;
 use bitcoincore_rpc::jsonrpc::serde_json::Value;
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
@@ -285,6 +285,7 @@ impl Wallet for BitcoinCoreProvider {
         amount: u64,
         _fee_rate: u64,
         lock_utxos: bool,
+        _change_script: &Script,
     ) -> Result<Vec<Utxo>, ManagerError> {
         let client = self.client.lock().unwrap();
         let utxo_res = client
