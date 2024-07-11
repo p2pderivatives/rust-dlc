@@ -19,6 +19,36 @@ use crate::{
     Blockchain, ContractSigner, ContractSignerProvider, Wallet,
 };
 
+macro_rules! get_object_in_state {
+    ($manager: expr, $id: expr, $state: ident, $peer_id: expr, $object_type: ident, $get_call: ident) => {{
+        let object = $manager.get_store().$get_call($id)?;
+        match object {
+            Some(c) => match $peer_id as Option<PublicKey> {
+                Some(p) if c.get_counter_party_id() != p => Err(Error::InvalidParameters(format!(
+                    "Peer {:02x?} is not involved with {} {:02x?}.",
+                    $peer_id,
+                    stringify!($object_type),
+                    $id
+                ))),
+                _ => match c {
+                    $object_type::$state(s) => Ok(s),
+                    _ => Err(Error::InvalidState(format!(
+                        "Invalid state {:?} expected {}.",
+                        c,
+                        stringify!($state),
+                    ))),
+                },
+            },
+            None => Err(Error::InvalidParameters(format!(
+                "Unknown {} id.",
+                stringify!($object_type)
+            ))),
+        }
+    }};
+}
+
+pub(crate) use get_object_in_state;
+
 #[cfg(not(feature = "fuzztarget"))]
 pub(crate) fn get_new_serial_id() -> u64 {
     thread_rng().next_u64()

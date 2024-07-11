@@ -1,13 +1,15 @@
 //! # This module contains static functions to update the state of a DLC channel.
 
-use std::ops::Deref;
+use std::{ops::Deref, sync::Mutex};
 
 use crate::{
+    chain_monitor::{ChainMonitor, ChannelInfo, TxType},
     channel::{
         accepted_channel::AcceptedChannel,
         offered_channel::OfferedChannel,
         party_points::PartyBasePoints,
         signed_channel::{SignedChannel, SignedChannelState},
+        Channel, ClosedChannel,
     },
     contract::{
         accepted_contract::AcceptedContract, contract_info::ContractInfo,
@@ -20,7 +22,8 @@ use crate::{
     },
     error::Error,
     utils::get_new_temporary_id,
-    Blockchain, ContractSigner, ContractSignerProvider, Time, Wallet,
+    Blockchain, ChannelId, ContractId, ContractSigner, ContractSignerProvider, KeysId, Time,
+    Wallet,
 };
 use bitcoin::{OutPoint, Script, ScriptBuf, Sequence, Transaction, TxIn, Witness};
 use dlc::{
@@ -30,7 +33,8 @@ use dlc::{
 use dlc_messages::{
     channel::{
         AcceptChannel, CollaborativeCloseOffer, Reject, RenewAccept, RenewConfirm, RenewFinalize,
-        RenewOffer, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer, SignChannel,
+        RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize, SettleOffer,
+        SignChannel,
     },
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingSignatures,
@@ -44,19 +48,19 @@ const INITIAL_UPDATE_NUMBER: u64 = (1 << 48) - 1;
 
 macro_rules! get_signed_channel_state {
     ($signed_channel: ident, $state: ident, ref $field: ident) => {{
-       match $signed_channel.state {
+       match &$signed_channel.state {
            SignedChannelState::$state{ref $field, ..} => Ok($field),
            _ => Err(Error::InvalidState(format!("Expected state {} got {:?}", stringify!($state), $signed_channel.state))),
         }
     }};
     ($signed_channel: ident, $state: ident, $field: ident) => {{
-       match $signed_channel.state {
+       match &$signed_channel.state {
            SignedChannelState::$state{$field, ..} => Ok($field),
            _ => Err(Error::InvalidState(format!("Expected state {} got {:?}", stringify!($state), $signed_channel.state))),
         }
     }};
     ($signed_channel: ident, $state: ident, $($field: ident),* $(|$($ref_field: ident),*)?) => {{
-       match $signed_channel.state {
+       match &$signed_channel.state {
            SignedChannelState::$state{$($field,)* $($(ref $ref_field,)*)? ..} => Ok(($($field,)* $($($ref_field,)*)?)),
            _ => Err(Error::InvalidState(format!("Expected state {} got {:?}", stringify!($state), $signed_channel.state))),
         }
@@ -77,6 +81,7 @@ pub fn offer_channel<C: Signing, W: Deref, SP: Deref, B: Deref, T: Deref, X: Con
     signer_provider: &SP,
     blockchain: &B,
     time: &T,
+    temporary_channel_id: ChannelId,
 ) -> Result<(OfferedChannel, OfferedContract), Error>
 where
     W::Target: Wallet,
@@ -108,8 +113,6 @@ where
         time.unix_time_now() as u32,
         keys_id,
     );
-
-    let temporary_channel_id = get_new_temporary_id();
 
     let per_update_seed = signer_provider.get_new_secret_key()?;
 
@@ -278,6 +281,7 @@ pub fn verify_and_sign_accepted_channel<W: Deref, SP: Deref, X: ContractSigner>(
     cet_nsequence: u32,
     wallet: &W,
     signer_provider: &SP,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedChannel, SignedContract, SignChannel), Error>
 where
     W::Target: Wallet,
@@ -387,6 +391,14 @@ where
         &accept_revoke_params.publish_pk.inner,
     )?;
 
+    chain_monitor.lock().unwrap().add_tx(
+        buffer_transaction.txid(),
+        ChannelInfo {
+            channel_id,
+            tx_type: TxType::BufferTx,
+        },
+    );
+
     let signed_channel = SignedChannel {
         counter_party: signed_contract
             .accepted_contract
@@ -402,6 +414,7 @@ where
             counter_buffer_adaptor_signature: accept_channel.buffer_adaptor_signature,
             buffer_transaction,
             is_offer: true,
+            total_collateral,
             keys_id: offered_contract.keys_id,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
@@ -443,6 +456,7 @@ pub fn verify_signed_channel<W: Deref>(
     accepted_contract: &AcceptedContract,
     sign_channel: &SignChannel,
     wallet: &W,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedChannel, SignedContract, Transaction), Error>
 where
     W::Target: Wallet,
@@ -479,6 +493,14 @@ where
         Some(accepted_channel.channel_id),
     )?;
 
+    chain_monitor.lock().unwrap().add_tx(
+        accepted_channel.buffer_transaction.txid(),
+        ChannelInfo {
+            channel_id: accepted_channel.channel_id,
+            tx_type: TxType::BufferTx,
+        },
+    );
+
     let signed_channel = SignedChannel {
         counter_party: signed_contract
             .accepted_contract
@@ -499,6 +521,7 @@ where
             counter_buffer_adaptor_signature: sign_channel.buffer_adaptor_signature,
             buffer_transaction: accepted_channel.buffer_transaction.clone(),
             is_offer: false,
+            total_collateral: accepted_contract.offered_contract.total_collateral,
             keys_id: signed_contract.accepted_contract.offered_contract.keys_id,
         },
         update_idx: INITIAL_UPDATE_NUMBER,
@@ -591,8 +614,18 @@ pub fn on_settle_offer(
         ));
     };
 
+    let total_collateral =
+        signed_channel.own_params.collateral + signed_channel.counter_params.collateral;
+
+    if settle_offer.counter_payout > total_collateral {
+        return Err(Error::InvalidState(
+            "Proposed settle offer payout greater than total collateral".to_string(),
+        ));
+    }
+
     let mut new_state = SignedChannelState::SettledReceived {
         own_payout: settle_offer.counter_payout,
+        counter_payout: total_collateral - settle_offer.counter_payout,
         counter_next_per_update_point: settle_offer.next_per_update_point,
         keys_id,
     };
@@ -614,19 +647,26 @@ pub fn settle_channel_accept<SP: Deref, T: Deref>(
     peer_timeout: u64,
     signer_provider: &SP,
     time: &T,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<SettleAccept, Error>
 where
     SP::Target: ContractSignerProvider,
     T::Target: Time,
 {
-    let (own_payout, counter_next_per_update_point, keys_id) =
+    let (own_payout, counter_next_per_update_point, counter_payout, keys_id) =
         if let SignedChannelState::SettledReceived {
             own_payout,
             counter_next_per_update_point,
+            counter_payout,
             keys_id,
         } = channel.state
         {
-            (own_payout, counter_next_per_update_point, keys_id)
+            (
+                own_payout,
+                counter_next_per_update_point,
+                counter_payout,
+                keys_id,
+            )
         } else {
             return Err(Error::InvalidState(
                 "Signed channel was not in SettledReceived state as expected.".to_string(),
@@ -673,6 +713,14 @@ where
         channel.fee_rate_per_vb,
     )?;
 
+    chain_monitor.lock().unwrap().add_tx(
+        settle_tx.txid(),
+        ChannelInfo {
+            channel_id: channel.channel_id,
+            tx_type: TxType::SettleTx,
+        },
+    );
+
     channel.state = SignedChannelState::SettledAccepted {
         counter_next_per_update_point,
         own_next_per_update_point,
@@ -680,6 +728,7 @@ where
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
+        counter_payout,
         keys_id,
     };
 
@@ -705,6 +754,7 @@ pub fn settle_channel_confirm<T: Deref, SP: Deref>(
     peer_timeout: u64,
     signer_provider: &SP,
     time: &T,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<SettleConfirm, Error>
 where
     SP::Target: ContractSignerProvider,
@@ -757,6 +807,14 @@ where
         channel.fee_rate_per_vb,
     )?;
 
+    chain_monitor.lock().unwrap().add_tx(
+        settle_tx.txid(),
+        ChannelInfo {
+            channel_id: channel.channel_id,
+            tx_type: TxType::SettleTx,
+        },
+    );
+
     let per_update_seed_pk = channel.own_per_update_seed;
     let per_update_seed = signer_provider.get_secret_key_for_pubkey(&per_update_seed_pk)?;
 
@@ -773,6 +831,7 @@ where
         own_settle_adaptor_signature: settle_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout: total_collateral - counter_payout,
+        counter_payout,
         keys_id,
     };
 
@@ -805,6 +864,8 @@ where
         counter_next_per_update_point,
         settle_tx,
         own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
         keys_id,
     ) = match &channel.state {
         SignedChannelState::SettledAccepted {
@@ -812,6 +873,8 @@ where
             own_next_per_update_point,
             settle_tx,
             own_settle_adaptor_signature,
+            own_payout,
+            counter_payout,
             keys_id,
             ..
         } => (
@@ -819,6 +882,8 @@ where
             counter_next_per_update_point,
             settle_tx,
             own_settle_adaptor_signature,
+            *own_payout,
+            *counter_payout,
             *keys_id,
         ),
         _ => {
@@ -874,6 +939,8 @@ where
         settle_tx: settle_tx.clone(),
         counter_settle_adaptor_signature: settle_channel_confirm.settle_adaptor_signature,
         own_settle_adaptor_signature: *own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
         keys_id,
     };
 
@@ -906,6 +973,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
         counter_next_per_update_point,
         own_next_per_update_point,
         own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
         keys_id,
     ) = match &channel.state {
         SignedChannelState::SettledConfirmed {
@@ -914,6 +983,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
             counter_next_per_update_point,
             own_next_per_update_point,
             own_settle_adaptor_signature,
+            own_payout,
+            counter_payout,
             keys_id,
             ..
         } => (
@@ -922,6 +993,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
             *counter_next_per_update_point,
             *own_next_per_update_point,
             *own_settle_adaptor_signature,
+            *own_payout,
+            *counter_payout,
             *keys_id,
         ),
         _ => {
@@ -953,6 +1026,8 @@ pub fn settle_channel_on_finalize<C: Signing>(
         settle_tx,
         counter_settle_adaptor_signature,
         own_settle_adaptor_signature,
+        own_payout,
+        counter_payout,
         keys_id,
     };
     channel.roll_back_state = None;
@@ -997,12 +1072,51 @@ where
     SP::Target: ContractSignerProvider<Signer = X>,
     T::Target: Time,
 {
-    let id = get_new_temporary_id();
+    // Validity checks.
+    match &signed_channel.state {
+        SignedChannelState::Established {
+            total_collateral, ..
+        } => {
+            if *total_collateral
+                != contract_input.accept_collateral + contract_input.offer_collateral
+            {
+                return Err(Error::InvalidParameters(
+                    "Sum of collaterals in contract must equal total collateral in channel."
+                        .to_string(),
+                ));
+            }
+        }
+        SignedChannelState::Settled {
+            own_payout,
+            counter_payout,
+            ..
+        } => {
+            if contract_input.offer_collateral != *own_payout
+                || contract_input.accept_collateral != *counter_payout
+            {
+                return Err(Error::InvalidParameters(
+                    "Contract collateral not equal to each party's balance in the channel"
+                        .to_string(),
+                ));
+            }
+        }
+        s => {
+            return Err(Error::InvalidState(format!(
+                "Can only renewed established or closed channels, not {s}."
+            )));
+        }
+    };
+
+    let temporary_contract_id: ContractId = crate::channel::generate_temporary_contract_id(
+        signed_channel.channel_id,
+        signed_channel.update_idx,
+    );
+
     let keys_id = signed_channel
         .keys_id()
         .ok_or(Error::InvalidState("No keys_id available".to_string()))?;
     let mut offered_contract = OfferedContract::new(
-        id,
+        temporary_contract_id,
         contract_input,
         oracle_announcements,
         &signed_channel.own_params,
@@ -1141,8 +1255,6 @@ where
         }
     };
 
-    let contract_signer = signer_provider.derive_contract_signer(keys_id)?;
-
     let own_base_secret_key =
         signer_provider.get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
     let per_update_seed =
@@ -1187,15 +1299,6 @@ where
         Sequence(cet_nsequence),
     )?;
 
-    let buffer_adaptor_signature = get_tx_adaptor_signature(
-        secp,
-        &buffer_transaction,
-        dlc_transactions.get_fund_output().value,
-        &dlc_transactions.funding_script_pubkey,
-        &contract_signer.get_secret_key()?,
-        &offer_revoke_params.publish_pk.inner,
-    )?;
-
     let own_secret_key = derive_private_key(secp, &accept_per_update_point, &own_base_secret_key);
 
     let (accepted_contract, adaptor_sigs) = accept_contract_internal(
@@ -1215,7 +1318,6 @@ where
         accept_per_update_point,
         buffer_transaction,
         buffer_script_pubkey,
-        accept_buffer_adaptor_signature: buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
         keys_id,
@@ -1226,7 +1328,6 @@ where
     let renew_accept = RenewAccept {
         channel_id: signed_channel.channel_id,
         next_per_update_point: accept_per_update_point,
-        buffer_adaptor_signature,
         cet_adaptor_signatures: (&adaptor_sigs as &[_]).into(),
         refund_signature: accepted_contract.accept_refund_signature,
     };
@@ -1257,15 +1358,7 @@ where
     let own_base_secret_key =
         signer_provider.get_secret_key_for_pubkey(&signed_channel.own_points.own_basepoint)?;
 
-    let per_update_seed =
-        signer_provider.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
-
-    let prev_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
-        per_update_seed.as_ref(),
-        signed_channel.update_idx,
-    ))?;
-
-    let (offer_per_update_point, keys_id) = get_signed_channel_state!(
+    let (&offer_per_update_point, &keys_id) = get_signed_channel_state!(
         signed_channel,
         RenewOffered,
         offer_next_per_update_point,
@@ -1327,16 +1420,6 @@ where
         Some(signed_channel.channel_id),
     )?;
 
-    verify_tx_adaptor_signature(
-        secp,
-        &buffer_transaction,
-        dlc_transactions.get_fund_output().value,
-        &dlc_transactions.funding_script_pubkey,
-        &signed_contract.accepted_contract.accept_params.fund_pubkey,
-        &offer_revoke_params.publish_pk.inner,
-        &renew_accept.buffer_adaptor_signature,
-    )?;
-
     let own_buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
         &buffer_transaction,
@@ -1353,9 +1436,9 @@ where
         buffer_transaction,
         buffer_script_pubkey,
         offer_buffer_adaptor_signature: own_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature: renew_accept.buffer_adaptor_signature,
         timeout: time.unix_time_now() + peer_timeout,
         own_payout,
+        total_collateral,
         keys_id,
     };
 
@@ -1363,7 +1446,6 @@ where
 
     let renew_confirm = RenewConfirm {
         channel_id: signed_channel.channel_id,
-        per_update_secret: prev_per_update_secret,
         buffer_adaptor_signature: own_buffer_adaptor_signature,
         cet_adaptor_signatures: (&cet_adaptor_signatures as &[_]).into(),
         refund_signature: signed_contract.offer_refund_signature,
@@ -1376,33 +1458,38 @@ where
 /// [`RenewAccept`] message, verifying the message and updating the state of the
 /// channel and associated contract the same time. Expects the channel to be in
 /// [`SignedChannelState::RenewAccepted`] state.
-pub fn verify_renew_confirm_and_finalize<W: Deref, SP: Deref>(
+///
+pub(crate) fn verify_renew_confirm_and_finalize<S: Deref, T: Deref, W: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     accepted_contract: &AcceptedContract,
     renew_confirm: &RenewConfirm,
+    peer_timeout: u64,
+    time: &T,
     wallet: &W,
-    signer_provider: &SP,
+    signer: &S,
+    chain_monitor: &Mutex<ChainMonitor>,
 ) -> Result<(SignedContract, RenewFinalize), Error>
 where
+    T::Target: Time,
+    S::Target: ContractSignerProvider,
     W::Target: Wallet,
-    SP::Target: ContractSignerProvider,
 {
     let (
-        offer_per_update_point,
-        accept_per_update_point,
-        accept_buffer_adaptor_signature,
+        &offer_per_update_point,
+        &accept_per_update_point,
+        &own_payout,
+        &keys_id,
         buffer_transaction,
         buffer_script_pubkey,
-        keys_id,
     ) = get_signed_channel_state!(
         signed_channel,
         RenewAccepted,
         offer_per_update_point,
         accept_per_update_point,
-        accept_buffer_adaptor_signature | buffer_transaction,
-        buffer_script_pubkey,
-        keys_id
+        own_payout,
+        keys_id | buffer_transaction,
+        buffer_script_pubkey
     )?;
 
     let own_publish_pk = signed_channel
@@ -1412,16 +1499,18 @@ where
     let counter_own_pk = signed_channel
         .counter_points
         .get_own_pk(secp, &offer_per_update_point);
+    let counter_buffer_own_pk = &accepted_contract.offered_contract.offer_params.fund_pubkey;
 
     verify_tx_adaptor_signature(
         secp,
         buffer_transaction,
-        accepted_contract.dlc_transactions.get_fund_output().value,
-        &accepted_contract.dlc_transactions.funding_script_pubkey,
-        &accepted_contract.offered_contract.offer_params.fund_pubkey,
+        signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
+        &signed_channel.fund_script_pubkey,
+        counter_buffer_own_pk,
         &own_publish_pk,
         &renew_confirm.buffer_adaptor_signature,
     )?;
+
     let cet_adaptor_signatures: Vec<_> = (&renew_confirm.cet_adaptor_signatures).into();
     let (signed_contract, _) = verify_signed_contract_internal(
         secp,
@@ -1438,76 +1527,133 @@ where
         Some(signed_channel.channel_id),
     )?;
 
-    signed_channel.state = SignedChannelState::Established {
-        signed_contract_id: signed_contract.accepted_contract.get_contract_id(),
-        own_buffer_adaptor_signature: accept_buffer_adaptor_signature,
-        counter_buffer_adaptor_signature: renew_confirm.buffer_adaptor_signature,
-        buffer_transaction: buffer_transaction.clone(),
-        is_offer: false,
-        keys_id: *keys_id,
-    };
-
-    signed_channel.update_idx -= 1;
-
-    signed_channel
-        .counter_party_commitment_secrets
-        .provide_secret(
-            signed_channel.update_idx + 1,
-            *renew_confirm.per_update_secret.as_ref(),
-        )
-        .map_err(|_| Error::InvalidParameters("Provided secret was invalid".to_string()))?;
-
+    let prev_offer_per_update_point = signed_channel.counter_per_update_point;
     signed_channel.counter_per_update_point = offer_per_update_point;
     signed_channel.own_per_update_point = accept_per_update_point;
 
-    let per_update_seed =
-        signer_provider.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
+    let per_update_seed = signer.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
 
     let prev_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
         per_update_seed.as_ref(),
-        signed_channel.update_idx + 1,
+        signed_channel.update_idx,
     ))?;
+
+    let offer_revoke_params = signed_channel.counter_points.get_revokable_params(
+        secp,
+        &signed_channel.own_points.revocation_basepoint,
+        &signed_channel.counter_per_update_point,
+    );
+
+    let own_fund_sk = signer.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
+
+    let buffer_input_value = signed_channel.fund_tx.output[signed_channel.fund_output_index].value;
+
+    let buffer_adaptor_signature = get_tx_adaptor_signature(
+        secp,
+        buffer_transaction,
+        buffer_input_value,
+        &signed_channel.fund_script_pubkey,
+        &own_fund_sk,
+        &offer_revoke_params.publish_pk.inner,
+    )?;
+
+    let total_collateral =
+        signed_channel.own_params.collateral + signed_channel.counter_params.collateral;
+
+    chain_monitor.lock().unwrap().add_tx(
+        buffer_transaction.txid(),
+        ChannelInfo {
+            channel_id: signed_channel.channel_id,
+            tx_type: TxType::BufferTx,
+        },
+    );
+
+    signed_channel.state = SignedChannelState::RenewFinalized {
+        contract_id: signed_contract.accepted_contract.get_contract_id(),
+        prev_offer_per_update_point,
+        buffer_transaction: buffer_transaction.clone(),
+        buffer_script_pubkey: buffer_script_pubkey.clone(),
+        offer_buffer_adaptor_signature: renew_confirm.buffer_adaptor_signature,
+        accept_buffer_adaptor_signature: buffer_adaptor_signature,
+        timeout: time.unix_time_now() + peer_timeout,
+        own_payout,
+        total_collateral,
+        keys_id,
+    };
 
     let renew_finalize = RenewFinalize {
         channel_id: signed_channel.channel_id,
         per_update_secret: prev_per_update_secret,
+        buffer_adaptor_signature,
     };
 
     Ok((signed_contract, renew_finalize))
 }
 
 /// Verify the given [`RenewFinalize`] and update the state of the channel.
-pub fn renew_channel_on_finalize(
+pub fn renew_channel_on_finalize<S: Deref>(
+    secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
     renew_finalize: &RenewFinalize,
-) -> Result<(), Error> {
+    signer: &S,
+) -> Result<RenewRevoke, Error>
+where
+    S::Target: ContractSignerProvider,
+{
     let (
         contract_id,
+        &total_collateral,
         offer_per_update_point,
         accept_per_update_point,
         offer_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature,
         buffer_transaction,
         keys_id,
     ) = get_signed_channel_state!(
         signed_channel,
         RenewConfirmed,
         contract_id,
+        total_collateral,
         offer_per_update_point,
         accept_per_update_point,
-        offer_buffer_adaptor_signature,
-        accept_buffer_adaptor_signature | buffer_transaction,
+        offer_buffer_adaptor_signature | buffer_transaction,
         keys_id
+    )?;
+    let offer_revoke_params = signed_channel.own_points.get_revokable_params(
+        secp,
+        &signed_channel.counter_points.revocation_basepoint,
+        offer_per_update_point,
+    );
+
+    let buffer_input_value = signed_channel.fund_tx.output[signed_channel.fund_output_index].value;
+    let counter_buffer_own_pk = &signed_channel.counter_params.fund_pubkey;
+
+    verify_tx_adaptor_signature(
+        secp,
+        buffer_transaction,
+        buffer_input_value,
+        &signed_channel.fund_script_pubkey,
+        counter_buffer_own_pk,
+        &offer_revoke_params.publish_pk.inner,
+        &renew_finalize.buffer_adaptor_signature,
     )?;
 
     let state = SignedChannelState::Established {
-        signed_contract_id: contract_id,
-        counter_buffer_adaptor_signature: accept_buffer_adaptor_signature,
-        own_buffer_adaptor_signature: offer_buffer_adaptor_signature,
+        signed_contract_id: *contract_id,
+        counter_buffer_adaptor_signature: renew_finalize.buffer_adaptor_signature,
+        own_buffer_adaptor_signature: *offer_buffer_adaptor_signature,
         buffer_transaction: buffer_transaction.clone(),
         is_offer: true,
+        total_collateral,
         keys_id: *keys_id,
     };
+
+    if PublicKey::from_secret_key(secp, &renew_finalize.per_update_secret)
+        != signed_channel.counter_per_update_point
+    {
+        return Err(Error::InvalidParameters(
+            "Invalid per update secret in channel renew finalize".to_string(),
+        ));
+    }
 
     signed_channel
         .counter_party_commitment_secrets
@@ -1517,12 +1663,80 @@ pub fn renew_channel_on_finalize(
         )
         .map_err(|_| Error::InvalidParameters("Provided secret was invalid".to_string()))?;
 
-    signed_channel.own_per_update_point = offer_per_update_point;
-    signed_channel.counter_per_update_point = accept_per_update_point;
+    let per_update_seed = signer.get_secret_key_for_pubkey(&signed_channel.own_per_update_seed)?;
+
+    let prev_per_update_secret = SecretKey::from_slice(&build_commitment_secret(
+        per_update_seed.as_ref(),
+        signed_channel.update_idx,
+    ))?;
+
+    signed_channel.own_per_update_point = *offer_per_update_point;
+    signed_channel.counter_per_update_point = *accept_per_update_point;
 
     signed_channel.state = state;
     signed_channel.roll_back_state = None;
     signed_channel.update_idx -= 1;
+
+    let msg = RenewRevoke {
+        channel_id: signed_channel.channel_id,
+        per_update_secret: prev_per_update_secret,
+    };
+
+    Ok(msg)
+}
+
+/// Verify the given [`RenewRevoke`] and update the state of the channel.
+pub fn renew_channel_on_revoke(
+    secp: &Secp256k1<All>,
+    signed_channel: &mut SignedChannel,
+    renew_revoke: &RenewRevoke,
+) -> Result<(), Error> {
+    let (
+        contract_id,
+        &keys_id,
+        total_collateral,
+        prev_offer_per_update_point,
+        offer_buffer_adaptor_signature,
+        accept_buffer_adaptor_signature,
+        buffer_transaction,
+    ) = get_signed_channel_state!(
+        signed_channel,
+        RenewFinalized,
+        contract_id,
+        keys_id,
+        total_collateral,
+        prev_offer_per_update_point,
+        offer_buffer_adaptor_signature,
+        accept_buffer_adaptor_signature | buffer_transaction
+    )?;
+
+    if PublicKey::from_secret_key(secp, &renew_revoke.per_update_secret)
+        != *prev_offer_per_update_point
+    {
+        return Err(Error::InvalidParameters(
+            "Invalid per update secret in channel renew revoke".to_string(),
+        ));
+    }
+
+    signed_channel
+        .counter_party_commitment_secrets
+        .provide_secret(
+            signed_channel.update_idx,
+            *renew_revoke.per_update_secret.as_ref(),
+        )
+        .map_err(|_| Error::InvalidParameters("Provided secret was invalid".to_string()))?;
+
+    signed_channel.update_idx -= 1;
+
+    signed_channel.state = SignedChannelState::Established {
+        signed_contract_id: *contract_id,
+        keys_id,
+        counter_buffer_adaptor_signature: *offer_buffer_adaptor_signature,
+        own_buffer_adaptor_signature: *accept_buffer_adaptor_signature,
+        buffer_transaction: buffer_transaction.clone(),
+        is_offer: true,
+        total_collateral: *total_collateral,
+    };
 
     Ok(())
 }
@@ -1531,7 +1745,7 @@ pub fn renew_channel_on_finalize(
 /// the channel to be in [`SignedChannelState::RenewOffered`] state and the local
 /// party not to be the offer party.
 pub fn reject_renew_offer(signed_channel: &mut SignedChannel) -> Result<Reject, Error> {
-    let is_offer = get_signed_channel_state!(signed_channel, RenewOffered, is_offer)?;
+    let &is_offer = get_signed_channel_state!(signed_channel, RenewOffered, is_offer)?;
 
     if is_offer {
         return Err(Error::InvalidState(
@@ -1682,39 +1896,43 @@ where
 /// closing transaction and returning it.
 pub fn accept_collaborative_close_offer<C: Signing, SP: Deref>(
     secp: &Secp256k1<C>,
-    signed_channel: &mut SignedChannel,
+    signed_channel: &SignedChannel,
     signer_provider: &SP,
-) -> Result<Transaction, Error>
+) -> Result<(Transaction, Channel), Error>
 where
     SP::Target: ContractSignerProvider,
 {
-    let (offer_signature, close_tx, keys_id) = get_signed_channel_state!(
+    let (offer_signature, close_tx) = get_signed_channel_state!(
         signed_channel,
         CollaborativeCloseOffered,
-        offer_signature | close_tx,
-        keys_id
+        offer_signature | close_tx
     )?;
 
     let fund_out_amount = signed_channel.fund_tx.output[signed_channel.fund_output_index].value;
 
-    let contract_signer = signer_provider.derive_contract_signer(*keys_id)?;
+    let own_fund_sk =
+        signer_provider.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
 
     let mut close_tx = close_tx.clone();
 
     dlc::util::sign_multi_sig_input(
         secp,
         &mut close_tx,
-        &offer_signature,
+        offer_signature,
         &signed_channel.counter_params.fund_pubkey,
-        &contract_signer.get_secret_key()?,
+        &own_fund_sk,
         &signed_channel.fund_script_pubkey,
         fund_out_amount,
         0,
     )?;
 
     // TODO(tibo): should only transition to close after confirmation.
-    signed_channel.state = SignedChannelState::CollaborativelyClosed;
-    Ok(close_tx)
+    let channel = Channel::CollaborativelyClosed(ClosedChannel {
+        counter_party: signed_channel.counter_party,
+        temporary_channel_id: signed_channel.temporary_channel_id,
+        channel_id: signed_channel.channel_id,
+    });
+    Ok((close_tx, channel))
 }
 
 fn get_settle_tx_and_adaptor_sig(
@@ -1837,29 +2055,20 @@ pub fn on_reject(signed_channel: &mut SignedChannel) -> Result<(), Error> {
 }
 
 /// Sign the buffer transaction and closing CET and update the state of the channel.
-pub fn initiate_unilateral_close_established_channel<SP: Deref>(
+pub fn initiate_unilateral_close_established_channel<S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &mut SignedChannel,
-    confirmed_contract: &SignedContract,
-    contract_info: &ContractInfo,
-    attestations: &[(usize, OracleAttestation)],
-    adaptor_info: &AdaptorInfo,
-    signer_provider: &SP,
+    buffer_adaptor_signature: EcdsaAdaptorSignature,
+    keys_id: KeysId,
+    mut buffer_transaction: Transaction,
+    signer: &S,
+    is_initiator: bool,
 ) -> Result<(), Error>
 where
-    SP::Target: ContractSignerProvider,
+    S::Target: ContractSignerProvider,
 {
-    let (buffer_adaptor_signature, buffer_transaction, keys_id) = get_signed_channel_state!(
-        signed_channel,
-        Established,
-        counter_buffer_adaptor_signature | buffer_transaction,
-        keys_id
-    )?;
-
-    let mut buffer_transaction = buffer_transaction.clone();
-
     let publish_base_secret =
-        signer_provider.get_secret_key_for_pubkey(&signed_channel.own_points.publish_basepoint)?;
+        signer.get_secret_key_for_pubkey(&signed_channel.own_points.publish_basepoint)?;
 
     let publish_sk = derive_private_key(
         secp,
@@ -1869,18 +2078,51 @@ where
 
     let counter_buffer_signature = buffer_adaptor_signature.decrypt(&publish_sk)?;
 
-    let fund_sk = signer_provider.derive_contract_signer(*keys_id)?;
-
+    let buffer_input_sk =
+        signer.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
     dlc::util::sign_multi_sig_input(
         secp,
         &mut buffer_transaction,
         &counter_buffer_signature,
         &signed_channel.counter_params.fund_pubkey,
-        &fund_sk.get_secret_key()?,
+        &buffer_input_sk,
         &signed_channel.fund_script_pubkey,
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
         0,
     )?;
+
+    let contract_id = signed_channel.get_contract_id().ok_or_else(|| {
+        Error::InvalidState(
+            "Expected to be in a state with an associated contract id but was not.".to_string(),
+        )
+    })?;
+
+    signed_channel.state = SignedChannelState::Closing {
+        buffer_transaction,
+        contract_id,
+        is_initiator,
+        keys_id,
+    };
+
+    Ok(())
+}
+
+/// Extract the CET and computes the signature for it, and marks the channel as closed.
+pub fn finalize_unilateral_close_settled_channel<S: Deref>(
+    secp: &Secp256k1<All>,
+    signed_channel: &SignedChannel,
+    confirmed_contract: &SignedContract,
+    contract_info: &ContractInfo,
+    attestations: &[(usize, OracleAttestation)],
+    adaptor_info: &AdaptorInfo,
+    signer: &S,
+    is_initiator: bool,
+) -> Result<(Transaction, Channel), Error>
+where
+    S::Target: ContractSignerProvider,
+{
+    let buffer_transaction =
+        get_signed_channel_state!(signed_channel, Closing, buffer_transaction)?;
 
     let (range_info, oracle_sigs) =
         crate::utils::get_range_info_and_oracle_sigs(contract_info, adaptor_info, attestations)?;
@@ -1945,7 +2187,7 @@ where
         )
     };
 
-    let base_secret = signer_provider.get_secret_key_for_pubkey(own_basepoint)?;
+    let base_secret = signer.get_secret_key_for_pubkey(own_basepoint)?;
     let own_sk = derive_private_key(secp, own_per_update_point, &base_secret);
 
     dlc::channel::sign_cet(
@@ -1959,38 +2201,41 @@ where
         &adaptor_sigs[range_info.adaptor_index],
         &oracle_sigs,
     )?;
-
-    signed_channel.state = SignedChannelState::Closing {
-        buffer_transaction,
-        signed_cet: cet,
-        contract_id: confirmed_contract.accepted_contract.get_contract_id(),
-        attestations: attestations.iter().map(|x| x.1.clone()).collect(),
-        keys_id: *keys_id,
+    let closed_channel = ClosedChannel {
+        counter_party: signed_channel.counter_party,
+        temporary_channel_id: signed_channel.temporary_channel_id,
+        channel_id: signed_channel.channel_id,
+    };
+    let channel = if is_initiator {
+        Channel::Closed(closed_channel)
+    } else {
+        Channel::CounterClosed(closed_channel)
     };
 
-    Ok(())
+    Ok((cet, channel))
 }
 
 /// Sign the settlement transaction and update the state of the channel.
-pub fn close_settled_channel<C: Signing, SP: Deref>(
-    secp: &Secp256k1<C>,
-    signed_channel: &mut SignedChannel,
-    signer_provider: &SP,
-) -> Result<Transaction, Error>
+
+pub(crate) fn close_settled_channel<S: Deref>(
+    secp: &Secp256k1<All>,
+    signed_channel: &SignedChannel,
+    signer: &S,
+    is_initiator: bool,
+) -> Result<(Transaction, Channel), Error>
 where
-    SP::Target: ContractSignerProvider,
+    S::Target: ContractSignerProvider,
 {
-    let (counter_settle_adaptor_signature, settle_tx, keys_id) = get_signed_channel_state!(
+    let (counter_settle_adaptor_signature, settle_tx) = get_signed_channel_state!(
         signed_channel,
         Settled,
-        counter_settle_adaptor_signature | settle_tx,
-        keys_id
+        counter_settle_adaptor_signature | settle_tx
     )?;
 
     let mut settle_tx = settle_tx.clone();
 
     let publish_base_secret =
-        signer_provider.get_secret_key_for_pubkey(&signed_channel.own_points.publish_basepoint)?;
+        signer.get_secret_key_for_pubkey(&signed_channel.own_points.publish_basepoint)?;
 
     let publish_sk = derive_private_key(
         secp,
@@ -2000,19 +2245,31 @@ where
 
     let counter_settle_signature = counter_settle_adaptor_signature.decrypt(&publish_sk)?;
 
-    let fund_sk = signer_provider.derive_contract_signer(*keys_id)?;
+    let fund_sk = signer.get_secret_key_for_pubkey(&signed_channel.own_params.fund_pubkey)?;
 
     dlc::util::sign_multi_sig_input(
         secp,
         &mut settle_tx,
         &counter_settle_signature,
         &signed_channel.counter_params.fund_pubkey,
-        &fund_sk.get_secret_key()?,
+        &fund_sk,
         &signed_channel.fund_script_pubkey,
         signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
         0,
     )?;
 
-    signed_channel.state = SignedChannelState::Closed;
-    Ok(settle_tx)
+    let channel = if is_initiator {
+        Channel::Closed(ClosedChannel {
+            counter_party: signed_channel.counter_party,
+            temporary_channel_id: signed_channel.temporary_channel_id,
+            channel_id: signed_channel.channel_id,
+        })
+    } else {
+        Channel::CounterClosed(ClosedChannel {
+            counter_party: signed_channel.counter_party,
+            temporary_channel_id: signed_channel.temporary_channel_id,
+            channel_id: signed_channel.channel_id,
+        })
+    };
+    Ok((settle_tx, channel))
 }

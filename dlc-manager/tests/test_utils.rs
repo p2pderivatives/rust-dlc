@@ -146,14 +146,19 @@ macro_rules! write_channel {
 #[macro_export]
 macro_rules! assert_channel_state {
     ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
+        assert_channel_state_unlocked!($d.lock().unwrap(), $id, $p $(, $s)?)
+    }};
+}
+
+#[allow(unused_macros)]
+macro_rules! assert_channel_state_unlocked {
+    ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
         let res = $d
-            .lock()
-            .unwrap()
             .get_store()
             .get_channel(&$id)
-            .expect("Could not retrieve contract");
+            .expect("Could not retrieve channel");
         if let Some(Channel::$p(c)) = res {
-            $(if let SignedChannelState::$s { .. } = c.state {
+            $(if let dlc_manager::channel::signed_channel::SignedChannelState::$s { .. } = c.state {
             } else {
                 panic!("Unexpected signed channel state {:?}", c.state);
             })?
@@ -161,17 +166,10 @@ macro_rules! assert_channel_state {
                 let channel = Channel::$p(c);
                 write_channel!(channel, $p);
             }
+        } else if let Some(c) = res {
+            panic!("Unexpected channel state {:?}", c);
         } else {
-            let state = match res {
-                Some(Channel::Offered(_)) => "offered",
-                Some(Channel::Accepted(_)) => "accepted",
-                Some(Channel::Signed(_)) => "signed",
-                Some(Channel::FailedAccept(_)) => "failed accept",
-                Some(Channel::FailedSign(_)) => "failed sign",
-                Some(Channel::Cancelled(_)) => "cancelled",
-                None => "none",
-            };
-            panic!("Unexpected channel state {}", state);
+            panic!("Could not find requested channel");
         }
     }};
 }
