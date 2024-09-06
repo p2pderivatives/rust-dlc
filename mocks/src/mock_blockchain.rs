@@ -28,7 +28,7 @@ impl Blockchain for MockBlockchain {
         self.transactions.lock().unwrap().push(transaction.clone());
         Ok(())
     }
-    fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error> {
+    fn get_network(&self) -> Result<bitcoin::Network, Error> {
         Ok(bitcoin::Network::Regtest)
     }
     fn get_blockchain_height(&self) -> Result<u64, Error> {
@@ -43,7 +43,7 @@ impl Blockchain for MockBlockchain {
             .lock()
             .unwrap()
             .iter()
-            .find(|x| &x.txid() == tx_id)
+            .find(|x| &x.compute_txid() == tx_id)
             .unwrap()
             .clone())
     }

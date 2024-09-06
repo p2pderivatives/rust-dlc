@@ -8,13 +8,11 @@ use std::time::Duration;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::consensus::encode::Error as EncodeError;
 use bitcoin::hashes::serde;
-use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1::rand::thread_rng;
-use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{
-    consensus::Decodable, network::constants::Network, Amount, PrivateKey, Transaction, Txid,
-};
-use bitcoin::{Address, OutPoint, ScriptBuf, TxOut};
+use bitcoin::secp256k1::SecretKey;
+use bitcoin::{consensus::Decodable, Network, PrivateKey, Transaction, Txid};
+use bitcoin::{secp256k1::PublicKey, Address, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::jsonrpc::serde_json;
 use bitcoincore_rpc::jsonrpc::serde_json::Value;
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
@@ -106,7 +104,7 @@ impl BitcoinCoreProvider {
     pub fn new_from_rpc_client(rpc_client: Client) -> Self {
         let client = Arc::new(Mutex::new(rpc_client));
         let mut fees: HashMap<ConfirmationTarget, AtomicU32> = HashMap::with_capacity(7);
-        fees.insert(ConfirmationTarget::OnChainSweep, AtomicU32::new(5000));
+        fees.insert(ConfirmationTarget::UrgentOnChainSweep, AtomicU32::new(5000));
         fees.insert(
             ConfirmationTarget::MinAllowedAnchorChannelRemoteFee,
             AtomicU32::new(MIN_FEERATE),
@@ -155,7 +153,7 @@ struct UtxoWrap(Utxo);
 
 impl rust_bitcoin_coin_selection::Utxo for UtxoWrap {
     fn get_value(&self) -> u64 {
-        self.0.tx_out.value
+        self.0.tx_out.value.to_sat()
     }
 }
 
@@ -206,7 +204,7 @@ impl ContractSignerProvider for BitcoinCoreProvider {
                 .import_private_key(
                     &PrivateKey {
                         compressed: true,
-                        network,
+                        network: network.into(),
                         inner: sk,
                     },
                     Some(&keys_id.to_lower_hex_string()),
@@ -219,12 +217,8 @@ impl ContractSignerProvider for BitcoinCoreProvider {
     }
 
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
-        let b_pubkey = bitcoin::PublicKey {
-            compressed: true,
-            inner: *pubkey,
-        };
-        let address =
-            Address::p2wpkh(&b_pubkey, self.get_network()?).or(Err(Error::BitcoinError))?;
+        let b_pubkey = bitcoin::CompressedPublicKey(pubkey.to_owned());
+        let address = Address::p2wpkh(&b_pubkey, self.get_network()?);
 
         let pk = self
             .client
@@ -244,7 +238,7 @@ impl ContractSignerProvider for BitcoinCoreProvider {
             .import_private_key(
                 &PrivateKey {
                     compressed: true,
-                    network,
+                    network: network.into(),
                     inner: sk,
                 },
                 None,
@@ -296,7 +290,7 @@ impl Wallet for BitcoinCoreProvider {
             .map(|x| {
                 Ok(UtxoWrap(Utxo {
                     tx_out: TxOut {
-                        value: x.amount.to_sat(),
+                        value: x.amount,
                         script_pubkey: x.script_pub_key.clone(),
                     },
                     outpoint: OutPoint {
@@ -338,11 +332,7 @@ impl Wallet for BitcoinCoreProvider {
             .map_err(rpc_err_to_manager_err)
     }
 
-    fn sign_psbt_input(
-        &self,
-        psbt: &mut PartiallySignedTransaction,
-        input_index: usize,
-    ) -> Result<(), ManagerError> {
+    fn sign_psbt_input(&self, psbt: &mut Psbt, input_index: usize) -> Result<(), ManagerError> {
         let outpoint = &psbt.unsigned_tx.input[input_index].previous_output;
         let tx_out = if let Some(input) = psbt.inputs.get(input_index) {
             if let Some(wit_utxo) = &input.witness_utxo {
@@ -370,7 +360,7 @@ impl Wallet for BitcoinCoreProvider {
             vout: outpoint.vout,
             script_pub_key: tx_out.script_pubkey.clone(),
             redeem_script,
-            amount: Some(Amount::from_sat(tx_out.value)),
+            amount: Some(tx_out.value),
         };
 
         let sign_result = self
@@ -417,25 +407,13 @@ impl Blockchain for BitcoinCoreProvider {
     }
 
     fn get_network(&self) -> Result<Network, ManagerError> {
-        let network = match self
+        let network = self
             .client
             .lock()
             .unwrap()
             .get_blockchain_info()
             .map_err(rpc_err_to_manager_err)?
-            .chain
-            .as_ref()
-        {
-            "main" => Network::Bitcoin,
-            "test" => Network::Testnet,
-            "regtest" => Network::Regtest,
-            "signet" => Network::Signet,
-            _ => {
-                return Err(ManagerError::BlockchainError(
-                    "Unknown Bitcoin network".to_string(),
-                ))
-            }
-        };
+            .chain;
 
         Ok(network)
     }
@@ -547,7 +525,7 @@ fn poll_for_fee_estimates(
         };
         match query_fee_estimate(&client, 6, EstimateMode::Conservative) {
             Ok(fee_rate) => {
-                fees.get(&ConfirmationTarget::OnChainSweep)
+                fees.get(&ConfirmationTarget::UrgentOnChainSweep)
                     .unwrap()
                     .store(fee_rate, Ordering::Release);
             }

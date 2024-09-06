@@ -33,6 +33,7 @@ use dlc_manager::contract::{
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
 use dlc_manager::{error::Error, ContractId, Storage};
+use lightning::io::{Cursor, Read};
 #[cfg(feature = "wallet")]
 use lightning::util::ser::{Readable, Writeable};
 #[cfg(feature = "wallet")]
@@ -42,7 +43,6 @@ use simple_wallet::WalletStorage;
 use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
 use sled::{Db, Transactional, Tree};
 use std::convert::TryInto;
-use std::io::{Cursor, Read};
 
 const CONTRACT_TREE: u8 = 1;
 const CHANNEL_TREE: u8 = 2;
@@ -401,7 +401,7 @@ impl Storage for SledStorageProvider {
             .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {}", e)))?;
         let deserialized = match serialized {
             Some(s) => Some(
-                ChainMonitor::deserialize(&mut ::std::io::Cursor::new(s))
+                ChainMonitor::deserialize(&mut lightning::io::Cursor::new(s))
                     .map_err(to_storage_error)?,
             ),
             None => None,
@@ -546,7 +546,7 @@ fn insert_contract(
     db.insert(&contract.get_id(), serialized)
 }
 
-fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, ::std::io::Error> {
+fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, lightning::io::Error> {
     let serialized = match contract {
         Contract::Offered(o) | Contract::Rejected(o) => o.serialize(),
         Contract::Accepted(o) => o.serialize(),
@@ -564,7 +564,7 @@ fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, ::std::io::Error> 
 }
 
 fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
-    let mut cursor = ::std::io::Cursor::new(buff);
+    let mut cursor = lightning::io::Cursor::new(buff);
     let mut prefix = [0u8; 1];
     cursor.read_exact(&mut prefix)?;
     let contract_prefix: ContractPrefix = prefix[0].try_into()?;
@@ -603,7 +603,7 @@ fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
     Ok(contract)
 }
 
-fn serialize_channel(channel: &Channel) -> Result<Vec<u8>, ::std::io::Error> {
+fn serialize_channel(channel: &Channel) -> Result<Vec<u8>, lightning::io::Error> {
     let serialized = match channel {
         Channel::Offered(o) => o.serialize(),
         Channel::Accepted(a) => a.serialize(),
@@ -628,7 +628,7 @@ fn serialize_channel(channel: &Channel) -> Result<Vec<u8>, ::std::io::Error> {
 }
 
 fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
-    let mut cursor = ::std::io::Cursor::new(buff);
+    let mut cursor = lightning::io::Cursor::new(buff);
     let mut prefix = [0u8; 1];
     cursor.read_exact(&mut prefix)?;
     let channel_prefix: ChannelPrefix = prefix[0].try_into()?;
@@ -709,7 +709,7 @@ mod tests {
     where
         T: Serializable,
     {
-        let mut cursor = std::io::Cursor::new(&serialized);
+        let mut cursor = lightning::io::Cursor::new(serialized);
         T::deserialize(&mut cursor).unwrap()
     }
 

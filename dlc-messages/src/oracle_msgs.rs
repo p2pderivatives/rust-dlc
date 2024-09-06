@@ -4,6 +4,7 @@ use crate::ser_impls::{
     read_as_tlv, read_i32, read_schnorr_pubkey, read_schnorrsig, read_strings_u16, write_as_tlv,
     write_i32, write_schnorr_pubkey, write_schnorrsig, write_strings_u16,
 };
+use bitcoin::hashes::Hash;
 use dlc::{Error, OracleInfo as DlcOracleInfo};
 use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
@@ -173,7 +174,8 @@ impl OracleAnnouncement {
             .write(&mut event_hex)
             .expect("Error writing oracle event");
 
-        let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+        let hash = secp256k1_zkp::hashes::sha256::Hash::const_hash(&event_hex);
+        let msg = Message::from_digest(hash.to_byte_array());
         secp.verify_schnorr(&self.announcement_signature, &msg, &self.oracle_public_key)?;
         self.oracle_event.validate()
     }
@@ -346,7 +348,7 @@ impl_dlc_writeable!(OracleAttestation, {
 mod tests {
     use super::*;
     use secp256k1_zkp::{rand::thread_rng, Message, SECP256K1};
-    use secp256k1_zkp::{schnorr::Signature as SchnorrSignature, KeyPair, XOnlyPublicKey};
+    use secp256k1_zkp::{schnorr::Signature as SchnorrSignature, Keypair, XOnlyPublicKey};
 
     fn enum_descriptor() -> EnumEventDescriptor {
         EnumEventDescriptor {
@@ -365,7 +367,7 @@ mod tests {
     }
 
     fn some_schnorr_pubkey() -> XOnlyPublicKey {
-        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         XOnlyPublicKey::from_keypair(&key_pair).0
     }
 
@@ -389,7 +391,7 @@ mod tests {
 
     #[test]
     fn valid_oracle_announcement_passes_validation_test() {
-        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let events = [digit_event(10), enum_event(1)];
         for event in events {
@@ -397,7 +399,8 @@ mod tests {
             event
                 .write(&mut event_hex)
                 .expect("Error writing oracle event");
-            let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+            let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+            let msg = Message::from_digest(hash.to_byte_array());
             let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
             let valid_announcement = OracleAnnouncement {
                 announcement_signature: sig,
@@ -413,7 +416,7 @@ mod tests {
 
     #[test]
     fn invalid_oracle_announcement_fails_validation_test() {
-        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let events = [digit_event(9), enum_event(2)];
         for event in events {
@@ -421,7 +424,8 @@ mod tests {
             event
                 .write(&mut event_hex)
                 .expect("Error writing oracle event");
-            let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+            let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+            let msg = Message::from_digest(hash.to_byte_array());
             let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
             let invalid_announcement = OracleAnnouncement {
                 announcement_signature: sig,
@@ -437,14 +441,15 @@ mod tests {
 
     #[test]
     fn invalid_oracle_announcement_signature_fails_validation_test() {
-        let key_pair = KeyPair::new(SECP256K1, &mut thread_rng());
+        let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
         let event = digit_event(10);
         let mut event_hex = Vec::new();
         event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+        let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+        let msg = Message::from_digest(hash.to_byte_array());
         let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
         let mut sig_hex = *sig.as_ref();
         sig_hex[10] = sig_hex[10].checked_add(1).unwrap_or(0);

@@ -5,18 +5,18 @@ homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "dlc-trie"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-trie"
-version = "0.5.0"
+version = "0.6.0"
 
 [features]
 default = ["std"]
 std = ["dlc/std", "bitcoin/std"]
-no-std = ["bitcoin/no-std", "dlc/no-std"]
+no-std = ["dlc/no-std"]
 parallel = ["rayon"]
 use-serde = ["serde", "dlc/use-serde"]
 
 [dependencies]
-bitcoin = { version = "0.30.2", default-features = false }
-dlc = {version = "0.5.0", default-features = false, path = "../dlc"}
+bitcoin = { version = "0.32.2", default-features = false }
+dlc = {version = "0.6.0", default-features = false, path = "../dlc"}
 rayon = {version = "1.5", optional = true}
-secp256k1-zkp = {version = "0.9.2" }
-serde = {version = "1.0", optional = true, default_features = false, features = ["derive"]}
+secp256k1-zkp = {version = "0.11.0" }
+serde = {version = "1.0", optional = true, default-features = false, features = ["derive"]}

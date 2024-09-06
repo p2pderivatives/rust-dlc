@@ -7,32 +7,26 @@ use secp256k1_sys::{
     types::{c_int, c_uchar, c_void, size_t},
     CPtr, SchnorrSigExtraParams,
 };
-use secp256k1_zkp::hashes::Hash;
 use secp256k1_zkp::hashes::*;
 use secp256k1_zkp::{
-    schnorr::Signature as SchnorrSignature, KeyPair, Message, PublicKey, Scalar, Secp256k1,
+    schnorr::Signature as SchnorrSignature, Keypair, Message, PublicKey, Scalar, Secp256k1,
     Signing, Verification, XOnlyPublicKey,
 };
 
-const BIP340_MIDSTATE: [u8; 32] = [
-    0x9c, 0xec, 0xba, 0x11, 0x23, 0x92, 0x53, 0x81, 0x11, 0x67, 0x91, 0x12, 0xd1, 0x62, 0x7e, 0x0f,
-    0x97, 0xc8, 0x75, 0x50, 0x00, 0x3c, 0xc7, 0x65, 0x90, 0xf6, 0x11, 0x64, 0x33, 0xe9, 0xb6, 0x6a,
-];
+sha256t_hash_newtype! {
+    /// BIP340 Hash Tag
+    pub struct BIP340HashTag = hash_str("bip340 hash");
 
-sha256t_hash_newtype!(
-    BIP340Hash,
-    BIP340HashTag,
-    BIP340_MIDSTATE,
-    64,
-    doc = "bip340 hash",
-    backward
-);
+    /// BIP340 Hash
+    #[hash_newtype(backward)]
+    pub struct BIP340Hash(_);
+}
 
 /// Create a Schnorr signature using the provided nonce instead of generating one.
 pub fn schnorrsig_sign_with_nonce<S: Signing>(
     secp: &Secp256k1<S>,
     msg: &Message,
-    keypair: &KeyPair,
+    keypair: &Keypair,
     nonce: &[u8; 32],
 ) -> SchnorrSignature {
     unsafe {

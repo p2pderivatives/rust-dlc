@@ -132,7 +132,7 @@ impl ChainMonitor {
         assert_eq!(self.last_height + 1, height);
 
         for tx in block.txdata.iter() {
-            if let Some(state) = self.watched_tx.get_mut(&tx.txid()) {
+            if let Some(state) = self.watched_tx.get_mut(&tx.compute_txid()) {
                 state.confirm(tx.clone());
             }
 
@@ -190,7 +190,7 @@ impl WatchState {
             WatchState::Registered { ref channel_info } => {
                 log::info!(
                     "Transaction {} confirmed: {channel_info:?}",
-                    transaction.txid()
+                    transaction.compute_txid()
                 );
 
                 *self = WatchState::Confirmed {
@@ -204,7 +204,7 @@ impl WatchState {
             } => {
                 log::error!(
                     "Transaction {} already confirmed: {channel_info:?}",
-                    transaction.txid()
+                    transaction.compute_txid()
                 );
             }
         }

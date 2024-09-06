@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::psbt::Psbt;
 use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::FundingInput;
@@ -120,7 +120,7 @@ where
         &accept_params,
         &funding_inputs,
         &signer.get_secret_key()?,
-        fund_output_value,
+        fund_output_value.to_sat(),
         None,
         &dlc_transactions,
     )?;
@@ -282,7 +282,7 @@ where
         &accept_msg.funding_inputs,
         &accept_msg.refund_signature,
         &cet_adaptor_signatures,
-        fund_output_value,
+        fund_output_value.to_sat(),
         wallet,
         &signer,
         None,
@@ -296,10 +296,7 @@ where
     Ok((signed_contract, signed_msg))
 }
 
-fn populate_psbt(
-    psbt: &mut PartiallySignedTransaction,
-    all_funding_inputs: &[&FundingInput],
-) -> Result<(), Error> {
+fn populate_psbt(psbt: &mut Psbt, all_funding_inputs: &[&FundingInput]) -> Result<(), Error> {
     // add witness utxo to fund_psbt for all inputs
     for (input_index, x) in all_funding_inputs.iter().enumerate() {
         let tx = Transaction::consensus_decode(&mut x.prev_tx.as_slice()).map_err(|_| {
@@ -344,7 +341,7 @@ where
         funding_script_pubkey,
     } = dlc_transactions;
 
-    let mut fund_psbt = PartiallySignedTransaction::from_unsigned_tx(fund.clone())
+    let mut fund_psbt = Psbt::from_unsigned_tx(fund.clone())
         .map_err(|_| Error::InvalidState("Tried to create PSBT from signed tx".to_string()))?;
     let mut cets = cets.clone();
 
@@ -536,7 +533,11 @@ where
         &sign_msg.refund_signature,
         &cet_adaptor_signatures,
         &sign_msg.funding_signatures,
-        accepted_contract.dlc_transactions.get_fund_output().value,
+        accepted_contract
+            .dlc_transactions
+            .get_fund_output()
+            .value
+            .to_sat(),
         None,
         None,
         wallet,
@@ -595,7 +596,7 @@ where
     }
 
     let fund_tx = &accepted_contract.dlc_transactions.fund;
-    let mut fund_psbt = PartiallySignedTransaction::from_unsigned_tx(fund_tx.clone())
+    let mut fund_psbt = Psbt::from_unsigned_tx(fund_tx.clone())
         .map_err(|_| Error::InvalidState("Tried to create PSBT from signed tx".to_string()))?;
 
     // get all funding inputs
@@ -655,7 +656,14 @@ where
         channel_id,
     };
 
-    Ok((signed_contract, fund_psbt.extract_tx()))
+    let transaction = fund_psbt.extract_tx().map_err(|e| {
+        Error::InvalidState(format!(
+            "Could not extract transaction from funding psbt. {}",
+            e
+        ))
+    })?;
+
+    Ok((signed_contract, transaction))
 }
 
 /// Signs and return the CET that can be used to close the given contract.
@@ -708,7 +716,8 @@ where
             .accepted_contract
             .dlc_transactions
             .get_fund_output()
-            .value,
+            .value
+            .to_sat(),
     )?;
 
     Ok(cet)
@@ -748,7 +757,7 @@ where
         other_fund_pubkey,
         &fund_priv_key,
         funding_script_pubkey,
-        fund_output_value,
+        fund_output_value.to_sat(),
         0,
     )?;
     Ok(refund)

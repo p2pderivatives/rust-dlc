@@ -75,7 +75,9 @@ where
 {
     reqwest::blocking::get(path)
         .map_err(|x| {
-            dlc_manager::error::Error::IOError(std::io::Error::new(std::io::ErrorKind::Other, x))
+            dlc_manager::error::Error::IOError(
+                std::io::Error::new(std::io::ErrorKind::Other, x).into(),
+            )
         })?
         .json::<T>()
         .map_err(|e| dlc_manager::error::Error::OracleError(e.to_string()))

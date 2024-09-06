@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
-use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::psbt::Psbt;
+use bitcoin::transaction::Version;
 use bitcoin::{absolute::LockTime, Address, OutPoint, ScriptBuf, Transaction, TxOut};
+use bitcoin::{Amount, CompressedPublicKey};
 use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
 use secp256k1_zkp::{rand::seq::SliceRandom, PublicKey, SecretKey};
 
@@ -17,11 +19,11 @@ impl MockWallet {
 
         for utxo_value in utxo_values {
             let tx_out = TxOut {
-                value: *utxo_value,
+                value: Amount::from_sat(*utxo_value),
                 script_pubkey: ScriptBuf::default(),
             };
             let tx = Transaction {
-                version: 2,
+                version: Version::TWO,
                 lock_time: LockTime::ZERO,
                 input: vec![],
                 output: vec![tx_out.clone()],
@@ -30,7 +32,7 @@ impl MockWallet {
             let utxo = Utxo {
                 tx_out,
                 outpoint: bitcoin::OutPoint {
-                    txid: tx.txid(),
+                    txid: tx.compute_txid(),
                     vout: 0,
                 },
                 address: get_address(),
@@ -94,7 +96,7 @@ impl Wallet for MockWallet {
                 if sum >= amount {
                     return false;
                 }
-                sum += x.tx_out.value;
+                sum += x.tx_out.value.to_sat();
                 true
             })
             .cloned()
@@ -111,7 +113,7 @@ impl Wallet for MockWallet {
         Ok(())
     }
 
-    fn sign_psbt_input(&self, _: &mut PartiallySignedTransaction, _: usize) -> Result<(), Error> {
+    fn sign_psbt_input(&self, _: &mut Psbt, _: usize) -> Result<(), Error> {
         Ok(())
     }
 
@@ -121,14 +123,9 @@ impl Wallet for MockWallet {
 }
 
 fn get_address() -> Address {
-    Address::p2wpkh(
-        &bitcoin::PublicKey::from_private_key(
-            secp256k1_zkp::SECP256K1,
-            &bitcoin::PrivateKey::new(get_secret_key(), bitcoin::Network::Regtest),
-        ),
-        bitcoin::Network::Regtest,
-    )
-    .unwrap()
+    let pk = bitcoin::PrivateKey::new(get_secret_key(), bitcoin::Network::Regtest);
+    let pubkey = CompressedPublicKey::from_private_key(secp256k1_zkp::SECP256K1, &pk).unwrap();
+    Address::p2wpkh(&pubkey, bitcoin::Network::Regtest)
 }
 
 pub fn get_secret_key() -> SecretKey {
