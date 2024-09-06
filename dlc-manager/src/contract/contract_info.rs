@@ -4,6 +4,7 @@ use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
 use crate::ContractSigner;
+use bitcoin::hashes::Hash;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
@@ -294,9 +295,9 @@ impl ContractInfo {
                         for nonce in nonces {
                             let mut points = Vec::with_capacity(base);
                             for j in 0..base {
-                                let msg = Message::from_hashed_data::<sha256::Hash>(
-                                    j.to_string().as_bytes(),
-                                );
+                                let hash =
+                                    sha256::Hash::hash(j.to_string().as_bytes()).to_byte_array();
+                                let msg = Message::from_digest(hash);
                                 let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(
                                     secp, pubkey, nonce, &msg,
                                 )?;

@@ -1,3 +1,4 @@
+use bitcoin::hashes::Hash;
 use dlc_manager::error::Error as DaemonError;
 use dlc_manager::Oracle;
 use dlc_messages::oracle_msgs::{
@@ -7,13 +8,13 @@ use lightning::util::ser::Writeable;
 use secp256k1_zkp::rand::thread_rng;
 use secp256k1_zkp::SecretKey;
 use secp256k1_zkp::{All, Message, Secp256k1};
-use secp256k1_zkp::{KeyPair, XOnlyPublicKey};
+use secp256k1_zkp::{Keypair, XOnlyPublicKey};
 
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct MockOracle {
-    key_pair: KeyPair,
+    key_pair: Keypair,
     secp: Secp256k1<All>,
     announcements: HashMap<String, OracleAnnouncement>,
     attestations: HashMap<String, OracleAttestation>,
@@ -23,7 +24,7 @@ pub struct MockOracle {
 impl MockOracle {
     pub fn new() -> Self {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::new(&secp, &mut thread_rng());
+        let key_pair = Keypair::new(&secp, &mut thread_rng());
 
         MockOracle {
             secp,
@@ -36,7 +37,7 @@ impl MockOracle {
 
     pub fn from_secret_key(sk: &SecretKey) -> Self {
         let secp = Secp256k1::new();
-        let key_pair = KeyPair::from_secret_key(&secp, sk);
+        let key_pair = Keypair::from_secret_key(&secp, sk);
 
         MockOracle {
             secp,
@@ -92,7 +93,7 @@ impl MockOracle {
             .collect();
         let key_pairs: Vec<_> = priv_nonces
             .iter()
-            .map(|x| KeyPair::from_seckey_slice(&self.secp, x.as_ref()).unwrap())
+            .map(|x| Keypair::from_seckey_slice(&self.secp, x.as_ref()).unwrap())
             .collect();
 
         let nonces = key_pairs
@@ -117,7 +118,8 @@ impl MockOracle {
         oracle_event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let msg = Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&event_hex);
+        let hash = bitcoin::hashes::sha256::Hash::hash(&event_hex).to_byte_array();
+        let msg = Message::from_digest(hash);
         let sig = self.secp.sign_schnorr(&msg, &self.key_pair);
         let announcement = OracleAnnouncement {
             oracle_event,
@@ -134,8 +136,8 @@ impl MockOracle {
             .iter()
             .zip(nonces.iter())
             .map(|(x, nonce)| {
-                let msg =
-                    Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(x.as_bytes());
+                let hash = bitcoin::hashes::sha256::Hash::hash(x.as_bytes()).to_byte_array();
+                let msg = Message::from_digest(hash);
                 dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &self.secp,
                     &msg,

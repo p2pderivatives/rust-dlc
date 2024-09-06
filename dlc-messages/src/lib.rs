@@ -132,7 +132,7 @@ impl From<&FundingInput> for TxInputInfo {
             outpoint: OutPoint {
                 txid: Transaction::consensus_decode(&mut funding_input.prev_tx.as_slice())
                     .expect("Transaction Decode Error")
-                    .txid(),
+                    .compute_txid(),
                 vout: funding_input.prev_tx_vout,
             },
             max_witness_len: (funding_input.max_witness_len as usize),
@@ -603,7 +603,7 @@ mod tests {
     fn test_roundtrip<T: Writeable + Readable + PartialEq + std::fmt::Debug>(msg: T) {
         let mut buf = Vec::new();
         msg.write(&mut buf).expect("Error writing message");
-        let mut cursor = std::io::Cursor::new(&buf);
+        let mut cursor = lightning::io::Cursor::new(buf);
         let deser = Readable::read(&mut cursor).expect("Error reading message");
         assert_eq!(msg, deser);
     }

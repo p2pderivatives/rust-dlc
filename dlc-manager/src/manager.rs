@@ -520,7 +520,11 @@ where
 
     fn check_signed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
         let confirmations = self.blockchain.get_transaction_confirmations(
-            &contract.accepted_contract.dlc_transactions.fund.txid(),
+            &contract
+                .accepted_contract
+                .dlc_transactions
+                .fund
+                .compute_txid(),
         )?;
         if confirmations >= NB_CONFIRMATIONS {
             self.store
@@ -721,7 +725,7 @@ where
     }
 
     fn check_preclosed_contract(&self, contract: &PreClosedContract) -> Result<(), Error> {
-        let broadcasted_txid = contract.signed_cet.txid();
+        let broadcasted_txid = contract.signed_cet.compute_txid();
         let confirmations = self
             .blockchain
             .get_transaction_confirmations(&broadcasted_txid)?;
@@ -760,7 +764,7 @@ where
     ) -> Result<Contract, Error> {
         let confirmations = self
             .blockchain
-            .get_transaction_confirmations(&signed_cet.txid())?;
+            .get_transaction_confirmations(&signed_cet.compute_txid())?;
 
         if confirmations < 1 {
             // TODO(tibo): if this fails because another tx is already in
@@ -812,7 +816,7 @@ where
             let refund = accepted_contract.dlc_transactions.refund.clone();
             let confirmations = self
                 .blockchain
-                .get_transaction_confirmations(&refund.txid())?;
+                .get_transaction_confirmations(&refund.compute_txid())?;
             if confirmations == 0 {
                 let offer = &contract.accepted_contract.offered_contract;
                 let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
@@ -850,7 +854,13 @@ where
         }
 
         // check if it is the refund tx (easy case)
-        if contract.accepted_contract.dlc_transactions.refund.txid() == closing_tx.txid() {
+        if contract
+            .accepted_contract
+            .dlc_transactions
+            .refund
+            .compute_txid()
+            == closing_tx.compute_txid()
+        {
             let refunded = Contract::Refunded(contract.clone());
             self.store.update_contract(&refunded)?;
             return Ok(refunded);
@@ -1224,7 +1234,7 @@ where
         )?;
 
         self.chain_monitor.lock().unwrap().add_tx(
-            close_tx.txid(),
+            close_tx.compute_txid(),
             ChannelInfo {
                 channel_id: *channel_id,
                 tx_type: TxType::CollaborativeClose,
@@ -1296,7 +1306,7 @@ where
 
         if self
             .blockchain
-            .get_transaction_confirmations(&buffer_tx.txid())?
+            .get_transaction_confirmations(&buffer_tx.compute_txid())?
             >= CET_NSEQUENCE
         {
             log::info!(
@@ -1440,7 +1450,7 @@ where
         } = &signed_channel.state
         {
             self.chain_monitor.lock().unwrap().add_tx(
-                buffer_transaction.txid(),
+                buffer_transaction.compute_txid(),
                 ChannelInfo {
                     channel_id: signed_channel.channel_id,
                     tx_type: TxType::BufferTx,
@@ -1506,7 +1516,7 @@ where
         } = &signed_channel.state
         {
             self.chain_monitor.lock().unwrap().add_tx(
-                buffer_transaction.txid(),
+                buffer_transaction.compute_txid(),
                 ChannelInfo {
                     channel_id: signed_channel.channel_id,
                     tx_type: TxType::BufferTx,
@@ -1593,7 +1603,7 @@ where
             signed_contract_id
         )?;
 
-        let prev_buffer_txid = prev_buffer_tx.txid();
+        let prev_buffer_txid = prev_buffer_tx.compute_txid();
         let own_buffer_adaptor_signature = *own_buffer_adaptor_signature;
         let is_offer = *is_offer;
         let signed_contract_id = *signed_contract_id;
@@ -1651,7 +1661,7 @@ where
 
         let own_buffer_adaptor_signature = *own_buffer_adaptor_signature;
         let is_offer = *is_offer;
-        let buffer_txid = buffer_tx.txid();
+        let buffer_txid = buffer_tx.compute_txid();
         let signed_contract_id = *signed_contract_id;
 
         crate::channel_updater::settle_channel_on_finalize(
@@ -1791,7 +1801,7 @@ where
                         is_offer: false,
                         revoked_tx_type: RevokedTxType::Buffer,
                     },
-                    buffer_transaction.txid(),
+                    buffer_transaction.compute_txid(),
                     Some(closed_contract),
                 )
             }
@@ -1806,7 +1816,7 @@ where
                     is_offer: false,
                     revoked_tx_type: RevokedTxType::Settle,
                 },
-                settle_tx.txid(),
+                settle_tx.compute_txid(),
                 None,
             ),
             s => {
@@ -1886,7 +1896,7 @@ where
                         is_offer: false,
                         revoked_tx_type: RevokedTxType::Buffer,
                     },
-                    buffer_transaction.txid(),
+                    buffer_transaction.compute_txid(),
                     Some(Contract::Closed(closed_contract)),
                 )
             }
@@ -1901,7 +1911,7 @@ where
                     is_offer: false,
                     revoked_tx_type: RevokedTxType::Settle,
                 },
-                settle_tx.txid(),
+                settle_tx.compute_txid(),
                 None,
             ),
             s => {
@@ -1930,7 +1940,7 @@ where
             get_signed_channel_state!(signed_channel, Established, ref buffer_transaction)?;
 
         self.chain_monitor.lock().unwrap().add_tx(
-            buffer_tx.txid(),
+            buffer_tx.compute_txid(),
             ChannelInfo {
                 channel_id: signed_channel.channel_id,
                 tx_type: TxType::BufferTx,
@@ -2016,7 +2026,7 @@ where
                                 &mut funding_input.prev_tx.as_slice(),
                             )
                             .expect("Transaction Decode Error")
-                            .txid();
+                            .compute_txid();
                             let vout = funding_input.prev_tx_vout;
                             OutPoint { txid, vout }
                         })
@@ -2235,7 +2245,7 @@ where
                     };
 
                     let fee_rate_per_vb: u64 = (self.fee_estimator.get_est_sat_per_1000_weight(
-                        lightning::chain::chaininterface::ConfirmationTarget::OnChainSweep,
+                        lightning::chain::chaininterface::ConfirmationTarget::UrgentOnChainSweep,
                     ) / 250)
                         .into();
 
@@ -2278,7 +2288,7 @@ where
                         counter_party: signed_channel.counter_party,
                         temporary_channel_id: signed_channel.temporary_channel_id,
                         channel_id: signed_channel.channel_id,
-                        punish_txid: signed_tx.txid(),
+                        punish_txid: signed_tx.compute_txid(),
                     });
 
                     //TODO(tibo): should probably make sure the tx is confirmed somewhere before
@@ -2498,7 +2508,7 @@ where
         self.chain_monitor
             .lock()
             .unwrap()
-            .remove_tx(&buffer_transaction.txid());
+            .remove_tx(&buffer_transaction.compute_txid());
 
         self.store
             .upsert_channel(Channel::Signed(signed_channel), None)?;
@@ -2524,7 +2534,7 @@ where
 
         if self
             .blockchain
-            .get_transaction_confirmations(&settle_tx.txid())
+            .get_transaction_confirmations(&settle_tx.compute_txid())
             .unwrap_or(0)
             == 0
         {

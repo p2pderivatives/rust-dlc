@@ -9,6 +9,8 @@ pub enum Error {
     Conversion(crate::conversion_utils::Error),
     /// An IO error.
     IOError(lightning::io::Error),
+    /// Deserialize error
+    Deserialize(bitcoin::consensus::encode::Error),
     /// Some invalid parameters were provided.
     InvalidParameters(String),
     /// An invalid state was encounter, likely to indicate a bug.
@@ -32,6 +34,7 @@ impl fmt::Display for Error {
         match *self {
             Error::Conversion(_) => write!(f, "Conversion error"),
             Error::IOError(_) => write!(f, "IO error"),
+            Error::Deserialize(ref s) => write!(f, "Deserialize error: {}", s),
             Error::InvalidState(ref s) => write!(f, "Invalid state: {}", s),
             Error::InvalidParameters(ref s) => write!(f, "Invalid parameters were provided: {}", s),
             Error::WalletError(ref e) => write!(f, "Wallet error {}", e),
@@ -74,12 +77,19 @@ impl From<secp256k1_zkp::UpstreamError> for Error {
     }
 }
 
+impl From<bitcoin::consensus::encode::Error> for Error {
+    fn from(e: bitcoin::consensus::encode::Error) -> Self {
+        Error::Deserialize(e)
+    }
+}
+
 #[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Conversion(e) => Some(e),
             Error::IOError(e) => Some(e),
+            Error::Deserialize(e) => Some(e),
             Error::InvalidParameters(_) => None,
             Error::InvalidState(_) => None,
             Error::WalletError(_) => None,

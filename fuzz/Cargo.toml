@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 dlc-messages = {path = "../dlc-messages"}
 honggfuzz = "0.5"
-lightning = {version = "0.0.121" }
+lightning = {version = "0.0.124" }
 
 [workspace]
 members = ["."]

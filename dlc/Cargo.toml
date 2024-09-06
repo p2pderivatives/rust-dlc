@@ -5,14 +5,13 @@ homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "dlc"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc"
-version = "0.5.0"
+version = "0.6.0"
 
 [dependencies]
-bitcoin = { version = "0.30.2", default-features = false }
-hashbrown = { version = "0.11.2", optional = true }
-miniscript = { version = "10", default-features = false }
-secp256k1-sys = "0.8.1"
-secp256k1-zkp = "0.9.2"
+bitcoin = { version = "0.32.2", default-features = false }
+miniscript = { version = "12.2", default-features = false }
+secp256k1-sys = "0.10.0"
+secp256k1-zkp = "0.11.0"
 serde = { version = "1.0", default-features = false, optional = true }
 
 [features]
@@ -20,12 +19,12 @@ serde = { version = "1.0", default-features = false, optional = true }
 unstable = []
 default = ["std"]
 std = ["bitcoin/std", "miniscript/std", "secp256k1-zkp/rand-std"]
-no-std = ["dep:hashbrown", "miniscript/no-std", "bitcoin/no-std"]
+no-std = ["miniscript/no-std"]
 use-serde = ["serde", "secp256k1-zkp/serde", "bitcoin/serde"]
 
 [dev-dependencies]
 bitcoin-test-utils = { path = "../bitcoin-test-utils" }
-bitcoincore-rpc = { version = "0.17.0" }
-bitcoincore-rpc-json = { version = "0.17.0" }
+bitcoincore-rpc = { version = "0.19.0" }
+bitcoincore-rpc-json = { version = "0.19.0" }
 rayon = "1.5"
-secp256k1-zkp = { version = "0.9.2", features = ["bitcoin_hashes", "rand","serde", "global-context"] }
+secp256k1-zkp = { version = "0.11.0", features = ["hashes", "rand","serde", "global-context"] }

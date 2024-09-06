@@ -1,7 +1,7 @@
 //! Set of utility functions to help with serialization.
 
-use bitcoin::network::constants::Network;
 use bitcoin::Address;
+use bitcoin::Network;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::io::Read;
 use lightning::ln::msgs::DecodeError;
@@ -470,18 +470,36 @@ where
 }
 
 /// Writes a [`bitcoin::util::address::Address`] value to the given writer.
+///
+/// https://docs.rs/bitcoin/0.30.2/bitcoin/address/struct.Address.html
+///
+/// Parsed addresses do not always have one network. The problem is that legacy testnet, regtest and
+/// signet addresse use the same prefix instead of multiple different ones. When parsing,
+/// such addresses are always assumed to be testnet addresses (the same is true for bech32 signet addresses).
+///
+/// Only checks if the address is Mainnet.
 pub fn write_address<W: Writer>(
     address: &Address,
     writer: &mut W,
 ) -> Result<(), ::lightning::io::Error> {
     address.script_pubkey().write(writer)?;
-    let net: u8 = match address.network {
-        Network::Bitcoin => 0,
-        Network::Testnet => 1,
-        Network::Signet => 2,
-        Network::Regtest => 3,
-        _ => unimplemented!(),
-    };
+    let unchecked_address = address.as_unchecked();
+
+    const NETWORKS: [Network; 4] = [
+        Network::Bitcoin,
+        Network::Testnet,
+        Network::Signet,
+        Network::Regtest,
+    ];
+
+    let mut net: u8 = 0;
+
+    for (i, n) in NETWORKS.iter().enumerate() {
+        if unchecked_address.is_valid_for_network(*n) {
+            net = i as u8;
+            break;
+        }
+    }
 
     net.write(writer)
 }
@@ -639,7 +657,7 @@ impl_dlc_writeable_external!(PartyParams, party_params, {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use lightning::io::Cursor;
 
     use super::{read_f64, write_f64};
 
@@ -648,7 +666,7 @@ mod tests {
         let original = 2.3;
         let mut ser = Vec::new();
         write_f64(original, &mut ser).unwrap();
-        let deser = read_f64(&mut Cursor::new(&mut ser)).unwrap();
+        let deser = read_f64(&mut Cursor::new(&ser)).unwrap();
 
         assert_eq!(original, deser);
     }

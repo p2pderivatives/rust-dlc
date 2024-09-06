@@ -36,7 +36,7 @@ pub mod manager;
 pub mod payout_curve;
 mod utils;
 
-use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::psbt::Psbt;
 use bitcoin::{Address, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
@@ -162,11 +162,7 @@ pub trait Wallet {
     /// Import the provided address.
     fn import_address(&self, address: &Address) -> Result<(), Error>;
     /// Signs a transaction input
-    fn sign_psbt_input(
-        &self,
-        psbt: &mut PartiallySignedTransaction,
-        input_index: usize,
-    ) -> Result<(), Error>;
+    fn sign_psbt_input(&self, psbt: &mut Psbt, input_index: usize) -> Result<(), Error>;
     /// Unlock reserved utxo
     fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error>;
 }
@@ -176,7 +172,7 @@ pub trait Blockchain {
     /// Broadcast the given transaction to the bitcoin network.
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error>;
     /// Returns the network currently used (mainnet, testnet or regtest).
-    fn get_network(&self) -> Result<bitcoin::network::constants::Network, Error>;
+    fn get_network(&self) -> Result<bitcoin::Network, Error>;
     /// Returns the height of the blockchain
     fn get_blockchain_height(&self) -> Result<u64, Error>;
     /// Returns the block at given height

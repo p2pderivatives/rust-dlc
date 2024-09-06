@@ -86,7 +86,7 @@ macro_rules! handle_read_dlc_messages {
     ($msg_type:ident, $buffer:ident, $(($type_id:ident, $variant:ident)),*) => {{
         let decoded = match $msg_type {
             $(
-                $crate::$type_id => Message::$variant(Readable::read(&mut $buffer)?),
+                $crate::$type_id => Message::$variant(Readable::read($buffer)?),
             )*
             _ => return Ok(None),
         };
@@ -97,7 +97,7 @@ macro_rules! handle_read_dlc_messages {
 /// Parses a DLC message from a buffer.
 pub fn read_dlc_message<R: ::lightning::io::Read>(
     msg_type: u16,
-    mut buffer: &mut R,
+    buffer: &mut R,
 ) -> Result<Option<WireMessage>, DecodeError> {
     handle_read_dlc_messages!(
         msg_type,
@@ -128,14 +128,14 @@ impl CustomMessageReader for MessageHandler {
     fn read<R: ::lightning::io::Read>(
         &self,
         msg_type: u16,
-        mut buffer: &mut R,
+        buffer: &mut R,
     ) -> Result<Option<WireMessage>, DecodeError> {
         let decoded = match msg_type {
             crate::segmentation::SEGMENT_START_TYPE => {
-                WireMessage::SegmentStart(Readable::read(&mut buffer)?)
+                WireMessage::SegmentStart(Readable::read(buffer)?)
             }
             crate::segmentation::SEGMENT_CHUNK_TYPE => {
-                WireMessage::SegmentChunk(Readable::read(&mut buffer)?)
+                WireMessage::SegmentChunk(Readable::read(buffer)?)
             }
             _ => return read_dlc_message(msg_type, buffer),
         };
@@ -147,6 +147,17 @@ impl CustomMessageReader for MessageHandler {
 /// Implementation of the `CustomMessageHandler` trait is required to handle
 /// custom messages in the LDK.
 impl CustomMessageHandler for MessageHandler {
+    fn peer_connected(
+        &self,
+        _their_node_id: &PublicKey,
+        _msg: &lightning::ln::msgs::Init,
+        _inbound: bool,
+    ) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn peer_disconnected(&self, _their_node_id: &PublicKey) {}
+
     fn handle_custom_message(
         &self,
         msg: WireMessage,

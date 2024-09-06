@@ -220,7 +220,7 @@ where
     let own_secret_key = derive_private_key(secp, &first_per_update_point, &own_base_secret_key);
 
     let channel_id = crate::utils::compute_id(
-        dlc_transactions.fund.txid(),
+        dlc_transactions.fund.compute_txid(),
         dlc_transactions.get_fund_output_index() as u16,
         &offered_channel.temporary_channel_id,
     );
@@ -228,7 +228,7 @@ where
     let buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
         &buffer_transaction,
-        dlc_transactions.get_fund_output().value,
+        dlc_transactions.get_fund_output().value.to_sat(),
         &dlc_transactions.funding_script_pubkey,
         &signer.get_secret_key()?,
         &offer_revoke_params.publish_pk.inner,
@@ -240,7 +240,7 @@ where
         &accept_params,
         &funding_inputs,
         &own_secret_key,
-        buffer_transaction.output[0].value,
+        buffer_transaction.output[0].value.to_sat(),
         Some(&buffer_script_pubkey),
         &dlc_transactions,
     )?;
@@ -349,7 +349,7 @@ where
     )?;
 
     let channel_id = crate::utils::compute_id(
-        dlc_transactions.fund.txid(),
+        dlc_transactions.fund.compute_txid(),
         dlc_transactions.get_fund_output_index() as u16,
         &offered_channel.temporary_channel_id,
     );
@@ -363,7 +363,7 @@ where
         &accept_channel.funding_inputs,
         &accept_channel.refund_signature,
         &accept_cet_adaptor_signatures,
-        buffer_transaction.output[0].value,
+        buffer_transaction.output[0].value.to_sat(),
         wallet,
         &offer_own_sk,
         Some(&buffer_script_pubkey),
@@ -375,7 +375,7 @@ where
     verify_tx_adaptor_signature(
         secp,
         &buffer_transaction,
-        dlc_transactions.get_fund_output().value,
+        dlc_transactions.get_fund_output().value.to_sat(),
         &dlc_transactions.funding_script_pubkey,
         &signed_contract.accepted_contract.accept_params.fund_pubkey,
         &offer_revoke_params.publish_pk.inner,
@@ -385,14 +385,14 @@ where
     let own_buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
         &buffer_transaction,
-        dlc_transactions.get_fund_output().value,
+        dlc_transactions.get_fund_output().value.to_sat(),
         &dlc_transactions.funding_script_pubkey,
         &offer_fund_sk.get_secret_key()?,
         &accept_revoke_params.publish_pk.inner,
     )?;
 
     chain_monitor.lock().unwrap().add_tx(
-        buffer_transaction.txid(),
+        buffer_transaction.compute_txid(),
         ChannelInfo {
             channel_id,
             tx_type: TxType::BufferTx,
@@ -471,7 +471,11 @@ where
     verify_tx_adaptor_signature(
         secp,
         &accepted_channel.buffer_transaction,
-        accepted_contract.dlc_transactions.get_fund_output().value,
+        accepted_contract
+            .dlc_transactions
+            .get_fund_output()
+            .value
+            .to_sat(),
         &accepted_contract.dlc_transactions.funding_script_pubkey,
         &accepted_contract.offered_contract.offer_params.fund_pubkey,
         &own_publish_pk,
@@ -486,7 +490,7 @@ where
         &sign_channel.refund_signature,
         &cet_adaptor_signatures,
         &sign_channel.funding_signatures,
-        accepted_channel.buffer_transaction.output[0].value,
+        accepted_channel.buffer_transaction.output[0].value.to_sat(),
         Some(&accepted_channel.buffer_script_pubkey),
         Some(counter_own_pk),
         wallet,
@@ -494,7 +498,7 @@ where
     )?;
 
     chain_monitor.lock().unwrap().add_tx(
-        accepted_channel.buffer_transaction.txid(),
+        accepted_channel.buffer_transaction.compute_txid(),
         ChannelInfo {
             channel_id: accepted_channel.channel_id,
             tx_type: TxType::BufferTx,
@@ -714,7 +718,7 @@ where
     )?;
 
     chain_monitor.lock().unwrap().add_tx(
-        settle_tx.txid(),
+        settle_tx.compute_txid(),
         ChannelInfo {
             channel_id: channel.channel_id,
             tx_type: TxType::SettleTx,
@@ -808,7 +812,7 @@ where
     )?;
 
     chain_monitor.lock().unwrap().add_tx(
-        settle_tx.txid(),
+        settle_tx.compute_txid(),
         ChannelInfo {
             channel_id: channel.channel_id,
             tx_type: TxType::SettleTx,
@@ -905,7 +909,9 @@ where
     verify_tx_adaptor_signature(
         secp,
         settle_tx,
-        channel.fund_tx.output[channel.fund_output_index].value,
+        channel.fund_tx.output[channel.fund_output_index]
+            .value
+            .to_sat(),
         &channel.fund_script_pubkey,
         &channel.counter_params.fund_pubkey,
         &accept_revoke_params.publish_pk.inner,
@@ -1307,7 +1313,7 @@ where
         &signed_channel.own_params,
         &[],
         &own_secret_key,
-        buffer_transaction.output[0].value,
+        buffer_transaction.output[0].value.to_sat(),
         Some(&buffer_script_pubkey),
         &dlc_transactions,
     )?;
@@ -1411,7 +1417,7 @@ where
         &[],
         &renew_accept.refund_signature,
         &cet_adaptor_signatures,
-        buffer_transaction.output[0].value,
+        buffer_transaction.output[0].value.to_sat(),
         wallet,
         &offer_own_sk,
         Some(&buffer_script_pubkey),
@@ -1423,7 +1429,7 @@ where
     let own_buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
         &buffer_transaction,
-        dlc_transactions.get_fund_output().value,
+        dlc_transactions.get_fund_output().value.to_sat(),
         &dlc_transactions.funding_script_pubkey,
         &contract_signer.get_secret_key()?,
         &accept_revoke_params.publish_pk.inner,
@@ -1504,7 +1510,9 @@ where
     verify_tx_adaptor_signature(
         secp,
         buffer_transaction,
-        signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
+        signed_channel.fund_tx.output[signed_channel.fund_output_index]
+            .value
+            .to_sat(),
         &signed_channel.fund_script_pubkey,
         counter_buffer_own_pk,
         &own_publish_pk,
@@ -1520,7 +1528,7 @@ where
         &FundingSignatures {
             funding_signatures: Vec::new(),
         },
-        buffer_transaction.output[0].value,
+        buffer_transaction.output[0].value.to_sat(),
         Some(buffer_script_pubkey),
         Some(counter_own_pk),
         wallet,
@@ -1551,7 +1559,7 @@ where
     let buffer_adaptor_signature = get_tx_adaptor_signature(
         secp,
         buffer_transaction,
-        buffer_input_value,
+        buffer_input_value.to_sat(),
         &signed_channel.fund_script_pubkey,
         &own_fund_sk,
         &offer_revoke_params.publish_pk.inner,
@@ -1561,7 +1569,7 @@ where
         signed_channel.own_params.collateral + signed_channel.counter_params.collateral;
 
     chain_monitor.lock().unwrap().add_tx(
-        buffer_transaction.txid(),
+        buffer_transaction.compute_txid(),
         ChannelInfo {
             channel_id: signed_channel.channel_id,
             tx_type: TxType::BufferTx,
@@ -1630,7 +1638,7 @@ where
     verify_tx_adaptor_signature(
         secp,
         buffer_transaction,
-        buffer_input_value,
+        buffer_input_value.to_sat(),
         &signed_channel.fund_script_pubkey,
         counter_buffer_own_pk,
         &offer_revoke_params.publish_pk.inner,
@@ -1795,10 +1803,10 @@ where
         &signed_channel.counter_params,
         counter_payout,
         OutPoint {
-            txid: signed_channel.fund_tx.txid(),
+            txid: signed_channel.fund_tx.compute_txid(),
             vout: signed_channel.fund_output_index as u32,
         },
-        fund_output_value,
+        fund_output_value.to_sat(),
     );
 
     let keys_id = signed_channel
@@ -1811,7 +1819,7 @@ where
         &close_tx,
         0,
         &signed_channel.fund_script_pubkey,
-        fund_output_value,
+        fund_output_value.to_sat(),
         &contract_signer.get_secret_key()?,
     )?;
 
@@ -1870,10 +1878,10 @@ where
         &signed_channel.own_params,
         close_offer.counter_payout,
         OutPoint {
-            txid: signed_channel.fund_tx.txid(),
+            txid: signed_channel.fund_tx.compute_txid(),
             vout: signed_channel.fund_output_index as u32,
         },
-        fund_output_value,
+        fund_output_value.to_sat(),
     );
 
     let mut state = SignedChannelState::CollaborativeCloseOffered {
@@ -1922,7 +1930,7 @@ where
         &signed_channel.counter_params.fund_pubkey,
         &own_fund_sk,
         &signed_channel.fund_script_pubkey,
-        fund_out_amount,
+        fund_out_amount.to_sat(),
         0,
     )?;
 
@@ -1961,7 +1969,7 @@ fn get_settle_tx_and_adaptor_sig(
 
     let fund_tx_in = TxIn {
         previous_output: bitcoin::OutPoint {
-            txid: fund_tx.txid(),
+            txid: fund_tx.compute_txid(),
             vout: fund_vout as u32,
         },
         script_sig: ScriptBuf::new(),
@@ -1989,7 +1997,7 @@ fn get_settle_tx_and_adaptor_sig(
         accept_payout,
         csv_timelock,
         lock_time,
-        fund_tx.output[fund_vout].value,
+        fund_tx.output[fund_vout].value.to_sat(),
         fee_rate_per_vb,
     )?;
 
@@ -1997,7 +2005,7 @@ fn get_settle_tx_and_adaptor_sig(
         verify_tx_adaptor_signature(
             secp,
             &settle_tx,
-            fund_tx.output[fund_vout].value,
+            fund_tx.output[fund_vout].value.to_sat(),
             funding_script_pubkey,
             &fund_pk,
             &offer_revoke_params.publish_pk.inner,
@@ -2014,7 +2022,7 @@ fn get_settle_tx_and_adaptor_sig(
     let settle_adaptor_signature = dlc::channel::get_tx_adaptor_signature(
         secp,
         &settle_tx,
-        fund_tx.output[fund_vout].value,
+        fund_tx.output[fund_vout].value.to_sat(),
         funding_script_pubkey,
         own_fund_sk,
         &counter_pk,
@@ -2087,7 +2095,9 @@ where
         &signed_channel.counter_params.fund_pubkey,
         &buffer_input_sk,
         &signed_channel.fund_script_pubkey,
-        signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
+        signed_channel.fund_tx.output[signed_channel.fund_output_index]
+            .value
+            .to_sat(),
         0,
     )?;
 
@@ -2193,7 +2203,7 @@ where
     dlc::channel::sign_cet(
         secp,
         &mut cet,
-        buffer_transaction.output[0].value,
+        buffer_transaction.output[0].value.to_sat(),
         &offer_revoke_params,
         &accept_revoke_params,
         &own_sk,
@@ -2254,7 +2264,9 @@ where
         &signed_channel.counter_params.fund_pubkey,
         &fund_sk,
         &signed_channel.fund_script_pubkey,
-        signed_channel.fund_tx.output[signed_channel.fund_output_index].value,
+        signed_channel.fund_tx.output[signed_channel.fund_output_index]
+            .value
+            .to_sat(),
         0,
     )?;
 

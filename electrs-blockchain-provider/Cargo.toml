@@ -6,11 +6,11 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitcoin = {version = "0.30"}
+bitcoin = {version = "0.32.2"}
 bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.121"}
-lightning-block-sync = {version = "0.0.121"}
+lightning = {version = "0.0.124"}
+lightning-block-sync = {version = "0.0.124"}
 reqwest = {version = "0.11", features = ["blocking", "json"]}
 serde = {version = "*", features = ["derive"]}
 simple-wallet = {path = "../simple-wallet"}

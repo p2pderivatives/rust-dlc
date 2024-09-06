@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bitcoin::consensus::Decodable;
+use bitcoin::Amount;
 use bitcoin::{
     block::Header, Block, BlockHash, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
 };
@@ -129,9 +130,7 @@ impl Blockchain for ElectrsBlockchainProvider {
         Ok(())
     }
 
-    fn get_network(
-        &self,
-    ) -> Result<bitcoin::network::constants::Network, dlc_manager::error::Error> {
+    fn get_network(&self) -> Result<bitcoin::Network, dlc_manager::error::Error> {
         Ok(self.network)
     }
 
@@ -142,13 +141,14 @@ impl Blockchain for ElectrsBlockchainProvider {
     fn get_block_at_height(&self, height: u64) -> Result<Block, dlc_manager::error::Error> {
         let hash_at_height = self.get_text(&format!("block-height/{height}"))?;
         let raw_block = self.get_bytes(&format!("block/{hash_at_height}/raw"))?;
-        Block::consensus_decode(&mut std::io::Cursor::new(&*raw_block))
+        // TODO: Bitcoin IO for all
+        Block::consensus_decode(&mut bitcoin::io::Cursor::new(&*raw_block))
             .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, dlc_manager::error::Error> {
         let raw_tx = self.get_bytes(&format!("tx/{tx_id}/raw"))?;
-        Transaction::consensus_decode(&mut std::io::Cursor::new(&*raw_tx))
+        Transaction::consensus_decode(&mut lightning::io::Cursor::new(&*raw_tx))
             .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
@@ -189,7 +189,7 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
                     redeem_script: ScriptBuf::default(),
                     reserved: false,
                     tx_out: TxOut {
-                        value: x.value,
+                        value: Amount::from_sat(x.value),
                         script_pubkey: address.script_pubkey(),
                     },
                 })
@@ -228,9 +228,15 @@ impl FeeEstimator for ElectrsBlockchainProvider {
                 .get(&Target::Normal)
                 .unwrap()
                 .load(Ordering::Acquire),
-            ConfirmationTarget::OnChainSweep => self
+            ConfirmationTarget::UrgentOnChainSweep => self
                 .fees
                 .get(&Target::HighPriority)
+                .unwrap()
+                .load(Ordering::Acquire),
+            // TODO: Map all
+            _ => self
+                .fees
+                .get(&Target::Normal)
                 .unwrap()
                 .load(Ordering::Acquire),
         };
@@ -261,14 +267,14 @@ impl BlockSource for ElectrsBlockchainProvider {
                 .await
                 .map_err(BlockSourceError::transient)?;
             let header_hex = bitcoin_test_utils::str_to_hex(&header_hex_str);
-            let header = Header::consensus_decode(&mut std::io::Cursor::new(&*header_hex))
+            let header = Header::consensus_decode(&mut lightning::io::Cursor::new(&*header_hex))
                 .expect("to have a valid header");
             header.validate_pow(header.target()).unwrap();
             Ok(BlockHeaderData {
                 header,
                 height: block_info.height,
                 // Electrs doesn't seem to make this available.
-                chainwork: bitcoin::pow::Work::MAINNET_MIN,
+                chainwork: header.work(),
             })
         })
     }
@@ -285,7 +291,7 @@ impl BlockSource for ElectrsBlockchainProvider {
                 .bytes()
                 .await
                 .map_err(BlockSourceError::transient)?;
-            let block = Block::consensus_decode(&mut std::io::Cursor::new(&*block_raw))
+            let block = Block::consensus_decode(&mut lightning::io::Cursor::new(&*block_raw))
                 .expect("to have a valid header");
             Ok(BlockData::FullBlock(block))
         })
