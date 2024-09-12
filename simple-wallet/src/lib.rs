@@ -2,12 +2,12 @@ use std::ops::Deref;
 
 use bdk_wallet::{
     chain::ConfirmationTime,
-    coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
+    coin_selection::{CoinSelectionAlgorithm, OldestFirstCoinSelection},
     KeychainKind, LocalOutput, Utxo as BdkUtxo, WeightedUtxo,
 };
 use bitcoin::{
-    hashes::Hash, Address, Amount, CompressedPublicKey, FeeRate, KnownHrp, Network, OutPoint,
-    PrivateKey, Sequence, Transaction, TxIn, TxOut, Txid, Weight, Witness,
+    hashes::Hash, Address, Amount, CompressedPublicKey, FeeRate, Network, OutPoint, PrivateKey,
+    Sequence, Transaction, TxIn, TxOut, Txid, Weight, Witness,
 };
 use bitcoin::{psbt::Psbt, ScriptBuf};
 use dlc_manager::{
@@ -226,7 +226,7 @@ where
         let seckey = SecretKey::new(&mut thread_rng());
         let privkey = PrivateKey::new(seckey, self.network);
         let pubkey = CompressedPublicKey::from_private_key(&self.secp_ctx, &privkey).unwrap();
-        let address = Address::p2wpkh(&pubkey, KnownHrp::Regtest);
+        let address = Address::p2wpkh(&pubkey, self.network);
         self.storage.upsert_address(&address, &seckey)?;
         Ok(address)
     }
@@ -261,7 +261,7 @@ where
                 }
             })
             .collect::<Vec<_>>();
-        let coin_selection = BranchAndBoundCoinSelection::default();
+        let coin_selection = OldestFirstCoinSelection;
         let dummy_pubkey: PublicKey =
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
                 .parse()

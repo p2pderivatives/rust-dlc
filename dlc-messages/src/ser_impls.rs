@@ -483,15 +483,23 @@ pub fn write_address<W: Writer>(
     writer: &mut W,
 ) -> Result<(), ::lightning::io::Error> {
     address.script_pubkey().write(writer)?;
+    let unchecked_address = address.as_unchecked();
 
-    let net: u8 = if address
-        .as_unchecked()
-        .is_valid_for_network(Network::Bitcoin)
-    {
-        0
-    } else {
-        1
-    };
+    const NETWORKS: [Network; 4] = [
+        Network::Bitcoin,
+        Network::Testnet,
+        Network::Signet,
+        Network::Regtest,
+    ];
+
+    let mut net: u8 = 0;
+
+    for (i, n) in NETWORKS.iter().enumerate() {
+        if unchecked_address.is_valid_for_network(*n) {
+            net = i as u8;
+            break;
+        }
+    }
 
     net.write(writer)
 }

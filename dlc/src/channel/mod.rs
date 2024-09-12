@@ -1,13 +1,10 @@
 //! Module for working with DLC channels
 
-#[cfg(all(feature = "no-std", not(feature = "std")))]
-extern crate hashbrown;
-
 #[cfg(any(feature = "std", not(feature = "no-std")))]
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[cfg(all(feature = "no-std", not(feature = "std")))]
-use self::hashbrown::HashMap;
+use alloc::collections::BTreeMap;
 
 use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, PartyParams, Payout};
 
@@ -367,7 +364,7 @@ pub fn sign_cet<C: Signing>(
     )?;
     let own_pk = SecpPublicKey::from_secret_key(secp, own_sk);
 
-    let sigs = HashMap::from_iter([
+    let sigs = BTreeMap::from_iter([
         (
             PublicKey {
                 inner: own_pk,
@@ -438,7 +435,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
         }],
     };
 
-    let mut sigs = HashMap::new();
+    let mut sigs = BTreeMap::new();
 
     for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
         let pk = PublicKey {
@@ -526,7 +523,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         }],
     };
 
-    let mut sigs = HashMap::new();
+    let mut sigs = BTreeMap::new();
 
     for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
         let pk = PublicKey {
@@ -792,7 +789,7 @@ mod tests {
             sighash_type: EcdsaSighashType::All,
         };
 
-        let satisfier = HashMap::from_iter(vec![
+        let satisfier = BTreeMap::from_iter(vec![
             (offer_params.own_pk, sig),
             (accept_params.own_pk, sig),
         ]);
@@ -922,7 +919,7 @@ mod tests {
             sighash_type: EcdsaSighashType::All,
         };
 
-        let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig)]);
+        let satisfier = BTreeMap::from_iter(vec![(offer_params.own_pk, sig)]);
 
         descriptor
             .satisfy(

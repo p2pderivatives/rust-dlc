@@ -12,6 +12,8 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
+#[cfg(not(feature = "std"))]
+extern crate alloc;
 extern crate bitcoin;
 extern crate core;
 extern crate miniscript;

@@ -217,7 +217,7 @@ impl ContractSignerProvider for BitcoinCoreProvider {
     }
 
     fn get_secret_key_for_pubkey(&self, pubkey: &PublicKey) -> Result<SecretKey, ManagerError> {
-        let b_pubkey = bitcoin::CompressedPublicKey(pubkey.to_owned());
+        let b_pubkey = bitcoin::CompressedPublicKey(*pubkey);
         let address = Address::p2wpkh(&b_pubkey, self.get_network()?);
 
         let pk = self

@@ -9,7 +9,6 @@ version = "0.6.0"
 
 [dependencies]
 bitcoin = { version = "0.32.2", default-features = false }
-hashbrown = { version = "0.11.2", optional = true }
 miniscript = { version = "12.2", default-features = false }
 secp256k1-sys = "0.10.0"
 secp256k1-zkp = "0.11.0"
@@ -20,7 +19,7 @@ serde = { version = "1.0", default-features = false, optional = true }
 unstable = []
 default = ["std"]
 std = ["bitcoin/std", "miniscript/std", "secp256k1-zkp/rand-std"]
-no-std = ["dep:hashbrown", "miniscript/no-std"]
+no-std = ["miniscript/no-std"]
 use-serde = ["serde", "secp256k1-zkp/serde", "bitcoin/serde"]
 
 [dev-dependencies]
