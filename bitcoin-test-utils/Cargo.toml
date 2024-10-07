@@ -4,6 +4,6 @@ name = "bitcoin-test-utils"
 version = "0.1.0"
 
 [dependencies]
-bitcoin = { version = "0.30.2", default-features = false }
-bitcoincore-rpc = {version = "0.17"}
-bitcoincore-rpc-json = {version = "0.17"}
+bitcoin = { version = "0.32.2", default-features = false }
+bitcoincore-rpc = {version = "0.19"}
+bitcoincore-rpc-json = {version = "0.19"}

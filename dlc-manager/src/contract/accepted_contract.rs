@@ -36,7 +36,7 @@ impl AcceptedContract {
     /// <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Protocol.md#requirements-2>
     pub fn get_contract_id(&self) -> [u8; 32] {
         crate::utils::compute_id(
-            self.dlc_transactions.fund.txid(),
+            self.dlc_transactions.fund.compute_txid(),
             self.dlc_transactions.get_fund_output_index() as u16,
             &self.offered_contract.id,
         )
@@ -89,7 +89,7 @@ impl AcceptedContract {
             .iter()
             .find_map(|x| {
                 if &x.script_pubkey == v0_witness_payout_script {
-                    Some(x.value)
+                    Some(x.value.to_sat())
                 } else {
                     None
                 }
@@ -101,7 +101,7 @@ impl AcceptedContract {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use lightning::io::Cursor;
 
     use lightning::util::ser::Readable;
 

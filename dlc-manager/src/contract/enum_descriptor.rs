@@ -4,6 +4,7 @@ use super::contract_info::OracleIndexAndPrefixLength;
 use super::utils::{get_majority_combination, unordered_equal};
 use super::AdaptorInfo;
 use crate::error::Error;
+use bitcoin::hashes::Hash;
 use bitcoin::{Script, Transaction};
 use dlc::OracleInfo;
 use dlc::{EnumerationPayout, Payout};
@@ -240,9 +241,9 @@ impl EnumDescriptor {
             .outcome_payouts
             .iter()
             .map(|x| {
-                let message = vec![Message::from_hashed_data::<
-                    secp256k1_zkp::hashes::sha256::Hash,
-                >(x.outcome.as_bytes())];
+                let hash =
+                    secp256k1_zkp::hashes::sha256::Hash::hash(x.outcome.as_bytes()).to_byte_array();
+                let message = vec![Message::from_digest(hash)];
                 std::iter::repeat(message).take(threshold).collect()
             })
             .collect();

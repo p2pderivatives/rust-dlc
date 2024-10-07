@@ -9,7 +9,7 @@ use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
     PolynomialPayoutCurvePiece, RoundingInterval, RoundingIntervals,
 };
-use bitcoin::{consensus::encode::Decodable, OutPoint, Transaction};
+use bitcoin::{consensus::encode::Decodable, Amount, OutPoint, Transaction};
 use dlc::{EnumerationPayout, Payout, TxInputInfo};
 use dlc_messages::oracle_msgs::{
     MultiOracleInfo, OracleInfo as SerOracleInfo, OracleParams, SingleOracleInfo,
@@ -72,7 +72,7 @@ impl From<bitcoin::consensus::encode::Error> for Error {
 pub fn get_tx_input_infos(
     funding_inputs: &[FundingInput],
 ) -> Result<(Vec<TxInputInfo>, u64), Error> {
-    let mut input_amount = 0;
+    let mut input_amount = Amount::ZERO;
     let mut inputs = Vec::new();
 
     for fund_input in funding_inputs {
@@ -85,7 +85,7 @@ pub fn get_tx_input_infos(
         input_amount += tx_out.value;
         inputs.push(TxInputInfo {
             outpoint: OutPoint {
-                txid: tx.txid(),
+                txid: tx.compute_txid(),
                 vout,
             },
             max_witness_len: 107,
@@ -94,7 +94,7 @@ pub fn get_tx_input_infos(
         });
     }
 
-    Ok((inputs, input_amount))
+    Ok((inputs, input_amount.to_sat()))
 }
 
 pub(crate) fn get_contract_info_and_announcements(

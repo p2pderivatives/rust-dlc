@@ -1,6 +1,6 @@
 use lightning::util::logger::{Logger, Record};
-use lightning::util::ser::Writer;
 use std::fs;
+use std::io::Write;
 use time::OffsetDateTime;
 
 pub(crate) struct FilesystemLogger {
@@ -26,6 +26,7 @@ impl Logger for FilesystemLogger {
             record.line,
             raw_log
         );
+
         let logs_file_path = format!("{}/logs.txt", self.data_dir.clone());
         fs::OpenOptions::new()
             .create(true)

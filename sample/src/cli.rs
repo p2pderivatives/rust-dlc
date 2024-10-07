@@ -115,7 +115,7 @@ pub(crate) async fn poll_for_user_input(
                         match parse_peer_info(peer_pubkey_and_ip_addr.unwrap().to_string()) {
                             Ok(info) => info,
                             Err(e) => {
-                                println!("{:?}", e.into_inner().unwrap());
+                                println!("{:?}", e);
                                 print!("> ");
                                 io::stdout().flush().unwrap();
                                 continue;
@@ -146,7 +146,7 @@ pub(crate) async fn poll_for_user_input(
                         match parse_peer_info(peer_pubkey_and_ip_addr.to_string()) {
                             Ok(info) => info,
                             Err(e) => {
-                                println!("{:?}", e.into_inner().unwrap());
+                                println!("{:?}", e);
                                 print!("> ");
                                 io::stdout().flush().unwrap();
                                 continue;
@@ -507,8 +507,8 @@ fn help() {
 
 fn list_peers(peer_manager: Arc<PeerManager>) {
     println!("\t{{");
-    for (pubkey, _) in peer_manager.get_peer_node_ids() {
-        println!("\t\t pubkey: {}", pubkey);
+    for peer in peer_manager.list_peers() {
+        println!("\t\t pubkey: {}", peer.counterparty_node_id);
     }
     println!("\t}},");
 }
@@ -518,8 +518,8 @@ pub(crate) async fn connect_peer_if_necessary(
     peer_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
 ) -> Result<(), ()> {
-    for (node_pubkey, _) in peer_manager.get_peer_node_ids() {
-        if node_pubkey == pubkey {
+    for peer in peer_manager.list_peers() {
+        if peer.counterparty_node_id == pubkey {
             return Ok(());
         }
     }
@@ -537,9 +537,9 @@ pub(crate) async fn connect_peer_if_necessary(
                 }
                 // Avoid blocking the tokio context by sleeping a bit
                 match peer_manager
-                    .get_peer_node_ids()
+                    .list_peers()
                     .iter()
-                    .find(|id| id.0 == pubkey)
+                    .find(|id| id.counterparty_node_id == pubkey)
                 {
                     Some(_) => break,
                     None => tokio::time::sleep(Duration::from_millis(10)).await,

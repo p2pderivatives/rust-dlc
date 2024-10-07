@@ -1,20 +1,17 @@
 //! Module for working with DLC channels
 
-#[cfg(all(feature = "no-std", not(feature = "std")))]
-extern crate hashbrown;
-
 #[cfg(any(feature = "std", not(feature = "no-std")))]
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[cfg(all(feature = "no-std", not(feature = "std")))]
-use self::hashbrown::HashMap;
+use alloc::collections::BTreeMap;
 
 use crate::{signatures_to_secret, util::get_sig_hash_msg, DlcTransactions, PartyParams, Payout};
 
 use super::Error;
 use bitcoin::{
-    absolute::LockTime, ecdsa::Signature, sighash::EcdsaSighashType, Address, OutPoint, PublicKey,
-    Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    absolute::LockTime, ecdsa::Signature, sighash::EcdsaSighashType, Address, Amount, OutPoint,
+    PublicKey, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use miniscript::Descriptor;
 use secp256k1_zkp::{
@@ -125,7 +122,7 @@ pub fn create_buffer_transaction(
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output: vec![TxOut {
-            value: total_collateral,
+            value: Amount::from_sat(total_collateral),
             script_pubkey: descriptor.script_pubkey(),
         }],
     }
@@ -197,11 +194,11 @@ pub fn create_settle_transaction(
     let mut output = crate::util::discard_dust(
         vec![
             TxOut {
-                value: offer_payout,
+                value: Amount::from_sat(offer_payout),
                 script_pubkey: offer_descriptor.script_pubkey(),
             },
             TxOut {
-                value: accept_payout,
+                value: Amount::from_sat(accept_payout),
                 script_pubkey: accept_descriptor.script_pubkey(),
             },
         ],
@@ -220,7 +217,7 @@ pub fn create_settle_transaction(
         / (output.len() as u64);
 
     for o in &mut output {
-        o.value += remaining_fee;
+        o.value += Amount::from_sat(remaining_fee);
     }
 
     Ok(Transaction {
@@ -290,11 +287,11 @@ pub fn create_renewal_channel_transactions(
         super::util::weight_to_fee(BUFFER_TX_WEIGHT + CET_EXTRA_WEIGHT, fee_rate_per_vb)?;
 
     let (fund_vout, fund_output) =
-        super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_v0_p2wsh())
+        super::util::get_output_for_script_pubkey(fund_tx, &funding_script_pubkey.to_p2wsh())
             .expect("to find the funding script pubkey");
 
     let outpoint = OutPoint {
-        txid: fund_tx.txid(),
+        txid: fund_tx.compute_txid(),
         vout: fund_vout as u32,
     };
 
@@ -310,12 +307,12 @@ pub fn create_renewal_channel_transactions(
     let buffer_transaction = create_buffer_transaction(
         &tx_in,
         &buffer_descriptor,
-        fund_output.value - extra_fee,
+        fund_output.value.to_sat() - extra_fee,
         cet_lock_time,
     );
 
     let outpoint = OutPoint {
-        txid: buffer_transaction.txid(),
+        txid: buffer_transaction.compute_txid(),
         vout: 0,
     };
 
@@ -367,22 +364,22 @@ pub fn sign_cet<C: Signing>(
     )?;
     let own_pk = SecpPublicKey::from_secret_key(secp, own_sk);
 
-    let sigs = HashMap::from_iter([
+    let sigs = BTreeMap::from_iter([
         (
             PublicKey {
                 inner: own_pk,
                 compressed: true,
             },
             bitcoin::ecdsa::Signature {
-                sig: own_sig,
-                hash_ty: EcdsaSighashType::All,
+                signature: own_sig,
+                sighash_type: EcdsaSighashType::All,
             },
         ),
         (
             *counter_pubkey,
             bitcoin::ecdsa::Signature {
-                sig: adapted_sig,
-                hash_ty: EcdsaSighashType::All,
+                signature: adapted_sig,
+                sighash_type: EcdsaSighashType::All,
             },
         ),
     ]);
@@ -412,7 +409,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
 
     let tx_in = TxIn {
         previous_output: OutPoint {
-            txid: prev_tx.txid(),
+            txid: prev_tx.compute_txid(),
             vout: 0,
         },
         sequence: Sequence::ZERO,
@@ -426,19 +423,19 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
     let tx_fee =
         crate::util::weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
-    let output_value = prev_tx.output[0].value - tx_fee;
+    let output_value = prev_tx.output[0].value.to_sat() - tx_fee;
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
-            value: output_value,
+            value: Amount::from_sat(output_value),
             script_pubkey: dest_address.script_pubkey(),
         }],
     };
 
-    let mut sigs = HashMap::new();
+    let mut sigs = BTreeMap::new();
 
     for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
         let pk = PublicKey {
@@ -452,15 +449,15 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
             (
                 pk,
                 bitcoin::ecdsa::Signature {
-                    sig: super::util::get_raw_sig_for_tx_input(
+                    signature: super::util::get_raw_sig_for_tx_input(
                         secp,
                         &tx,
                         0,
                         &descriptor.script_code()?,
-                        prev_tx.output[0].value,
+                        prev_tx.output[0].value.to_sat(),
                         sk,
                     )?,
-                    hash_ty: EcdsaSighashType::All,
+                    sighash_type: EcdsaSighashType::All,
                 },
             ),
         );
@@ -500,7 +497,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 
     let tx_in = TxIn {
         previous_output: OutPoint {
-            txid: prev_tx.txid(),
+            txid: prev_tx.compute_txid(),
             vout,
         },
         sequence: Sequence::ZERO,
@@ -508,7 +505,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         witness: Witness::default(),
     };
 
-    let input_value = prev_tx.output[vout as usize].value;
+    let input_value = prev_tx.output[vout as usize].value.to_sat();
 
     let dest_script_pk_len = dest_address.script_pubkey().len();
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
@@ -521,12 +518,12 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
-            value: input_value - tx_fee,
+            value: Amount::from_sat(input_value - tx_fee),
             script_pubkey: dest_address.script_pubkey(),
         }],
     };
 
-    let mut sigs = HashMap::new();
+    let mut sigs = BTreeMap::new();
 
     for sk in &[&own_sk, &counter_publish_sk, &counter_revoke_sk] {
         let pk = PublicKey {
@@ -571,12 +568,12 @@ pub fn create_collaborative_close_transaction(
 
     //TODO(tibo): add fee re-payment
     let offer_output = TxOut {
-        value: offer_payout,
+        value: Amount::from_sat(offer_payout),
         script_pubkey: offer_params.payout_script_pubkey.clone(),
     };
 
     let accept_output = TxOut {
-        value: accept_payout,
+        value: Amount::from_sat(accept_payout),
         script_pubkey: accept_params.payout_script_pubkey.clone(),
     };
 
@@ -781,7 +778,7 @@ mod tests {
 
         // Use random signature as it doesn't matter.
         let sig = bitcoin::ecdsa::Signature {
-            sig: secp256k1_zkp::ecdsa::Signature::from_str(
+            signature: secp256k1_zkp::ecdsa::Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -789,10 +786,10 @@ mod tests {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
             )
             .unwrap(),
-            hash_ty: EcdsaSighashType::All,
+            sighash_type: EcdsaSighashType::All,
         };
 
-        let satisfier = HashMap::from_iter(vec![
+        let satisfier = BTreeMap::from_iter(vec![
             (offer_params.own_pk, sig),
             (accept_params.own_pk, sig),
         ]);
@@ -911,7 +908,7 @@ mod tests {
 
         // Use random signature as it doesn't matter.
         let sig = bitcoin::ecdsa::Signature {
-            sig: secp256k1_zkp::ecdsa::Signature::from_str(
+            signature: secp256k1_zkp::ecdsa::Signature::from_str(
                 "3045\
              0221\
              00f7c3648c390d87578cd79c8016940aa8e3511c4104cb78daa8fb8e429375efc1\
@@ -919,10 +916,10 @@ mod tests {
              531d75c136272f127a5dc14acc0722301cbddc222262934151f140da345af177",
             )
             .unwrap(),
-            hash_ty: EcdsaSighashType::All,
+            sighash_type: EcdsaSighashType::All,
         };
 
-        let satisfier = HashMap::from_iter(vec![(offer_params.own_pk, sig)]);
+        let satisfier = BTreeMap::from_iter(vec![(offer_params.own_pk, sig)]);
 
         descriptor
             .satisfy(

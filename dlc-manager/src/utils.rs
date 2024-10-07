@@ -1,7 +1,7 @@
 //! #Utils
 use std::ops::Deref;
 
-use bitcoin::{consensus::Encodable, Txid};
+use bitcoin::{consensus::Encodable, Amount, Txid};
 use dlc::{PartyParams, TxInputInfo};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
@@ -117,7 +117,7 @@ where
 
     let mut funding_inputs: Vec<FundingInput> = Vec::new();
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
-    let mut total_input = 0;
+    let mut total_input = Amount::ZERO;
     for utxo in utxos {
         let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;
         let mut writer = Vec::new();
@@ -147,7 +147,7 @@ where
         payout_serial_id,
         inputs: funding_tx_info,
         collateral: own_collateral,
-        input_amount: total_input,
+        input_amount: total_input.to_sat(),
     };
 
     Ok((party_params, funding_inputs))
@@ -236,7 +236,7 @@ mod tests {
             "81db60dcbef10a2d0cb92cb78400a96ee6a9b6da785d0230bdabf1e18a2d6ffb",
         );
 
-        let id = compute_id(transaction.txid(), output_index, &temporary_id);
+        let id = compute_id(transaction.compute_txid(), output_index, &temporary_id);
 
         assert_eq!(expected_id, id);
     }

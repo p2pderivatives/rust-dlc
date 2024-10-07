@@ -104,7 +104,7 @@ impl ContractInput {
 #[cfg(test)]
 mod tests {
     use dlc::{EnumerationPayout, Payout};
-    use secp256k1_zkp::{KeyPair, SecretKey, SECP256K1};
+    use secp256k1_zkp::{Keypair, SecretKey, SECP256K1};
 
     use crate::contract::enum_descriptor::EnumDescriptor;
 
@@ -136,7 +136,7 @@ mod tests {
                 }),
                 oracles: OracleInput {
                     public_keys: vec![
-                        XOnlyPublicKey::from_keypair(&KeyPair::from_secret_key(
+                        XOnlyPublicKey::from_keypair(&Keypair::from_secret_key(
                             SECP256K1,
                             &SecretKey::from_slice(&secp256k1_zkp::constants::ONE).unwrap(),
                         ))

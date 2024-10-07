@@ -1,15 +1,15 @@
 use std::ops::Deref;
 
-use bdk::{
-    database::{BatchOperations, Database},
-    wallet::coin_selection::{BranchAndBoundCoinSelection, CoinSelectionAlgorithm},
-    FeeRate, KeychainKind, LocalUtxo, Utxo as BdkUtxo, WeightedUtxo,
+use bdk_wallet::{
+    chain::ConfirmationTime,
+    coin_selection::{CoinSelectionAlgorithm, OldestFirstCoinSelection},
+    KeychainKind, LocalOutput, Utxo as BdkUtxo, WeightedUtxo,
 };
 use bitcoin::{
-    hashes::Hash, Address, Network, OutPoint, Script, Sequence, Transaction, TxIn, TxOut, Txid,
-    Witness,
+    hashes::Hash, Address, Amount, CompressedPublicKey, FeeRate, Network, OutPoint, PrivateKey,
+    Sequence, Transaction, TxIn, TxOut, Txid, Weight, Witness,
 };
-use bitcoin::{psbt::PartiallySignedTransaction, ScriptBuf};
+use bitcoin::{psbt::Psbt, ScriptBuf};
 use dlc_manager::{
     error::Error, Blockchain, ContractSignerProvider, KeysId, SimpleSigner, Utxo, Wallet,
 };
@@ -101,7 +101,7 @@ where
             .get_utxos()
             .unwrap()
             .iter()
-            .map(|x| x.tx_out.value)
+            .map(|x| x.tx_out.value.to_sat())
             .sum()
     }
 
@@ -126,7 +126,7 @@ where
             return Err(Error::InvalidState("No utxo in wallet".to_string()));
         }
 
-        let mut total_value = 0;
+        let mut total_value = Amount::ZERO;
         let input = utxos
             .iter()
             .map(|x| {
@@ -144,7 +144,7 @@ where
             script_pubkey: address.script_pubkey(),
         }];
         let mut tx = Transaction {
-            version: 2,
+            version: bitcoin::transaction::Version(2),
             lock_time: bitcoin::absolute::LockTime::ZERO,
             input,
             output,
@@ -155,11 +155,11 @@ where
             .blockchain
             .get_est_sat_per_1000_weight(ConfirmationTarget::NonAnchorChannelFee)
             as u64;
-        let fee = (weight * fee_rate) / 1000;
+        let fee = Amount::from_sat((weight * fee_rate) / 1000);
         tx.output[0].value -= fee;
 
         // construct psbt
-        let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).unwrap();
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         for (i, utxo) in utxos.iter().enumerate().take(tx.input.len()) {
             psbt.inputs[i].witness_utxo = Some(utxo.tx_out.clone());
         }
@@ -168,7 +168,9 @@ where
             self.sign_psbt_input(&mut psbt, i)?;
         }
 
-        let tx = psbt.extract_tx();
+        let tx = psbt
+            .extract_tx()
+            .expect("could not extract transaction from psbt");
 
         self.blockchain.send_transaction(&tx)
     }
@@ -222,15 +224,9 @@ where
 {
     fn get_new_address(&self) -> Result<Address> {
         let seckey = SecretKey::new(&mut thread_rng());
-        let pubkey = PublicKey::from_secret_key(&self.secp_ctx, &seckey);
-        let address = Address::p2wpkh(
-            &bitcoin::PublicKey {
-                inner: pubkey,
-                compressed: true,
-            },
-            self.network,
-        )
-        .map_err(|x| Error::WalletError(Box::new(x)))?;
+        let privkey = PrivateKey::new(seckey, self.network);
+        let pubkey = CompressedPublicKey::from_private_key(&self.secp_ctx, &privkey).unwrap();
+        let address = Address::p2wpkh(&pubkey, self.network);
         self.storage.upsert_address(&address, &seckey)?;
         Ok(address)
     }
@@ -250,25 +246,34 @@ where
             .iter()
             .filter(|x| !x.reserved)
             .map(|x| WeightedUtxo {
-                utxo: BdkUtxo::Local(LocalUtxo {
+                utxo: BdkUtxo::Local(LocalOutput {
                     outpoint: x.outpoint,
                     txout: x.tx_out.clone(),
                     keychain: KeychainKind::External,
                     is_spent: false,
+                    confirmation_time: ConfirmationTime::unconfirmed(1),
+                    derivation_index: 1,
                 }),
-                satisfaction_weight: 107,
+                satisfaction_weight: Weight::from_wu(107),
             })
             .collect::<Vec<_>>();
-        let coin_selection = BranchAndBoundCoinSelection::default();
+        let coin_selection = OldestFirstCoinSelection;
         let dummy_pubkey: PublicKey =
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
                 .parse()
                 .unwrap();
         let dummy_drain =
-            ScriptBuf::new_v0_p2wpkh(&bitcoin::WPubkeyHash::hash(&dummy_pubkey.serialize()));
-        let fee_rate = FeeRate::from_sat_per_vb(fee_rate as f32);
+            ScriptBuf::new_p2wpkh(&bitcoin::WPubkeyHash::hash(&dummy_pubkey.serialize()));
+        let fee_rate = FeeRate::from_sat_per_vb(fee_rate).unwrap_or(FeeRate::BROADCAST_MIN);
         let selection = coin_selection
-            .coin_select(self, Vec::new(), utxos, fee_rate, amount, &dummy_drain)
+            .coin_select(
+                Vec::new(),
+                utxos,
+                fee_rate,
+                amount,
+                &dummy_drain,
+                &mut bitcoin::key::rand::thread_rng(),
+            )
             .map_err(|e| Error::WalletError(Box::new(e)))?;
         let mut res = Vec::new();
         for utxo in selection.selected {
@@ -307,7 +312,7 @@ where
 
     fn sign_psbt_input(
         &self,
-        psbt: &mut PartiallySignedTransaction,
+        psbt: &mut Psbt,
         input_index: usize,
     ) -> std::result::Result<(), Error> {
         let tx_out = if let Some(input) = psbt.inputs.get(input_index) {
@@ -342,181 +347,13 @@ where
             &mut tx,
             input_index,
             bitcoin::sighash::EcdsaSighashType::All,
-            tx_out.value,
+            tx_out.value.to_sat(),
         )?;
 
         let tx_input = tx.input[input_index].clone();
         psbt.inputs[input_index].final_script_sig = Some(tx_input.script_sig);
         psbt.inputs[input_index].final_script_witness = Some(tx_input.witness);
         Ok(())
-    }
-}
-
-impl<B: Deref, W: Deref> BatchOperations for SimpleWallet<B, W>
-where
-    B::Target: WalletBlockchainProvider,
-    W::Target: WalletStorage,
-{
-    fn set_script_pubkey(
-        &mut self,
-        _: &Script,
-        _: bdk::KeychainKind,
-        _: u32,
-    ) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn set_utxo(&mut self, _: &bdk::LocalUtxo) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn set_raw_tx(&mut self, _: &Transaction) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn set_tx(&mut self, _: &bdk::TransactionDetails) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn set_last_index(
-        &mut self,
-        _: bdk::KeychainKind,
-        _: u32,
-    ) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn set_sync_time(&mut self, _: bdk::database::SyncTime) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn del_script_pubkey_from_path(
-        &mut self,
-        _: bdk::KeychainKind,
-        _: u32,
-    ) -> std::result::Result<Option<ScriptBuf>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn del_path_from_script_pubkey(
-        &mut self,
-        _: &Script,
-    ) -> std::result::Result<Option<(bdk::KeychainKind, u32)>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn del_utxo(
-        &mut self,
-        _: &bitcoin::OutPoint,
-    ) -> std::result::Result<Option<bdk::LocalUtxo>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn del_raw_tx(&mut self, _: &Txid) -> std::result::Result<Option<Transaction>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn del_tx(
-        &mut self,
-        _: &Txid,
-        _: bool,
-    ) -> std::result::Result<Option<bdk::TransactionDetails>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn del_last_index(
-        &mut self,
-        _: bdk::KeychainKind,
-    ) -> std::result::Result<Option<u32>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn del_sync_time(
-        &mut self,
-    ) -> std::result::Result<Option<bdk::database::SyncTime>, bdk::Error> {
-        Ok(None)
-    }
-}
-
-impl<B: Deref, W: Deref> Database for SimpleWallet<B, W>
-where
-    B::Target: WalletBlockchainProvider,
-    W::Target: WalletStorage,
-{
-    fn check_descriptor_checksum<BY: AsRef<[u8]>>(
-        &mut self,
-        _: bdk::KeychainKind,
-        _: BY,
-    ) -> std::result::Result<(), bdk::Error> {
-        Ok(())
-    }
-
-    fn iter_script_pubkeys(
-        &self,
-        _: Option<bdk::KeychainKind>,
-    ) -> std::result::Result<Vec<ScriptBuf>, bdk::Error> {
-        Ok(Vec::new())
-    }
-
-    fn iter_utxos(&self) -> std::result::Result<Vec<bdk::LocalUtxo>, bdk::Error> {
-        Ok(Vec::new())
-    }
-
-    fn iter_raw_txs(&self) -> std::result::Result<Vec<Transaction>, bdk::Error> {
-        Ok(Vec::new())
-    }
-
-    fn iter_txs(&self, _: bool) -> std::result::Result<Vec<bdk::TransactionDetails>, bdk::Error> {
-        Ok(Vec::new())
-    }
-
-    fn get_script_pubkey_from_path(
-        &self,
-        _: bdk::KeychainKind,
-        _: u32,
-    ) -> std::result::Result<Option<ScriptBuf>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn get_path_from_script_pubkey(
-        &self,
-        _: &Script,
-    ) -> std::result::Result<Option<(bdk::KeychainKind, u32)>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn get_utxo(
-        &self,
-        _: &bitcoin::OutPoint,
-    ) -> std::result::Result<Option<bdk::LocalUtxo>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn get_raw_tx(&self, _: &Txid) -> std::result::Result<Option<Transaction>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn get_tx(
-        &self,
-        _: &Txid,
-        _: bool,
-    ) -> std::result::Result<Option<bdk::TransactionDetails>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn get_last_index(&self, _: bdk::KeychainKind) -> std::result::Result<Option<u32>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn get_sync_time(&self) -> std::result::Result<Option<bdk::database::SyncTime>, bdk::Error> {
-        Ok(None)
-    }
-
-    fn increment_last_index(
-        &mut self,
-        _: bdk::KeychainKind,
-    ) -> std::result::Result<u32, bdk::Error> {
-        Ok(0)
     }
 }
 

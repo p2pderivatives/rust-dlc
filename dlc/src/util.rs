@@ -1,12 +1,9 @@
 //! Utility functions not uniquely related to DLC
 
-use bitcoin::address::{WitnessProgram, WitnessVersion};
-use bitcoin::script::PushBytesBuf;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{
-    address::Payload, hash_types::PubkeyHash, sighash::EcdsaSighashType, Script, Transaction, TxOut,
-};
-use bitcoin::{ScriptBuf, Sequence, Witness};
+use bitcoin::{sighash::EcdsaSighashType, Script, Transaction, TxOut};
+use bitcoin::{Amount, ScriptBuf, Sequence, Witness};
+use bitcoin::{PubkeyHash, WitnessProgram, WitnessVersion};
 use secp256k1_zkp::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey, Signing};
 
 use crate::Error;
@@ -27,13 +24,14 @@ pub(crate) fn get_sig_hash_msg(
     script_pubkey: &Script,
     value: u64,
 ) -> Result<Message, Error> {
-    let sig_hash = SighashCache::new(tx).segwit_signature_hash(
+    let sig_hash = SighashCache::new(tx).p2wsh_signature_hash(
         input_index,
         script_pubkey,
-        value,
+        Amount::from_sat(value),
         EcdsaSighashType::All,
     )?;
-    Ok(Message::from_slice(sig_hash.as_ref()).unwrap())
+
+    Ok(Message::from_digest_slice(sig_hash.as_ref()).unwrap())
 }
 
 /// Convert a raw signature to DER encoded and append the sighash type, to use
@@ -115,10 +113,12 @@ fn get_pkh_script_pubkey_from_sk<C: Signing>(secp: &Secp256k1<C>, sk: &SecretKey
         inner: PublicKey::from_secret_key(secp, sk),
     };
     let mut hash_engine = PubkeyHash::engine();
+
     pk.write_into(&mut hash_engine)
         .expect("Error writing hash.");
-    let pkh = Payload::PubkeyHash(PubkeyHash::from_engine(hash_engine));
-    pkh.script_pubkey()
+    let pk = PubkeyHash::from_engine(hash_engine);
+
+    ScriptBuf::new_p2pkh(&pk)
 }
 
 /// Create a signature for a p2wpkh transaction input using the provided secret key
@@ -204,8 +204,7 @@ pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> ScriptBuf {
     match redeem.len() {
         0 => ScriptBuf::new(),
         _ => {
-            let mut bytes = PushBytesBuf::new();
-            bytes.extend_from_slice(redeem.as_bytes()).unwrap();
+            let bytes = redeem.as_bytes();
             ScriptBuf::new_witness_program(&WitnessProgram::new(WitnessVersion::V0, bytes).unwrap())
         }
     }
@@ -233,7 +232,9 @@ pub fn get_output_for_script_pubkey<'a>(
 
 /// Filters the outputs that have a value lower than the given `dust_limit`.
 pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
-    txs.into_iter().filter(|x| x.value >= dust_limit).collect()
+    txs.into_iter()
+        .filter(|x| x.value.to_sat() >= dust_limit)
+        .collect()
 }
 
 pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
@@ -245,7 +246,7 @@ pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
 }
 
 pub(crate) fn compute_var_int_prefix_size(len: usize) -> usize {
-    bitcoin::VarInt(len as u64).len()
+    bitcoin::VarInt(len as u64).size()
 }
 
 /// Validate that the fee rate is not too high
