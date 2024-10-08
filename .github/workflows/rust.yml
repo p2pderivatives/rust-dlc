@@ -52,7 +52,7 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Test
-        run: cargo test --verbose --all-features
+        run: ./scripts/unit_tests.sh async
 
   integration_tests_prepare:
     runs-on: ubuntu-latest

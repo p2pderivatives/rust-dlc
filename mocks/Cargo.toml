@@ -8,7 +8,7 @@ version = "0.1.0"
 bdk-macros = "0.6.0"
 bitcoin = "0.32.2"
 dlc = {path = "../dlc"}
-dlc-manager = {path = "../dlc-manager"}
+dlc-manager = {path = "../dlc-manager", default-features = false}
 dlc-messages = {path = "../dlc-messages"}
 lightning = {version = "0.0.124"}
 secp256k1-zkp = {version = "0.11.0", features = ["hashes", "global-context", "rand", "rand-std"]}
