@@ -8,6 +8,7 @@ members = [
   "dlc-messages",
   "dlc-trie",
   "dlc-manager",
+  "dlc-macros",
   "mocks",
   "sample",
   "simple-wallet",

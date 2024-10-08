@@ -12,6 +12,7 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
+#[cfg(feature = "async")]
 extern crate async_trait;
 extern crate bitcoin;
 extern crate dlc;
@@ -44,6 +45,7 @@ use channel::signed_channel::{SignedChannel, SignedChannelStateType};
 use channel::Channel;
 use contract::PreClosedContract;
 use contract::{offered_contract::OfferedContract, signed_contract::SignedContract, Contract};
+use dlc_macros::maybe_async;
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::ser_impls::{read_address, write_address};
 use error::Error;
@@ -225,13 +227,17 @@ pub trait Storage {
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
 }
 
+#[allow(missing_docs)]
 /// Oracle trait provides access to oracle information.
+#[maybe_async]
 pub trait Oracle {
     /// Returns the public key of the oracle.
     fn get_public_key(&self) -> XOnlyPublicKey;
+    #[maybe_async]
     /// Returns the announcement for the event with the given id if found.
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.
+    #[maybe_async]
     fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, Error>;
 }
 

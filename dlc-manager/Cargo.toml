@@ -14,19 +14,22 @@ std = ["dlc/std", "dlc-messages/std", "dlc-trie/std", "bitcoin/std", "lightning/
 fuzztarget = ["rand_chacha"]
 parallel = ["dlc-trie/parallel"]
 use-serde = ["serde", "dlc/use-serde", "dlc-messages/use-serde", "dlc-trie/use-serde"]
+async = ["dep:async-trait"]
 
 [dependencies]
-async-trait = "0.1.50"
+async-trait = { version = "0.1.50", optional = true }
 bitcoin = { version = "0.32.2", default-features = false }
 dlc = { version = "0.7.0", default-features = false, path = "../dlc" }
 dlc-messages = { version = "0.7.0", default-features = false, path = "../dlc-messages" }
 dlc-trie = { version = "0.7.0", default-features = false, path = "../dlc-trie" }
+dlc-macros = { version = "0.1.0", path = "../dlc-macros" }
 hex = { package = "hex-conservative", version = "0.1" }
 lightning = { version = "0.0.125", default-features = false, features = ["grind_signatures"] }
 log = "0.4.14"
 rand_chacha = {version = "0.3.1", optional = true}
 secp256k1-zkp = {version = "0.11.0"}
 serde = {version = "1.0", optional = true}
+# bdk-macros = "0.6.0"
 
 [dev-dependencies]
 bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}

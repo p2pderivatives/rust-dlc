@@ -24,6 +24,7 @@ use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::consensus::Decodable;
 use bitcoin::Address;
 use bitcoin::{OutPoint, Transaction};
+use dlc_macros::*;
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize,
@@ -269,16 +270,14 @@ where
     /// and an OfferDlc message returned.
     ///
     /// This function will fetch the oracle announcements from the oracle.
+    #[maybe_async]
     pub fn send_offer(
         &self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferDlc, Error> {
-        let oracle_announcements = contract_input
-            .contract_infos
-            .iter()
-            .map(|x| self.get_oracle_announcements(&x.oracles))
-            .collect::<Result<Vec<_>, Error>>()?;
+        let oracle_announcements =
+            maybe_await!(self.get_oracle_announcements_from_infos(contract_input))?;
 
         self.send_offer_with_announcements(contract_input, counter_party, oracle_announcements)
     }
@@ -375,13 +374,14 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
+    #[maybe_async]
     pub fn periodic_check(&self, check_channels: bool) -> Result<(), Error> {
         self.check_signed_contracts()?;
-        self.check_confirmed_contracts()?;
+        maybe_await!(self.check_confirmed_contracts())?;
         self.check_preclosed_contracts()?;
 
         if check_channels {
-            self.channel_checks()?;
+            maybe_await!(self.channel_checks())?;
         }
 
         Ok(())
@@ -470,6 +470,7 @@ where
         Ok(())
     }
 
+    #[maybe_async]
     fn get_oracle_announcements(
         &self,
         oracle_inputs: &OracleInput,
@@ -480,7 +481,8 @@ where
                 .oracles
                 .get(pubkey)
                 .ok_or_else(|| Error::InvalidParameters("Unknown oracle public key".to_string()))?;
-            announcements.push(oracle.get_announcement(&oracle_inputs.event_id)?.clone());
+            let announcement = maybe_await!(oracle.get_announcement(&oracle_inputs.event_id))?;
+            announcements.push(announcement);
         }
 
         Ok(announcements)
@@ -547,13 +549,14 @@ where
         Ok(())
     }
 
+    #[maybe_async]
     fn check_confirmed_contracts(&self) -> Result<(), Error> {
         for c in self.store.get_confirmed_contracts()? {
             // Confirmed contracts from channel are processed in channel specific methods.
             if c.channel_id.is_some() {
                 continue;
             }
-            if let Err(e) = self.check_confirmed_contract(&c) {
+            if let Err(e) = maybe_await!(self.check_confirmed_contract(&c)) {
                 error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
@@ -565,6 +568,7 @@ where
         Ok(())
     }
 
+    #[maybe_async]
     fn get_closable_contract_info<'a>(
         &'a self,
         contract: &'a SignedContract,
@@ -580,27 +584,26 @@ where
                 })
                 .enumerate()
                 .collect();
+
             if matured.len() >= contract_info.threshold {
-                let attestations: Vec<_> = matured
-                    .iter()
-                    .filter_map(|(i, announcement)| {
-                        let oracle = self.oracles.get(&announcement.oracle_public_key)?;
-                        let attestation = oracle
-                            .get_attestation(&announcement.oracle_event.event_id)
+                let mut attestations = Vec::new();
+                for (i, announcement) in matured {
+                    let oracle = self.oracles.get(&announcement.oracle_public_key)?;
+                    let attestation =
+                        maybe_await!(oracle.get_attestation(&announcement.oracle_event.event_id))
                             .ok()?;
-                        attestation
-                            .validate(&self.secp, announcement)
-                            .map_err(|_| {
-                                log::error!(
-                                    "Oracle attestation is not valid. pubkey={} event_id={}",
-                                    announcement.oracle_public_key,
-                                    announcement.oracle_event.event_id
-                                )
-                            })
-                            .ok()?;
-                        Some((*i, attestation))
-                    })
-                    .collect();
+                    attestation
+                        .validate(&self.secp, announcement)
+                        .map_err(|_| {
+                            log::error!(
+                                "Oracle attestation is not valid. pubkey={} event_id={}",
+                                announcement.oracle_public_key,
+                                announcement.oracle_event.event_id
+                            )
+                        })
+                        .ok()?;
+                    attestations.push((i, attestation));
+                }
                 if attestations.len() >= contract_info.threshold {
                     return Some((contract_info, adaptor_info, attestations));
                 }
@@ -609,8 +612,9 @@ where
         None
     }
 
+    #[maybe_async]
     fn check_confirmed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
-        let closable_contract_info = self.get_closable_contract_info(contract);
+        let closable_contract_info = maybe_await!(self.get_closable_contract_info(contract));
         if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
             let offer = &contract.accepted_contract.offered_contract;
             let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
@@ -895,6 +899,20 @@ where
 
         Ok(contract)
     }
+
+    #[maybe_async]
+    fn get_oracle_announcements_from_infos(
+        &self,
+        contract_input: &ContractInput,
+    ) -> Result<Vec<Vec<OracleAnnouncement>>, Error> {
+        let mut oracle_announcements = vec![];
+        for contract_info in contract_input.contract_infos.clone() {
+            let announcement = maybe_await!(self.get_oracle_announcements(&contract_info.oracles))?;
+            oracle_announcements.push(announcement);
+        }
+
+        Ok(oracle_announcements)
+    }
 }
 
 impl<W: Deref, SP: Deref, B: Deref, S: Deref, O: Deref, T: Deref, F: Deref, X: ContractSigner>
@@ -910,16 +928,14 @@ where
 {
     /// Create a new channel offer and return the [`dlc_messages::channel::OfferChannel`]
     /// message to be sent to the `counter_party`.
+    #[maybe_async]
     pub fn offer_channel(
         &self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferChannel, Error> {
-        let oracle_announcements = contract_input
-            .contract_infos
-            .iter()
-            .map(|x| self.get_oracle_announcements(&x.oracles))
-            .collect::<Result<Vec<_>, Error>>()?;
+        let oracle_announcements =
+            maybe_await!(self.get_oracle_announcements_from_infos(contract_input))?;
 
         let (offered_channel, offered_contract) = crate::channel_updater::offer_channel(
             &self.secp,
@@ -1092,6 +1108,7 @@ where
     /// Returns a [`RenewOffer`] message as well as the [`PublicKey`] of the
     /// counter party's node to offer the establishment of a new contract in the
     /// channel.
+    #[maybe_async]
     pub fn renew_offer(
         &self,
         channel_id: &ChannelId,
@@ -1101,11 +1118,8 @@ where
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
-        let oracle_announcements = contract_input
-            .contract_infos
-            .iter()
-            .map(|x| self.get_oracle_announcements(&x.oracles))
-            .collect::<Result<Vec<_>, Error>>()?;
+        let oracle_announcements =
+            maybe_await!(self.get_oracle_announcements_from_infos(contract_input))?;
 
         let (msg, offered_contract) = crate::channel_updater::renew_offer(
             &self.secp,
@@ -1300,6 +1314,7 @@ where
         Ok(())
     }
 
+    #[maybe_async]
     fn try_finalize_closing_established_channel(
         &self,
         signed_channel: SignedChannel,
@@ -1325,11 +1340,12 @@ where
             let confirmed_contract =
                 get_contract_in_state!(self, &contract_id, Confirmed, None as Option<PublicKey>)?;
 
-            let (contract_info, adaptor_info, attestations) = self
-                .get_closable_contract_info(&confirmed_contract)
-                .ok_or_else(|| {
-                    Error::InvalidState("Could not get information to close contract".to_string())
-                })?;
+            let (contract_info, adaptor_info, attestations) = maybe_await!(
+                self.get_closable_contract_info(&confirmed_contract)
+            )
+            .ok_or_else(|| {
+                Error::InvalidState("Could not get information to close contract".to_string())
+            })?;
 
             let (signed_cet, closed_channel) =
                 crate::channel_updater::finalize_unilateral_close_settled_channel(
@@ -2087,13 +2103,14 @@ where
         Ok(())
     }
 
+    #[maybe_async]
     fn channel_checks(&self) -> Result<(), Error> {
         let established_closing_channels = self
             .store
             .get_signed_channels(Some(SignedChannelStateType::Closing))?;
 
         for channel in established_closing_channels {
-            if let Err(e) = self.try_finalize_closing_established_channel(channel) {
+            if let Err(e) = maybe_await!(self.try_finalize_closing_established_channel(channel)) {
                 error!("Error trying to close established channel: {}", e);
             }
         }

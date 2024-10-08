@@ -5,6 +5,7 @@ name = "mocks"
 version = "0.1.0"
 
 [dependencies]
+bdk-macros = "0.6.0"
 bitcoin = "0.32.2"
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
