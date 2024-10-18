@@ -55,6 +55,7 @@ impl Default for MockOracle {
     }
 }
 
+#[cfg(not(feature = "async"))]
 impl Oracle for MockOracle {
     fn get_public_key(&self) -> XOnlyPublicKey {
         XOnlyPublicKey::from_keypair(&self.key_pair).0
@@ -69,6 +70,30 @@ impl Oracle for MockOracle {
     }
 
     fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
+        let res = self
+            .attestations
+            .get(event_id)
+            .ok_or_else(|| DaemonError::OracleError("Attestation not found".to_string()))?;
+        Ok(res.clone())
+    }
+}
+
+#[cfg(feature = "async")]
+#[async_trait::async_trait]
+impl Oracle for MockOracle {
+    fn get_public_key(&self) -> XOnlyPublicKey {
+        XOnlyPublicKey::from_keypair(&self.key_pair).0
+    }
+
+    async fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
+        let res = self
+            .announcements
+            .get(event_id)
+            .ok_or_else(|| DaemonError::OracleError("Announcement not found".to_string()))?;
+        Ok(res.clone())
+    }
+
+    async fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
         let res = self
             .attestations
             .get(event_id)
