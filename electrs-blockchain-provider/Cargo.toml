@@ -9,8 +9,8 @@ version = "0.1.0"
 bitcoin = {version = "0.32.2"}
 bitcoin-test-utils = {path = "../bitcoin-test-utils"}
 dlc-manager = {path = "../dlc-manager"}
-lightning = {version = "0.0.124"}
-lightning-block-sync = {version = "0.0.124"}
+lightning = {version = "0.0.125"}
+lightning-block-sync = {version = "0.0.125"}
 reqwest = {version = "0.11", features = ["blocking", "json"]}
 serde = {version = "*", features = ["derive"]}
 simple-wallet = {path = "../simple-wallet"}
