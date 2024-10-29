@@ -2,13 +2,12 @@
 //! rust-secp256k1 or rust-secp256k1-zkp.
 
 use crate::Error;
-use bitcoin::hashes::sha256t_hash_newtype;
+use bitcoin::hashes::{sha256t_hash_newtype, Hash};
 use core::ptr;
 use secp256k1_sys::{
     types::{c_int, c_uchar, c_void, size_t},
     CPtr, SchnorrSigExtraParams,
 };
-use secp256k1_zkp::hashes::Hash;
 use secp256k1_zkp::{
     schnorr::Signature as SchnorrSignature, Keypair, Message, PublicKey, Scalar, Secp256k1,
     Signing, Verification, XOnlyPublicKey,

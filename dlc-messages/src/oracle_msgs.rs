@@ -174,7 +174,7 @@ impl OracleAnnouncement {
             .write(&mut event_hex)
             .expect("Error writing oracle event");
 
-        let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+        let hash = bitcoin::hashes::sha256::Hash::hash(&event_hex);
         let msg = Message::from_digest(hash.to_byte_array());
         secp.verify_schnorr(&self.announcement_signature, &msg, &self.oracle_public_key)?;
         self.oracle_event.validate()
@@ -399,7 +399,7 @@ mod tests {
             event
                 .write(&mut event_hex)
                 .expect("Error writing oracle event");
-            let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+            let hash = bitcoin::hashes::sha256::Hash::hash(&event_hex);
             let msg = Message::from_digest(hash.to_byte_array());
             let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
             let valid_announcement = OracleAnnouncement {
@@ -424,7 +424,7 @@ mod tests {
             event
                 .write(&mut event_hex)
                 .expect("Error writing oracle event");
-            let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+            let hash = bitcoin::hashes::sha256::Hash::hash(&event_hex);
             let msg = Message::from_digest(hash.to_byte_array());
             let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
             let invalid_announcement = OracleAnnouncement {
@@ -448,7 +448,7 @@ mod tests {
         event
             .write(&mut event_hex)
             .expect("Error writing oracle event");
-        let hash = secp256k1_zkp::hashes::sha256::Hash::hash(&event_hex);
+        let hash = bitcoin::hashes::sha256::Hash::hash(&event_hex);
         let msg = Message::from_digest(hash.to_byte_array());
         let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
         let mut sig_hex = *sig.as_ref();
