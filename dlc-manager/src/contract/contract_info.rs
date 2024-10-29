@@ -10,8 +10,7 @@ use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
 use dlc_trie::{DlcTrie, RangeInfo};
 use secp256k1_zkp::{
-    hashes::sha256, All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey,
-    Verification,
+    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
 };
 use std::ops::Deref;
 
@@ -296,7 +295,8 @@ impl ContractInfo {
                             let mut points = Vec::with_capacity(base);
                             for j in 0..base {
                                 let hash =
-                                    sha256::Hash::hash(j.to_string().as_bytes()).to_byte_array();
+                                    bitcoin::hashes::sha256::Hash::hash(j.to_string().as_bytes())
+                                        .to_byte_array();
                                 let msg = Message::from_digest(hash);
                                 let sig_point = dlc::secp_utils::schnorrsig_compute_sig_point(
                                     secp, pubkey, nonce, &msg,

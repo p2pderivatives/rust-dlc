@@ -242,7 +242,7 @@ impl EnumDescriptor {
             .iter()
             .map(|x| {
                 let hash =
-                    secp256k1_zkp::hashes::sha256::Hash::hash(x.outcome.as_bytes()).to_byte_array();
+                    bitcoin::hashes::sha256::Hash::hash(x.outcome.as_bytes()).to_byte_array();
                 let message = vec![Message::from_digest(hash)];
                 std::iter::repeat(message).take(threshold).collect()
             })
