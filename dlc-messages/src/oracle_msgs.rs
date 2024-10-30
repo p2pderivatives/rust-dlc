@@ -313,6 +313,8 @@ impl_dlc_writeable!(DigitDecompositionEventDescriptor, {
     serde(rename_all = "camelCase")
 )]
 pub struct OracleAttestation {
+    /// The identifier of the announcement.
+    pub event_id: String,
     /// The public key of the oracle.
     pub oracle_public_key: XOnlyPublicKey,
     /// The signatures over the event outcome.
@@ -322,6 +324,26 @@ pub struct OracleAttestation {
 }
 
 impl OracleAttestation {
+    /// Returns whether the attestation satisfy validity checks.
+    pub fn validate<C: Verification>(&self, secp: &Secp256k1<C>) -> Result<(), Error> {
+        if self.outcomes.len() != self.signatures.len() {
+            return Err(Error::InvalidArgument);
+        }
+
+        self.signatures
+            .iter()
+            .zip(self.outcomes.iter())
+            .try_for_each(|(sig, outcome)| {
+                let hash = bitcoin::hashes::sha256::Hash::hash(outcome.as_bytes());
+                let msg = Message::from_digest(hash.to_byte_array());
+                secp.verify_schnorr(sig, &msg, &self.oracle_public_key)
+                    .map_err(|_| Error::InvalidArgument)?;
+
+                Ok::<(), dlc::Error>(())
+            })?;
+
+        Ok(())
+    }
     /// Returns the nonces used by the oracle to sign the event outcome.
     /// This is used for finding the matching oracle announcement.
     pub fn nonces(&self) -> Vec<XOnlyPublicKey> {
@@ -339,6 +361,7 @@ impl Type for OracleAttestation {
 }
 
 impl_dlc_writeable!(OracleAttestation, {
+    (event_id, string),
     (oracle_public_key, {cb_writeable, write_schnorr_pubkey, read_schnorr_pubkey}),
     (signatures, {vec_u16_cb, write_schnorrsig, read_schnorrsig}),
     (outcomes, {cb_writeable, write_strings_u16, read_strings_u16})
@@ -461,5 +484,32 @@ mod tests {
         };
 
         assert!(invalid_announcement.validate(SECP256K1).is_err());
+    }
+
+    #[test]
+    fn oracle_attestation() {
+        let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
+        let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
+        let hash = bitcoin::hashes::sha256::Hash::hash("attestation".as_bytes());
+        let msg = Message::from_digest(hash.to_byte_array());
+        let sig = SECP256K1.sign_schnorr(&msg, &key_pair);
+
+        let attestation = OracleAttestation {
+            event_id: "attestation".to_string(),
+            oracle_public_key: oracle_pubkey,
+            signatures: vec![sig],
+            outcomes: vec!["attestation".to_string()],
+        };
+
+        let mut attestation_hex = Vec::new();
+        let writer = attestation.write(&mut attestation_hex);
+        assert!(writer.is_ok());
+
+        let att: OracleAttestation = Readable::read(&mut attestation_hex.as_slice())
+            .expect("could not read oracle attestation");
+
+        let validation = att.validate(SECP256K1);
+
+        assert!(validation.is_ok())
     }
 }
