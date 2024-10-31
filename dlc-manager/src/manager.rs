@@ -589,7 +589,7 @@ where
                             .get_attestation(&announcement.oracle_event.event_id)
                             .ok()?;
                         attestation
-                            .validate(&self.secp)
+                            .validate(&self.secp, announcement)
                             .map_err(|_| {
                                 log::error!(
                                     "Oracle attestation is not valid. pubkey={} event_id={}",
