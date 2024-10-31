@@ -585,12 +585,20 @@ where
                     .iter()
                     .filter_map(|(i, announcement)| {
                         let oracle = self.oracles.get(&announcement.oracle_public_key)?;
-                        Some((
-                            *i,
-                            oracle
-                                .get_attestation(&announcement.oracle_event.event_id)
-                                .ok()?,
-                        ))
+                        let attestation = oracle
+                            .get_attestation(&announcement.oracle_event.event_id)
+                            .ok()?;
+                        attestation
+                            .validate(&self.secp, announcement)
+                            .map_err(|_| {
+                                log::error!(
+                                    "Oracle attestation is not valid. pubkey={} event_id={}",
+                                    announcement.oracle_public_key,
+                                    announcement.oracle_event.event_id
+                                )
+                            })
+                            .ok()?;
+                        Some((*i, attestation))
                     })
                     .collect();
                 if attestations.len() >= contract_info.threshold {

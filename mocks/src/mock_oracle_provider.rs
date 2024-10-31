@@ -147,6 +147,7 @@ impl MockOracle {
             })
             .collect();
         let attestation = OracleAttestation {
+            event_id: event_id.to_string(),
             oracle_public_key: self.get_public_key(),
             signatures,
             outcomes: outcomes.to_vec(),

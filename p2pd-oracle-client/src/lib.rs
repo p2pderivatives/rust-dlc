@@ -169,6 +169,7 @@ impl Oracle for P2PDOracleClient {
         } = get::<AttestationResponse>(&path)?;
 
         Ok(OracleAttestation {
+            event_id: event_id.to_string(),
             oracle_public_key: self.public_key,
             signatures,
             outcomes: values,
