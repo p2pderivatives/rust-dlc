@@ -5,9 +5,14 @@ homepage = "https://github.com/p2pderivatives/rust-dlc"
 license-file = "../LICENSE"
 name = "p2pd-oracle-client"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/p2pd-oracle-client"
+edition = "2018"
 version = "0.1.0"
 
+[features]
+async = ["dep:async-trait", "dlc-manager/async"]
+
 [dependencies]
+async-trait = { version = "0.1.83", optional = true }
 chrono = {version = "0.4.19", features = ["serde"]}
 dlc-manager = {path = "../dlc-manager"}
 dlc-messages = {path = "../dlc-messages", features = ["use-serde"]}

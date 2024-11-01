@@ -86,18 +86,22 @@ impl Oracle for MockOracle {
     }
 
     async fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
-        let res = self
-            .announcements
-            .get(event_id)
-            .ok_or_else(|| DaemonError::OracleError("Announcement not found".to_string()))?;
+        let res = std::future::ready(
+            self.announcements
+                .get(event_id)
+                .ok_or_else(|| DaemonError::OracleError("Announcement not found".to_string()))?,
+        )
+        .await;
         Ok(res.clone())
     }
 
     async fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
-        let res = self
-            .attestations
-            .get(event_id)
-            .ok_or_else(|| DaemonError::OracleError("Attestation not found".to_string()))?;
+        let res = std::future::ready(
+            self.attestations
+                .get(event_id)
+                .ok_or_else(|| DaemonError::OracleError("Attestation not found".to_string()))?,
+        )
+        .await;
         Ok(res.clone())
     }
 }
