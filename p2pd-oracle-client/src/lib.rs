@@ -227,6 +227,7 @@ impl Oracle for P2PDOracleClient {
             .map_err(|e| DlcManagerError::OracleError(e.to_string()))?;
 
         Ok(OracleAttestation {
+            event_id: event_id.to_string(),
             oracle_public_key: self.public_key,
             signatures,
             outcomes: values,
