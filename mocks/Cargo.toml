@@ -4,7 +4,12 @@ edition = "2018"
 name = "mocks"
 version = "0.1.0"
 
+[features]
+async = ["dep:async-trait", "dlc-manager/async"]
+
 [dependencies]
+async-trait = { version = "0.1.83", optional = true }
+bdk-macros = "0.6.0"
 bitcoin = "0.32.2"
 dlc = {path = "../dlc"}
 dlc-manager = {path = "../dlc-manager"}
