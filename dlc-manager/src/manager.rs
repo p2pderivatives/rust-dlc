@@ -584,24 +584,40 @@ where
                 })
                 .enumerate()
                 .collect();
-
             if matured.len() >= contract_info.threshold {
                 let mut attestations = Vec::new();
                 for (i, announcement) in matured {
-                    let oracle = self.oracles.get(&announcement.oracle_public_key)?;
-                    let attestation =
+                    let oracle = match self.oracles.get(&announcement.oracle_public_key) {
+                        Some(o) => o,
+                        None => {
+                            log::warn!(
+                                "No oracle found with pubkey. pubkey={}",
+                                announcement.oracle_public_key
+                            );
+                            continue;
+                        }
+                    };
+                    let Ok(attestation) =
                         maybe_await!(oracle.get_attestation(&announcement.oracle_event.event_id))
-                            .ok()?;
-                    attestation
-                        .validate(&self.secp, announcement)
-                        .map_err(|_| {
-                            log::error!(
-                                "Oracle attestation is not valid. pubkey={} event_id={}",
-                                announcement.oracle_public_key,
-                                announcement.oracle_event.event_id
-                            )
-                        })
-                        .ok()?;
+                    else {
+                        log::warn!(
+                            "Failed to get attestation. oracle={} event_id={}",
+                            announcement.oracle_public_key,
+                            announcement.oracle_event.event_id
+                        );
+                        continue;
+                    };
+
+                    if let Err(error) = attestation.validate(&self.secp, announcement) {
+                        log::warn!(
+                            "Oracle attestation is invalid. error={} pubkey={} event_id={}",
+                            error,
+                            announcement.oracle_public_key,
+                            announcement.oracle_event.event_id
+                        );
+                        continue;
+                    }
+
                     attestations.push((i, attestation));
                 }
                 if attestations.len() >= contract_info.threshold {
