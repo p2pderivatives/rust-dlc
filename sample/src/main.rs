@@ -1,3 +1,4 @@
+#[allow(unused_macros, unused_imports, dead_code)]
 mod cli;
 mod disk;
 mod hex_utils;

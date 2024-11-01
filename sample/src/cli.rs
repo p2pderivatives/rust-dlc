@@ -85,6 +85,17 @@ macro_rules! read_id_or_continue {
     };
 }
 
+#[cfg(feature = "async")]
+pub(crate) async fn poll_for_user_input(
+    _peer_manager: Arc<PeerManager>,
+    _dlc_message_handler: Arc<DlcMessageHandler>,
+    _dlc_manager: Arc<Mutex<DlcManager>>,
+    _offers_path: &str,
+) {
+    println!("Sample does not run async manager.");
+    std::process::exit(0)
+}
+#[cfg(not(feature = "async"))]
 pub(crate) async fn poll_for_user_input(
     peer_manager: Arc<PeerManager>,
     dlc_message_handler: Arc<DlcMessageHandler>,

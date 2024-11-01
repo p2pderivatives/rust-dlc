@@ -4,6 +4,9 @@ edition = "2018"
 name = "sample"
 version = "0.1.0"
 
+[features]
+async = []
+
 [dependencies]
 bitcoin = {version = "0.32.2"}
 bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
