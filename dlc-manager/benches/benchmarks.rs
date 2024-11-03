@@ -23,7 +23,7 @@ use dlc_messages::oracle_msgs::EventDescriptor;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::oracle_msgs::OracleEvent;
 use secp256k1_zkp::{
-    global::SECP256K1, rand::thread_rng, schnorr::Signature, KeyPair, SecretKey, XOnlyPublicKey,
+    global::SECP256K1, rand::thread_rng, schnorr::Signature, Keypair, SecretKey, XOnlyPublicKey,
 };
 use std::str::FromStr;
 
@@ -131,7 +131,7 @@ fn create_contract_descriptor() -> ContractDescriptor {
 }
 
 fn get_schnorr_pubkey() -> XOnlyPublicKey {
-    XOnlyPublicKey::from_keypair(&KeyPair::new(SECP256K1, &mut thread_rng())).0
+    XOnlyPublicKey::from_keypair(&Keypair::new(SECP256K1, &mut thread_rng())).0
 }
 
 fn get_pubkey() -> secp256k1_zkp::PublicKey {
@@ -139,7 +139,7 @@ fn get_pubkey() -> secp256k1_zkp::PublicKey {
 }
 
 fn get_p2wpkh_script_pubkey() -> ScriptBuf {
-    ScriptBuf::new_v0_p2wpkh(&WPubkeyHash::hash(&get_pubkey().serialize()))
+    ScriptBuf::new_p2wpkh(&WPubkeyHash::hash(&get_pubkey().serialize()))
 }
 
 fn create_oracle_announcements() -> Vec<OracleAnnouncement> {
@@ -234,7 +234,7 @@ pub fn sign_bench(c: &mut Criterion) {
                         TOTAL_COLLATERAL,
                         &seckey,
                         &dlc_transactions.funding_script_pubkey,
-                        fund_output_value,
+                        fund_output_value.to_sat(),
                         &dlc_transactions.cets,
                         0,
                     )
@@ -258,7 +258,7 @@ pub fn verify_bench(c: &mut Criterion) {
             TOTAL_COLLATERAL,
             &seckey,
             &dlc_transactions.funding_script_pubkey,
-            fund_output_value,
+            fund_output_value.to_sat(),
             &dlc_transactions.cets,
             0,
         )
@@ -272,7 +272,7 @@ pub fn verify_bench(c: &mut Criterion) {
                         SECP256K1,
                         &pubkey,
                         &dlc_transactions.funding_script_pubkey,
-                        fund_output_value,
+                        fund_output_value.to_sat(),
                         &dlc_transactions.cets,
                         adaptor_signatures,
                         0,
