@@ -443,7 +443,7 @@ mod tests {
     fn invalid_oracle_announcement_fails_validation_test() {
         let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
-        let events = [digit_event(9), enum_event(2)];
+        let events = [digit_event(9), signed_digit_event(10), enum_event(2)];
         for event in events {
             let mut event_hex = Vec::new();
             event
