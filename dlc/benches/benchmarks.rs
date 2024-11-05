@@ -16,7 +16,7 @@ mod benches {
     use dlc::*;
     use rayon::prelude::*;
     use secp256k1_zkp::{
-        global::SECP256K1, rand::thread_rng, rand::RngCore, KeyPair, Message, PublicKey, SecretKey,
+        global::SECP256K1, rand::thread_rng, rand::RngCore, Keypair, Message, PublicKey, SecretKey,
     };
 
     use test::{black_box, Bencher};
@@ -28,14 +28,14 @@ mod benches {
     const ALL_BASE: usize = 2;
 
     fn generate_oracle_info(nb_nonces: usize) -> OracleInfo {
-        let public_key = KeyPair::new(SECP256K1, &mut thread_rng())
+        let public_key = Keypair::new(SECP256K1, &mut thread_rng())
             .x_only_public_key()
             .0;
 
         let mut nonces = Vec::with_capacity(nb_nonces);
         for _ in 0..nb_nonces {
             nonces.push(
-                KeyPair::new(SECP256K1, &mut thread_rng())
+                Keypair::new(SECP256K1, &mut thread_rng())
                     .x_only_public_key()
                     .0,
             );
@@ -57,7 +57,7 @@ mod benches {
                     .map(|_| {
                         let mut buf = [0u8; 32];
                         thread_rng().fill_bytes(&mut buf);
-                        Message::from_slice(&buf).unwrap()
+                        Message::from_digest_slice(&buf).unwrap()
                     })
                     .collect()
             })
@@ -76,11 +76,7 @@ mod benches {
             for _ in 0..nb_oracles {
                 tmp.push(
                     cur.iter()
-                        .map(|x| {
-                            Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&[
-                                (*x) as u8,
-                            ])
-                        })
+                        .map(|x| Message::from_digest_slice(&[(*x) as u8]).unwrap())
                         .collect(),
                 );
             }
@@ -111,9 +107,7 @@ mod benches {
         (0..base)
             .map(|i| {
                 (0..nb_nonces)
-                    .map(|_| {
-                        Message::from_hashed_data::<secp256k1_zkp::hashes::sha256::Hash>(&[i as u8])
-                    })
+                    .map(|_| Message::from_digest_slice(&[i as u8]).unwrap())
                     .collect()
             })
             .collect()
@@ -147,7 +141,7 @@ mod benches {
                     &oracle_infos,
                     &seckey,
                     &funding_script_pubkey(),
-                    cet.output[0].value,
+                    cet.output[0].value.to_sat(),
                     &generate_single_outcome_messages(SINGLE_NB_ORACLES, SINGLE_NB_NONCES),
                 )
                 .unwrap(),
@@ -170,7 +164,7 @@ mod benches {
                     adaptor_point,
                     &seckey,
                     &funding_script_pubkey(),
-                    cet.output[0].value,
+                    cet.output[0].value.to_sat(),
                 )
                 .unwrap(),
             )
