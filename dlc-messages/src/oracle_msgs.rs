@@ -220,7 +220,13 @@ impl OracleEvent {
     pub fn validate(&self) -> Result<(), Error> {
         let expected_nb_nonces = match &self.event_descriptor {
             EventDescriptor::EnumEvent(_) => 1,
-            EventDescriptor::DigitDecompositionEvent(d) => d.nb_digits as usize,
+            EventDescriptor::DigitDecompositionEvent(d) => {
+                if d.is_signed {
+                    d.nb_digits as usize + 1
+                } else {
+                    d.nb_digits as usize
+                }
+            }
         };
 
         if expected_nb_nonces == self.oracle_nonces.len() {
@@ -410,6 +416,16 @@ mod tests {
         }
     }
 
+    fn signed_digit_descriptor() -> DigitDecompositionEventDescriptor {
+        DigitDecompositionEventDescriptor {
+            base: 2,
+            is_signed: true,
+            unit: "kg/sats".to_string(),
+            precision: 1,
+            nb_digits: 10,
+        }
+    }
+
     fn some_schnorr_pubkey() -> XOnlyPublicKey {
         let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         XOnlyPublicKey::from_keypair(&key_pair).0
@@ -421,6 +437,15 @@ mod tests {
             event_maturity_epoch: 10,
             event_descriptor: EventDescriptor::DigitDecompositionEvent(digit_descriptor()),
             event_id: "test".to_string(),
+        }
+    }
+
+    fn signed_digit_event(nb_nonces: usize) -> OracleEvent {
+        OracleEvent {
+            oracle_nonces: (0..nb_nonces).map(|_| some_schnorr_pubkey()).collect(),
+            event_maturity_epoch: 10,
+            event_descriptor: EventDescriptor::DigitDecompositionEvent(signed_digit_descriptor()),
+            event_id: "test-signed".to_string(),
         }
     }
 
@@ -451,7 +476,7 @@ mod tests {
     fn valid_oracle_announcement_passes_validation_test() {
         let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
-        let events = [digit_event(10), enum_event(1)];
+        let events = [digit_event(10), signed_digit_event(11), enum_event(1)];
         for event in events {
             let mut event_hex = Vec::new();
             event
@@ -476,7 +501,7 @@ mod tests {
     fn invalid_oracle_announcement_fails_validation_test() {
         let key_pair = Keypair::new(SECP256K1, &mut thread_rng());
         let oracle_pubkey = XOnlyPublicKey::from_keypair(&key_pair).0;
-        let events = [digit_event(9), enum_event(2)];
+        let events = [digit_event(9), signed_digit_event(10), enum_event(2)];
         for event in events {
             let mut event_hex = Vec::new();
             event
