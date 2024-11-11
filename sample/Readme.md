@@ -8,15 +8,15 @@ Example configurations and contract input are available in the [examples](./exam
 In order to use the [example contract](./examples/contracts/numerical_contract_input.json) you will need to update the `event_id`.
 Replace the part after `btcusd` with a UNIX timestamp in the future.
 
-Use the [helper script](../scripts/gen-sample-offer.sh) to create the example contract 1 hour in the future. This creates an `event_id` with a UNIX timestamp 1 hour in the future. Manually update the value for a longer time period.
+Use the [helper script](../scripts/gen-sample-offer.sh) to create the example contract 1 hour in the future. This will duplicate the `numerical_contract_input.json` sample under the name `sample_contract.json`, and modify the `event_id` with a UNIX timestamp 1 hour in the future. Manually update the value for a longer time period.
 
 
 ## Quick run
 
-To give a quick try to this sample, run the following set of commands (assuming that the working directory is the one in which this readme is located and that docker and docker-compose is available on your machine):
+To give a quick try to this sample, run the following set of commands (assuming that the working directory is the one in which this readme is located and that `docker` (and `docker-compose`, for V1; V2 is part of `docker`) is available on your machine):
 
 ```bash
-docker-compose --profile oracle up -d
+docker compose --profile oracle up -d
 docker compose exec bitcoind /scripts/create_wallets.sh
 cargo run ./examples/configurations/alice.yml
 ```
@@ -40,6 +40,7 @@ listoffers
 ```
 You should see the id of the contract that was offered by Bob.
 A JSON file with contract information should also have been saved in Alice's data folder (`./dlc_sample_alice/offers/xxx.json`).
+Note: Just pressing `Enter` will also trigger checking and handling of pending messages.
 
 Alice can now accept the offer by typing:
 ```
