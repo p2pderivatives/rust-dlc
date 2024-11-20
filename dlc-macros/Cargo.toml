@@ -1,0 +1,21 @@
+[package]
+name = "dlc-macros"
+authors = ["benny b <ben@bitcoinbay.foundation>"]
+version = "0.1.0"
+edition = "2018"
+description = "Procedural macros for writing optionally asynchronous code for traits and functions."
+homepage = "https://github.com/p2pderivatives/rust-dlc"
+license-file = "../LICENSE"
+repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-macros"
+
+[dependencies]
+proc-macro2 = "1.0.87"
+quote = "1.0.37"
+syn = { version = "2.0.79", features = ["full", "extra-traits"] }
+tokio = { version = "1.40.0", features = ["macros", "test-util"] }
+
+[lib]
+proc-macro = true
+
+[dev-dependencies]
+trybuild = "1.0.99"

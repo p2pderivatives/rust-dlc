@@ -144,6 +144,7 @@ fn parse_event_id(event_id: &str) -> Result<(String, DateTime<Utc>), DlcManagerE
     Ok((asset_id.to_string(), date_time))
 }
 
+#[cfg(not(feature = "async"))]
 impl Oracle for P2PDOracleClient {
     fn get_public_key(&self) -> XOnlyPublicKey {
         self.public_key
@@ -167,6 +168,63 @@ impl Oracle for P2PDOracleClient {
             signatures,
             values,
         } = get::<AttestationResponse>(&path)?;
+
+        Ok(OracleAttestation {
+            event_id: event_id.to_string(),
+            oracle_public_key: self.public_key,
+            signatures,
+            outcomes: values,
+        })
+    }
+}
+
+#[cfg(feature = "async")]
+#[async_trait::async_trait]
+impl Oracle for P2PDOracleClient {
+    fn get_public_key(&self) -> XOnlyPublicKey {
+        self.public_key
+    }
+
+    async fn get_announcement(
+        &self,
+        event_id: &str,
+    ) -> Result<OracleAnnouncement, DlcManagerError> {
+        let (asset_id, date_time) = parse_event_id(event_id)?;
+        let path = announcement_path(&self.host, &asset_id, &date_time);
+        let announcement = reqwest::get(&path)
+            .await
+            .map_err(|x| {
+                dlc_manager::error::Error::IOError(
+                    std::io::Error::new(std::io::ErrorKind::Other, x).into(),
+                )
+            })?
+            .json::<OracleAnnouncement>()
+            .await
+            .map_err(|e| DlcManagerError::OracleError(e.to_string()))?;
+
+        Ok(announcement)
+    }
+
+    async fn get_attestation(
+        &self,
+        event_id: &str,
+    ) -> Result<OracleAttestation, dlc_manager::error::Error> {
+        let (asset_id, date_time) = parse_event_id(event_id)?;
+        let path = attestation_path(&self.host, &asset_id, &date_time);
+        let AttestationResponse {
+            event_id: _,
+            signatures,
+            values,
+        } = reqwest::get(&path)
+            .await
+            .map_err(|x| {
+                dlc_manager::error::Error::IOError(
+                    std::io::Error::new(std::io::ErrorKind::Other, x).into(),
+                )
+            })?
+            .json::<AttestationResponse>()
+            .await
+            .map_err(|e| DlcManagerError::OracleError(e.to_string()))?;
 
         Ok(OracleAttestation {
             event_id: event_id.to_string(),
@@ -217,6 +275,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "async"))]
     fn get_announcement_test() {
         let url = &mockito::server_url();
         let _pubkey_mock = pubkey_mock();
@@ -237,6 +296,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "async"))]
     fn get_attestation_test() {
         let url = &mockito::server_url();
         let _pubkey_mock = pubkey_mock();
