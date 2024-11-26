@@ -70,7 +70,7 @@ pub(crate) use get_signed_channel_state;
 
 /// Creates an [`OfferedChannel`] and an associated [`OfferedContract`] using
 /// the given parameter.
-pub fn offer_channel<C: Signing, W: Deref, SP: Deref, B: Deref, T: Deref, X: ContractSigner>(
+pub async fn offer_channel<C: Signing, W: Deref, SP: Deref, B: Deref, T: Deref, X: ContractSigner>(
     secp: &Secp256k1<C>,
     contract: &ContractInput,
     counter_party: &PublicKey,
@@ -99,7 +99,8 @@ where
         wallet,
         &signer,
         blockchain,
-    )?;
+    )
+    .await?;
     let party_points = crate::utils::get_party_base_points(secp, signer_provider)?;
 
     let offered_contract = OfferedContract::new(
@@ -142,7 +143,7 @@ where
 /// Move the given [`OfferedChannel`] and [`OfferedContract`] to an [`AcceptedChannel`]
 /// and [`AcceptedContract`], returning them as well as the [`AcceptChannel`]
 /// message to be sent to the counter party.
-pub fn accept_channel_offer<W: Deref, SP: Deref, B: Deref, X: ContractSigner>(
+pub async fn accept_channel_offer<W: Deref, SP: Deref, B: Deref, X: ContractSigner>(
     secp: &Secp256k1<All>,
     offered_channel: &OfferedChannel,
     offered_contract: &OfferedContract,
@@ -167,7 +168,8 @@ where
         wallet,
         &signer,
         blockchain,
-    )?;
+    )
+    .await?;
 
     let per_update_seed = signer_provider.get_new_secret_key()?;
 

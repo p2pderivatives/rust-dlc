@@ -1,10 +1,11 @@
 [package]
 authors = ["Crypto Garage"]
-edition = "2018"
+edition = "2021"
 name = "mocks"
 version = "0.1.0"
 
 [dependencies]
+async-trait = "0.1.83"
 bitcoin = "0.32.2"
 ddk-dlc = {path = "../ddk-dlc"}
 ddk-manager = {path = "../ddk-manager"}

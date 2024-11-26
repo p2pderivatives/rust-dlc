@@ -55,12 +55,13 @@ impl Default for MockOracle {
     }
 }
 
+#[async_trait::async_trait]
 impl Oracle for MockOracle {
     fn get_public_key(&self) -> XOnlyPublicKey {
         XOnlyPublicKey::from_keypair(&self.key_pair).0
     }
 
-    fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
+    async fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, DaemonError> {
         let res = self
             .announcements
             .get(event_id)
@@ -68,7 +69,7 @@ impl Oracle for MockOracle {
         Ok(res.clone())
     }
 
-    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
+    async fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, DaemonError> {
         let res = self
             .attestations
             .get(event_id)

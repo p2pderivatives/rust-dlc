@@ -396,8 +396,9 @@ impl Wallet for BitcoinCoreProvider {
     }
 }
 
+#[async_trait::async_trait]
 impl Blockchain for BitcoinCoreProvider {
-    fn send_transaction(&self, transaction: &Transaction) -> Result<(), ManagerError> {
+    async fn send_transaction(&self, transaction: &Transaction) -> Result<(), ManagerError> {
         self.client
             .lock()
             .unwrap()
@@ -418,7 +419,7 @@ impl Blockchain for BitcoinCoreProvider {
         Ok(network)
     }
 
-    fn get_blockchain_height(&self) -> Result<u64, ManagerError> {
+    async fn get_blockchain_height(&self) -> Result<u64, ManagerError> {
         self.client
             .lock()
             .unwrap()
@@ -426,7 +427,7 @@ impl Blockchain for BitcoinCoreProvider {
             .map_err(rpc_err_to_manager_err)
     }
 
-    fn get_block_at_height(&self, height: u64) -> Result<bitcoin::Block, ManagerError> {
+    async fn get_block_at_height(&self, height: u64) -> Result<bitcoin::Block, ManagerError> {
         let client = self.client.lock().unwrap();
         let hash = client
             .get_block_hash(height)
@@ -434,7 +435,7 @@ impl Blockchain for BitcoinCoreProvider {
         client.get_block(&hash).map_err(rpc_err_to_manager_err)
     }
 
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
+    async fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
         let tx_info = self
             .client
             .lock()
@@ -446,7 +447,7 @@ impl Blockchain for BitcoinCoreProvider {
         Ok(tx)
     }
 
-    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
+    async fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
         let tx_info_res = self.client.lock().unwrap().get_transaction(tx_id, None);
         match tx_info_res {
             Ok(tx_info) => Ok(tx_info.info.confirmations as u32),

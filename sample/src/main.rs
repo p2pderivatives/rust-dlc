@@ -18,8 +18,9 @@ use p2pd_oracle_client::P2PDOracleClient;
 use std::collections::hash_map::HashMap;
 use std::env;
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::Mutex;
 
 pub(crate) type PeerManager = LdkPeerManager<
     SocketDescriptor,
@@ -72,11 +73,9 @@ async fn main() {
     // client uses reqwest in blocking mode to satisfy the non async oracle interface
     // so we need to use `spawn_blocking`.
     let oracle_host = config.oracle_config.host;
-    let oracle = tokio::task::spawn_blocking(move || {
-        P2PDOracleClient::new(&oracle_host).expect("Error creating oracle client")
-    })
-    .await
-    .unwrap();
+    let oracle = P2PDOracleClient::new(&oracle_host)
+        .await
+        .expect("Error creating oracle client");
     let mut oracles = HashMap::new();
     oracles.insert(oracle.get_public_key(), Box::new(oracle));
 
@@ -94,6 +93,7 @@ async fn main() {
             Arc::new(ddk_manager::SystemTimeProvider {}),
             bitcoind_provider.clone(),
         )
+        .await
         .expect("Could not create manager."),
     ));
 

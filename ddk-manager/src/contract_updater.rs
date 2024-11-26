@@ -27,7 +27,14 @@ use crate::{
 
 /// Creates an [`OfferedContract`] and [`OfferDlc`] message from the provided
 /// contract and oracle information.
-pub fn offer_contract<W: Deref, B: Deref, T: Deref, X: ContractSigner, SP: Deref, C: Signing>(
+pub async fn offer_contract<
+    W: Deref,
+    B: Deref,
+    T: Deref,
+    X: ContractSigner,
+    SP: Deref,
+    C: Signing,
+>(
     secp: &Secp256k1<C>,
     contract_input: &ContractInput,
     oracle_announcements: Vec<Vec<OracleAnnouncement>>,
@@ -56,7 +63,8 @@ where
         wallet,
         &signer,
         blockchain,
-    )?;
+    )
+    .await?;
 
     let offered_contract = OfferedContract::new(
         id,
@@ -77,7 +85,7 @@ where
 
 /// Creates an [`AcceptedContract`] and produces
 /// the accepting party's cet adaptor signatures.
-pub fn accept_contract<W: Deref, X: ContractSigner, SP: Deref, B: Deref>(
+pub async fn accept_contract<W: Deref, X: ContractSigner, SP: Deref, B: Deref>(
     secp: &Secp256k1<All>,
     offered_contract: &OfferedContract,
     wallet: &W,
@@ -99,7 +107,8 @@ where
         wallet,
         &signer,
         blockchain,
-    )?;
+    )
+    .await?;
 
     let dlc_transactions = ddk_dlc::create_dlc_transactions(
         &offered_contract.offer_params,
@@ -765,8 +774,8 @@ mod tests {
     use mocks::ddk_manager::contract::offered_contract::OfferedContract;
     use secp256k1_zkp::PublicKey;
 
-    #[test]
-    fn accept_contract_test() {
+    #[tokio::test]
+    async fn accept_contract_test() {
         let offer_dlc =
             serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap();
         let dummy_pubkey: PublicKey =
@@ -780,10 +789,8 @@ mod tests {
         let utxo_value: u64 = offered_contract.total_collateral
             - offered_contract.offer_params.collateral
             + crate::utils::get_half_common_fee(fee_rate).unwrap();
-        let wallet = Rc::new(mocks::mock_wallet::MockWallet::new(
-            &blockchain,
-            &[utxo_value, 10000],
-        ));
+        let wallet =
+            Rc::new(mocks::mock_wallet::MockWallet::new(&blockchain, &[utxo_value, 10000]).await);
 
         mocks::ddk_manager::contract_updater::accept_contract(
             secp256k1_zkp::SECP256K1,
@@ -792,6 +799,7 @@ mod tests {
             &wallet,
             &blockchain,
         )
+        .await
         .expect("Not to fail");
     }
 }

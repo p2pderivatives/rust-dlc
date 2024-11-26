@@ -14,7 +14,7 @@ pub struct MockWallet {
 }
 
 impl MockWallet {
-    pub fn new(blockchain: &Rc<MockBlockchain>, utxo_values: &[u64]) -> Self {
+    pub async fn new(blockchain: &Rc<MockBlockchain>, utxo_values: &[u64]) -> Self {
         let mut utxos = Vec::with_capacity(utxo_values.len());
 
         for utxo_value in utxo_values {
@@ -28,7 +28,7 @@ impl MockWallet {
                 input: vec![],
                 output: vec![tx_out.clone()],
             };
-            blockchain.send_transaction(&tx).unwrap();
+            blockchain.send_transaction(&tx).await.unwrap();
             let utxo = Utxo {
                 tx_out,
                 outpoint: bitcoin::OutPoint {

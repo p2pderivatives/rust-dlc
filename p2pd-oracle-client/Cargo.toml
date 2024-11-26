@@ -6,14 +6,17 @@ license-file = "../LICENSE"
 name = "p2pd-oracle-client"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/p2pd-oracle-client"
 version = "0.1.0"
+edition = "2021"
 
 [dependencies]
+async-trait = "0.1.83"
 chrono = {version = "0.4.19", features = ["serde"]}
 ddk-manager = {path = "../ddk-manager"}
 ddk-messages = {path = "../ddk-messages", features = ["use-serde"]}
-reqwest = {version = "0.11", features = ["blocking", "json"]}
+reqwest = {version = "0.11", features = ["json"]}
 secp256k1-zkp = {version = "0.11.0" }
 serde = {version = "*", features = ["derive"]}
 
 [dev-dependencies]
 mockito = "0.31.0"
+tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread", "test-util"] }

@@ -19,10 +19,11 @@ use secp256k1_zkp::{rand::thread_rng, All, PublicKey, Secp256k1, SecretKey};
 
 type Result<T> = core::result::Result<T, Error>;
 
+#[async_trait::async_trait]
 /// Trait providing blockchain information to the wallet.
 pub trait WalletBlockchainProvider: Blockchain + FeeEstimator {
-    fn get_utxos_for_address(&self, address: &Address) -> Result<Vec<Utxo>>;
-    fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool>;
+    async fn get_utxos_for_address(&self, address: &Address) -> Result<Vec<Utxo>>;
+    async fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool>;
 }
 
 /// Trait enabling the wallet to persist data.
@@ -68,13 +69,14 @@ where
     }
 
     /// Refresh the wallet checking and updating the UTXO states.
-    pub fn refresh(&self) -> Result<()> {
+    pub async fn refresh(&self) -> Result<()> {
         let utxos: Vec<Utxo> = self.storage.get_utxos()?;
 
         for utxo in &utxos {
             let is_spent = self
                 .blockchain
-                .is_output_spent(&utxo.outpoint.txid, utxo.outpoint.vout)?;
+                .is_output_spent(&utxo.outpoint.txid, utxo.outpoint.vout)
+                .await?;
             if is_spent {
                 self.storage.delete_utxo(utxo)?;
             }
@@ -83,7 +85,7 @@ where
         let addresses = self.storage.get_addresses()?;
 
         for address in &addresses {
-            let utxos = self.blockchain.get_utxos_for_address(address)?;
+            let utxos = self.blockchain.get_utxos_for_address(address).await?;
 
             for utxo in &utxos {
                 if !self.storage.has_utxo(utxo)? {
@@ -117,7 +119,7 @@ where
 
     /// Creates a transaction with all wallet UTXOs as inputs and a single output
     /// sending everything to the given address.
-    pub fn empty_to_address(&self, address: &Address) -> Result<()> {
+    pub async fn empty_to_address(&self, address: &Address) -> Result<()> {
         let utxos = self
             .storage
             .get_utxos()
@@ -172,7 +174,7 @@ where
             .extract_tx()
             .expect("could not extract transaction from psbt");
 
-        self.blockchain.send_transaction(&tx)
+        self.blockchain.send_transaction(&tx).await
     }
 }
 

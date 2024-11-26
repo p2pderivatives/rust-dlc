@@ -31,6 +31,9 @@ use ddk_messages::channel::{
 };
 use ddk_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use ddk_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc};
+use futures::stream;
+use futures::stream::FuturesUnordered;
+use futures::{StreamExt, TryStreamExt};
 use hex::DisplayHex;
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
@@ -137,7 +140,7 @@ macro_rules! check_for_timed_out_channels {
             if let SignedChannelState::$state { timeout, .. } = channel.state {
                 let is_timed_out = timeout < $manager.time.unix_time_now();
                 if is_timed_out {
-                    match $manager.force_close_channel_internal(channel, true) {
+                    match $manager.force_close_channel_internal(channel, true).await {
                         Err(e) => error!("Error force closing channel {}", e),
                         _ => {}
                     }
@@ -159,7 +162,7 @@ where
     F::Target: FeeEstimator,
 {
     /// Create a new Manager struct.
-    pub fn new(
+    pub async fn new(
         wallet: W,
         signer_provider: SP,
         blockchain: B,
@@ -168,7 +171,7 @@ where
         time: T,
         fee_estimator: F,
     ) -> Result<Self, Error> {
-        let init_height = blockchain.get_blockchain_height()?;
+        let init_height = blockchain.get_blockchain_height().await?;
         let chain_monitor = Mutex::new(
             store
                 .get_chain_monitor()?
@@ -196,7 +199,7 @@ where
     }
 
     /// Function called to pass a DlcMessage to the Manager.
-    pub fn on_dlc_message(
+    pub async fn on_dlc_message(
         &self,
         msg: &DlcMessage,
         counter_party: PublicKey,
@@ -208,7 +211,7 @@ where
             }
             DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a, &counter_party)?)),
             DlcMessage::Sign(s) => {
-                self.on_sign_message(s, &counter_party)?;
+                self.on_sign_message(s, &counter_party).await?;
                 Ok(None)
             }
             DlcMessage::OfferChannel(o) => {
@@ -219,7 +222,7 @@ where
                 self.on_accept_channel(a, &counter_party)?,
             ))),
             DlcMessage::SignChannel(s) => {
-                self.on_sign_channel(s, &counter_party)?;
+                self.on_sign_channel(s, &counter_party).await?;
                 Ok(None)
             }
             DlcMessage::SettleOffer(s) => match self.on_settle_offer(s, &counter_party)? {
@@ -269,18 +272,16 @@ where
     /// and an OfferDlc message returned.
     ///
     /// This function will fetch the oracle announcements from the oracle.
-    pub fn send_offer(
+    pub async fn send_offer(
         &self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferDlc, Error> {
-        let oracle_announcements = contract_input
-            .contract_infos
-            .iter()
-            .map(|x| self.get_oracle_announcements(&x.oracles))
-            .collect::<Result<Vec<_>, Error>>()?;
+        // If the oracle announcement fails to retrieve, then log and continue.
+        let oracle_announcements = self.oracle_announcements(contract_input).await?;
 
         self.send_offer_with_announcements(contract_input, counter_party, oracle_announcements)
+            .await
     }
 
     /// Function called to create a new DLC. The offered contract will be stored
@@ -288,7 +289,7 @@ where
     ///
     /// This function allows to pass the oracle announcements directly instead of
     /// fetching them from the oracle.
-    pub fn send_offer_with_announcements(
+    pub async fn send_offer_with_announcements(
         &self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
@@ -304,7 +305,8 @@ where
             &self.blockchain,
             &self.time,
             &self.signer_provider,
-        )?;
+        )
+        .await?;
 
         offered_contract.validate()?;
 
@@ -314,7 +316,7 @@ where
     }
 
     /// Function to call to accept a DLC for which an offer was received.
-    pub fn accept_contract_offer(
+    pub async fn accept_contract_offer(
         &self,
         contract_id: &ContractId,
     ) -> Result<(ContractId, PublicKey, AcceptDlc), Error> {
@@ -329,7 +331,8 @@ where
             &self.wallet,
             &self.signer_provider,
             &self.blockchain,
-        )?;
+        )
+        .await?;
 
         self.wallet.import_address(&Address::p2wsh(
             &accepted_contract.dlc_transactions.funding_script_pubkey,
@@ -349,8 +352,8 @@ where
     ///
     /// Consumers **MUST** call this periodically in order to
     /// determine when pending transactions reach confirmation.
-    pub fn periodic_chain_monitor(&self) -> Result<(), Error> {
-        let cur_height = self.blockchain.get_blockchain_height()?;
+    pub async fn periodic_chain_monitor(&self) -> Result<(), Error> {
+        let cur_height = self.blockchain.get_blockchain_height().await?;
         let last_height = self.chain_monitor.lock().unwrap().last_height;
 
         // TODO(luckysori): We could end up reprocessing a block at
@@ -362,7 +365,7 @@ where
         }
 
         for height in last_height + 1..=cur_height {
-            let block = self.blockchain.get_block_at_height(height)?;
+            let block = self.blockchain.get_block_at_height(height).await?;
 
             self.chain_monitor
                 .lock()
@@ -375,13 +378,13 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
-    pub fn periodic_check(&self, check_channels: bool) -> Result<(), Error> {
-        self.check_signed_contracts()?;
-        self.check_confirmed_contracts()?;
-        self.check_preclosed_contracts()?;
+    pub async fn periodic_check(&self, check_channels: bool) -> Result<(), Error> {
+        self.check_signed_contracts().await?;
+        self.check_confirmed_contracts().await?;
+        self.check_preclosed_contracts().await?;
 
         if check_channels {
-            self.channel_checks()?;
+            self.channel_checks().await?;
         }
 
         Ok(())
@@ -448,7 +451,11 @@ where
         Ok(DlcMessage::Sign(signed_msg))
     }
 
-    fn on_sign_message(&self, sign_message: &SignDlc, peer_id: &PublicKey) -> Result<(), Error> {
+    async fn on_sign_message(
+        &self,
+        sign_message: &SignDlc,
+        peer_id: &PublicKey,
+    ) -> Result<(), Error> {
         let accepted_contract =
             get_contract_in_state!(self, &sign_message.contract_id, Accepted, Some(*peer_id))?;
 
@@ -465,12 +472,12 @@ where
         self.store
             .update_contract(&Contract::Signed(signed_contract))?;
 
-        self.blockchain.send_transaction(&fund_tx)?;
+        self.blockchain.send_transaction(&fund_tx).await?;
 
         Ok(())
     }
 
-    fn get_oracle_announcements(
+    async fn get_oracle_announcements(
         &self,
         oracle_inputs: &OracleInput,
     ) -> Result<Vec<OracleAnnouncement>, Error> {
@@ -480,7 +487,8 @@ where
                 .oracles
                 .get(pubkey)
                 .ok_or_else(|| Error::InvalidParameters("Unknown oracle public key".to_string()))?;
-            announcements.push(oracle.get_announcement(&oracle_inputs.event_id)?.clone());
+            let announcement = oracle.get_announcement(&oracle_inputs.event_id).await?;
+            announcements.push(announcement);
         }
 
         Ok(announcements)
@@ -518,14 +526,17 @@ where
         Err(e)
     }
 
-    fn check_signed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
-        let confirmations = self.blockchain.get_transaction_confirmations(
-            &contract
-                .accepted_contract
-                .dlc_transactions
-                .fund
-                .compute_txid(),
-        )?;
+    async fn check_signed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
+        let confirmations = self
+            .blockchain
+            .get_transaction_confirmations(
+                &contract
+                    .accepted_contract
+                    .dlc_transactions
+                    .fund
+                    .compute_txid(),
+            )
+            .await?;
         if confirmations >= NB_CONFIRMATIONS {
             self.store
                 .update_contract(&Contract::Confirmed(contract.clone()))?;
@@ -533,9 +544,9 @@ where
         Ok(())
     }
 
-    fn check_signed_contracts(&self) -> Result<(), Error> {
+    async fn check_signed_contracts(&self) -> Result<(), Error> {
         for c in self.store.get_signed_contracts()? {
-            if let Err(e) = self.check_signed_contract(&c) {
+            if let Err(e) = self.check_signed_contract(&c).await {
                 error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
@@ -547,13 +558,13 @@ where
         Ok(())
     }
 
-    fn check_confirmed_contracts(&self) -> Result<(), Error> {
+    async fn check_confirmed_contracts(&self) -> Result<(), Error> {
         for c in self.store.get_confirmed_contracts()? {
             // Confirmed contracts from channel are processed in channel specific methods.
             if c.channel_id.is_some() {
                 continue;
             }
-            if let Err(e) = self.check_confirmed_contract(&c) {
+            if let Err(e) = self.check_confirmed_contract(&c).await {
                 error!(
                     "Error checking confirmed contract {}: {}",
                     c.accepted_contract.get_contract_id_string(),
@@ -565,7 +576,7 @@ where
         Ok(())
     }
 
-    fn get_closable_contract_info<'a>(
+    async fn get_closable_contract_info<'a>(
         &'a self,
         contract: &'a SignedContract,
     ) -> ClosableContractInfo<'a> {
@@ -581,26 +592,54 @@ where
                 .enumerate()
                 .collect();
             if matured.len() >= contract_info.threshold {
-                let attestations: Vec<_> = matured
-                    .iter()
-                    .filter_map(|(i, announcement)| {
-                        let oracle = self.oracles.get(&announcement.oracle_public_key)?;
-                        let attestation = oracle
+                let attestations = stream::iter(matured.iter())
+                    .map(|(i, announcement)| async move {
+                        // First try to get the oracle
+                        let oracle = match self.oracles.get(&announcement.oracle_public_key) {
+                            Some(oracle) => oracle,
+                            None => {
+                                log::debug!(
+                                    "Oracle not found for key: {}",
+                                    announcement.oracle_public_key
+                                );
+                                return None;
+                            }
+                        };
+
+                        // Then try to get the attestation
+                        let attestation = match oracle
                             .get_attestation(&announcement.oracle_event.event_id)
-                            .ok()?;
-                        attestation
-                            .validate(&self.secp, announcement)
-                            .map_err(|_| {
+                            .await
+                        {
+                            Ok(attestation) => attestation,
+                            Err(e) => {
                                 log::error!(
-                                    "Oracle attestation is not valid. pubkey={} event_id={}",
-                                    announcement.oracle_public_key,
-                                    announcement.oracle_event.event_id
-                                )
-                            })
-                            .ok()?;
+                                    "Attestation not found for event. id={} error={}",
+                                    announcement.oracle_event.event_id,
+                                    e.to_string()
+                                );
+                                return None;
+                            }
+                        };
+
+                        // Validate the attestation
+                        if let Err(e) = attestation.validate(&self.secp, announcement) {
+                            log::error!(
+                                "Oracle attestation is not valid. pubkey={} event_id={}, error={:?}",
+                                announcement.oracle_public_key,
+                                announcement.oracle_event.event_id,
+                                e
+                            );
+                            return None;
+                        }
+
                         Some((*i, attestation))
                     })
-                    .collect();
+                    .collect::<FuturesUnordered<_>>()
+                    .await
+                    .filter_map(|result| async move { result }) // Filter out None values
+                    .collect::<Vec<_>>()
+                    .await;
                 if attestations.len() >= contract_info.threshold {
                     return Some((contract_info, adaptor_info, attestations));
                 }
@@ -609,8 +648,8 @@ where
         None
     }
 
-    fn check_confirmed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
-        let closable_contract_info = self.get_closable_contract_info(contract);
+    async fn check_confirmed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
+        let closable_contract_info = self.get_closable_contract_info(contract).await;
         if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
             let offer = &contract.accepted_contract.offered_contract;
             let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
@@ -622,11 +661,14 @@ where
                 &attestations,
                 &signer,
             )?;
-            match self.close_contract(
-                contract,
-                cet,
-                attestations.iter().map(|x| x.1.clone()).collect(),
-            ) {
+            match self
+                .close_contract(
+                    contract,
+                    cet,
+                    attestations.iter().map(|x| x.1.clone()).collect(),
+                )
+                .await
+            {
                 Ok(closed_contract) => {
                     self.store.update_contract(&closed_contract)?;
                     return Ok(());
@@ -642,13 +684,13 @@ where
             }
         }
 
-        self.check_refund(contract)?;
+        self.check_refund(contract).await?;
 
         Ok(())
     }
 
     /// Manually close a contract with the oracle attestations.
-    pub fn close_confirmed_contract(
+    pub async fn close_confirmed_contract(
         &self,
         contract_id: &ContractId,
         attestations: Vec<(usize, OracleAttestation)>,
@@ -684,8 +726,9 @@ where
             // Check that the lock time has passed
             let time = bitcoin::absolute::Time::from_consensus(self.time.unix_time_now() as u32)
                 .expect("Time is not in valid range. This should never happen.");
-            let height = Height::from_consensus(self.blockchain.get_blockchain_height()? as u32)
-                .expect("Height is not in valid range. This should never happen.");
+            let height =
+                Height::from_consensus(self.blockchain.get_blockchain_height().await? as u32)
+                    .expect("Height is not in valid range. This should never happen.");
             let locktime = cet.lock_time;
 
             if !locktime.is_satisfied_by(height, time) {
@@ -694,11 +737,14 @@ where
                 ));
             }
 
-            match self.close_contract(
-                &contract,
-                cet,
-                attestations.into_iter().map(|x| x.1).collect(),
-            ) {
+            match self
+                .close_contract(
+                    &contract,
+                    cet,
+                    attestations.into_iter().map(|x| x.1).collect(),
+                )
+                .await
+            {
                 Ok(closed_contract) => {
                     self.store.update_contract(&closed_contract)?;
                     Ok(closed_contract)
@@ -718,9 +764,9 @@ where
         }
     }
 
-    fn check_preclosed_contracts(&self) -> Result<(), Error> {
+    async fn check_preclosed_contracts(&self) -> Result<(), Error> {
         for c in self.store.get_preclosed_contracts()? {
-            if let Err(e) = self.check_preclosed_contract(&c) {
+            if let Err(e) = self.check_preclosed_contract(&c).await {
                 error!(
                     "Error checking pre-closed contract {}: {}",
                     c.signed_contract.accepted_contract.get_contract_id_string(),
@@ -732,11 +778,12 @@ where
         Ok(())
     }
 
-    fn check_preclosed_contract(&self, contract: &PreClosedContract) -> Result<(), Error> {
+    async fn check_preclosed_contract(&self, contract: &PreClosedContract) -> Result<(), Error> {
         let broadcasted_txid = contract.signed_cet.compute_txid();
         let confirmations = self
             .blockchain
-            .get_transaction_confirmations(&broadcasted_txid)?;
+            .get_transaction_confirmations(&broadcasted_txid)
+            .await?;
         if confirmations >= NB_CONFIRMATIONS {
             let closed_contract = ClosedContract {
                 attestations: contract.attestations.clone(),
@@ -764,7 +811,7 @@ where
         Ok(())
     }
 
-    fn close_contract(
+    async fn close_contract(
         &self,
         contract: &SignedContract,
         signed_cet: Transaction,
@@ -772,14 +819,15 @@ where
     ) -> Result<Contract, Error> {
         let confirmations = self
             .blockchain
-            .get_transaction_confirmations(&signed_cet.compute_txid())?;
+            .get_transaction_confirmations(&signed_cet.compute_txid())
+            .await?;
 
         if confirmations < 1 {
             // TODO(tibo): if this fails because another tx is already in
             // mempool or blockchain, we might have been cheated. There is
             // not much to be done apart from possibly extracting a fraud
             // proof but ideally it should be handled.
-            self.blockchain.send_transaction(&signed_cet)?;
+            self.blockchain.send_transaction(&signed_cet).await?;
 
             let preclosed_contract = PreClosedContract {
                 signed_contract: contract.clone(),
@@ -810,7 +858,7 @@ where
         Ok(Contract::Closed(closed_contract))
     }
 
-    fn check_refund(&self, contract: &SignedContract) -> Result<(), Error> {
+    async fn check_refund(&self, contract: &SignedContract) -> Result<(), Error> {
         // TODO(tibo): should check for confirmation of refund before updating state
         if contract
             .accepted_contract
@@ -824,13 +872,14 @@ where
             let refund = accepted_contract.dlc_transactions.refund.clone();
             let confirmations = self
                 .blockchain
-                .get_transaction_confirmations(&refund.compute_txid())?;
+                .get_transaction_confirmations(&refund.compute_txid())
+                .await?;
             if confirmations == 0 {
                 let offer = &contract.accepted_contract.offered_contract;
                 let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
                 let refund =
                     crate::contract_updater::get_signed_refund(&self.secp, contract, &signer)?;
-                self.blockchain.send_transaction(&refund)?;
+                self.blockchain.send_transaction(&refund).await?;
             }
 
             self.store
@@ -910,16 +959,12 @@ where
 {
     /// Create a new channel offer and return the [`dlc_messages::channel::OfferChannel`]
     /// message to be sent to the `counter_party`.
-    pub fn offer_channel(
+    pub async fn offer_channel(
         &self,
         contract_input: &ContractInput,
         counter_party: PublicKey,
     ) -> Result<OfferChannel, Error> {
-        let oracle_announcements = contract_input
-            .contract_infos
-            .iter()
-            .map(|x| self.get_oracle_announcements(&x.oracles))
-            .collect::<Result<Vec<_>, Error>>()?;
+        let oracle_announcements = self.oracle_announcements(contract_input).await?;
 
         let (offered_channel, offered_contract) = crate::channel_updater::offer_channel(
             &self.secp,
@@ -933,7 +978,8 @@ where
             &self.blockchain,
             &self.time,
             crate::utils::get_new_temporary_id(),
-        )?;
+        )
+        .await?;
 
         let msg = offered_channel.get_offer_channel_msg(&offered_contract);
 
@@ -979,7 +1025,7 @@ where
     /// Accept a channel that was offered. Returns the [`dlc_messages::channel::AcceptChannel`]
     /// message to be sent, the updated [`crate::ChannelId`] and [`crate::ContractId`],
     /// as well as the public key of the offering node.
-    pub fn accept_channel(
+    pub async fn accept_channel(
         &self,
         channel_id: &ChannelId,
     ) -> Result<(AcceptChannel, ChannelId, ContractId, PublicKey), Error> {
@@ -1007,7 +1053,8 @@ where
                 &self.wallet,
                 &self.signer_provider,
                 &self.blockchain,
-            )?;
+            )
+            .await?;
 
         self.wallet.import_address(&Address::p2wsh(
             &accepted_contract.dlc_transactions.funding_script_pubkey,
@@ -1027,10 +1074,10 @@ where
     }
 
     /// Force close the channel with given [`crate::ChannelId`].
-    pub fn force_close_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    pub async fn force_close_channel(&self, channel_id: &ChannelId) -> Result<(), Error> {
         let channel = get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
-        self.force_close_channel_internal(channel, true)
+        self.force_close_channel_internal(channel, true).await
     }
 
     /// Offer to settle the balance of a channel so that the counter party gets
@@ -1092,7 +1139,7 @@ where
     /// Returns a [`RenewOffer`] message as well as the [`PublicKey`] of the
     /// counter party's node to offer the establishment of a new contract in the
     /// channel.
-    pub fn renew_offer(
+    pub async fn renew_offer(
         &self,
         channel_id: &ChannelId,
         counter_payout: u64,
@@ -1101,11 +1148,7 @@ where
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
-        let oracle_announcements = contract_input
-            .contract_infos
-            .iter()
-            .map(|x| self.get_oracle_announcements(&x.oracles))
-            .collect::<Result<Vec<_>, Error>>()?;
+        let oracle_announcements = self.oracle_announcements(contract_input).await?;
 
         let (msg, offered_contract) = crate::channel_updater::renew_offer(
             &self.secp,
@@ -1259,7 +1302,7 @@ where
 
     /// Accept an offer to collaboratively close the channel. The close transaction
     /// will be broadcast and the state of the channel updated.
-    pub fn accept_collaborative_close(&self, channel_id: &ChannelId) -> Result<(), Error> {
+    pub async fn accept_collaborative_close(&self, channel_id: &ChannelId) -> Result<(), Error> {
         let signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
 
@@ -1288,7 +1331,7 @@ where
             &self.signer_provider,
         )?;
 
-        self.blockchain.send_transaction(&close_tx)?;
+        self.blockchain.send_transaction(&close_tx).await?;
 
         self.store.upsert_channel(closed_channel, None)?;
 
@@ -1300,7 +1343,7 @@ where
         Ok(())
     }
 
-    fn try_finalize_closing_established_channel(
+    async fn try_finalize_closing_established_channel(
         &self,
         signed_channel: SignedChannel,
     ) -> Result<(), Error> {
@@ -1314,7 +1357,8 @@ where
 
         if self
             .blockchain
-            .get_transaction_confirmations(&buffer_tx.compute_txid())?
+            .get_transaction_confirmations(&buffer_tx.compute_txid())
+            .await?
             >= CET_NSEQUENCE
         {
             log::info!(
@@ -1327,6 +1371,7 @@ where
 
             let (contract_info, adaptor_info, attestations) = self
                 .get_closable_contract_info(&confirmed_contract)
+                .await
                 .ok_or_else(|| {
                     Error::InvalidState("Could not get information to close contract".to_string())
                 })?;
@@ -1343,11 +1388,13 @@ where
                     is_initiator,
                 )?;
 
-            let closed_contract = self.close_contract(
-                &confirmed_contract,
-                signed_cet,
-                attestations.iter().map(|x| &x.1).cloned().collect(),
-            )?;
+            let closed_contract = self
+                .close_contract(
+                    &confirmed_contract,
+                    signed_cet,
+                    attestations.iter().map(|x| &x.1).cloned().collect(),
+                )
+                .await?;
 
             self.chain_monitor
                 .lock()
@@ -1479,7 +1526,7 @@ where
         Ok(sign_channel)
     }
 
-    fn on_sign_channel(
+    async fn on_sign_channel(
         &self,
         sign_channel: &SignChannel,
         peer_id: &PublicKey,
@@ -1534,7 +1581,7 @@ where
             unreachable!();
         }
 
-        self.blockchain.send_transaction(&signed_fund_tx)?;
+        self.blockchain.send_transaction(&signed_fund_tx).await?;
 
         self.store.upsert_channel(
             Channel::Signed(signed_channel),
@@ -2087,24 +2134,24 @@ where
         Ok(())
     }
 
-    fn channel_checks(&self) -> Result<(), Error> {
+    async fn channel_checks(&self) -> Result<(), Error> {
         let established_closing_channels = self
             .store
             .get_signed_channels(Some(SignedChannelStateType::Closing))?;
 
         for channel in established_closing_channels {
-            if let Err(e) = self.try_finalize_closing_established_channel(channel) {
+            if let Err(e) = self.try_finalize_closing_established_channel(channel).await {
                 error!("Error trying to close established channel: {}", e);
             }
         }
 
-        if let Err(e) = self.check_for_timed_out_channels() {
+        if let Err(e) = self.check_for_timed_out_channels().await {
             error!("Error checking timed out channels {}", e);
         }
-        self.check_for_watched_tx()
+        self.check_for_watched_tx().await
     }
 
-    fn check_for_timed_out_channels(&self) -> Result<(), Error> {
+    async fn check_for_timed_out_channels(&self) -> Result<(), Error> {
         check_for_timed_out_channels!(self, RenewOffered);
         check_for_timed_out_channels!(self, RenewAccepted);
         check_for_timed_out_channels!(self, RenewConfirmed);
@@ -2115,7 +2162,7 @@ where
         Ok(())
     }
 
-    pub(crate) fn process_watched_txs(
+    pub(crate) async fn process_watched_txs(
         &self,
         watched_txs: Vec<(Transaction, ChannelInfo)>,
     ) -> Result<(), Error> {
@@ -2290,7 +2337,7 @@ where
                         }
                     };
 
-                    self.blockchain.send_transaction(&signed_tx)?;
+                    self.blockchain.send_transaction(&signed_tx).await?;
 
                     let closed_channel = Channel::ClosedPunished(ClosedPunishedChannel {
                         counter_party: signed_channel.counter_party,
@@ -2420,10 +2467,10 @@ where
         Ok(())
     }
 
-    fn check_for_watched_tx(&self) -> Result<(), Error> {
+    async fn check_for_watched_tx(&self) -> Result<(), Error> {
         let confirmed_txs = self.chain_monitor.lock().unwrap().confirmed_txs();
 
-        self.process_watched_txs(confirmed_txs)?;
+        self.process_watched_txs(confirmed_txs).await?;
 
         self.get_store()
             .persist_chain_monitor(&self.chain_monitor.lock().unwrap())?;
@@ -2431,7 +2478,7 @@ where
         Ok(())
     }
 
-    fn force_close_channel_internal(
+    async fn force_close_channel_internal(
         &self,
         mut channel: SignedChannel,
         is_initiator: bool,
@@ -2450,6 +2497,7 @@ where
                     counter_buffer_adaptor_signature,
                     buffer_transaction,
                 )
+                .await
             }
             SignedChannelState::RenewFinalized {
                 buffer_transaction,
@@ -2464,8 +2512,11 @@ where
                     offer_buffer_adaptor_signature,
                     buffer_transaction,
                 )
+                .await
             }
-            SignedChannelState::Settled { .. } => self.close_settled_channel(channel, is_initiator),
+            SignedChannelState::Settled { .. } => {
+                self.close_settled_channel(channel, is_initiator).await
+            }
             SignedChannelState::SettledOffered { .. }
             | SignedChannelState::SettledReceived { .. }
             | SignedChannelState::SettledAccepted { .. }
@@ -2478,7 +2529,8 @@ where
                     .roll_back_state
                     .take()
                     .expect("to have a rollback state");
-                self.force_close_channel_internal(channel, is_initiator)
+                let channel_clone = channel.clone(); // Clone the channel to avoid moving it
+                Box::pin(self.force_close_channel_internal(channel_clone, is_initiator)).await
             }
             SignedChannelState::Closing { .. } => Err(Error::InvalidState(
                 "Channel is already closing.".to_string(),
@@ -2487,7 +2539,7 @@ where
     }
 
     /// Initiate the unilateral closing of a channel that has been established.
-    fn initiate_unilateral_close_established_channel(
+    async fn initiate_unilateral_close_established_channel(
         &self,
         mut signed_channel: SignedChannel,
         is_initiator: bool,
@@ -2511,7 +2563,7 @@ where
         let buffer_transaction =
             get_signed_channel_state!(signed_channel, Closing, ref buffer_transaction)?;
 
-        self.blockchain.send_transaction(buffer_transaction)?;
+        self.blockchain.send_transaction(buffer_transaction).await?;
 
         self.chain_monitor
             .lock()
@@ -2528,7 +2580,7 @@ where
     }
 
     /// Unilaterally close a channel that has been settled.
-    fn close_settled_channel(
+    async fn close_settled_channel(
         &self,
         signed_channel: SignedChannel,
         is_initiator: bool,
@@ -2543,10 +2595,11 @@ where
         if self
             .blockchain
             .get_transaction_confirmations(&settle_tx.compute_txid())
+            .await
             .unwrap_or(0)
             == 0
         {
-            self.blockchain.send_transaction(&settle_tx)?;
+            self.blockchain.send_transaction(&settle_tx).await?;
         }
 
         self.chain_monitor
@@ -2590,6 +2643,30 @@ where
             pnl,
         })
     }
+
+    async fn oracle_announcements(
+        &self,
+        contract_input: &ContractInput,
+    ) -> Result<Vec<Vec<OracleAnnouncement>>, Error> {
+        let announcements = stream::iter(contract_input.contract_infos.iter())
+            .map(|x| {
+                let future = self.get_oracle_announcements(&x.oracles);
+                async move {
+                    match future.await {
+                        Ok(result) => Ok(result),
+                        Err(e) => {
+                            log::error!("Failed to get oracle announcements: {}", e);
+                            Err(e)
+                        }
+                    }
+                }
+            })
+            .collect::<FuturesUnordered<_>>()
+            .await
+            .try_collect::<Vec<_>>()
+            .await?;
+        Ok(announcements)
+    }
 }
 
 #[cfg(test)]
@@ -2617,13 +2694,16 @@ mod test {
         SimpleSigner,
     >;
 
-    fn get_manager() -> TestManager {
+    async fn get_manager() -> TestManager {
         let blockchain = Rc::new(MockBlockchain::new());
         let store = Rc::new(MemoryStorage::new());
-        let wallet = Rc::new(MockWallet::new(
-            &blockchain,
-            &(0..100).map(|x| x as u64 * 1000000).collect::<Vec<_>>(),
-        ));
+        let wallet = Rc::new(
+            MockWallet::new(
+                &blockchain,
+                &(0..100).map(|x| x as u64 * 1000000).collect::<Vec<_>>(),
+            )
+            .await,
+        );
 
         let oracle_list = (0..5).map(|_| MockOracle::new()).collect::<Vec<_>>();
         let oracles: HashMap<XOnlyPublicKey, _> = oracle_list
@@ -2643,6 +2723,7 @@ mod test {
             time,
             blockchain,
         )
+        .await
         .unwrap()
     }
 
@@ -2652,37 +2733,41 @@ mod test {
             .unwrap()
     }
 
-    #[test]
-    fn reject_offer_with_existing_contract_id() {
+    #[tokio::test]
+    async fn reject_offer_with_existing_contract_id() {
         let offer_message = Message::Offer(
             serde_json::from_str(include_str!("../test_inputs/offer_contract.json")).unwrap(),
         );
 
-        let manager = get_manager();
+        let manager = get_manager().await;
 
         manager
             .on_dlc_message(&offer_message, pubkey())
+            .await
             .expect("To accept the first offer message");
 
         manager
             .on_dlc_message(&offer_message, pubkey())
+            .await
             .expect_err("To reject the second offer message");
     }
 
-    #[test]
-    fn reject_channel_offer_with_existing_channel_id() {
+    #[tokio::test]
+    async fn reject_channel_offer_with_existing_channel_id() {
         let offer_message = Message::OfferChannel(
             serde_json::from_str(include_str!("../test_inputs/offer_channel.json")).unwrap(),
         );
 
-        let manager = get_manager();
+        let manager = get_manager().await;
 
         manager
             .on_dlc_message(&offer_message, pubkey())
+            .await
             .expect("To accept the first offer message");
 
         manager
             .on_dlc_message(&offer_message, pubkey())
+            .await
             .expect_err("To reject the second offer message");
     }
 }

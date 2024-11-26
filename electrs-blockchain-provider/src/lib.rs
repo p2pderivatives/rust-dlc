@@ -13,7 +13,7 @@ use bitcoin_test_utils::tx_to_string;
 use ddk_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning_block_sync::{BlockData, BlockHeaderData, BlockSource, BlockSourceError};
-use reqwest::blocking::Response;
+use reqwest::Response;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -29,8 +29,7 @@ pub enum Target {
 
 pub struct ElectrsBlockchainProvider {
     host: String,
-    client: reqwest::blocking::Client,
-    async_client: reqwest::Client,
+    client: reqwest::Client,
     network: Network,
     fees: Arc<HashMap<Target, AtomicU32>>,
 }
@@ -46,16 +45,16 @@ impl ElectrsBlockchainProvider {
         Self {
             host,
             network,
-            client: reqwest::blocking::Client::new(),
-            async_client: reqwest::Client::new(),
+            client: reqwest::Client::new(),
             fees,
         }
     }
 
-    fn get(&self, sub_url: &str) -> Result<Response, Error> {
+    async fn get(&self, sub_url: &str) -> Result<Response, Error> {
         self.client
             .get(format!("{}{}", self.host, sub_url))
             .send()
+            .await
             .map_err(|x| {
                 ddk_manager::error::Error::IOError(lightning::io::Error::new(
                     lightning::io::ErrorKind::Other,
@@ -65,14 +64,14 @@ impl ElectrsBlockchainProvider {
     }
 
     async fn get_async(&self, sub_url: &str) -> Result<reqwest::Response, reqwest::Error> {
-        self.async_client
+        self.client
             .get(format!("{}{}", self.host, sub_url))
             .send()
             .await
     }
 
-    fn get_text(&self, sub_url: &str) -> Result<String, Error> {
-        self.get(sub_url)?.text().map_err(|x| {
+    async fn get_text(&self, sub_url: &str) -> Result<String, Error> {
+        self.get(sub_url).await?.text().await.map_err(|x| {
             ddk_manager::error::Error::IOError(lightning::io::Error::new(
                 lightning::io::ErrorKind::Other,
                 x,
@@ -80,41 +79,49 @@ impl ElectrsBlockchainProvider {
         })
     }
 
-    fn get_u64(&self, sub_url: &str) -> Result<u64, Error> {
-        self.get_text(sub_url)?
+    async fn get_u64(&self, sub_url: &str) -> Result<u64, Error> {
+        self.get_text(sub_url)
+            .await?
             .parse()
             .map_err(|e: std::num::ParseIntError| Error::BlockchainError(e.to_string()))
     }
 
-    fn get_bytes(&self, sub_url: &str) -> Result<Vec<u8>, Error> {
-        let bytes = self.get(sub_url)?.bytes();
+    async fn get_bytes(&self, sub_url: &str) -> Result<Vec<u8>, Error> {
+        let bytes = self.get(sub_url).await?.bytes().await;
         Ok(bytes
             .map_err(|e| Error::BlockchainError(e.to_string()))?
             .into_iter()
             .collect::<Vec<_>>())
     }
 
-    fn get_from_json<T>(&self, sub_url: &str) -> Result<T, Error>
+    async fn get_from_json<T>(&self, sub_url: &str) -> Result<T, Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        self.get(sub_url)?
+        self.get(sub_url)
+            .await?
             .json::<T>()
+            .await
             .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
-    pub fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
-        self.get_from_json(&format!("tx/{txid}/outspends"))
+    pub async fn get_outspends(&self, txid: &Txid) -> Result<Vec<OutSpendResp>, Error> {
+        self.get_from_json(&format!("tx/{txid}/outspends")).await
     }
 }
 
+#[async_trait::async_trait]
 impl Blockchain for ElectrsBlockchainProvider {
-    fn send_transaction(&self, transaction: &Transaction) -> Result<(), ddk_manager::error::Error> {
+    async fn send_transaction(
+        &self,
+        transaction: &Transaction,
+    ) -> Result<(), ddk_manager::error::Error> {
         let res = self
             .client
             .post(format!("{}tx", self.host))
             .body(tx_to_string(transaction))
             .send()
+            .await
             .map_err(|x| {
                 ddk_manager::error::Error::IOError(lightning::io::Error::new(
                     lightning::io::ErrorKind::Other,
@@ -122,7 +129,7 @@ impl Blockchain for ElectrsBlockchainProvider {
                 ))
             })?;
         if let Err(error) = res.error_for_status_ref() {
-            let body = res.text().unwrap_or_default();
+            let body = res.text().await.unwrap_or_default();
             return Err(ddk_manager::error::Error::InvalidParameters(format!(
                 "Server returned error: {error} {body}"
             )));
@@ -134,31 +141,38 @@ impl Blockchain for ElectrsBlockchainProvider {
         Ok(self.network)
     }
 
-    fn get_blockchain_height(&self) -> Result<u64, ddk_manager::error::Error> {
-        self.get_u64("blocks/tip/height")
+    async fn get_blockchain_height(&self) -> Result<u64, ddk_manager::error::Error> {
+        self.get_u64("blocks/tip/height").await
     }
 
-    fn get_block_at_height(&self, height: u64) -> Result<Block, ddk_manager::error::Error> {
-        let hash_at_height = self.get_text(&format!("block-height/{height}"))?;
-        let raw_block = self.get_bytes(&format!("block/{hash_at_height}/raw"))?;
+    async fn get_block_at_height(&self, height: u64) -> Result<Block, ddk_manager::error::Error> {
+        let hash_at_height = self.get_text(&format!("block-height/{height}")).await?;
+        let raw_block = self
+            .get_bytes(&format!("block/{hash_at_height}/raw"))
+            .await?;
         // TODO: Bitcoin IO for all
         Block::consensus_decode(&mut bitcoin::io::Cursor::new(&*raw_block))
             .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ddk_manager::error::Error> {
-        let raw_tx = self.get_bytes(&format!("tx/{tx_id}/raw"))?;
+    async fn get_transaction(
+        &self,
+        tx_id: &Txid,
+    ) -> Result<Transaction, ddk_manager::error::Error> {
+        let raw_tx = self.get_bytes(&format!("tx/{tx_id}/raw")).await?;
         Transaction::consensus_decode(&mut lightning::io::Cursor::new(&*raw_tx))
             .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
-    fn get_transaction_confirmations(
+    async fn get_transaction_confirmations(
         &self,
         tx_id: &Txid,
     ) -> Result<u32, ddk_manager::error::Error> {
-        let tx_status = self.get_from_json::<TxStatus>(&format!("tx/{tx_id}/status"))?;
+        let tx_status = self
+            .get_from_json::<TxStatus>(&format!("tx/{tx_id}/status"))
+            .await?;
         if tx_status.confirmed {
-            let block_chain_height = self.get_blockchain_height()?;
+            let block_chain_height = self.get_blockchain_height().await?;
             if let Some(block_height) = tx_status.block_height {
                 return Ok((block_chain_height - block_height + 1) as u32);
             }
@@ -168,9 +182,12 @@ impl Blockchain for ElectrsBlockchainProvider {
     }
 }
 
+#[async_trait::async_trait]
 impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
-    fn get_utxos_for_address(&self, address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
-        let utxos: Vec<UtxoResp> = self.get_from_json(&format!("address/{address}/utxo"))?;
+    async fn get_utxos_for_address(&self, address: &bitcoin::Address) -> Result<Vec<Utxo>, Error> {
+        let utxos: Vec<UtxoResp> = self
+            .get_from_json(&format!("address/{address}/utxo"))
+            .await?;
 
         utxos
             .into_iter()
@@ -197,8 +214,10 @@ impl simple_wallet::WalletBlockchainProvider for ElectrsBlockchainProvider {
             .collect::<Result<Vec<_>, Error>>()
     }
 
-    fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool, Error> {
-        let is_spent: SpentResp = self.get_from_json(&format!("tx/{txid}/outspend/{vout}"))?;
+    async fn is_output_spent(&self, txid: &Txid, vout: u32) -> Result<bool, Error> {
+        let is_spent: SpentResp = self
+            .get_from_json(&format!("tx/{txid}/outspend/{vout}"))
+            .await?;
         Ok(is_spent.spent)
     }
 }
@@ -327,25 +346,25 @@ impl BlockSource for ElectrsBlockchainProvider {
 
 impl BroadcasterInterface for ElectrsBlockchainProvider {
     fn broadcast_transactions(&self, txs: &[&Transaction]) {
-        let client = self.client.clone();
-        let host = self.host.clone();
-        let bodies = txs
+        let _client = self.client.clone();
+        let _host = self.host.clone();
+        let _bodies = txs
             .iter()
             .map(|tx| bitcoin_test_utils::tx_to_string(tx))
             .collect::<Vec<_>>();
-        std::thread::spawn(move || {
-            for body in bodies {
-                match client.post(format!("{host}tx")).body(body).send() {
-                    Err(_) => {}
-                    Ok(res) => {
-                        if res.error_for_status_ref().is_err() {
-                            // let body = res.text().unwrap_or_default();
-                            // TODO(tibo): log
-                        }
-                    }
-                };
-            }
-        });
+        // std::thread::spawn(move || {
+        //     for body in bodies {
+        //         match client.post(format!("{host}tx")).body(body).send() {
+        //             Err(_) => {}
+        //             Ok(res) => {
+        //                 if res.error_for_status_ref().is_err() {
+        //                     // let body = res.text().unwrap_or_default();
+        //                     // TODO(tibo): log
+        //                 }
+        //             }
+        //         };
+        //     }
+        // });
     }
 }
 
@@ -399,16 +418,16 @@ fn store_estimate_for_target(
 
 fn poll_for_fee_estimates(fees: Arc<HashMap<Target, AtomicU32>>, host: &str) {
     let host = host.to_owned();
-    std::thread::spawn(move || loop {
-        if let Ok(res) = reqwest::blocking::get(format!("{host}fee-estimates")) {
-            if let Ok(fee_estimates) = res.json::<FeeEstimates>() {
+    tokio::spawn(async move {
+        if let Ok(res) = reqwest::get(format!("{host}fee-estimates")).await {
+            if let Ok(fee_estimates) = res.json::<FeeEstimates>().await {
                 store_estimate_for_target(&fees, &fee_estimates, Target::Background);
                 store_estimate_for_target(&fees, &fee_estimates, Target::HighPriority);
                 store_estimate_for_target(&fees, &fee_estimates, Target::Normal);
             }
         }
 
-        std::thread::sleep(Duration::from_secs(60));
+        tokio::time::sleep(Duration::from_secs(60)).await;
     });
 }
 

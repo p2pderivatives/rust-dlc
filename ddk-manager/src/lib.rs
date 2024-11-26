@@ -167,20 +167,21 @@ pub trait Wallet {
     fn unreserve_utxos(&self, outpoints: &[OutPoint]) -> Result<(), Error>;
 }
 
+#[async_trait::async_trait]
 /// Blockchain trait provides access to the bitcoin blockchain.
 pub trait Blockchain {
     /// Broadcast the given transaction to the bitcoin network.
-    fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error>;
+    async fn send_transaction(&self, transaction: &Transaction) -> Result<(), Error>;
     /// Returns the network currently used (mainnet, testnet or regtest).
     fn get_network(&self) -> Result<bitcoin::Network, Error>;
     /// Returns the height of the blockchain
-    fn get_blockchain_height(&self) -> Result<u64, Error>;
+    async fn get_blockchain_height(&self) -> Result<u64, Error>;
     /// Returns the block at given height
-    fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
+    async fn get_block_at_height(&self, height: u64) -> Result<Block, Error>;
     /// Get the transaction with given id.
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+    async fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
     /// Get the number of confirmation for the transaction with given id.
-    fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
+    async fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, Error>;
 }
 
 /// Storage trait provides functionalities to store and retrieve DLCs.
@@ -225,14 +226,15 @@ pub trait Storage {
     fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, Error>;
 }
 
+#[async_trait::async_trait]
 /// Oracle trait provides access to oracle information.
 pub trait Oracle {
     /// Returns the public key of the oracle.
     fn get_public_key(&self) -> XOnlyPublicKey;
     /// Returns the announcement for the event with the given id if found.
-    fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
+    async fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.
-    fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, Error>;
+    async fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, Error>;
 }
 
 /// Represents a UTXO.

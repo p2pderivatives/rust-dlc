@@ -46,39 +46,46 @@ pub const ROUNDING_MOD: u64 = 1;
 #[macro_export]
 macro_rules! receive_loop {
     ($receive:expr, $manager:expr, $send:expr, $expect_err:expr, $sync_send:expr, $rcv_callback: expr, $msg_callback: expr) => {
-        thread::spawn(move || loop {
-            match $receive.recv() {
-                Ok(Some(msg)) => match $manager.lock().unwrap().on_dlc_message(
-                    &msg,
-                    "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
-                        .parse()
-                        .unwrap(),
-                ) {
-                    Ok(opt) => {
-                        if $expect_err.load(Ordering::Relaxed) != false {
-                            panic!("Expected error not raised");
-                        }
-                        match opt {
-                            Some(msg) => {
-                                let msg_opt = $rcv_callback(msg);
-                                if let Some(msg) = msg_opt {
-                                    #[allow(clippy::redundant_closure_call)]
-                                    $msg_callback(&msg);
-                                    (&$send).send(Some(msg)).expect("Error sending");
-                                }
+        tokio::spawn(async move {
+            loop {
+                match $receive.recv().await {
+                    Some(Some(msg)) => match $manager
+                        .lock()
+                        .await
+                        .on_dlc_message(
+                            &msg,
+                            "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
+                                .parse()
+                                .unwrap(),
+                        )
+                        .await
+                    {
+                        Ok(opt) => {
+                            if $expect_err.load(Ordering::Relaxed) != false {
+                                panic!("Expected error not raised");
                             }
-                            None => {}
+                            match opt {
+                                Some(msg) => {
+                                    let msg_opt = $rcv_callback(msg);
+                                    if let Some(msg) = msg_opt {
+                                        #[allow(clippy::redundant_closure_call)]
+                                        $msg_callback(&msg);
+                                        (&$send).send(Some(msg)).await.expect("Error sending");
+                                    }
+                                }
+                                None => {}
+                            }
                         }
-                    }
-                    Err(e) => {
-                        if $expect_err.load(Ordering::Relaxed) != true {
-                            panic!("Unexpected error {}", e);
+                        Err(e) => {
+                            if $expect_err.load(Ordering::Relaxed) != true {
+                                panic!("Unexpected error {}", e);
+                            }
                         }
-                    }
-                },
-                Ok(None) | Err(_) => return,
-            };
-            $sync_send.send(()).expect("Error syncing");
+                    },
+                    None | Some(None) => return,
+                };
+                $sync_send.send(()).await.expect("Error syncing");
+            }
         })
     };
 }
@@ -104,7 +111,7 @@ macro_rules! assert_contract_state {
     ($d:expr, $id:expr, $p:ident) => {
         let res = $d
             .lock()
-            .unwrap()
+            .await
             .get_store()
             .get_contract(&$id)
             .expect("Could not retrieve contract");
@@ -146,7 +153,7 @@ macro_rules! write_channel {
 #[macro_export]
 macro_rules! assert_channel_state {
     ($d:expr, $id:expr, $p:ident $(, $s: ident)?) => {{
-        assert_channel_state_unlocked!($d.lock().unwrap(), $id, $p $(, $s)?)
+        assert_channel_state_unlocked!($d.lock().await, $id, $p $(, $s)?)
     }};
 }
 
@@ -568,7 +575,7 @@ pub fn get_variable_oracle_numeric_infos(nb_digits: &[usize]) -> OracleNumericIn
     }
 }
 
-pub fn refresh_wallet<B: Deref, W: Deref>(
+pub async fn refresh_wallet<B: Deref, W: Deref>(
     wallet: &simple_wallet::SimpleWallet<B, W>,
     expected_funds: u64,
 ) where
@@ -581,7 +588,7 @@ pub fn refresh_wallet<B: Deref, W: Deref>(
             panic!("Wallet refresh taking too long.")
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
-        wallet.refresh().unwrap();
+        wallet.refresh().await.unwrap();
         retry += 1;
     }
 }

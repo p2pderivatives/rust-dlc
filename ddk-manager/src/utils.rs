@@ -89,7 +89,7 @@ pub(crate) fn compute_id(
     res
 }
 
-pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner, C: Signing>(
+pub(crate) async fn get_party_params<W: Deref, B: Deref, X: ContractSigner, C: Signing>(
     secp: &Secp256k1<C>,
     own_collateral: u64,
     fee_rate: u64,
@@ -120,7 +120,7 @@ where
     let mut funding_tx_info: Vec<TxInputInfo> = Vec::new();
     let mut total_input = Amount::ZERO;
     for utxo in utxos {
-        let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid)?;
+        let prev_tx = blockchain.get_transaction(&utxo.outpoint.txid).await?;
         let mut writer = Vec::new();
         prev_tx.consensus_encode(&mut writer)?;
         let prev_tx_vout = utxo.outpoint.vout;

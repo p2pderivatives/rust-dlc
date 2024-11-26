@@ -19,8 +19,9 @@ use std::io;
 use std::io::{BufRead, Write};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::str::SplitWhitespace;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,7 +98,7 @@ pub(crate) async fn poll_for_user_input(
     print!("> ");
     io::stdout().flush().unwrap(); // Without flushing, the `>` doesn't print
     for line in stdin.lock().lines() {
-        process_incoming_messages(&peer_manager, &dlc_manager, &dlc_message_handler);
+        process_incoming_messages(&peer_manager, &dlc_manager, &dlc_message_handler).await;
         let line = line.unwrap();
         let mut words = line.split_whitespace();
         if let Some(word) = words.next() {
@@ -164,32 +165,30 @@ pub(crate) async fn poll_for_user_input(
                         .expect("Error deserializing contract input.");
                     let manager_clone = dlc_manager.clone();
                     let is_contract = o == "offercontract";
-                    let offer = tokio::task::spawn_blocking(move || {
-                        if is_contract {
-                            DlcMessage::Offer(
-                                manager_clone
-                                    .lock()
-                                    .unwrap()
-                                    .send_offer(&contract_input, pubkey)
-                                    .expect("Error sending offer"),
-                            )
-                        } else {
-                            DlcMessage::OfferChannel(
-                                manager_clone
-                                    .lock()
-                                    .unwrap()
-                                    .offer_channel(&contract_input, pubkey)
-                                    .expect("Error sending offer channel"),
-                            )
-                        }
-                    })
-                    .await
-                    .unwrap();
+                    let offer = if is_contract {
+                        DlcMessage::Offer(
+                            manager_clone
+                                .lock()
+                                .await
+                                .send_offer(&contract_input, pubkey)
+                                .await
+                                .expect("Error sending offer"),
+                        )
+                    } else {
+                        DlcMessage::OfferChannel(
+                            manager_clone
+                                .lock()
+                                .await
+                                .offer_channel(&contract_input, pubkey)
+                                .await
+                                .expect("Error sending offer channel"),
+                        )
+                    };
                     dlc_message_handler.send_message(pubkey, offer);
                     peer_manager.process_events();
                 }
                 "listoffers" => {
-                    let locked_manager = dlc_manager.lock().unwrap();
+                    let locked_manager = dlc_manager.lock().await;
                     for offer in locked_manager
                         .get_store()
                         .get_contract_offers()
@@ -213,8 +212,9 @@ pub(crate) async fn poll_for_user_input(
 
                     let (_, node_id, msg) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .accept_contract_offer(&contract_id)
+                        .await
                         .expect("Error accepting contract.");
                     dlc_message_handler.send_message(node_id, DlcMessage::Accept(msg));
                     peer_manager.process_events();
@@ -222,62 +222,60 @@ pub(crate) async fn poll_for_user_input(
                 "listcontracts" => {
                     let manager_clone = dlc_manager.clone();
                     // Because the oracle client is currently blocking we need to use `spawn_blocking` here.
-                    tokio::task::spawn_blocking(move || {
-                        manager_clone
-                            .lock()
-                            .unwrap()
-                            .periodic_check(true)
-                            .expect("Error doing periodic check.");
-                        let contracts = manager_clone
-                            .lock()
-                            .unwrap()
-                            .get_store()
-                            .get_contracts()
-                            .expect("Error retrieving contract list.");
-                        for contract in contracts {
-                            let id = hex_str(&contract.get_id());
-                            match contract {
-                                Contract::Offered(_) => {
-                                    println!("Offered contract: {}", id);
-                                }
-                                Contract::Accepted(_) => {
-                                    println!("Accepted contract: {}", id);
-                                }
-                                Contract::Confirmed(_) => {
-                                    println!("Confirmed contract: {}", id);
-                                }
-                                Contract::Signed(_) => {
-                                    println!("Signed contract: {}", id);
-                                }
-                                Contract::Closed(closed) => {
-                                    println!("Closed contract: {}", id);
-                                    if let Some(attestations) = closed.attestations {
-                                        println!(
-                                            "Outcomes: {:?}",
-                                            attestations
-                                                .iter()
-                                                .map(|x| x.outcomes.clone())
-                                                .collect::<Vec<_>>()
-                                        );
-                                    }
-                                    println!("PnL: {} sats", closed.pnl)
-                                }
-                                Contract::Refunded(_) => {
-                                    println!("Refunded contract: {}", id);
-                                }
-                                Contract::FailedAccept(_) | Contract::FailedSign(_) => {
-                                    println!("Failed contract: {}", id);
-                                }
-                                Contract::Rejected(_) => println!("Rejected contract: {}", id),
-                                Contract::PreClosed(_) => println!("Pre-closed contract: {}", id),
+
+                    manager_clone
+                        .lock()
+                        .await
+                        .periodic_check(true)
+                        .await
+                        .expect("Error doing periodic check.");
+                    let contracts = manager_clone
+                        .lock()
+                        .await
+                        .get_store()
+                        .get_contracts()
+                        .expect("Error retrieving contract list.");
+                    for contract in contracts {
+                        let id = hex_str(&contract.get_id());
+                        match contract {
+                            Contract::Offered(_) => {
+                                println!("Offered contract: {}", id);
                             }
+                            Contract::Accepted(_) => {
+                                println!("Accepted contract: {}", id);
+                            }
+                            Contract::Confirmed(_) => {
+                                println!("Confirmed contract: {}", id);
+                            }
+                            Contract::Signed(_) => {
+                                println!("Signed contract: {}", id);
+                            }
+                            Contract::Closed(closed) => {
+                                println!("Closed contract: {}", id);
+                                if let Some(attestations) = closed.attestations {
+                                    println!(
+                                        "Outcomes: {:?}",
+                                        attestations
+                                            .iter()
+                                            .map(|x| x.outcomes.clone())
+                                            .collect::<Vec<_>>()
+                                    );
+                                }
+                                println!("PnL: {} sats", closed.pnl)
+                            }
+                            Contract::Refunded(_) => {
+                                println!("Refunded contract: {}", id);
+                            }
+                            Contract::FailedAccept(_) | Contract::FailedSign(_) => {
+                                println!("Failed contract: {}", id);
+                            }
+                            Contract::Rejected(_) => println!("Rejected contract: {}", id),
+                            Contract::PreClosed(_) => println!("Pre-closed contract: {}", id),
                         }
-                    })
-                    .await
-                    .expect("Error listing contract info");
+                    }
                 }
                 "listchanneloffers" => {
-                    let locked_manager = dlc_manager.lock().unwrap();
+                    let locked_manager = dlc_manager.lock().await;
                     for offer in locked_manager
                         .get_store()
                         .get_offered_channels()
@@ -305,8 +303,9 @@ pub(crate) async fn poll_for_user_input(
 
                     let (msg, _, _, node_id) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .accept_channel(&channel_id)
+                        .await
                         .expect("Error accepting channel.");
                     dlc_message_handler.send_message(node_id, DlcMessage::AcceptChannel(msg));
                     peer_manager.process_events();
@@ -323,7 +322,7 @@ pub(crate) async fn poll_for_user_input(
 
                     let (msg, node_id) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .settle_offer(&channel_id, counter_payout)
                         .expect("Error getting settle offer message.");
                     dlc_message_handler.send_message(node_id, DlcMessage::SettleOffer(msg));
@@ -333,7 +332,7 @@ pub(crate) async fn poll_for_user_input(
                     let channel_id = read_id_or_continue!(words, l, "channel id");
                     let (msg, node_id) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .accept_settle_offer(&channel_id)
                         .expect("Error accepting settle channel offer.");
                     dlc_message_handler.send_message(node_id, DlcMessage::SettleAccept(msg));
@@ -343,14 +342,14 @@ pub(crate) async fn poll_for_user_input(
                     let channel_id = read_id_or_continue!(words, l, "channel id");
                     let (msg, node_id) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .reject_settle_offer(&channel_id)
                         .expect("Error rejecting settle channel offer.");
                     dlc_message_handler.send_message(node_id, DlcMessage::Reject(msg));
                     peer_manager.process_events();
                 }
                 "listsettlechanneloffers" => {
-                    let locked_manager = dlc_manager.lock().unwrap();
+                    let locked_manager = dlc_manager.lock().await;
                     for channel in locked_manager
                         .get_store()
                         .get_signed_channels(Some(SignedChannelStateType::SettledReceived))
@@ -380,20 +379,17 @@ pub(crate) async fn poll_for_user_input(
                     let contract_input: ContractInput = serde_json::from_str(&contract_input_str)
                         .expect("Error deserializing contract input.");
                     let manager_clone = dlc_manager.clone();
-                    let (renew_offer, node_id) = tokio::task::spawn_blocking(move || {
-                        manager_clone
-                            .lock()
-                            .unwrap()
-                            .renew_offer(&channel_id, counter_payout, &contract_input)
-                            .expect("Error sending offer")
-                    })
-                    .await
-                    .unwrap();
+                    let (renew_offer, node_id) = manager_clone
+                        .lock()
+                        .await
+                        .renew_offer(&channel_id, counter_payout, &contract_input)
+                        .await
+                        .expect("Error sending offer");
                     dlc_message_handler.send_message(node_id, DlcMessage::RenewOffer(renew_offer));
                     peer_manager.process_events();
                 }
                 "listrenewchanneloffers" => {
-                    let locked_manager = dlc_manager.lock().unwrap();
+                    let locked_manager = dlc_manager.lock().await;
                     for channel in locked_manager
                         .get_store()
                         .get_signed_channels(Some(SignedChannelStateType::RenewOffered))
@@ -426,7 +422,7 @@ pub(crate) async fn poll_for_user_input(
                     let channel_id = read_id_or_continue!(words, l, "channel id");
                     let (msg, node_id) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .accept_renew_offer(&channel_id)
                         .expect("Error accepting channel.");
                     dlc_message_handler.send_message(node_id, DlcMessage::RenewAccept(msg));
@@ -436,14 +432,14 @@ pub(crate) async fn poll_for_user_input(
                     let channel_id = read_id_or_continue!(words, l, "channel id");
                     let (msg, node_id) = dlc_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .reject_renew_offer(&channel_id)
                         .expect("Error rejecting settle channel offer.");
                     dlc_message_handler.send_message(node_id, DlcMessage::Reject(msg));
                     peer_manager.process_events();
                 }
                 "listsignedchannels" => {
-                    let locked_manager = dlc_manager.lock().unwrap();
+                    let locked_manager = dlc_manager.lock().await;
                     for channel in locked_manager
                         .get_store()
                         .get_signed_channels(None)
@@ -589,7 +585,7 @@ pub(crate) fn parse_peer_info(
     Ok((pubkey.unwrap(), peer_addr.unwrap().unwrap()))
 }
 
-fn process_incoming_messages(
+async fn process_incoming_messages(
     peer_manager: &Arc<PeerManager>,
     dlc_manager: &Arc<Mutex<DlcManager>>,
     dlc_message_handler: &Arc<DlcMessageHandler>,
@@ -601,8 +597,9 @@ fn process_incoming_messages(
         println!("Processing message from {}", node_id);
         let resp = dlc_manager
             .lock()
-            .unwrap()
+            .await
             .on_dlc_message(&message, node_id)
+            .await
             .expect("Error processing message");
         if let Some(msg) = resp {
             println!("Sending message to {}", node_id);

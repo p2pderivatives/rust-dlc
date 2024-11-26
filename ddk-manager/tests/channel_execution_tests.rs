@@ -21,19 +21,19 @@ use secp256k1_zkp::rand::{thread_rng, RngCore};
 use secp256k1_zkp::EcdsaAdaptorSignature;
 use simple_wallet::SimpleWallet;
 use test_utils::{get_enum_test_params, TestParams};
+use tokio::time::sleep;
 
-use std::sync::mpsc::{sync_channel, Receiver, Sender};
-use std::thread;
-
-use std::time::Duration;
+use std::future::Future;
+use std::pin::Pin;
 use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::channel,
-        Arc, Mutex,
+        Arc,
     },
 };
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Mutex;
 
 use crate::test_utils::{refresh_wallet, EVENT_MATURITY};
 
@@ -57,10 +57,13 @@ type DlcParty = Arc<
     >,
 >;
 
-fn get_established_channel_contract_id(dlc_party: &DlcParty, channel_id: &ChannelId) -> ContractId {
+async fn get_established_channel_contract_id(
+    dlc_party: &DlcParty,
+    channel_id: &ChannelId,
+) -> ContractId {
     let channel = dlc_party
         .lock()
-        .unwrap()
+        .await
         .get_store()
         .get_channel(channel_id)
         .unwrap()
@@ -82,11 +85,11 @@ fn alter_adaptor_sig(input: &EcdsaAdaptorSignature) -> EcdsaAdaptorSignature {
 /// We wrap updating the state of the chain monitor and calling the
 /// `Manager::periodic_check` because the latter will only be aware of
 /// newly confirmed transactions if the former processes new blocks.
-fn periodic_check(dlc_party: DlcParty) {
-    let dlc_manager = dlc_party.lock().unwrap();
+async fn periodic_check(dlc_party: DlcParty) {
+    let dlc_manager = dlc_party.lock().await;
 
-    dlc_manager.periodic_chain_monitor().unwrap();
-    dlc_manager.periodic_check(true).unwrap();
+    dlc_manager.periodic_chain_monitor().await.unwrap();
+    dlc_manager.periodic_check(true).await.unwrap();
 }
 
 #[derive(Eq, PartialEq, Clone)]
@@ -115,182 +118,195 @@ enum TestPath {
     CancelOffer,
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_established_close_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::Close);
+async fn channel_established_close_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::Close).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_bad_accept_buffer_adaptor_test() {
+async fn channel_bad_accept_buffer_adaptor_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::BadAcceptBufferAdaptorSignature,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_bad_sign_buffer_adaptor_test() {
+async fn channel_bad_sign_buffer_adaptor_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::BadSignBufferAdaptorSignature,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settled_close_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleClose);
+async fn channel_settled_close_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleClose).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_punish_buffer_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::BufferCheat);
+async fn channel_punish_buffer_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::BufferCheat).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_close_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewedClose);
+async fn channel_renew_close_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewedClose).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_established_close_test() {
+async fn channel_renew_established_close_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::RenewEstablishedClose,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_cheat_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleCheat);
+async fn channel_settle_cheat_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleCheat).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_collaborative_close_test() {
+async fn channel_collaborative_close_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::CollaborativeClose,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_renew_settle_test() {
+async fn channel_settle_renew_settle_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::SettleRenewSettle,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_offer_timeout_test() {
+async fn channel_settle_offer_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::SettleOfferTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_accept_timeout_test() {
+async fn channel_settle_accept_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::SettleAcceptTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_confirm_timeout_test() {
+async fn channel_settle_confirm_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::SettleConfirmTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_reject_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleReject);
+async fn channel_settle_reject_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleReject).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_settle_race_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleRace);
+async fn channel_settle_race_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::SettleRace).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_offer_timeout_test() {
+async fn channel_renew_offer_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::RenewOfferTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_accept_timeout_test() {
+async fn channel_renew_accept_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::RenewAcceptTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_confirm_timeout_test() {
+async fn channel_renew_confirm_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::RenewConfirmTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_finalize_timeout_test() {
+async fn channel_renew_finalize_timeout_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::RenewFinalizeTimeout,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_reject_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewReject);
+async fn channel_renew_reject_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewReject).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_renew_race_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewRace);
+async fn channel_renew_race_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::RenewRace).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn channel_offer_reject_test() {
-    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::CancelOffer);
+async fn channel_offer_reject_test() {
+    channel_execution_test(get_enum_test_params(1, 1, None), TestPath::CancelOffer).await;
 }
 
-fn channel_execution_test(test_params: TestParams, path: TestPath) {
+async fn channel_execution_test(test_params: TestParams, path: TestPath) {
     env_logger::init();
-    let (alice_send, bob_receive) = channel::<Option<Message>>();
-    let (bob_send, alice_receive) = channel::<Option<Message>>();
-    let (alice_sync_send, alice_sync_receive) = sync_channel::<()>(0);
-    let (bob_sync_send, bob_sync_receive) = sync_channel::<()>(0);
+    let (alice_send, mut bob_receive) = channel::<Option<Message>>(100);
+    let (bob_send, mut alice_receive) = channel::<Option<Message>>(100);
+    let (alice_sync_send, mut alice_sync_receive) = channel::<()>(100);
+    let (bob_sync_send, mut bob_sync_receive) = channel::<()>(100);
 
     let (_, _, sink_rpc) = init_clients();
+    let sink = Arc::new(sink_rpc);
 
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
@@ -306,10 +322,16 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
     let mock_time = Arc::new(mocks::mock_time::MockTime {});
     mocks::mock_time::set_time((EVENT_MATURITY as u64) - 1);
 
-    let electrs = Arc::new(ElectrsBlockchainProvider::new(
-        "http://localhost:3004/".to_string(),
-        bitcoin::Network::Regtest,
-    ));
+    let electrs = tokio::task::spawn_blocking(|| {
+        Arc::new(ElectrsBlockchainProvider::new(
+            "http://localhost:3004/".to_string(),
+            bitcoin::Network::Regtest,
+        ))
+    })
+    .await
+    .unwrap();
+
+    println!("couldnt create electrs");
 
     let alice_wallet = Arc::new(SimpleWallet::new(
         electrs.clone(),
@@ -323,58 +345,66 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         bitcoin::Network::Regtest,
     ));
 
+    println!("getting address");
     let alice_fund_address = alice_wallet.get_new_address().unwrap();
     let bob_fund_address = bob_wallet.get_new_address().unwrap();
 
-    sink_rpc
-        .send_to_address(
-            &alice_fund_address,
-            Amount::from_btc(2.0).unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    println!("funded address");
+    sink.send_to_address(
+        &alice_fund_address,
+        Amount::from_btc(2.0).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
-    sink_rpc
-        .send_to_address(
-            &bob_fund_address,
-            Amount::from_btc(2.0).unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    println!("prolly not her.");
 
-    let generate_blocks = |nb_blocks: u64| {
-        let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
+    sink.send_to_address(
+        &bob_fund_address,
+        Amount::from_btc(2.0).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
-        let sink_address = sink_rpc
-            .get_new_address(None, None)
-            .expect("RPC Error")
-            .assume_checked();
-        sink_rpc
-            .generate_to_address(nb_blocks, &sink_address)
-            .expect("RPC Error");
-
-        // Wait for electrs to have processed the new blocks
-        let mut cur_blockchain_height = prev_blockchain_height;
-        while cur_blockchain_height < prev_blockchain_height + nb_blocks {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            cur_blockchain_height = electrs.get_blockchain_height().unwrap();
-        }
+    let generate_blocks = |nb_blocks: u64| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let electrs_clone = electrs.clone();
+        let sink_clone = sink.clone();
+        println!("failing");
+        Box::pin(async move {
+            let prev_blockchain_height = electrs_clone.get_blockchain_height().await.unwrap();
+            println!("Got block {}", prev_blockchain_height);
+            let sink_address = sink_clone
+                .get_new_address(None, None)
+                .expect("RPC Error")
+                .assume_checked();
+            println!("got address");
+            sink_clone
+                .generate_to_address(nb_blocks, &sink_address)
+                .expect("RPC Error");
+            // Wait for electrs to have processed the new blocks
+            let mut cur_blockchain_height = prev_blockchain_height;
+            while cur_blockchain_height < prev_blockchain_height + nb_blocks {
+                sleep(std::time::Duration::from_millis(200)).await;
+                cur_blockchain_height = electrs_clone.get_blockchain_height().await.unwrap();
+            }
+        })
     };
 
-    generate_blocks(6);
-
-    refresh_wallet(&alice_wallet, 200000000);
-    refresh_wallet(&bob_wallet, 200000000);
+    println!("generating.");
+    generate_blocks(6).await;
+    println!("agh generate.");
+    refresh_wallet(&alice_wallet, 200000000).await;
+    refresh_wallet(&bob_wallet, 200000000).await;
 
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
@@ -386,6 +416,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
+        .await
         .unwrap(),
     ));
 
@@ -402,6 +433,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
+        .await
         .unwrap(),
     ));
 
@@ -476,44 +508,53 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
     let offer_msg = bob_manager_send
         .lock()
-        .unwrap()
+        .await
         .offer_channel(
             &test_params.contract_input,
             "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
                 .parse()
                 .unwrap(),
         )
+        .await
         .expect("Send offer error");
 
     let temporary_channel_id = offer_msg.temporary_channel_id;
     bob_send
         .send(Some(Message::OfferChannel(offer_msg)))
+        .await
         .unwrap();
 
     assert_channel_state!(bob_manager_send, temporary_channel_id, Offered);
 
-    alice_sync_receive.recv().expect("Error synchronizing");
+    alice_sync_receive
+        .recv()
+        .await
+        .expect("Error synchronizing");
 
     assert_channel_state!(alice_manager_send, temporary_channel_id, Offered);
 
     if let TestPath::CancelOffer = path {
         let (reject_msg, _) = alice_manager_send
             .lock()
-            .unwrap()
+            .await
             .reject_channel(&temporary_channel_id)
             .expect("Error rejecting contract offer");
         assert_channel_state!(alice_manager_send, temporary_channel_id, Cancelled);
-        alice_send.send(Some(Message::Reject(reject_msg))).unwrap();
+        alice_send
+            .send(Some(Message::Reject(reject_msg)))
+            .await
+            .unwrap();
 
-        bob_sync_receive.recv().expect("Error synchronizing");
+        bob_sync_receive.recv().await.expect("Error synchronizing");
         assert_channel_state!(bob_manager_send, temporary_channel_id, Cancelled);
         return;
     }
 
     let (mut accept_msg, channel_id, contract_id, _) = alice_manager_send
         .lock()
-        .unwrap()
+        .await
         .accept_channel(&temporary_channel_id)
+        .await
         .expect("Error accepting contract offer");
     assert_channel_state!(alice_manager_send, channel_id, Accepted);
 
@@ -524,40 +565,49 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
             bob_expect_error.store(true, Ordering::Relaxed);
             alice_send
                 .send(Some(Message::AcceptChannel(accept_msg)))
+                .await
                 .unwrap();
-            bob_sync_receive.recv().expect("Error synchronizing");
+            bob_sync_receive.recv().await.expect("Error synchronizing");
             assert_channel_state!(bob_manager_send, temporary_channel_id, FailedAccept);
         }
         TestPath::BadSignBufferAdaptorSignature => {
             alice_expect_error.store(true, Ordering::Relaxed);
             alice_send
                 .send(Some(Message::AcceptChannel(accept_msg)))
+                .await
                 .unwrap();
             // Bob receives accept message
-            bob_sync_receive.recv().expect("Error synchronizing");
+            bob_sync_receive.recv().await.expect("Error synchronizing");
             // Alice receives sign message
-            alice_sync_receive.recv().expect("Error synchronizing");
+            alice_sync_receive
+                .recv()
+                .await
+                .expect("Error synchronizing");
             assert_channel_state!(alice_manager_send, channel_id, FailedSign);
         }
         _ => {
             alice_send
                 .send(Some(Message::AcceptChannel(accept_msg)))
+                .await
                 .unwrap();
-            bob_sync_receive.recv().expect("Error synchronizing");
+            bob_sync_receive.recv().await.expect("Error synchronizing");
 
             assert_channel_state!(bob_manager_send, channel_id, Signed, Established);
 
-            alice_sync_receive.recv().expect("Error synchronizing");
+            alice_sync_receive
+                .recv()
+                .await
+                .expect("Error synchronizing");
 
             assert_channel_state!(alice_manager_send, channel_id, Signed, Established);
 
-            generate_blocks(6);
+            generate_blocks(6).await;
 
             mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
 
-            periodic_check(alice_manager_send.clone());
+            periodic_check(alice_manager_send.clone()).await;
 
-            periodic_check(bob_manager_send.clone());
+            periodic_check(bob_manager_send.clone()).await;
 
             assert_contract_state!(alice_manager_send, contract_id, Confirmed);
             assert_contract_state!(bob_manager_send, contract_id, Confirmed);
@@ -568,25 +618,25 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                     (
                         alice_manager_send,
                         &alice_send,
-                        &alice_sync_receive,
+                        &mut alice_sync_receive,
                         bob_manager_send,
                         &bob_send,
-                        &bob_sync_receive,
+                        &mut bob_sync_receive,
                     )
                 } else {
                     (
                         bob_manager_send,
                         &bob_send,
-                        &bob_sync_receive,
+                        &mut bob_sync_receive,
                         alice_manager_send,
                         &alice_send,
-                        &alice_sync_receive,
+                        &mut alice_sync_receive,
                     )
                 };
 
             match path {
                 TestPath::Close => {
-                    close_established_channel(first, second, channel_id, &generate_blocks);
+                    close_established_channel(first, second, channel_id, &generate_blocks).await;
                 }
                 TestPath::CollaborativeClose => {
                     collaborative_close(
@@ -596,7 +646,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         channel_id,
                         second_receive,
                         &generate_blocks,
-                    );
+                    )
+                    .await;
                 }
                 TestPath::SettleOfferTimeout
                 | TestPath::SettleAcceptTimeout
@@ -610,7 +661,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         second_receive,
                         channel_id,
                         path,
-                    );
+                    )
+                    .await;
                 }
                 TestPath::SettleReject => {
                     settle_reject(
@@ -621,7 +673,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         second_send,
                         second_receive,
                         channel_id,
-                    );
+                    )
+                    .await;
                 }
                 TestPath::SettleRace => {
                     settle_race(
@@ -632,7 +685,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                         second_send,
                         second_receive,
                         channel_id,
-                    );
+                    )
+                    .await;
                 }
                 _ => {
                     // Shuffle positions
@@ -657,7 +711,7 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                             )
                         };
 
-                    first.lock().unwrap().get_store().save();
+                    first.lock().await.get_store().save();
 
                     if let TestPath::RenewEstablishedClose = path {
                     } else {
@@ -669,7 +723,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                             second_send,
                             second_receive,
                             channel_id,
-                        );
+                        )
+                        .await;
                     }
 
                     match path {
@@ -682,12 +737,13 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
                             closer
                                 .lock()
-                                .unwrap()
+                                .await
                                 .force_close_channel(&channel_id)
+                                .await
                                 .expect("to be able to unilaterally close the channel.");
                         }
                         TestPath::BufferCheat => {
-                            cheat_punish(first, second, channel_id, &generate_blocks, true);
+                            cheat_punish(first, second, channel_id, &generate_blocks, true).await;
                         }
                         TestPath::RenewOfferTimeout
                         | TestPath::RenewAcceptTimeout
@@ -703,7 +759,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 &test_params.contract_input,
                                 path,
                                 &generate_blocks,
-                            );
+                            )
+                            .await;
                         }
                         TestPath::RenewReject => {
                             renew_reject(
@@ -715,7 +772,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 second_receive,
                                 channel_id,
                                 &test_params.contract_input,
-                            );
+                            )
+                            .await;
                         }
                         TestPath::RenewRace => {
                             renew_race(
@@ -727,12 +785,13 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 second_receive,
                                 channel_id,
                                 &test_params.contract_input,
-                            );
+                            )
+                            .await;
                         }
                         TestPath::RenewedClose
                         | TestPath::SettleCheat
                         | TestPath::RenewEstablishedClose => {
-                            first.lock().unwrap().get_store().save();
+                            first.lock().await.get_store().save();
 
                             let check_prev_contract_close =
                                 if let TestPath::RenewEstablishedClose = path {
@@ -751,7 +810,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 channel_id,
                                 &test_params.contract_input,
                                 check_prev_contract_close,
-                            );
+                            )
+                            .await;
 
                             if let TestPath::RenewedClose = path {
                                 close_established_channel(
@@ -759,9 +819,11 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                     second,
                                     channel_id,
                                     &generate_blocks,
-                                );
+                                )
+                                .await;
                             } else if let TestPath::SettleCheat = path {
-                                cheat_punish(first, second, channel_id, &generate_blocks, false);
+                                cheat_punish(first, second, channel_id, &generate_blocks, false)
+                                    .await;
                             }
                         }
                         TestPath::SettleRenewSettle => {
@@ -775,7 +837,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 channel_id,
                                 &test_params.contract_input,
                                 false,
-                            );
+                            )
+                            .await;
 
                             settle_channel(
                                 first,
@@ -785,7 +848,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                                 second_send,
                                 second_receive,
                                 channel_id,
-                            );
+                            )
+                            .await;
                         }
                         _ => (),
                     }
@@ -794,119 +858,125 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
         }
     }
 
-    alice_send.send(None).unwrap();
-    bob_send.send(None).unwrap();
+    alice_send.send(None).await.unwrap();
+    bob_send.send(None).await.unwrap();
 
-    alice_handle.join().unwrap();
-    bob_handle.join().unwrap();
+    alice_handle.await.unwrap();
+    bob_handle.await.unwrap();
 }
 
-fn close_established_channel<F>(
+async fn close_established_channel<F>(
     first: DlcParty,
     second: DlcParty,
     channel_id: ChannelId,
     generate_blocks: &F,
 ) where
-    F: Fn(u64),
+    F: Fn(u64) -> Pin<Box<dyn Future<Output = ()> + Send>>,
 {
     first
         .lock()
-        .unwrap()
+        .await
         .force_close_channel(&channel_id)
+        .await
         .expect("to be able to unilaterally close.");
     assert_channel_state!(first, channel_id, Signed, Closing);
 
-    let contract_id = get_established_channel_contract_id(&first, &channel_id);
+    let contract_id = get_established_channel_contract_id(&first, &channel_id).await;
 
-    periodic_check(first.clone());
+    periodic_check(first.clone()).await;
 
     let wait = ddk_manager::manager::CET_NSEQUENCE;
 
-    generate_blocks(10);
+    generate_blocks(10).await;
 
-    periodic_check(second.clone());
+    periodic_check(second.clone()).await;
 
     assert_channel_state!(second, channel_id, Signed, Closing);
 
-    periodic_check(first.clone());
+    periodic_check(first.clone()).await;
 
     // Should not have changed state before the CET is spendable.
     assert_channel_state!(first, channel_id, Signed, Closing);
 
-    generate_blocks(wait as u64 - 9);
+    generate_blocks(wait as u64 - 9).await;
 
-    periodic_check(first.clone());
+    periodic_check(first.clone()).await;
 
     assert_channel_state!(first, channel_id, Closed);
 
     assert_contract_state!(first, contract_id, PreClosed);
 
-    generate_blocks(1);
+    generate_blocks(1).await;
 
-    periodic_check(second.clone());
+    periodic_check(second.clone()).await;
 
     assert_channel_state!(second, channel_id, CounterClosed);
     assert_contract_state!(second, contract_id, PreClosed);
 
-    generate_blocks(5);
+    generate_blocks(5).await;
 
-    periodic_check(first.clone());
-    periodic_check(second.clone());
+    periodic_check(first.clone()).await;
+    periodic_check(second.clone()).await;
 
     assert_contract_state!(first, contract_id, Closed);
     assert_contract_state!(second, contract_id, Closed);
 }
 
-fn cheat_punish<F: Fn(u64)>(
+async fn cheat_punish<F>(
     first: DlcParty,
     second: DlcParty,
     channel_id: ChannelId,
     generate_blocks: &F,
     established: bool,
-) {
-    first.lock().unwrap().get_store().rollback();
+) where
+    F: Fn(u64) -> Pin<Box<dyn Future<Output = ()> + Send>>,
+{
+    first.lock().await.get_store().rollback();
 
     if established {
         first
             .lock()
-            .unwrap()
+            .await
             .force_close_channel(&channel_id)
+            .await
             .expect("the cheater to be able to close on established");
     } else {
         first
             .lock()
-            .unwrap()
+            .await
             .force_close_channel(&channel_id)
+            .await
             .expect("the cheater to be able to close on settled");
     }
 
-    generate_blocks(2);
+    generate_blocks(2).await;
 
-    periodic_check(second.clone());
+    periodic_check(second.clone()).await;
 
     assert_channel_state!(second, channel_id, ClosedPunished);
 }
 
-fn settle_channel(
+async fn settle_channel(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
 ) {
     let (settle_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
         .send(Some(Message::SettleOffer(settle_offer)))
+        .await
         .unwrap();
 
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, SettledOffered);
 
@@ -914,46 +984,48 @@ fn settle_channel(
 
     let (settle_accept, _) = second
         .lock()
-        .unwrap()
+        .await
         .accept_settle_offer(&channel_id)
         .expect("to be able to accept a settlement offer");
 
     second_send
         .send(Some(Message::SettleAccept(settle_accept)))
+        .await
         .unwrap();
 
     // Process Accept
-    first_receive.recv().expect("Error synchronizing");
+    first_receive.recv().await.expect("Error synchronizing");
     // Process Confirm
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
     // Process Finalize
-    first_receive.recv().expect("Error synchronizing");
+    first_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, Settled);
 
     assert_channel_state!(second, channel_id, Signed, Settled);
 }
 
-fn settle_reject(
+async fn settle_reject(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
 ) {
     let (settle_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
         .expect("to be able to reject a settlement of the contract.");
 
     first_send
         .send(Some(Message::SettleOffer(settle_offer)))
+        .await
         .unwrap();
 
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, SettledOffered);
 
@@ -961,128 +1033,126 @@ fn settle_reject(
 
     let (settle_reject, _) = second
         .lock()
-        .unwrap()
+        .await
         .reject_settle_offer(&channel_id)
         .expect("to be able to reject a settlement offer");
 
     second_send
         .send(Some(Message::Reject(settle_reject)))
+        .await
         .unwrap();
 
-    first_receive.recv().expect("Error synchronizing");
+    first_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, Established);
 
     assert_channel_state!(second, channel_id, Signed, Established);
 }
 
-fn settle_race(
+async fn settle_race(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
 ) {
     let (settle_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
         .expect("to be able to offer a settlement of the contract.");
 
     let (settle_offer_2, _) = second
         .lock()
-        .unwrap()
+        .await
         .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
         .send(Some(Message::SettleOffer(settle_offer)))
+        .await
         .unwrap();
 
     second_send
         .send(Some(Message::SettleOffer(settle_offer_2)))
+        .await
         .unwrap();
 
     // Process 2 offers + 2 rejects
-    first_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 1");
-    second_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 2");
-    first_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 3");
-    second_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 4");
+    first_receive.recv().await.expect("Error synchronizing 1");
+    second_receive.recv().await.expect("Error synchronizing 2");
+    first_receive.recv().await.expect("Error synchronizing 3");
+    second_receive.recv().await.expect("Error synchronizing 4");
 
     assert_channel_state!(first, channel_id, Signed, Established);
 
     assert_channel_state!(second, channel_id, Signed, Established);
 }
 
-fn renew_channel(
+async fn renew_channel(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
     contract_input: &ContractInput,
     check_prev_contract_close: bool,
 ) {
     let prev_contract_id = if check_prev_contract_close {
-        Some(get_established_channel_contract_id(&first, &channel_id))
+        Some(get_established_channel_contract_id(&first, &channel_id).await)
     } else {
         None
     };
 
     let (renew_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input)
+        .await
         .expect("to be able to renew channel contract");
 
     first_send
         .send(Some(Message::RenewOffer(renew_offer)))
+        .await
         .expect("to be able to send the renew offer");
 
     // Process Renew Offer
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, RenewOffered);
     assert_channel_state!(second, channel_id, Signed, RenewOffered);
 
     let (accept_renew, _) = second
         .lock()
-        .unwrap()
+        .await
         .accept_renew_offer(&channel_id)
         .expect("to be able to accept the renewal");
 
     second_send
         .send(Some(Message::RenewAccept(accept_renew)))
+        .await
         .expect("to be able to send the accept renew");
 
     // Process Renew Accept
-    first_receive.recv().expect("Error synchronizing");
+    first_receive.recv().await.expect("Error synchronizing");
     assert_channel_state!(first, channel_id, Signed, RenewConfirmed);
     // Process Renew Confirm
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
     // Process Renew Finalize
-    first_receive.recv().expect("Error synchronizing");
+    first_receive.recv().await.expect("Error synchronizing");
     // Process Renew Revoke
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
 
     if let Some(prev_contract_id) = prev_contract_id {
         assert_contract_state!(first, prev_contract_id, Closed);
         assert_contract_state!(second, prev_contract_id, Closed);
     }
 
-    let new_contract_id = get_established_channel_contract_id(&first, &channel_id);
+    let new_contract_id = get_established_channel_contract_id(&first, &channel_id).await;
 
     assert_channel_state!(first, channel_id, Signed, Established);
     assert_contract_state!(first, new_contract_id, Confirmed);
@@ -1090,62 +1160,66 @@ fn renew_channel(
     assert_contract_state!(second, new_contract_id, Confirmed);
 }
 
-fn renew_reject(
+async fn renew_reject(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
     contract_input: &ContractInput,
 ) {
     let (renew_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input)
+        .await
         .expect("to be able to renew channel contract");
 
     first_send
         .send(Some(Message::RenewOffer(renew_offer)))
+        .await
         .expect("to be able to send the renew offer");
 
     // Process Renew Offer
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, RenewOffered);
     assert_channel_state!(second, channel_id, Signed, RenewOffered);
 
     let (renew_reject, _) = second
         .lock()
-        .unwrap()
+        .await
         .reject_renew_offer(&channel_id)
         .expect("to be able to reject the renewal");
 
     second_send
         .send(Some(Message::Reject(renew_reject)))
+        .await
         .expect("to be able to send the renew reject");
 
     // Process Renew Reject
-    first_receive.recv().expect("Error synchronizing");
+    first_receive.recv().await.expect("Error synchronizing");
     assert_channel_state!(first, channel_id, Signed, Settled);
     assert_channel_state!(second, channel_id, Signed, Settled);
 }
 
-fn renew_race(
+async fn renew_race(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
     contract_input: &ContractInput,
 ) {
     let (renew_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, contract_input)
+        .await
         .expect("to be able to renew channel contract");
 
     let mut contract_input_2 = contract_input.clone();
@@ -1154,148 +1228,152 @@ fn renew_race(
 
     let (renew_offer_2, _) = second
         .lock()
-        .unwrap()
+        .await
         .renew_offer(&channel_id, test_utils::OFFER_COLLATERAL, &contract_input_2)
+        .await
         .expect("to be able to renew channel contract");
 
     first_send
         .send(Some(Message::RenewOffer(renew_offer)))
+        .await
         .expect("to be able to send the renew offer");
 
     second_send
         .send(Some(Message::RenewOffer(renew_offer_2)))
+        .await
         .expect("to be able to send the renew offer");
 
     // Process 2 offers + 2 rejects
-    first_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 1");
-    second_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 2");
-    first_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 3");
-    second_receive
-        .recv_timeout(Duration::from_secs(2))
-        .expect("Error synchronizing 4");
+    first_receive.recv().await.expect("Error synchronizing 1");
+    second_receive.recv().await.expect("Error synchronizing 2");
+    first_receive.recv().await.expect("Error synchronizing 3");
+    second_receive.recv().await.expect("Error synchronizing 4");
 
     assert_channel_state!(first, channel_id, Signed, Settled);
     assert_channel_state!(second, channel_id, Signed, Settled);
 }
 
-fn collaborative_close<F: Fn(u64)>(
+async fn collaborative_close<F>(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
     second: DlcParty,
     channel_id: ChannelId,
-    sync_receive: &Receiver<()>,
+    sync_receive: &mut Receiver<()>,
     generate_blocks: &F,
-) {
-    let contract_id = get_established_channel_contract_id(&first, &channel_id);
+) where
+    F: Fn(u64) -> Pin<Box<dyn Future<Output = ()> + Send>>,
+{
+    let contract_id = get_established_channel_contract_id(&first, &channel_id).await;
     let close_offer = first
         .lock()
-        .unwrap()
+        .await
         .offer_collaborative_close(&channel_id, 100000000)
         .expect("to be able to propose a collaborative close");
     first_send
         .send(Some(Message::CollaborativeCloseOffer(close_offer)))
+        .await
         .expect("to be able to send collaborative close");
-    sync_receive.recv().expect("Error synchronizing");
+    sync_receive.recv().await.expect("Error synchronizing");
 
     assert_channel_state!(first, channel_id, Signed, CollaborativeCloseOffered);
     assert_channel_state!(second, channel_id, Signed, CollaborativeCloseOffered);
 
     second
         .lock()
-        .unwrap()
+        .await
         .accept_collaborative_close(&channel_id)
+        .await
         .expect("to be able to accept a collaborative close");
 
     assert_channel_state!(second, channel_id, CollaborativelyClosed);
     assert_contract_state!(second, contract_id, Closed);
 
-    generate_blocks(2);
+    generate_blocks(2).await;
 
-    periodic_check(first.clone());
+    periodic_check(first.clone()).await;
 
     assert_channel_state!(first, channel_id, CollaborativelyClosed);
     assert_contract_state!(first, contract_id, Closed);
 }
 
-fn renew_timeout<F: Fn(u64)>(
+async fn renew_timeout<F>(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
     contract_input: &ContractInput,
     path: TestPath,
     generate_blocks: &F,
-) {
+) where
+    F: Fn(u64) -> Pin<Box<dyn Future<Output = ()> + Send>>,
+{
     {
         let (renew_offer, _) = first
             .lock()
-            .unwrap()
+            .await
             .renew_offer(&channel_id, test_utils::ACCEPT_COLLATERAL, contract_input)
+            .await
             .expect("to be able to offer a settlement of the contract.");
 
         first_send
             .send(Some(Message::RenewOffer(renew_offer)))
+            .await
             .unwrap();
 
-        second_receive.recv().expect("Error synchronizing");
+        second_receive.recv().await.expect("Error synchronizing");
 
         if let TestPath::RenewOfferTimeout = path {
             mocks::mock_time::set_time(
                 (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
             );
-            periodic_check(first.clone());
+            periodic_check(first.clone()).await;
 
             assert_channel_state!(first, channel_id, Closed);
         } else {
             let (renew_accept, _) = second
                 .lock()
-                .unwrap()
+                .await
                 .accept_renew_offer(&channel_id)
                 .expect("to be able to accept a settlement offer");
 
             second_send
                 .send(Some(Message::RenewAccept(renew_accept)))
+                .await
                 .unwrap();
 
             // Process Accept
-            first_receive.recv().expect("Error synchronizing");
+            first_receive.recv().await.expect("Error synchronizing");
 
             if let TestPath::RenewAcceptTimeout = path {
                 mocks::mock_time::set_time(
                     (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
                 );
-                periodic_check(second.clone());
+                periodic_check(second.clone()).await;
 
                 assert_channel_state!(second, channel_id, Closed);
             } else if let TestPath::RenewConfirmTimeout = path {
                 // Process Confirm
-                second_receive.recv().expect("Error synchronizing");
+                second_receive.recv().await.expect("Error synchronizing");
                 mocks::mock_time::set_time(
                     (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
                 );
-                periodic_check(first.clone());
+                periodic_check(first.clone()).await;
 
                 assert_channel_state!(first, channel_id, Closed);
             } else if let TestPath::RenewFinalizeTimeout = path {
                 //Process confirm
-                second_receive.recv().expect("Error synchronizing");
+                second_receive.recv().await.expect("Error synchronizing");
                 // Process Finalize
-                first_receive.recv().expect("Error synchronizing");
+                first_receive.recv().await.expect("Error synchronizing");
                 mocks::mock_time::set_time(
                     (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
                 );
-                periodic_check(second.clone());
-                generate_blocks(289);
-                periodic_check(second.clone());
+                periodic_check(second.clone()).await;
+                generate_blocks(289).await;
+                periodic_check(second.clone()).await;
 
                 assert_channel_state!(second, channel_id, Closed);
             }
@@ -1303,69 +1381,71 @@ fn renew_timeout<F: Fn(u64)>(
     }
 }
 
-fn settle_timeout(
+async fn settle_timeout(
     first: DlcParty,
     first_send: &Sender<Option<Message>>,
-    first_receive: &Receiver<()>,
+    first_receive: &mut Receiver<()>,
     second: DlcParty,
     second_send: &Sender<Option<Message>>,
-    second_receive: &Receiver<()>,
+    second_receive: &mut Receiver<()>,
     channel_id: ChannelId,
     path: TestPath,
 ) {
     let (settle_offer, _) = first
         .lock()
-        .unwrap()
+        .await
         .settle_offer(&channel_id, test_utils::ACCEPT_COLLATERAL)
         .expect("to be able to offer a settlement of the contract.");
 
     first_send
         .send(Some(Message::SettleOffer(settle_offer)))
+        .await
         .unwrap();
 
-    second_receive.recv().expect("Error synchronizing");
+    second_receive.recv().await.expect("Error synchronizing");
 
     if let TestPath::SettleOfferTimeout = path {
         mocks::mock_time::set_time(
             (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
         );
-        periodic_check(first.clone());
+        periodic_check(first.clone()).await;
 
         assert_channel_state!(first, channel_id, Signed, Closing);
     } else {
         let (settle_accept, _) = second
             .lock()
-            .unwrap()
+            .await
             .accept_settle_offer(&channel_id)
             .expect("to be able to accept a settlement offer");
 
         second_send
             .send(Some(Message::SettleAccept(settle_accept)))
+            .await
             .unwrap();
 
         // Process Accept
-        first_receive.recv().expect("Error synchronizing");
+        first_receive.recv().await.expect("Error synchronizing");
 
         if let TestPath::SettleAcceptTimeout = path {
             mocks::mock_time::set_time(
                 (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
             );
-            periodic_check(second.clone());
+            periodic_check(second.clone()).await;
 
             second
                 .lock()
-                .unwrap()
+                .await
                 .get_store()
                 .get_channel(&channel_id)
                 .unwrap();
             assert_channel_state!(second, channel_id, Signed, Closing);
         } else if let TestPath::SettleConfirmTimeout = path {
             // Process Confirm
-            second_receive.recv().expect("Error synchronizing");
+            second_receive.recv().await.expect("Error synchronizing");
             mocks::mock_time::set_time(
                 (EVENT_MATURITY as u64) + ddk_manager::manager::PEER_TIMEOUT + 2,
             );
-            periodic_check(first.clone());
+            periodic_check(first.clone()).await;
 
             assert_channel_state!(first, channel_id, Signed, Closing);
         }

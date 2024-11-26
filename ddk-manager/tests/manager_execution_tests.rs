@@ -26,15 +26,17 @@ use lightning::ln::wire::Type;
 use lightning::util::ser::Writeable;
 use secp256k1_zkp::rand::{thread_rng, RngCore};
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature};
-use serde_json::{from_str, to_writer_pretty};
+use serde_json::from_str;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc::channel,
-    Arc, Mutex,
+    Arc,
 };
-use std::thread;
-
+use tokio::sync::mpsc::channel;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 #[derive(serde::Serialize, serde::Deserialize)]
 struct TestVectorPart<T> {
     message: T,
@@ -55,50 +57,64 @@ struct TestVector {
     sign_message: TestVectorPart<SignDlc>,
 }
 
-fn write_message<T: Writeable + serde::Serialize + Type>(msg_name: &str, s: T) {
+fn write_message<T: Writeable + serde::Serialize + Type>(_msg_name: &str, s: T) {
     if std::env::var("GENERATE_TEST_VECTOR").is_ok() {
         let mut buf = Vec::new();
         s.type_id().write(&mut buf).unwrap();
         s.write(&mut buf).unwrap();
-        let t = TestVectorPart {
+        let _t = TestVectorPart {
             message: s,
             serialized: buf,
         };
-        to_writer_pretty(
-            &std::fs::File::create(format!("{}.json", msg_name)).unwrap(),
-            &t,
-        )
-        .unwrap();
+        // to_writer_pretty(
+        //     &std::fs::File::create(format!("{}.json", msg_name)).unwrap(),
+        //     &t,
+        // )
+        // .unwrap();
     }
 }
 
-fn create_test_vector() {
+async fn create_test_vector() {
     if std::env::var("GENERATE_TEST_VECTOR").is_ok() {
-        let test_vector = TestVector {
-            offer_message: from_str(&std::fs::read_to_string("offer_message.json").unwrap())
-                .unwrap(),
-            accept_message: from_str(&std::fs::read_to_string("accept_message.json").unwrap())
-                .unwrap(),
-            sign_message: from_str(&std::fs::read_to_string("sign_message.json").unwrap()).unwrap(),
+        let _test_vector = TestVector {
+            offer_message: from_str(
+                &tokio::fs::read_to_string("offer_message.json")
+                    .await
+                    .unwrap(),
+            )
+            .unwrap(),
+            accept_message: from_str(
+                &tokio::fs::read_to_string("accept_message.json")
+                    .await
+                    .unwrap(),
+            )
+            .unwrap(),
+            sign_message: from_str(
+                &tokio::fs::read_to_string("sign_message.json")
+                    .await
+                    .unwrap(),
+            )
+            .unwrap(),
         };
-        let file_name = std::env::var("TEST_VECTOR_OUTPUT_NAME")
+        let _file_name = std::env::var("TEST_VECTOR_OUTPUT_NAME")
             .unwrap_or_else(|_| "test_vector.json".to_string());
-        to_writer_pretty(std::fs::File::create(file_name).unwrap(), &test_vector).unwrap();
+        // to_writer_pretty(std::fs::File::create(file_name).unwrap(), &test_vector).unwrap();
     }
 }
 
 macro_rules! periodic_check {
     ($d:expr, $id:expr, $p:ident) => {
         $d.lock()
-            .unwrap()
+            .await
             .periodic_check(true)
+            .await
             .expect("Periodic check error");
 
         assert_contract_state!($d, $id, $p);
     };
 }
 
-fn numerical_common<F>(
+async fn numerical_common<F>(
     nb_oracles: usize,
     threshold: usize,
     payout_function_pieces_cb: F,
@@ -124,10 +140,11 @@ fn numerical_common<F>(
         ),
         TestPath::Close,
         manual_close,
-    );
+    )
+    .await;
 }
 
-fn numerical_polynomial_common(
+async fn numerical_polynomial_common(
     nb_oracles: usize,
     threshold: usize,
     difference_params: Option<DifferenceParams>,
@@ -139,10 +156,11 @@ fn numerical_polynomial_common(
         get_polynomial_payout_curve_pieces,
         difference_params,
         manual_close,
-    );
+    )
+    .await;
 }
 
-fn numerical_common_diff_nb_digits(
+async fn numerical_common_diff_nb_digits(
     nb_oracles: usize,
     threshold: usize,
     difference_params: Option<DifferenceParams>,
@@ -171,7 +189,8 @@ fn numerical_common_diff_nb_digits(
         ),
         TestPath::Close,
         manual_close,
-    );
+    )
+    .await;
 }
 
 #[derive(Eq, PartialEq, Clone)]
@@ -184,330 +203,344 @@ enum TestPath {
     BadSignRefundSignature,
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn single_oracle_numerical_test() {
-    numerical_polynomial_common(1, 1, None, false);
+async fn single_oracle_numerical_test() {
+    numerical_polynomial_common(1, 1, None, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn single_oracle_numerical_manual_test() {
-    numerical_polynomial_common(1, 1, None, true);
+async fn single_oracle_numerical_manual_test() {
+    numerical_polynomial_common(1, 1, None, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn single_oracle_numerical_hyperbola_test() {
-    numerical_common(1, 1, get_hyperbola_payout_curve_pieces, None, false);
+async fn single_oracle_numerical_hyperbola_test() {
+    numerical_common(1, 1, get_hyperbola_payout_curve_pieces, None, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn three_of_three_oracle_numerical_test() {
-    numerical_polynomial_common(3, 3, None, false);
+async fn three_of_three_oracle_numerical_test() {
+    numerical_polynomial_common(3, 3, None, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_test() {
-    numerical_polynomial_common(5, 2, None, false);
+async fn two_of_five_oracle_numerical_test() {
+    numerical_polynomial_common(5, 2, None, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_manual_test() {
-    numerical_polynomial_common(5, 2, None, true);
+async fn two_of_five_oracle_numerical_manual_test() {
+    numerical_polynomial_common(5, 2, None, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn three_of_three_oracle_numerical_with_diff_test() {
-    numerical_polynomial_common(3, 3, Some(get_difference_params()), false);
+async fn three_of_three_oracle_numerical_with_diff_test() {
+    numerical_polynomial_common(3, 3, Some(get_difference_params()), false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_with_diff_test() {
-    numerical_polynomial_common(5, 2, Some(get_difference_params()), false);
+async fn two_of_five_oracle_numerical_with_diff_test() {
+    numerical_polynomial_common(5, 2, Some(get_difference_params()), false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn three_of_five_oracle_numerical_with_diff_test() {
-    numerical_polynomial_common(5, 3, Some(get_difference_params()), false);
+async fn three_of_five_oracle_numerical_with_diff_test() {
+    numerical_polynomial_common(5, 3, Some(get_difference_params()), false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn three_of_five_oracle_numerical_with_diff_manual_test() {
-    numerical_polynomial_common(5, 3, Some(get_difference_params()), true);
+async fn three_of_five_oracle_numerical_with_diff_manual_test() {
+    numerical_polynomial_common(5, 3, Some(get_difference_params()), true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_test() {
-    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close, false);
+async fn enum_single_oracle_test() {
+    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_manual_test() {
-    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close, true);
+async fn enum_single_oracle_manual_test() {
+    manager_execution_test(get_enum_test_params(1, 1, None), TestPath::Close, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_3_of_3_test() {
-    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close, false);
+async fn enum_3_of_3_test() {
+    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_3_of_3_manual_test() {
-    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close, true);
+async fn enum_3_of_3_manual_test() {
+    manager_execution_test(get_enum_test_params(3, 3, None), TestPath::Close, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_3_of_5_test() {
-    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close, false);
+async fn enum_3_of_5_test() {
+    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_3_of_5_manual_test() {
-    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close, true);
+async fn enum_3_of_5_manual_test() {
+    manager_execution_test(get_enum_test_params(5, 3, None), TestPath::Close, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_with_diff_3_of_5_test() {
+async fn enum_and_numerical_with_diff_3_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 3, true, Some(get_difference_params())),
         TestPath::Close,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_with_diff_3_of_5_manual_test() {
+async fn enum_and_numerical_with_diff_3_of_5_manual_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 3, true, Some(get_difference_params())),
         TestPath::Close,
         true,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_with_diff_5_of_5_test() {
+async fn enum_and_numerical_with_diff_5_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 5, true, Some(get_difference_params())),
         TestPath::Close,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_with_diff_5_of_5_manual_test() {
+async fn enum_and_numerical_with_diff_5_of_5_manual_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 5, true, Some(get_difference_params())),
         TestPath::Close,
         true,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_3_of_5_test() {
+async fn enum_and_numerical_3_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 3, false, None),
         TestPath::Close,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_3_of_5_manual_test() {
+async fn enum_and_numerical_3_of_5_manual_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 3, false, None),
         TestPath::Close,
         true,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_5_of_5_test() {
+async fn enum_and_numerical_5_of_5_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 5, false, None),
         TestPath::Close,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_and_numerical_5_of_5_manual_test() {
+async fn enum_and_numerical_5_of_5_manual_test() {
     manager_execution_test(
         get_enum_and_numerical_test_params(5, 5, false, None),
         TestPath::Close,
         true,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_refund_test() {
+async fn enum_single_oracle_refund_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::Refund,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_refund_manual_test() {
+async fn enum_single_oracle_refund_manual_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::Refund,
         true,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_bad_accept_cet_sig_test() {
+async fn enum_single_oracle_bad_accept_cet_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadAcceptCetSignature,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_bad_accept_refund_sig_test() {
+async fn enum_single_oracle_bad_accept_refund_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadAcceptRefundSignature,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_bad_sign_cet_sig_test() {
+async fn enum_single_oracle_bad_sign_cet_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadSignCetSignature,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn enum_single_oracle_bad_sign_refund_sig_test() {
+async fn enum_single_oracle_bad_sign_refund_sig_test() {
     manager_execution_test(
         get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
         TestPath::BadSignRefundSignature,
         false,
-    );
+    )
+    .await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_two_oracle_numerical_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(2, 2, None, false, false);
+async fn two_of_two_oracle_numerical_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(2, 2, None, false, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_two_oracle_numerical_diff_nb_digits_manual_test() {
-    numerical_common_diff_nb_digits(2, 2, None, false, true);
+async fn two_of_two_oracle_numerical_diff_nb_digits_manual_test() {
+    numerical_common_diff_nb_digits(2, 2, None, false, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(5, 2, None, false, false);
+async fn two_of_five_oracle_numerical_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(5, 2, None, false, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_diff_nb_digits_manual_test() {
-    numerical_common_diff_nb_digits(5, 2, None, false, true);
+async fn two_of_five_oracle_numerical_diff_nb_digits_manual_test() {
+    numerical_common_diff_nb_digits(5, 2, None, false, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), false, false);
+async fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), false, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn three_of_three_oracle_numerical_with_diff_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(3, 3, Some(get_difference_params()), false, false);
+async fn three_of_three_oracle_numerical_with_diff_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(3, 3, Some(get_difference_params()), false, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_test() {
-    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), false, false);
+async fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_test() {
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), false, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), true, false);
+async fn two_of_two_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(2, 2, Some(get_difference_params()), true, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_three_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(3, 2, Some(get_difference_params()), true, false);
+async fn two_of_three_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(3, 2, Some(get_difference_params()), true, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true, false);
+async fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_manual_test() {
-    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true, true);
+async fn two_of_five_oracle_numerical_with_diff_diff_nb_digits_max_value_manual_test() {
+    numerical_common_diff_nb_digits(5, 2, Some(get_difference_params()), true, true).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_two_oracle_numerical_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(2, 2, None, true, false);
+async fn two_of_two_oracle_numerical_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(2, 2, None, true, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_three_oracle_numerical_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(3, 2, None, true, false);
+async fn two_of_three_oracle_numerical_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(3, 2, None, true, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_diff_nb_digits_max_value_test() {
-    numerical_common_diff_nb_digits(5, 2, None, true, false);
+async fn two_of_five_oracle_numerical_diff_nb_digits_max_value_test() {
+    numerical_common_diff_nb_digits(5, 2, None, true, false).await;
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn two_of_five_oracle_numerical_diff_nb_digits_max_value_manual_test() {
-    numerical_common_diff_nb_digits(5, 2, None, true, true);
+async fn two_of_five_oracle_numerical_diff_nb_digits_max_value_manual_test() {
+    numerical_common_diff_nb_digits(5, 2, None, true, true).await;
 }
 
 fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
@@ -530,24 +563,21 @@ fn alter_refund_sig(refund_signature: &Signature) -> Signature {
     Signature::from_compact(&copy).unwrap()
 }
 
-fn get_attestations(test_params: &TestParams) -> Vec<(usize, OracleAttestation)> {
+async fn get_attestations(test_params: &TestParams) -> Vec<(usize, OracleAttestation)> {
+    let mut attestations = Vec::new();
     for contract_info in test_params.contract_input.contract_infos.iter() {
-        let attestations: Vec<_> = contract_info
-            .oracles
-            .public_keys
-            .iter()
-            .enumerate()
-            .filter_map(|(i, pk)| {
-                let oracle = test_params
-                    .oracles
-                    .iter()
-                    .find(|x| x.get_public_key() == *pk);
-
-                oracle
-                    .and_then(|o| o.get_attestation(&contract_info.oracles.event_id).ok())
-                    .map(|a| (i, a))
-            })
-            .collect();
+        attestations.clear();
+        for (i, pk) in contract_info.oracles.public_keys.iter().enumerate() {
+            let oracle = test_params
+                .oracles
+                .iter()
+                .find(|x| x.get_public_key() == *pk);
+            if let Some(o) = oracle {
+                if let Ok(attestation) = o.get_attestation(&contract_info.oracles.event_id).await {
+                    attestations.push((i, attestation));
+                }
+            }
+        }
         if attestations.len() >= contract_info.oracles.threshold as usize {
             return attestations;
         }
@@ -556,14 +586,15 @@ fn get_attestations(test_params: &TestParams) -> Vec<(usize, OracleAttestation)>
     panic!("No attestations found");
 }
 
-fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close: bool) {
+async fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close: bool) {
     env_logger::try_init().ok();
-    let (alice_send, bob_receive) = channel::<Option<Message>>();
-    let (bob_send, alice_receive) = channel::<Option<Message>>();
-    let (sync_send, sync_receive) = channel::<()>();
+    let (alice_send, mut bob_receive) = channel::<Option<Message>>(100);
+    let (bob_send, mut alice_receive) = channel::<Option<Message>>(100);
+    let (sync_send, mut sync_receive) = channel::<()>(100);
     let alice_sync_send = sync_send.clone();
     let bob_sync_send = sync_send;
     let (_, _, sink_rpc) = init_clients();
+    let sink = Arc::new(sink_rpc);
 
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
@@ -599,55 +630,55 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     let alice_fund_address = alice_wallet.get_new_address().unwrap();
     let bob_fund_address = bob_wallet.get_new_address().unwrap();
 
-    sink_rpc
-        .send_to_address(
-            &alice_fund_address,
-            Amount::from_btc(2.0).unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    sink.send_to_address(
+        &alice_fund_address,
+        Amount::from_btc(2.0).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
-    sink_rpc
-        .send_to_address(
-            &bob_fund_address,
-            Amount::from_btc(2.0).unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    sink.send_to_address(
+        &bob_fund_address,
+        Amount::from_btc(2.0).unwrap(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
-    let generate_blocks = |nb_blocks: u64| {
-        let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
-
-        let sink_address = sink_rpc
-            .get_new_address(None, None)
-            .expect("RPC Error")
-            .assume_checked();
-        sink_rpc
-            .generate_to_address(nb_blocks, &sink_address)
-            .expect("RPC Error");
-
-        // Wait for electrs to have processed the new blocks
-        let mut cur_blockchain_height = prev_blockchain_height;
-        while cur_blockchain_height < prev_blockchain_height + nb_blocks {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            cur_blockchain_height = electrs.get_blockchain_height().unwrap();
-        }
+    let generate_blocks = |nb_blocks: u64| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let electrs_clone = electrs.clone();
+        let sink_clone = sink.clone();
+        Box::pin(async move {
+            let prev_blockchain_height = electrs_clone.get_blockchain_height().await.unwrap();
+            let sink_address = sink_clone
+                .get_new_address(None, None)
+                .expect("RPC Error")
+                .assume_checked();
+            sink_clone
+                .generate_to_address(nb_blocks, &sink_address)
+                .expect("RPC Error");
+            // Wait for electrs to have processed the new blocks
+            let mut cur_blockchain_height = prev_blockchain_height;
+            while cur_blockchain_height < prev_blockchain_height + nb_blocks {
+                sleep(std::time::Duration::from_millis(200)).await;
+                cur_blockchain_height = electrs_clone.get_blockchain_height().await.unwrap();
+            }
+        })
     };
 
-    generate_blocks(6);
+    generate_blocks(6).await;
 
-    refresh_wallet(&alice_wallet, 200000000);
-    refresh_wallet(&bob_wallet, 200000000);
+    refresh_wallet(&alice_wallet, 200000000).await;
+    refresh_wallet(&bob_wallet, 200000000).await;
 
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
@@ -659,6 +690,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
+        .await
         .unwrap(),
     ));
 
@@ -675,6 +707,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
             Arc::clone(&mock_time),
             Arc::clone(&electrs),
         )
+        .await
         .unwrap(),
     ));
 
@@ -734,29 +767,34 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
     let offer_msg = bob_manager_send
         .lock()
-        .unwrap()
+        .await
         .send_offer(
             &test_params.contract_input,
             "0218845781f631c48f1c9709e23092067d06837f30aa0cd0544ac887fe91ddd166"
                 .parse()
                 .unwrap(),
         )
+        .await
         .expect("Send offer error");
 
     write_message("offer_message", offer_msg.clone());
     let temporary_contract_id = offer_msg.temporary_contract_id;
-    bob_send.send(Some(Message::Offer(offer_msg))).unwrap();
+    bob_send
+        .send(Some(Message::Offer(offer_msg)))
+        .await
+        .unwrap();
 
     assert_contract_state!(bob_manager_send, temporary_contract_id, Offered);
 
-    sync_receive.recv().expect("Error synchronizing");
+    sync_receive.recv().await.expect("Error synchronizing");
 
     assert_contract_state!(alice_manager_send, temporary_contract_id, Offered);
 
     let (contract_id, _, mut accept_msg) = alice_manager_send
         .lock()
-        .unwrap()
+        .await
         .accept_contract_offer(&temporary_contract_id)
+        .await
         .expect("Error accepting contract offer");
 
     write_message("accept_message", accept_msg.clone());
@@ -775,33 +813,42 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                 _ => {}
             };
             bob_expect_error.store(true, Ordering::Relaxed);
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
-            sync_receive.recv().expect("Error synchronizing");
+            alice_send
+                .send(Some(Message::Accept(accept_msg)))
+                .await
+                .unwrap();
+            sync_receive.recv().await.expect("Error synchronizing");
             assert_contract_state!(bob_manager_send, temporary_contract_id, FailedAccept);
         }
         TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
             alice_expect_error.store(true, Ordering::Relaxed);
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
+            alice_send
+                .send(Some(Message::Accept(accept_msg)))
+                .await
+                .unwrap();
             // Bob receives accept message
-            sync_receive.recv().expect("Error synchronizing");
+            sync_receive.recv().await.expect("Error synchronizing");
             // Alice receives sign message
-            sync_receive.recv().expect("Error synchronizing");
+            sync_receive.recv().await.expect("Error synchronizing");
             assert_contract_state!(alice_manager_send, contract_id, FailedSign);
         }
         TestPath::Close | TestPath::Refund => {
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
-            sync_receive.recv().expect("Error synchronizing");
+            alice_send
+                .send(Some(Message::Accept(accept_msg)))
+                .await
+                .unwrap();
+            sync_receive.recv().await.expect("Error synchronizing");
 
             assert_contract_state!(bob_manager_send, contract_id, Signed);
 
             // Should not change state and should not error
             periodic_check!(bob_manager_send, contract_id, Signed);
 
-            sync_receive.recv().expect("Error synchronizing");
+            sync_receive.recv().await.expect("Error synchronizing");
 
             assert_contract_state!(alice_manager_send, contract_id, Signed);
 
-            generate_blocks(6);
+            generate_blocks(6).await;
 
             periodic_check!(alice_manager_send, contract_id, Confirmed);
             periodic_check!(bob_manager_send, contract_id, Confirmed);
@@ -831,15 +878,16 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                     if manual_close {
                         periodic_check!(first, contract_id, Confirmed);
 
-                        let attestations = get_attestations(&test_params);
+                        let attestations = get_attestations(&test_params).await;
 
-                        let f = first.lock().unwrap();
+                        let f = first.lock().await;
                         let contract = f
                             .close_confirmed_contract(&contract_id, attestations)
+                            .await
                             .expect("Error closing contract");
 
                         if let Contract::PreClosed(contract) = contract {
-                            let mut s = second.lock().unwrap();
+                            let mut s = second.lock().await;
                             let second_contract =
                                 s.get_store().get_contract(&contract_id).unwrap().unwrap();
                             if let Contract::Confirmed(signed) = second_contract {
@@ -861,7 +909,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
                     // mine blocks for the CET to be confirmed
                     if let Some(b) = blocks {
-                        generate_blocks(b as u64);
+                        generate_blocks(b as u64).await;
                     }
 
                     // Randomly check with or without having the CET mined
@@ -883,13 +931,13 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                         ((EVENT_MATURITY + ddk_manager::manager::REFUND_DELAY) as u64) + 1,
                     );
 
-                    generate_blocks(10);
+                    generate_blocks(10).await;
 
                     periodic_check!(first, contract_id, Refunded);
 
                     // Randomly check with or without having the Refund mined.
                     if thread_rng().next_u32() % 2 == 0 {
-                        generate_blocks(1);
+                        generate_blocks(1).await;
                     }
 
                     periodic_check!(second, contract_id, Refunded);
@@ -899,11 +947,11 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
         }
     }
 
-    alice_send.send(None).unwrap();
-    bob_send.send(None).unwrap();
+    alice_send.send(None).await.unwrap();
+    bob_send.send(None).await.unwrap();
 
-    alice_handle.join().unwrap();
-    bob_handle.join().unwrap();
+    alice_handle.await.unwrap();
+    bob_handle.await.unwrap();
 
-    create_test_vector();
+    create_test_vector().await;
 }
