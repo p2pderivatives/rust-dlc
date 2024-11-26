@@ -1,6 +1,6 @@
-extern crate dlc_manager;
+extern crate ddk_manager;
 
-use dlc_manager::Time;
+use ddk_manager::Time;
 use std::cell::RefCell;
 
 thread_local! {

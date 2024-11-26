@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use bitcoin::{Block, Transaction, Txid};
-use dlc_manager::{error::Error, Blockchain, Utxo};
+use ddk_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::FeeEstimator;
 use simple_wallet::WalletBlockchainProvider;
 

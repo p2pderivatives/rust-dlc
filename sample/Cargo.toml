@@ -7,9 +7,9 @@ version = "0.1.0"
 [dependencies]
 bitcoin = {version = "0.32.2"}
 bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
-dlc = {path = "../dlc", features = ["use-serde"]}
-dlc-manager = {path = "../dlc-manager", features = ["use-serde", "parallel"]}
-dlc-messages = {path = "../dlc-messages"}
+ddk-dlc = {path = "../ddk-dlc", features = ["use-serde"]}
+ddk-manager = {path = "../ddk-manager", features = ["use-serde", "parallel"]}
+ddk-messages = {path = "../ddk-messages"}
 dlc-sled-storage-provider = {path = "../dlc-sled-storage-provider"}
 futures = "0.3"
 lightning = {version = "0.0.125"}

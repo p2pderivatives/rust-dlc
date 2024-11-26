@@ -1,7 +1,7 @@
 use std::{process::Command, thread::sleep, time::Duration};
 
 use assert_cmd::cargo::cargo_bin;
-use dlc_manager::contract::contract_input::ContractInput;
+use ddk_manager::contract::contract_input::ContractInput;
 use rexpect::session::{spawn_command, PtySession};
 
 #[test]

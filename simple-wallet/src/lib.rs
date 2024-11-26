@@ -10,7 +10,7 @@ use bitcoin::{
     Sequence, Transaction, TxIn, TxOut, Txid, Weight, Witness,
 };
 use bitcoin::{psbt::Psbt, ScriptBuf};
-use dlc_manager::{
+use ddk_manager::{
     error::Error, Blockchain, ContractSignerProvider, KeysId, SimpleSigner, Utxo, Wallet,
 };
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
@@ -341,7 +341,7 @@ where
             .expect("to have the requested private key");
 
         let mut tx = psbt.unsigned_tx.clone();
-        dlc::util::sign_p2wpkh_input(
+        ddk_dlc::util::sign_p2wpkh_input(
             &self.secp_ctx,
             &seckey,
             &mut tx,
@@ -361,7 +361,7 @@ where
 mod tests {
     use std::rc::Rc;
 
-    use dlc_manager::ContractSignerProvider;
+    use ddk_manager::ContractSignerProvider;
     use mocks::simple_wallet::SimpleWallet;
     use mocks::{memory_storage_provider::MemoryStorage, mock_blockchain::MockBlockchain};
     use secp256k1_zkp::{PublicKey, SECP256K1};

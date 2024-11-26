@@ -1,0 +1,30 @@
+[package]
+authors = ["Crypto Garage", "benny b <ben@bitcoinbay.foundation>"]
+description = "Creation, signing and verification of Discreet Log Contracts (DLC) transactions."
+homepage = "https://github.com/bennyhodl/rust-dlc"
+license-file = "../LICENSE"
+name = "ddk-dlc"
+repository = "https://github.com/bennyhodl/rust-dlc/tree/master/dlc"
+version = "0.7.0"
+
+[dependencies]
+bitcoin = { version = "0.32.2", default-features = false }
+miniscript = { version = "12.2", default-features = false }
+secp256k1-sys = "0.10.0"
+secp256k1-zkp = "0.11.0"
+serde = { version = "1.0", default-features = false, optional = true }
+
+[features]
+# for benchmarks
+unstable = []
+default = ["std"]
+std = ["bitcoin/std", "miniscript/std", "secp256k1-zkp/rand-std"]
+no-std = ["miniscript/no-std"]
+use-serde = ["serde", "secp256k1-zkp/serde", "bitcoin/serde"]
+
+[dev-dependencies]
+bitcoin-test-utils = { path = "../bitcoin-test-utils" }
+bitcoincore-rpc = { version = "0.19.0" }
+bitcoincore-rpc-json = { version = "0.19.0" }
+rayon = "1.5"
+secp256k1-zkp = { version = "0.11.0", features = ["hashes", "rand","serde", "global-context"] }

@@ -1,0 +1,49 @@
+[package]
+authors = ["Crypto Garage", "benny b <ben@bitcoinbay.foundation>"]
+description = "Creation and handling of Discrete Log Contracts (DLC)."
+edition = "2018"
+homepage = "https://github.com/bennyhodl/rust-dlc"
+license-file = "../LICENSE"
+name = "ddk-manager"
+repository = "https://github.com/bennyhodl/rust-dlc/tree/master/dlc-manager"
+version = "0.7.0"
+
+[features]
+default = ["std"]
+std = ["ddk-dlc/std", "ddk-messages/std", "ddk-trie/std", "bitcoin/std", "lightning/std"]
+fuzztarget = ["rand_chacha"]
+parallel = ["ddk-trie/parallel"]
+use-serde = ["serde", "ddk-dlc/use-serde", "ddk-messages/use-serde", "ddk-trie/use-serde"]
+
+[dependencies]
+async-trait = "0.1.50"
+bitcoin = { version = "0.32.2", default-features = false }
+ddk-dlc = { version = "0.7.0", default-features = false, path = "../ddk-dlc" }
+ddk-messages = { version = "0.7.0", default-features = false, path = "../ddk-messages" }
+ddk-trie = { version = "0.7.0", default-features = false, path = "../ddk-trie" }
+hex = { package = "hex-conservative", version = "0.1" }
+lightning = { version = "0.0.125", default-features = false, features = ["grind_signatures"] }
+log = "0.4.14"
+rand_chacha = {version = "0.3.1", optional = true}
+secp256k1-zkp = {version = "0.11.0"}
+serde = {version = "1.0", optional = true}
+
+[dev-dependencies]
+bitcoin-rpc-provider = {path = "../bitcoin-rpc-provider"}
+bitcoin-test-utils = {path = "../bitcoin-test-utils"}
+bitcoincore-rpc = {version = "0.19"}
+bitcoincore-rpc-json = {version = "0.19"}
+criterion = "0.4.0"
+ddk-manager = { path = ".", default-features = false, features = ["use-serde"] }
+ddk-messages = { path = "../ddk-messages", default-features = false, features = ["serde"] }
+electrs-blockchain-provider = {path = "../electrs-blockchain-provider"}
+env_logger = "0.9.1"
+mocks = {path = "../mocks"}
+secp256k1-zkp = {version = "0.11.0", features = ["hashes", "rand", "rand-std", "global-context", "serde"]}
+serde = "1.0"
+serde_json = "1.0"
+simple-wallet = {path = "../simple-wallet"}
+
+[[bench]]
+harness = false
+name = "benchmarks"

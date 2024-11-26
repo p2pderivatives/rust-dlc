@@ -7,8 +7,8 @@ use disk::FilesystemLogger;
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::SecretKey;
 use bitcoin_rpc_provider::BitcoinCoreProvider;
-use dlc_manager::{CachedContractSignerProvider, Oracle, SimpleSigner, SystemTimeProvider};
-use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
+use ddk_manager::{CachedContractSignerProvider, Oracle, SimpleSigner, SystemTimeProvider};
+use ddk_messages::message_handler::MessageHandler as DlcMessageHandler;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
@@ -31,7 +31,7 @@ pub(crate) type PeerManager = LdkPeerManager<
     Arc<KeysManager>,
 >;
 
-pub(crate) type DlcManager = dlc_manager::manager::Manager<
+pub(crate) type DlcManager = ddk_manager::manager::Manager<
     Arc<BitcoinCoreProvider>,
     Arc<CachedContractSignerProvider<Arc<BitcoinCoreProvider>, SimpleSigner>>,
     Arc<BitcoinCoreProvider>,
@@ -82,7 +82,7 @@ async fn main() {
 
     // Instantiate a DlcManager.
     let dlc_manager = Arc::new(Mutex::new(
-        dlc_manager::manager::Manager::new(
+        ddk_manager::manager::Manager::new(
             bitcoind_provider.clone(),
             bitcoind_provider.clone(),
             bitcoind_provider.clone(),
@@ -91,7 +91,7 @@ async fn main() {
                     .expect("Error creating storage."),
             ),
             oracles,
-            Arc::new(dlc_manager::SystemTimeProvider {}),
+            Arc::new(ddk_manager::SystemTimeProvider {}),
             bitcoind_provider.clone(),
         )
         .expect("Could not create manager."),

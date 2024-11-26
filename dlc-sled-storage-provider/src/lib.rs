@@ -11,28 +11,28 @@
 #![deny(unused_imports)]
 #![deny(missing_docs)]
 
-extern crate dlc_manager;
+extern crate ddk_manager;
 extern crate sled;
 
 #[cfg(feature = "wallet")]
 use bitcoin::{address::NetworkUnchecked, Address, Txid};
-use dlc_manager::chain_monitor::ChainMonitor;
-use dlc_manager::channel::accepted_channel::AcceptedChannel;
-use dlc_manager::channel::offered_channel::OfferedChannel;
-use dlc_manager::channel::signed_channel::{SignedChannel, SignedChannelStateType};
-use dlc_manager::channel::{
+use ddk_manager::chain_monitor::ChainMonitor;
+use ddk_manager::channel::accepted_channel::AcceptedChannel;
+use ddk_manager::channel::offered_channel::OfferedChannel;
+use ddk_manager::channel::signed_channel::{SignedChannel, SignedChannelStateType};
+use ddk_manager::channel::{
     Channel, ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign,
 };
-use dlc_manager::contract::accepted_contract::AcceptedContract;
-use dlc_manager::contract::offered_contract::OfferedContract;
-use dlc_manager::contract::ser::Serializable;
-use dlc_manager::contract::signed_contract::SignedContract;
-use dlc_manager::contract::{
+use ddk_manager::contract::accepted_contract::AcceptedContract;
+use ddk_manager::contract::offered_contract::OfferedContract;
+use ddk_manager::contract::ser::Serializable;
+use ddk_manager::contract::signed_contract::SignedContract;
+use ddk_manager::contract::{
     ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
 #[cfg(feature = "wallet")]
-use dlc_manager::Utxo;
-use dlc_manager::{error::Error, ContractId, Storage};
+use ddk_manager::Utxo;
+use ddk_manager::{error::Error, ContractId, Storage};
 use lightning::io::{Cursor, Read};
 #[cfg(feature = "wallet")]
 use lightning::util::ser::{Readable, Writeable};
@@ -343,14 +343,14 @@ impl Storage for SledStorageProvider {
         Ok(())
     }
 
-    fn delete_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<(), Error> {
+    fn delete_channel(&self, channel_id: &ddk_manager::ChannelId) -> Result<(), Error> {
         self.channel_tree()?
             .remove(channel_id)
             .map_err(to_storage_error)?;
         Ok(())
     }
 
-    fn get_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<Option<Channel>, Error> {
+    fn get_channel(&self, channel_id: &ddk_manager::ChannelId) -> Result<Option<Channel>, Error> {
         match self
             .channel_tree()?
             .get(channel_id)
@@ -394,7 +394,7 @@ impl Storage for SledStorageProvider {
             .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {}", e)))?;
         Ok(())
     }
-    fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, dlc_manager::error::Error> {
+    fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, ddk_manager::error::Error> {
         let serialized = self
             .open_tree(&[CHAIN_MONITOR_TREE])?
             .get([CHAIN_MONITOR_KEY])
@@ -924,11 +924,11 @@ mod tests {
 
             let signed_channels = storage
                 .get_signed_channels(Some(
-                    dlc_manager::channel::signed_channel::SignedChannelStateType::Established,
+                    ddk_manager::channel::signed_channel::SignedChannelStateType::Established,
                 ))
                 .expect("Error retrieving offered channels");
             assert_eq!(1, signed_channels.len());
-            if let dlc_manager::channel::signed_channel::SignedChannelState::Established {
+            if let ddk_manager::channel::signed_channel::SignedChannelState::Established {
                 ..
             } = &signed_channels[0].state
             {

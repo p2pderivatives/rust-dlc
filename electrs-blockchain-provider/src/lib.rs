@@ -10,7 +10,7 @@ use bitcoin::{
     block::Header, Block, BlockHash, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
 };
 use bitcoin_test_utils::tx_to_string;
-use dlc_manager::{error::Error, Blockchain, Utxo};
+use ddk_manager::{error::Error, Blockchain, Utxo};
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning_block_sync::{BlockData, BlockHeaderData, BlockSource, BlockSourceError};
 use reqwest::blocking::Response;
@@ -57,7 +57,7 @@ impl ElectrsBlockchainProvider {
             .get(format!("{}{}", self.host, sub_url))
             .send()
             .map_err(|x| {
-                dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                ddk_manager::error::Error::IOError(lightning::io::Error::new(
                     lightning::io::ErrorKind::Other,
                     x,
                 ))
@@ -73,7 +73,7 @@ impl ElectrsBlockchainProvider {
 
     fn get_text(&self, sub_url: &str) -> Result<String, Error> {
         self.get(sub_url)?.text().map_err(|x| {
-            dlc_manager::error::Error::IOError(lightning::io::Error::new(
+            ddk_manager::error::Error::IOError(lightning::io::Error::new(
                 lightning::io::ErrorKind::Other,
                 x,
             ))
@@ -109,36 +109,36 @@ impl ElectrsBlockchainProvider {
 }
 
 impl Blockchain for ElectrsBlockchainProvider {
-    fn send_transaction(&self, transaction: &Transaction) -> Result<(), dlc_manager::error::Error> {
+    fn send_transaction(&self, transaction: &Transaction) -> Result<(), ddk_manager::error::Error> {
         let res = self
             .client
             .post(format!("{}tx", self.host))
             .body(tx_to_string(transaction))
             .send()
             .map_err(|x| {
-                dlc_manager::error::Error::IOError(lightning::io::Error::new(
+                ddk_manager::error::Error::IOError(lightning::io::Error::new(
                     lightning::io::ErrorKind::Other,
                     x,
                 ))
             })?;
         if let Err(error) = res.error_for_status_ref() {
             let body = res.text().unwrap_or_default();
-            return Err(dlc_manager::error::Error::InvalidParameters(format!(
+            return Err(ddk_manager::error::Error::InvalidParameters(format!(
                 "Server returned error: {error} {body}"
             )));
         }
         Ok(())
     }
 
-    fn get_network(&self) -> Result<bitcoin::Network, dlc_manager::error::Error> {
+    fn get_network(&self) -> Result<bitcoin::Network, ddk_manager::error::Error> {
         Ok(self.network)
     }
 
-    fn get_blockchain_height(&self) -> Result<u64, dlc_manager::error::Error> {
+    fn get_blockchain_height(&self) -> Result<u64, ddk_manager::error::Error> {
         self.get_u64("blocks/tip/height")
     }
 
-    fn get_block_at_height(&self, height: u64) -> Result<Block, dlc_manager::error::Error> {
+    fn get_block_at_height(&self, height: u64) -> Result<Block, ddk_manager::error::Error> {
         let hash_at_height = self.get_text(&format!("block-height/{height}"))?;
         let raw_block = self.get_bytes(&format!("block/{hash_at_height}/raw"))?;
         // TODO: Bitcoin IO for all
@@ -146,7 +146,7 @@ impl Blockchain for ElectrsBlockchainProvider {
             .map_err(|e| Error::BlockchainError(e.to_string()))
     }
 
-    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, dlc_manager::error::Error> {
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ddk_manager::error::Error> {
         let raw_tx = self.get_bytes(&format!("tx/{tx_id}/raw"))?;
         Transaction::consensus_decode(&mut lightning::io::Cursor::new(&*raw_tx))
             .map_err(|e| Error::BlockchainError(e.to_string()))
@@ -155,7 +155,7 @@ impl Blockchain for ElectrsBlockchainProvider {
     fn get_transaction_confirmations(
         &self,
         tx_id: &Txid,
-    ) -> Result<u32, dlc_manager::error::Error> {
+    ) -> Result<u32, ddk_manager::error::Error> {
         let tx_status = self.get_from_json::<TxStatus>(&format!("tx/{tx_id}/status"))?;
         if tx_status.confirmed {
             let block_chain_height = self.get_blockchain_height()?;

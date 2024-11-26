@@ -8,8 +8,8 @@ version = "0.1.0"
 [dependencies]
 bdk_wallet = "1.0.0-beta.2"
 bitcoin = "0.32.2"
-dlc = {path = "../dlc"}
-dlc-manager = {path = "../dlc-manager"}
+ddk-dlc = {path = "../ddk-dlc"}
+ddk-manager = {path = "../ddk-manager"}
 lightning = {version = "0.0.125"}
 secp256k1-zkp = {version = "0.11.0"}
 

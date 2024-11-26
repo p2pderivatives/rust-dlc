@@ -1,7 +1,7 @@
 use bitcoin::hashes::Hash;
-use dlc_manager::error::Error as DaemonError;
-use dlc_manager::Oracle;
-use dlc_messages::oracle_msgs::{
+use ddk_manager::error::Error as DaemonError;
+use ddk_manager::Oracle;
+use ddk_messages::oracle_msgs::{
     EventDescriptor, OracleAnnouncement, OracleAttestation, OracleEvent,
 };
 use lightning::util::ser::Writeable;
@@ -138,7 +138,7 @@ impl MockOracle {
             .map(|(x, nonce)| {
                 let hash = bitcoin::hashes::sha256::Hash::hash(x.as_bytes()).to_byte_array();
                 let msg = Message::from_digest(hash);
-                dlc::secp_utils::schnorrsig_sign_with_nonce(
+                ddk_dlc::secp_utils::schnorrsig_sign_with_nonce(
                     &self.secp,
                     &msg,
                     &self.key_pair,

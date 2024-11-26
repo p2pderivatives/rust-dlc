@@ -4,7 +4,7 @@ use bitcoin::psbt::Psbt;
 use bitcoin::transaction::Version;
 use bitcoin::{absolute::LockTime, Address, OutPoint, ScriptBuf, Transaction, TxOut};
 use bitcoin::{Amount, CompressedPublicKey};
-use dlc_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
+use ddk_manager::{error::Error, Blockchain, ContractSignerProvider, SimpleSigner, Utxo, Wallet};
 use secp256k1_zkp::{rand::seq::SliceRandom, PublicKey, SecretKey};
 
 use crate::mock_blockchain::MockBlockchain;
@@ -68,11 +68,11 @@ impl ContractSignerProvider for MockWallet {
 }
 
 impl Wallet for MockWallet {
-    fn get_new_address(&self) -> Result<Address, dlc_manager::error::Error> {
+    fn get_new_address(&self) -> Result<Address, ddk_manager::error::Error> {
         Ok(get_address())
     }
 
-    fn get_new_change_address(&self) -> Result<Address, dlc_manager::error::Error> {
+    fn get_new_change_address(&self) -> Result<Address, ddk_manager::error::Error> {
         Ok(get_address())
     }
 
@@ -81,7 +81,7 @@ impl Wallet for MockWallet {
         amount: u64,
         _fee_rate: u64,
         _lock_utxos: bool,
-    ) -> Result<Vec<dlc_manager::Utxo>, Error> {
+    ) -> Result<Vec<ddk_manager::Utxo>, Error> {
         let mut utxo_pool = self.utxos.clone();
         let seed = 1;
         utxo_pool.shuffle(&mut secp256k1_zkp::rand::rngs::mock::StepRng::new(
@@ -109,7 +109,7 @@ impl Wallet for MockWallet {
         Err(Error::InvalidParameters("Not enought UTXOs".to_string()))
     }
 
-    fn import_address(&self, _address: &Address) -> Result<(), dlc_manager::error::Error> {
+    fn import_address(&self, _address: &Address) -> Result<(), ddk_manager::error::Error> {
         Ok(())
     }
 

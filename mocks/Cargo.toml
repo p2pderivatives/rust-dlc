@@ -6,9 +6,9 @@ version = "0.1.0"
 
 [dependencies]
 bitcoin = "0.32.2"
-dlc = {path = "../dlc"}
-dlc-manager = {path = "../dlc-manager"}
-dlc-messages = {path = "../dlc-messages"}
+ddk-dlc = {path = "../ddk-dlc"}
+ddk-manager = {path = "../ddk-manager"}
+ddk-messages = {path = "../ddk-messages"}
 lightning = {version = "0.0.125"}
 secp256k1-zkp = {version = "0.11.0", features = ["hashes", "global-context", "rand", "rand-std"]}
 simple-wallet = {path = "../simple-wallet"}

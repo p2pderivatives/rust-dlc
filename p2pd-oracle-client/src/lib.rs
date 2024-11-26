@@ -12,16 +12,16 @@
 #![deny(missing_docs)]
 
 extern crate chrono;
-extern crate dlc_manager;
-extern crate dlc_messages;
+extern crate ddk_manager;
+extern crate ddk_messages;
 extern crate reqwest;
 extern crate secp256k1_zkp;
 extern crate serde;
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use dlc_manager::error::Error as DlcManagerError;
-use dlc_manager::Oracle;
-use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
+use ddk_manager::error::Error as DlcManagerError;
+use ddk_manager::Oracle;
+use ddk_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use secp256k1_zkp::{schnorr::Signature, XOnlyPublicKey};
 
 /// Enables interacting with a DLC oracle.
@@ -75,12 +75,12 @@ where
 {
     reqwest::blocking::get(path)
         .map_err(|x| {
-            dlc_manager::error::Error::IOError(
+            ddk_manager::error::Error::IOError(
                 std::io::Error::new(std::io::ErrorKind::Other, x).into(),
             )
         })?
         .json::<T>()
-        .map_err(|e| dlc_manager::error::Error::OracleError(e.to_string()))
+        .map_err(|e| ddk_manager::error::Error::OracleError(e.to_string()))
 }
 
 fn pubkey_path(host: &str) -> String {
@@ -159,7 +159,7 @@ impl Oracle for P2PDOracleClient {
     fn get_attestation(
         &self,
         event_id: &str,
-    ) -> Result<OracleAttestation, dlc_manager::error::Error> {
+    ) -> Result<OracleAttestation, ddk_manager::error::Error> {
         let (asset_id, date_time) = parse_event_id(event_id)?;
         let path = attestation_path(&self.host, &asset_id, &date_time);
         let AttestationResponse {

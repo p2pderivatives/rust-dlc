@@ -1,0 +1,22 @@
+[package]
+authors = ["Crypto Garage", "benny b <ben@bitcoinbay.foundation>"]
+description = "Data structures for storage and retrival of numerical Discreet Log Contracts (DLC)."
+homepage = "https://github.com/bennyhodl/rust-dlc"
+license-file = "../LICENSE"
+name = "ddk-trie"
+repository = "https://github.com/bennyhodl/rust-dlc/tree/master/dlc-trie"
+version = "0.7.0"
+
+[features]
+default = ["std"]
+std = ["ddk-dlc/std", "bitcoin/std"]
+no-std = ["ddk-dlc/no-std"]
+parallel = ["rayon"]
+use-serde = ["serde", "ddk-dlc/use-serde"]
+
+[dependencies]
+bitcoin = { version = "0.32.2", default-features = false }
+ddk-dlc = {version = "0.7.0", default-features = false, path = "../ddk-dlc"}
+rayon = {version = "1.5", optional = true}
+secp256k1-zkp = {version = "0.11.0" }
+serde = {version = "1.0", optional = true, default-features = false, features = ["derive"]}

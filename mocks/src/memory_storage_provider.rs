@@ -1,15 +1,15 @@
 use bitcoin::{Address, OutPoint, Txid};
-use dlc_manager::chain_monitor::ChainMonitor;
-use dlc_manager::channel::{
+use ddk_manager::chain_monitor::ChainMonitor;
+use ddk_manager::channel::{
     offered_channel::OfferedChannel,
     signed_channel::{SignedChannel, SignedChannelStateType},
     Channel,
 };
-use dlc_manager::contract::{
+use ddk_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
-use dlc_manager::Storage;
-use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
+use ddk_manager::Storage;
+use ddk_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
 use secp256k1_zkp::SecretKey;
 use simple_wallet::WalletStorage;
 use std::collections::HashMap;
