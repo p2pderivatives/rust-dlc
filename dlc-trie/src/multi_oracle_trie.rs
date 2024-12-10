@@ -259,7 +259,7 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
         Ok(trie_infos)
     }
 
-    fn iter(&'a self) -> MultiOracleTrieIter {
+    fn iter(&'a self) -> MultiOracleTrieIter<'a> {
         let digit_trie_iterator = DigitTrieIter::new(&self.digit_trie);
         let extra_cover_trie_iterator = self.extra_cover_trie.as_ref().map(MultiTrieIterator::new);
         MultiOracleTrieIter {
@@ -286,7 +286,7 @@ pub struct MultiOracleTrieIter<'a> {
     oracle_numeric_infos: OracleNumericInfo,
 }
 
-impl<'a> Iterator for MultiOracleTrieIter<'a> {
+impl Iterator for MultiOracleTrieIter<'_> {
     type Item = TrieIterInfo;
 
     fn next(&mut self) -> Option<Self::Item> {
