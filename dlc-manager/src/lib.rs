@@ -37,7 +37,7 @@ pub mod payout_curve;
 mod utils;
 
 use bitcoin::psbt::Psbt;
-use bitcoin::{Address, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
+use bitcoin::{Address, Amount, Block, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use chain_monitor::ChainMonitor;
 use channel::offered_channel::OfferedChannel;
 use channel::signed_channel::{SignedChannel, SignedChannelStateType};
@@ -155,7 +155,7 @@ pub trait Wallet {
     /// Get a set of UTXOs to fund the given amount.
     fn get_utxos_for_amount(
         &self,
-        amount: u64,
+        amount: Amount,
         fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, Error>;

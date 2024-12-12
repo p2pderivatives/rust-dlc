@@ -9,6 +9,7 @@ use super::contract_info::ContractInfo;
 use super::contract_input::ContractInput;
 use super::ContractDescriptor;
 use crate::{ContractId, KeysId};
+use bitcoin::Amount;
 use dlc::PartyParams;
 use dlc_messages::oracle_msgs::OracleAnnouncement;
 use dlc_messages::{FundingInput, OfferDlc};
@@ -34,7 +35,7 @@ pub struct OfferedContract {
     /// The parameters of the offering party.
     pub offer_params: PartyParams,
     /// The sum of both parties collateral.
-    pub total_collateral: u64,
+    pub total_collateral: Amount,
     /// Information about the offering party's funding inputs.
     pub funding_inputs: Vec<FundingInput>,
     /// The serial id of the fund output used for output ordering.

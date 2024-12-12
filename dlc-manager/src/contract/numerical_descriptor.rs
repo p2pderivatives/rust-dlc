@@ -3,7 +3,7 @@
 use super::AdaptorInfo;
 use crate::error::Error;
 use crate::payout_curve::{PayoutFunction, RoundingIntervals};
-use bitcoin::{Script, Transaction};
+use bitcoin::{Amount, Script, Transaction};
 use dlc::{Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
@@ -55,7 +55,7 @@ pub struct NumericalDescriptor {
 impl NumericalDescriptor {
     /// Returns the set of RangePayout for the descriptor generated from the
     /// payout function.
-    pub fn get_range_payouts(&self, total_collateral: u64) -> Result<Vec<RangePayout>, Error> {
+    pub fn get_range_payouts(&self, total_collateral: Amount) -> Result<Vec<RangePayout>, Error> {
         self.payout_function
             .to_range_payouts(total_collateral, &self.rounding_intervals)
     }
@@ -69,7 +69,7 @@ impl NumericalDescriptor {
 
     /// Returns the set of payouts for the descriptor generated from the payout
     /// function.
-    pub fn get_payouts(&self, total_collateral: u64) -> Result<Vec<Payout>, Error> {
+    pub fn get_payouts(&self, total_collateral: Amount) -> Result<Vec<Payout>, Error> {
         Ok(self
             .get_range_payouts(total_collateral)?
             .iter()

@@ -3,6 +3,7 @@
 use crate::error::Error;
 
 use super::ContractDescriptor;
+use bitcoin::Amount;
 use secp256k1_zkp::XOnlyPublicKey;
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
@@ -73,9 +74,9 @@ pub struct ContractInputInfo {
 /// Contains all the information necessary for the initialization of a DLC.
 pub struct ContractInput {
     /// The collateral for the offering party.
-    pub offer_collateral: u64,
+    pub offer_collateral: Amount,
     /// The collateral for the accepting party.
-    pub accept_collateral: u64,
+    pub accept_collateral: Amount,
     /// The fee rate used to construct the transactions.
     pub fee_rate: u64,
     /// The set of contract that make up the DLC (a single DLC can be based

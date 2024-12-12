@@ -3,6 +3,7 @@
 use std::ops::Deref;
 
 use crate::error::Error;
+use bitcoin::Amount;
 use dlc::{Payout, RangePayout};
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
@@ -98,7 +99,7 @@ impl PayoutFunction {
     /// Generate the range payouts from the function.
     pub fn to_range_payouts(
         &self,
-        total_collateral: u64,
+        total_collateral: Amount,
         rounding_intervals: &RoundingIntervals,
     ) -> Result<Vec<RangePayout>, Error> {
         let mut range_payouts = Vec::new();
@@ -127,7 +128,7 @@ impl PayoutFunctionPiece {
     /// Generate the range payouts for the function piece.
     pub fn to_range_payouts(
         &self,
-        total_collateral: u64,
+        total_collateral: Amount,
         rounding_intervals: &RoundingIntervals,
         range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
@@ -163,7 +164,7 @@ trait Evaluable {
         &self,
         outcome: u64,
         rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
+        total_collateral: Amount,
     ) -> Result<u64, Error> {
         let payout_double = self.evaluate(outcome);
         if payout_double.is_sign_negative() || (payout_double != 0.0 && !payout_double.is_normal())
@@ -174,7 +175,7 @@ trait Evaluable {
             )));
         }
 
-        if payout_double.round() > total_collateral as f64 {
+        if payout_double.round() > total_collateral.to_sat() as f64 {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral".to_string(),
             ));
@@ -183,7 +184,7 @@ trait Evaluable {
         // Ensure that we never round over the total collateral.
         Ok(u64::min(
             rounding_intervals.round(outcome, payout_double),
-            total_collateral,
+            total_collateral.to_sat(),
         ))
     }
 
@@ -352,7 +353,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
     fn to_range_payouts(
         &self,
         rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
+        total_collateral: Amount,
         range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
         if self.payout_points.len() == 2
