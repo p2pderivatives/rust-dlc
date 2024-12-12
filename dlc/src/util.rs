@@ -22,12 +22,12 @@ pub(crate) fn get_sig_hash_msg(
     tx: &Transaction,
     input_index: usize,
     script_pubkey: &Script,
-    value: u64,
+    value: Amount,
 ) -> Result<Message, Error> {
     let sig_hash = SighashCache::new(tx).p2wsh_signature_hash(
         input_index,
         script_pubkey,
-        Amount::from_sat(value),
+        value,
         EcdsaSighashType::All,
     )?;
 
@@ -50,7 +50,7 @@ pub fn get_raw_sig_for_tx_input<C: Signing>(
     tx: &Transaction,
     input_index: usize,
     script_pubkey: &Script,
-    value: u64,
+    value: Amount,
     sk: &SecretKey,
 ) -> Result<Signature, Error> {
     let sig_hash_msg = get_sig_hash_msg(tx, input_index, script_pubkey, value)?;
@@ -64,7 +64,7 @@ pub fn get_sig_for_tx_input<C: Signing>(
     tx: &Transaction,
     input_index: usize,
     script_pubkey: &Script,
-    value: u64,
+    value: Amount,
     sig_hash_type: EcdsaSighashType,
     sk: &SecretKey,
 ) -> Result<Vec<u8>, Error> {
@@ -78,7 +78,7 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
     sk: &SecretKey,
     tx: &Transaction,
     input_index: usize,
-    value: u64,
+    value: Amount,
     sig_hash_type: EcdsaSighashType,
 ) -> Result<Vec<u8>, Error> {
     let script_pubkey = get_pkh_script_pubkey_from_sk(secp, sk);
@@ -94,14 +94,15 @@ pub fn get_sig_for_p2wpkh_input<C: Signing>(
 }
 
 /// Returns the fee for the given weight at given fee rate.
-pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<u64, Error> {
-    (f64::ceil((weight as f64) / 4.0) as u64)
+pub fn weight_to_fee(weight: usize, fee_rate: u64) -> Result<Amount, Error> {
+    let amount = (f64::ceil((weight as f64) / 4.0) as u64)
         .checked_mul(fee_rate)
-        .ok_or(Error::InvalidArgument)
+        .ok_or(Error::InvalidArgument)?;
+    Ok(Amount::from_sat(amount))
 }
 
 /// Return the common base fee for a DLC for the given fee rate.
-pub fn get_common_fee(fee_rate: u64) -> Result<u64, Error> {
+pub fn get_common_fee(fee_rate: u64) -> Result<Amount, Error> {
     let base_weight = crate::FUND_TX_BASE_WEIGHT + crate::CET_BASE_WEIGHT;
     weight_to_fee(base_weight, fee_rate)
 }
@@ -129,7 +130,7 @@ pub fn sign_p2wpkh_input<C: Signing>(
     tx: &mut Transaction,
     input_index: usize,
     sig_hash_type: EcdsaSighashType,
-    value: u64,
+    value: Amount,
 ) -> Result<(), Error> {
     tx.input[input_index].witness =
         get_witness_for_p2wpkh_input(secp, sk, tx, input_index, sig_hash_type, value)?;
@@ -143,7 +144,7 @@ pub fn get_witness_for_p2wpkh_input<C: Signing>(
     tx: &Transaction,
     input_index: usize,
     sig_hash_type: EcdsaSighashType,
-    value: u64,
+    value: Amount,
 ) -> Result<Witness, Error> {
     let full_sig = get_sig_for_p2wpkh_input(secp, sk, tx, input_index, value, sig_hash_type)?;
     Ok(Witness::from_slice(&[
@@ -163,7 +164,7 @@ pub fn sign_multi_sig_input<C: Signing>(
     other_pk: &PublicKey,
     sk: &SecretKey,
     script_pubkey: &Script,
-    input_value: u64,
+    input_value: Amount,
     input_index: usize,
 ) -> Result<(), Error> {
     let own_sig = get_sig_for_tx_input(
@@ -231,10 +232,8 @@ pub fn get_output_for_script_pubkey<'a>(
 }
 
 /// Filters the outputs that have a value lower than the given `dust_limit`.
-pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: u64) -> Vec<TxOut> {
-    txs.into_iter()
-        .filter(|x| x.value.to_sat() >= dust_limit)
-        .collect()
+pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: Amount) -> Vec<TxOut> {
+    txs.into_iter().filter(|x| x.value >= dust_limit).collect()
 }
 
 pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
