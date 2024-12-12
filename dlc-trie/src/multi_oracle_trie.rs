@@ -358,6 +358,7 @@ impl Iterator for MultiOracleTrieIter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use dlc::{Payout, RangePayout};
 
     use crate::{test_utils::get_variable_oracle_numeric_infos, DlcTrie};
@@ -369,8 +370,8 @@ mod tests {
             start: 0,
             count: 1023,
             payout: Payout {
-                offer: 200000000,
-                accept: 0,
+                offer: Amount::from_sat(200000000),
+                accept: Amount::ZERO,
             },
         }];
         let oracle_numeric_infos = get_variable_oracle_numeric_infos(&[10, 15, 15, 15, 12], 2);
@@ -390,8 +391,8 @@ mod tests {
             start: 0,
             count: 1023,
             payout: Payout {
-                offer: 200000000,
-                accept: 0,
+                offer: Amount::from_sat(200000000),
+                accept: Amount::ZERO,
             },
         }];
         let oracle_numeric_infos = get_variable_oracle_numeric_infos(&[10, 15, 15, 15, 12], 2);
