@@ -2226,7 +2226,6 @@ where
 }
 
 /// Sign the settlement transaction and update the state of the channel.
-
 pub(crate) fn close_settled_channel<S: Deref>(
     secp: &Secp256k1<All>,
     signed_channel: &SignedChannel,

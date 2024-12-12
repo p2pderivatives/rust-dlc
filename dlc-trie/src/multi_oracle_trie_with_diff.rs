@@ -141,7 +141,7 @@ pub struct MultiOracleTrieWithDiffIter<'a> {
     multi_trie_iterator: MultiTrieIterator<'a, RangeInfo>,
 }
 
-impl<'a> Iterator for MultiOracleTrieWithDiffIter<'a> {
+impl Iterator for MultiOracleTrieWithDiffIter<'_> {
     type Item = TrieIterInfo;
 
     fn next(&mut self) -> Option<Self::Item> {

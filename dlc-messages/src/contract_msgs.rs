@@ -72,7 +72,6 @@ impl ContractInfo {
     serde(rename_all = "camelCase")
 )]
 /// Information for a contract based on a single event.
-
 pub struct SingleContractInfo {
     /// The total collateral locked in the contract.
     pub total_collateral: u64,
