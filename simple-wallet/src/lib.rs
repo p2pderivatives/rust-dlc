@@ -96,12 +96,12 @@ where
     }
 
     /// Returns the sum of all UTXOs value.
-    pub fn get_balance(&self) -> u64 {
+    pub fn get_balance(&self) -> Amount {
         self.storage
             .get_utxos()
             .unwrap()
             .iter()
-            .map(|x| x.tx_out.value.to_sat())
+            .map(|x| x.tx_out.value)
             .sum()
     }
 
@@ -237,7 +237,7 @@ where
 
     fn get_utxos_for_amount(
         &self,
-        amount: u64,
+        amount: Amount,
         fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>> {
@@ -270,7 +270,7 @@ where
                 Vec::new(),
                 utxos,
                 fee_rate,
-                amount,
+                amount.to_sat(),
                 &dummy_drain,
                 &mut bitcoin::key::rand::thread_rng(),
             )
@@ -347,7 +347,7 @@ where
             &mut tx,
             input_index,
             bitcoin::sighash::EcdsaSighashType::All,
-            tx_out.value.to_sat(),
+            tx_out.value,
         )?;
 
         let tx_input = tx.input[input_index].clone();

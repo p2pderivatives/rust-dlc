@@ -11,6 +11,7 @@ use bitcoin::hashes::serde;
 use bitcoin::psbt::Psbt;
 use bitcoin::secp256k1::rand::thread_rng;
 use bitcoin::secp256k1::SecretKey;
+use bitcoin::Amount;
 use bitcoin::{consensus::Decodable, Network, PrivateKey, Transaction, Txid};
 use bitcoin::{secp256k1::PublicKey, Address, OutPoint, ScriptBuf, TxOut};
 use bitcoincore_rpc::jsonrpc::serde_json;
@@ -276,7 +277,7 @@ impl Wallet for BitcoinCoreProvider {
 
     fn get_utxos_for_amount(
         &self,
-        amount: u64,
+        amount: Amount,
         _fee_rate: u64,
         lock_utxos: bool,
     ) -> Result<Vec<Utxo>, ManagerError> {
@@ -312,7 +313,8 @@ impl Wallet for BitcoinCoreProvider {
             })
             .collect::<Result<Vec<UtxoWrap>, Error>>()?;
         // TODO(tibo): properly compute the cost of change
-        let selection = select_coins(amount, 20, &mut utxo_pool).ok_or(Error::NotEnoughCoins)?;
+        let selection =
+            select_coins(amount.to_sat(), 20, &mut utxo_pool).ok_or(Error::NotEnoughCoins)?;
 
         if lock_utxos {
             let outputs: Vec<_> = selection.iter().map(|x| x.0.outpoint).collect();

@@ -685,7 +685,7 @@ where
 
     let total_collateral = channel.counter_params.collateral + channel.own_params.collateral;
     //Todo(tibo): compute fee for settle transaction.
-    let fee_remainder = 0 as u64; //channel.fund_tx.output[channel.fund_output_index].value - total_collateral;
+    let fee_remainder = 0_u64; //channel.fund_tx.output[channel.fund_output_index].value - total_collateral;
     let final_offer_payout = total_collateral - own_payout + Amount::from_sat(fee_remainder / 2);
     let final_accept_payout = own_payout + Amount::from_sat(fee_remainder / 2);
 
@@ -776,7 +776,7 @@ where
 
     let total_collateral = channel.counter_params.collateral + channel.own_params.collateral;
     //Todo(tibo): compute fee for settle transaction.
-    let fee_remainder = 0 as u64; //channel.fund_tx.output[channel.fund_output_index].value - total_collateral;
+    let fee_remainder = 0_u64; //channel.fund_tx.output[channel.fund_output_index].value - total_collateral;
     let final_offer_payout =
         total_collateral - counter_payout + Amount::from_sat(fee_remainder / 2);
     let final_accept_payout = counter_payout + Amount::from_sat(fee_remainder / 2);
