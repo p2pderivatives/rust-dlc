@@ -2,6 +2,7 @@
 
 use bitcoin::Address;
 use bitcoin::Network;
+use bitcoin::SignedAmount;
 use dlc::{EnumerationPayout, PartyParams, Payout, TxInputInfo};
 use lightning::io::Read;
 use lightning::ln::msgs::DecodeError;
@@ -577,12 +578,13 @@ pub fn write_i64<W: Writer>(i: &i64, writer: &mut W) -> Result<(), ::lightning::
 }
 
 /// Reads an `i64` value from the given reader.
-pub fn read_i64<R: ::lightning::io::Read>(reader: &mut R) -> Result<i64, DecodeError> {
+pub fn read_i64<R: ::lightning::io::Read>(reader: &mut R) -> Result<SignedAmount, DecodeError> {
     let mut v = [0u8; 8];
     for x in &mut v {
         *x = Readable::read(reader)?;
     }
-    Ok(i64::from_be_bytes(v))
+    let signed_amount = i64::from_be_bytes(v);
+    Ok(SignedAmount::from_sat(signed_amount))
 }
 
 /// Writes a [`lightning::util::ser::Writeable`] value to the given writer as a TLV.

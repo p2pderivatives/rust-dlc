@@ -1,5 +1,6 @@
 //! Structure containing information about contract details.
 
+use bitcoin::Amount;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use oracle_msgs::OracleInfo;
@@ -16,7 +17,7 @@ pub struct ContractOutcome {
     /// The outcome represented as a string.
     pub outcome: String,
     /// The payout of the offer party for the outcome.
-    pub offer_payout: u64,
+    pub offer_payout: Amount,
 }
 
 impl_dlc_writeable!(ContractOutcome, {(outcome, string), (offer_payout, writeable)});
@@ -41,7 +42,7 @@ impl_dlc_writeable_enum!(ContractInfo,
 
 impl ContractInfo {
     /// Returns the total collateral locked inside the contract.
-    pub fn get_total_collateral(&self) -> u64 {
+    pub fn get_total_collateral(&self) -> Amount {
         match self {
             ContractInfo::SingleContractInfo(v0) => v0.total_collateral,
             ContractInfo::DisjointContractInfo(v1) => v1.total_collateral,
@@ -74,7 +75,7 @@ impl ContractInfo {
 /// Information for a contract based on a single event.
 pub struct SingleContractInfo {
     /// The total collateral locked in the contract.
-    pub total_collateral: u64,
+    pub total_collateral: Amount,
     /// Information about the contract outcomes, payout and oracles.
     pub contract_info: ContractInfoInner,
 }
@@ -90,7 +91,7 @@ impl_dlc_writeable!(SingleContractInfo, { (total_collateral, writeable), (contra
 /// Information for a contract based on a multiple events.
 pub struct DisjointContractInfo {
     /// The total collateral locked in the contract.
-    pub total_collateral: u64,
+    pub total_collateral: Amount,
     /// Information about the contract outcomes, payout and oracles.
     pub contract_infos: Vec<ContractInfoInner>,
 }
@@ -241,7 +242,7 @@ pub struct PayoutPoint {
     /// The event outcome for this point (X coordinate).
     pub event_outcome: u64,
     /// The payout for this point (Y coordinate).
-    pub outcome_payout: u64,
+    pub outcome_payout: Amount,
     /// Extra precision to be applied when computing the payout.
     pub extra_precision: u16,
 }
