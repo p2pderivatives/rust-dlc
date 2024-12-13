@@ -373,8 +373,8 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
 
     generate_blocks(6);
 
-    refresh_wallet(&alice_wallet, 200000000);
-    refresh_wallet(&bob_wallet, 200000000);
+    refresh_wallet(&alice_wallet, Amount::from_sat(200000000));
+    refresh_wallet(&bob_wallet, Amount::from_sat(200000000));
 
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
@@ -1196,7 +1196,7 @@ fn collaborative_close<F: Fn(u64)>(
     let close_offer = first
         .lock()
         .unwrap()
-        .offer_collaborative_close(&channel_id, 100000000)
+        .offer_collaborative_close(&channel_id, Amount::from_sat(100000000))
         .expect("to be able to propose a collaborative close");
     first_send
         .send(Some(Message::CollaborativeCloseOffer(close_offer)))

@@ -646,8 +646,8 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
     generate_blocks(6);
 
-    refresh_wallet(&alice_wallet, 200000000);
-    refresh_wallet(&bob_wallet, 200000000);
+    refresh_wallet(&alice_wallet, Amount::from_sat(200000000));
+    refresh_wallet(&bob_wallet, Amount::from_sat(200000000));
 
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(

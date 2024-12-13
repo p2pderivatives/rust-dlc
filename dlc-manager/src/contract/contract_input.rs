@@ -113,8 +113,8 @@ mod tests {
 
     fn get_base_input() -> ContractInput {
         ContractInput {
-            offer_collateral: 1000000,
-            accept_collateral: 2000000,
+            offer_collateral: Amount::from_sat(1000000),
+            accept_collateral: Amount::from_sat(2000000),
             fee_rate: 1234,
             contract_infos: vec![ContractInputInfo {
                 contract_descriptor: ContractDescriptor::Enum(EnumDescriptor {
@@ -122,15 +122,15 @@ mod tests {
                         EnumerationPayout {
                             outcome: "A".to_string(),
                             payout: Payout {
-                                offer: 3000000,
-                                accept: 0,
+                                offer: Amount::from_sat(3000000),
+                                accept: Amount::ZERO,
                             },
                         },
                         EnumerationPayout {
                             outcome: "B".to_string(),
                             payout: Payout {
-                                offer: 0,
-                                accept: 3000000,
+                                offer: Amount::ZERO,
+                                accept: Amount::from_sat(3000000),
                             },
                         },
                     ],

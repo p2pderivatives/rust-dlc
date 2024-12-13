@@ -3,6 +3,7 @@
 use std::ops::Deref;
 
 use bitcoin::psbt::Psbt;
+use bitcoin::Amount;
 use bitcoin::{consensus::Decodable, Script, Transaction, Witness};
 use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::FundingInput;
@@ -120,7 +121,7 @@ where
         &accept_params,
         &funding_inputs,
         &signer.get_secret_key()?,
-        fund_output_value.to_sat(),
+        fund_output_value,
         None,
         &dlc_transactions,
     )?;
@@ -136,7 +137,7 @@ pub(crate) fn accept_contract_internal(
     accept_params: &PartyParams,
     funding_inputs: &[FundingInput],
     adaptor_secret_key: &SecretKey,
-    input_value: u64,
+    input_value: Amount,
     input_script_pubkey: Option<&Script>,
     dlc_transactions: &DlcTransactions,
 ) -> Result<(AcceptedContract, Vec<EcdsaAdaptorSignature>), crate::Error> {
@@ -282,7 +283,7 @@ where
         &accept_msg.funding_inputs,
         &accept_msg.refund_signature,
         &cet_adaptor_signatures,
-        fund_output_value.to_sat(),
+        fund_output_value,
         wallet,
         &signer,
         None,
@@ -323,7 +324,7 @@ pub(crate) fn verify_accepted_and_sign_contract_internal<W: Deref, X: ContractSi
     funding_inputs_info: &[FundingInput],
     refund_signature: &Signature,
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
-    input_value: u64,
+    input_value: Amount,
     wallet: &W,
     signer: &X,
     input_script_pubkey: Option<&Script>,
@@ -533,11 +534,7 @@ where
         &sign_msg.refund_signature,
         &cet_adaptor_signatures,
         &sign_msg.funding_signatures,
-        accepted_contract
-            .dlc_transactions
-            .get_fund_output()
-            .value
-            .to_sat(),
+        accepted_contract.dlc_transactions.get_fund_output().value,
         None,
         None,
         wallet,
@@ -551,7 +548,7 @@ pub(crate) fn verify_signed_contract_internal<W: Deref>(
     refund_signature: &Signature,
     cet_adaptor_signatures: &[EcdsaAdaptorSignature],
     funding_signatures: &FundingSignatures,
-    input_value: u64,
+    input_value: Amount,
     input_script_pubkey: Option<&Script>,
     counter_adaptor_pk: Option<PublicKey>,
     wallet: &W,
@@ -711,8 +708,7 @@ where
             .accepted_contract
             .dlc_transactions
             .get_fund_output()
-            .value
-            .to_sat(),
+            .value,
     )?;
 
     Ok(cet)
@@ -752,7 +748,7 @@ where
         other_fund_pubkey,
         &fund_priv_key,
         funding_script_pubkey,
-        fund_output_value.to_sat(),
+        fund_output_value,
         0,
     )?;
     Ok(refund)
@@ -762,6 +758,7 @@ where
 mod tests {
     use std::rc::Rc;
 
+    use bitcoin::Amount;
     use mocks::dlc_manager::contract::offered_contract::OfferedContract;
     use secp256k1_zkp::PublicKey;
 
@@ -777,12 +774,12 @@ mod tests {
             OfferedContract::try_from_offer_dlc(&offer_dlc, dummy_pubkey, [0; 32]).unwrap();
         let blockchain = Rc::new(mocks::mock_blockchain::MockBlockchain::new());
         let fee_rate: u64 = offered_contract.fee_rate_per_vb;
-        let utxo_value: u64 = offered_contract.total_collateral
+        let utxo_value = offered_contract.total_collateral
             - offered_contract.offer_params.collateral
             + crate::utils::get_half_common_fee(fee_rate).unwrap();
         let wallet = Rc::new(mocks::mock_wallet::MockWallet::new(
             &blockchain,
-            &[utxo_value, 10000],
+            &[utxo_value, Amount::from_sat(10000)],
         ));
 
         mocks::dlc_manager::contract_updater::accept_contract(

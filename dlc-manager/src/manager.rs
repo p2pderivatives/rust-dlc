@@ -22,7 +22,7 @@ use crate::{ChannelId, ContractId, ContractSignerProvider};
 use bitcoin::absolute::Height;
 use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::consensus::Decodable;
-use bitcoin::Address;
+use bitcoin::{Address, Amount, SignedAmount};
 use bitcoin::{OutPoint, Transaction};
 use dlc_messages::channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
@@ -1039,7 +1039,7 @@ where
     pub fn settle_offer(
         &self,
         channel_id: &ChannelId,
-        counter_payout: u64,
+        counter_payout: Amount,
     ) -> Result<(SettleOffer, PublicKey), Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1095,7 +1095,7 @@ where
     pub fn renew_offer(
         &self,
         channel_id: &ChannelId,
-        counter_payout: u64,
+        counter_payout: Amount,
         contract_input: &ContractInput,
     ) -> Result<(RenewOffer, PublicKey), Error> {
         let mut signed_channel =
@@ -1228,7 +1228,7 @@ where
     pub fn offer_collaborative_close(
         &self,
         channel_id: &ChannelId,
-        counter_payout: u64,
+        counter_payout: Amount,
     ) -> Result<CollaborativeCloseOffer, Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -2562,7 +2562,7 @@ where
     fn get_collaboratively_closed_contract(
         &self,
         contract_id: &ContractId,
-        payout: u64,
+        payout: Amount,
         is_own_payout: bool,
     ) -> Result<ClosedContract, Error> {
         let contract = get_contract_in_state!(self, contract_id, Confirmed, None::<PublicKey>)?;
@@ -2580,7 +2580,8 @@ where
         } else {
             contract.accepted_contract.offered_contract.total_collateral - payout
         };
-        let pnl = own_payout as i64 - own_collateral as i64;
+        let pnl =
+            SignedAmount::from_sat(own_payout.to_sat() as i64 - own_collateral.to_sat() as i64);
         Ok(ClosedContract {
             attestations: None,
             signed_cet: None,
@@ -2594,6 +2595,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use bitcoin::Amount;
     use dlc_messages::Message;
     use mocks::{
         dlc_manager::{manager::Manager, CachedContractSignerProvider, Oracle, SimpleSigner},
@@ -2622,7 +2624,9 @@ mod test {
         let store = Rc::new(MemoryStorage::new());
         let wallet = Rc::new(MockWallet::new(
             &blockchain,
-            &(0..100).map(|x| x as u64 * 1000000).collect::<Vec<_>>(),
+            &(0..100)
+                .map(|x| Amount::from_sat(x as u64 * 1000000))
+                .collect::<Vec<_>>(),
         ));
 
         let oracle_list = (0..5).map(|_| MockOracle::new()).collect::<Vec<_>>();
