@@ -27,6 +27,8 @@ pub enum Error {
     DlcError(dlc::Error),
     /// An error occurred in the Secp library.
     SecpError(secp256k1_zkp::Error),
+    /// A computation was out of range.
+    OutOfRange,
 }
 
 impl fmt::Display for Error {
@@ -43,6 +45,7 @@ impl fmt::Display for Error {
             Error::DlcError(ref e) => write!(f, "Dlc error {}", e),
             Error::OracleError(ref s) => write!(f, "Oracle error {}", s),
             Error::SecpError(_) => write!(f, "Secp error"),
+            Error::OutOfRange => write!(f, "Out of range error"),
         }
     }
 }
@@ -98,6 +101,7 @@ impl std::error::Error for Error {
             Error::OracleError(_) => None,
             Error::DlcError(e) => Some(e),
             Error::SecpError(e) => Some(e),
+            Error::OutOfRange => None,
         }
     }
 }

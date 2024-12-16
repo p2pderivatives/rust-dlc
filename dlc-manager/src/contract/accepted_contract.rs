@@ -1,4 +1,5 @@
 //! # AcceptedContract
+use crate::Error;
 
 use super::offered_contract::OfferedContract;
 use super::AdaptorInfo;
@@ -75,7 +76,7 @@ impl AcceptedContract {
     }
 
     /// Compute the profit and loss for this contract and an assciated cet index
-    pub fn compute_pnl(&self, cet: &Transaction) -> SignedAmount {
+    pub fn compute_pnl(&self, cet: &Transaction) -> Result<SignedAmount, Error> {
         let offer = &self.offered_contract;
         let party_params = if offer.is_offer_party {
             &offer.offer_params
@@ -95,7 +96,8 @@ impl AcceptedContract {
                 }
             })
             .unwrap_or(Amount::ZERO);
-        SignedAmount::from_sat(final_payout.to_sat() as i64 - collateral.to_sat() as i64)
+        Ok(final_payout.to_signed().map_err(|_| Error::OutOfRange)?
+            - collateral.to_signed().map_err(|_| Error::OutOfRange)?)
     }
 }
 
@@ -113,11 +115,13 @@ mod tests {
         let accepted_contract: AcceptedContract = Readable::read(&mut Cursor::new(&buf)).unwrap();
         let cets = &accepted_contract.dlc_transactions.cets;
         assert_eq!(
-            accepted_contract.compute_pnl(&cets[0]),
+            accepted_contract.compute_pnl(&cets[0]).unwrap(),
             SignedAmount::from_sat(90000000)
         );
         assert_eq!(
-            accepted_contract.compute_pnl(&cets[cets.len() - 1]),
+            accepted_contract
+                .compute_pnl(&cets[cets.len() - 1])
+                .unwrap(),
             SignedAmount::from_sat(-11000000)
         );
     }

@@ -167,6 +167,7 @@ trait Evaluable {
         total_collateral: Amount,
     ) -> Result<Amount, Error> {
         let payout_double = self.evaluate(outcome);
+        let total_collateral_sats = total_collateral.to_sat();
         if payout_double.is_sign_negative() || (payout_double != 0.0 && !payout_double.is_normal())
         {
             return Err(Error::InvalidParameters(format!(
@@ -175,7 +176,7 @@ trait Evaluable {
             )));
         }
 
-        if payout_double.round() > total_collateral.to_sat() as f64 {
+        if payout_double.round() > total_collateral_sats as f64 {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral".to_string(),
             ));
@@ -184,7 +185,7 @@ trait Evaluable {
         // Ensure that we never round over the total collateral.
         Ok(Amount::from_sat(u64::min(
             rounding_intervals.round(outcome, payout_double),
-            total_collateral.to_sat(),
+            total_collateral_sats,
         )))
     }
 
@@ -309,14 +310,14 @@ impl Evaluable for PolynomialPayoutCurvePiece {
         // Optimizations for constant and linear cases.
         if nb_points == 2 {
             let (left_point, right_point) = (&self.payout_points[0], &self.payout_points[1]);
+            let right_point_payout_sats = right_point.outcome_payout.to_sat() as f64;
+            let left_point_payout_sats = left_point.outcome_payout.to_sat() as f64;
             return if left_point.outcome_payout == right_point.outcome_payout {
-                right_point.outcome_payout.to_sat() as f64
+                right_point_payout_sats
             } else {
-                let slope = (right_point.outcome_payout.to_sat() as f64
-                    - left_point.outcome_payout.to_sat() as f64)
+                let slope = (right_point_payout_sats - left_point_payout_sats)
                     / (right_point.event_outcome - left_point.event_outcome) as f64;
-                (outcome - left_point.event_outcome) as f64 * slope
-                    + left_point.outcome_payout.to_sat() as f64
+                (outcome - left_point.event_outcome) as f64 * slope + left_point_payout_sats
             };
         }
 

@@ -755,7 +755,7 @@ where
                 pnl: contract
                     .signed_contract
                     .accepted_contract
-                    .compute_pnl(&contract.signed_cet),
+                    .compute_pnl(&contract.signed_cet)?,
             };
             self.store
                 .update_contract(&Contract::Closed(closed_contract))?;
@@ -800,7 +800,7 @@ where
 
         let closed_contract = ClosedContract {
             attestations: Some(attestations.to_vec()),
-            pnl: contract.accepted_contract.compute_pnl(&signed_cet),
+            pnl: contract.accepted_contract.compute_pnl(&signed_cet)?,
             signed_cet: Some(signed_cet),
             contract_id: contract.accepted_contract.get_contract_id(),
             temporary_contract_id: contract.accepted_contract.offered_contract.id,
@@ -883,7 +883,7 @@ where
         } else {
             Contract::Closed(ClosedContract {
                 attestations: None, // todo in some cases we can get the attestations from the closing tx
-                pnl: contract.accepted_contract.compute_pnl(&closing_tx),
+                pnl: contract.accepted_contract.compute_pnl(&closing_tx)?,
                 signed_cet: Some(closing_tx),
                 contract_id: contract.accepted_contract.get_contract_id(),
                 temporary_contract_id: contract.accepted_contract.offered_contract.id,
