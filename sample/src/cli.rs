@@ -4,6 +4,7 @@ use crate::DlcManager;
 use crate::DlcMessageHandler;
 use crate::PeerManager;
 use bitcoin::secp256k1::PublicKey;
+use bitcoin::Amount;
 use dlc_manager::channel::signed_channel::SignedChannelState;
 use dlc_manager::channel::signed_channel::SignedChannelStateType;
 use dlc_manager::contract::contract_input::ContractInput;
@@ -313,7 +314,7 @@ pub(crate) async fn poll_for_user_input(
                 }
                 s @ "offersettlechannel" => {
                     let channel_id = read_id_or_continue!(words, s, "channel id");
-                    let counter_payout: u64 = match words.next().map(|w| w.parse().ok()) {
+                    let counter_payout: Amount = match words.next().map(|w| w.parse().ok()) {
                         Some(Some(p)) => p,
                         _ => {
                             println!("Missing or invalid counter payout parameter");

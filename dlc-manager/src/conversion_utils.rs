@@ -71,7 +71,7 @@ impl From<bitcoin::consensus::encode::Error> for Error {
 
 pub fn get_tx_input_infos(
     funding_inputs: &[FundingInput],
-) -> Result<(Vec<TxInputInfo>, u64), Error> {
+) -> Result<(Vec<TxInputInfo>, Amount), Error> {
     let mut input_amount = Amount::ZERO;
     let mut inputs = Vec::new();
 
@@ -94,7 +94,7 @@ pub fn get_tx_input_infos(
         });
     }
 
-    Ok((inputs, input_amount.to_sat()))
+    Ok((inputs, input_amount))
 }
 
 pub(crate) fn get_contract_info_and_announcements(
@@ -542,12 +542,12 @@ mod tests {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 0,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 9,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                     ],
@@ -556,12 +556,12 @@ mod tests {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 9,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 10,
-                            outcome_payout: 10,
+                            outcome_payout: Amount::from_sat(10),
                             extra_precision: 0,
                         },
                     ],
@@ -570,12 +570,12 @@ mod tests {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 10,
-                            outcome_payout: 10,
+                            outcome_payout: Amount::from_sat(10),
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 20,
-                            outcome_payout: 10,
+                            outcome_payout: Amount::from_sat(10),
                             extra_precision: 0,
                         },
                     ],

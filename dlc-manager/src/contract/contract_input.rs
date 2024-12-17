@@ -3,6 +3,7 @@
 use crate::error::Error;
 
 use super::ContractDescriptor;
+use bitcoin::Amount;
 use secp256k1_zkp::XOnlyPublicKey;
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
@@ -73,9 +74,9 @@ pub struct ContractInputInfo {
 /// Contains all the information necessary for the initialization of a DLC.
 pub struct ContractInput {
     /// The collateral for the offering party.
-    pub offer_collateral: u64,
+    pub offer_collateral: Amount,
     /// The collateral for the accepting party.
-    pub accept_collateral: u64,
+    pub accept_collateral: Amount,
     /// The fee rate used to construct the transactions.
     pub fee_rate: u64,
     /// The set of contract that make up the DLC (a single DLC can be based
@@ -112,8 +113,8 @@ mod tests {
 
     fn get_base_input() -> ContractInput {
         ContractInput {
-            offer_collateral: 1000000,
-            accept_collateral: 2000000,
+            offer_collateral: Amount::from_sat(1000000),
+            accept_collateral: Amount::from_sat(2000000),
             fee_rate: 1234,
             contract_infos: vec![ContractInputInfo {
                 contract_descriptor: ContractDescriptor::Enum(EnumDescriptor {
@@ -121,15 +122,15 @@ mod tests {
                         EnumerationPayout {
                             outcome: "A".to_string(),
                             payout: Payout {
-                                offer: 3000000,
-                                accept: 0,
+                                offer: Amount::from_sat(3000000),
+                                accept: Amount::ZERO,
                             },
                         },
                         EnumerationPayout {
                             outcome: "B".to_string(),
                             payout: Payout {
-                                offer: 0,
-                                accept: 3000000,
+                                offer: Amount::ZERO,
+                                accept: Amount::from_sat(3000000),
                             },
                         },
                     ],

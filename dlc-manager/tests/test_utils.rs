@@ -8,6 +8,7 @@ extern crate dlc_manager;
 
 use std::ops::Deref;
 
+use bitcoin::Amount;
 use dlc::{EnumerationPayout, Payout};
 use dlc_manager::payout_curve::{
     PayoutFunction, PayoutFunctionPiece, PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval,
@@ -37,9 +38,9 @@ pub const MAX_ERROR_EXP: usize = 2;
 pub const BASE: u32 = 2;
 pub const EVENT_MATURITY: u32 = 1623133104;
 pub const EVENT_ID: &str = "Test";
-pub const OFFER_COLLATERAL: u64 = 90000000;
-pub const ACCEPT_COLLATERAL: u64 = 11000000;
-pub const TOTAL_COLLATERAL: u64 = OFFER_COLLATERAL + ACCEPT_COLLATERAL;
+pub const OFFER_COLLATERAL: Amount = Amount::from_sat(90000000);
+pub const ACCEPT_COLLATERAL: Amount = Amount::from_sat(11000000);
+pub const TOTAL_COLLATERAL: Amount = Amount::from_sat(101000000);
 pub const MID_POINT: u64 = 5;
 pub const ROUNDING_MOD: u64 = 1;
 
@@ -226,11 +227,11 @@ pub fn get_enum_contract_descriptor() -> ContractDescriptor {
             let payout = if i % 2 == 0 {
                 Payout {
                     offer: TOTAL_COLLATERAL,
-                    accept: 0,
+                    accept: Amount::ZERO,
                 }
             } else {
                 Payout {
-                    offer: 0,
+                    offer: Amount::ZERO,
                     accept: TOTAL_COLLATERAL,
                 }
             };
@@ -305,7 +306,7 @@ pub fn get_polynomial_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFun
             PolynomialPayoutCurvePiece::new(vec![
                 PayoutPoint {
                     event_outcome: 0,
-                    outcome_payout: 0,
+                    outcome_payout: Amount::ZERO,
                     extra_precision: 0,
                 },
                 PayoutPoint {
@@ -344,12 +345,12 @@ pub fn get_hyperbola_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFunc
         HyperbolaPayoutCurvePiece::new(
             PayoutPoint {
                 event_outcome: 0,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             PayoutPoint {
                 event_outcome: max_value_from_digits(min_nb_digits) as u64,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             true,
@@ -570,7 +571,7 @@ pub fn get_variable_oracle_numeric_infos(nb_digits: &[usize]) -> OracleNumericIn
 
 pub fn refresh_wallet<B: Deref, W: Deref>(
     wallet: &simple_wallet::SimpleWallet<B, W>,
-    expected_funds: u64,
+    expected_funds: Amount,
 ) where
     B::Target: Blockchain + WalletBlockchainProvider,
     W::Target: WalletStorage,

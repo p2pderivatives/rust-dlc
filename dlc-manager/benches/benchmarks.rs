@@ -1,4 +1,5 @@
 use bitcoin::hashes::Hash;
+use bitcoin::Amount;
 use bitcoin::OutPoint;
 use bitcoin::ScriptBuf;
 use bitcoin::WPubkeyHash;
@@ -49,7 +50,7 @@ const THRESHOLD: usize = 2;
 /// The ID of the event.
 const EVENT_ID: &str = "Test";
 /// The total collateral value locked in the contract.
-const TOTAL_COLLATERAL: u64 = 200000000;
+const TOTAL_COLLATERAL: Amount = Amount::from_sat(200000000);
 
 fn max_value() -> u32 {
     BASE.pow(NB_DIGITS as u32) - 1
@@ -71,12 +72,12 @@ fn create_contract_descriptor() -> ContractDescriptor {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: 0,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: FLOOR,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                 ])
@@ -86,7 +87,7 @@ fn create_contract_descriptor() -> ContractDescriptor {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: FLOOR,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                     PayoutPoint {
@@ -189,8 +190,8 @@ fn create_transactions(payouts: &[Payout]) -> DlcTransactions {
         payout_script_pubkey: get_p2wpkh_script_pubkey(),
         payout_serial_id: 1,
         inputs: create_txinputinfo_vec(),
-        input_amount: 300000000,
-        collateral: 100000000,
+        input_amount: Amount::from_sat(300000000),
+        collateral: Amount::from_sat(100000000),
     };
 
     let accept_params = PartyParams {
@@ -200,8 +201,8 @@ fn create_transactions(payouts: &[Payout]) -> DlcTransactions {
         payout_script_pubkey: get_p2wpkh_script_pubkey(),
         payout_serial_id: 1,
         inputs: create_txinputinfo_vec(),
-        input_amount: 300000000,
-        collateral: 100000000,
+        input_amount: Amount::from_sat(300000000),
+        collateral: Amount::from_sat(100000000),
     };
     create_dlc_transactions(&offer_params, &accept_params, payouts, 1000, 2, 0, 1000, 3).unwrap()
 }
@@ -221,7 +222,11 @@ fn offer_seckey() -> SecretKey {
 /// Benchmark to measure the adaptor signature creation time.
 pub fn sign_bench(c: &mut Criterion) {
     let contract_info = create_contract_info();
-    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000).unwrap());
+    let dlc_transactions = create_transactions(
+        &contract_info
+            .get_payouts(Amount::from_sat(200000000))
+            .unwrap(),
+    );
     let fund_output_value = dlc_transactions.get_fund_output().value;
 
     let seckey = accept_seckey();
@@ -234,7 +239,7 @@ pub fn sign_bench(c: &mut Criterion) {
                         TOTAL_COLLATERAL,
                         &seckey,
                         &dlc_transactions.funding_script_pubkey,
-                        fund_output_value.to_sat(),
+                        fund_output_value,
                         &dlc_transactions.cets,
                         0,
                     )
@@ -247,7 +252,11 @@ pub fn sign_bench(c: &mut Criterion) {
 /// Benchmark to measure the adaptor signature verification time.
 pub fn verify_bench(c: &mut Criterion) {
     let contract_info = create_contract_info();
-    let dlc_transactions = create_transactions(&contract_info.get_payouts(200000000).unwrap());
+    let dlc_transactions = create_transactions(
+        &contract_info
+            .get_payouts(Amount::from_sat(200000000))
+            .unwrap(),
+    );
     let fund_output_value = dlc_transactions.get_fund_output().value;
 
     let seckey = accept_seckey();
@@ -258,7 +267,7 @@ pub fn verify_bench(c: &mut Criterion) {
             TOTAL_COLLATERAL,
             &seckey,
             &dlc_transactions.funding_script_pubkey,
-            fund_output_value.to_sat(),
+            fund_output_value,
             &dlc_transactions.cets,
             0,
         )
@@ -272,7 +281,7 @@ pub fn verify_bench(c: &mut Criterion) {
                         SECP256K1,
                         &pubkey,
                         &dlc_transactions.funding_script_pubkey,
-                        fund_output_value.to_sat(),
+                        fund_output_value,
                         &dlc_transactions.cets,
                         adaptor_signatures,
                         0,

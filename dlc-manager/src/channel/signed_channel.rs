@@ -2,7 +2,7 @@
 //! transaction inputs. This module contains the model for a signed channel,
 //! the possible states in which it can be as well as methods to work with it.
 
-use bitcoin::{ScriptBuf, Transaction};
+use bitcoin::{Amount, ScriptBuf, Transaction};
 use dlc::PartyParams;
 use lightning::ln::chan_utils::CounterpartyCommitmentSecrets;
 use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey};
@@ -108,7 +108,7 @@ typed_enum!(
             /// state change.
             is_offer: bool,
             /// The total amount of collateral in the channel
-            total_collateral: u64,
+            total_collateral: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -116,7 +116,7 @@ typed_enum!(
         /// has sent a [`dlc_messages::channel::SettleOffer`] message.
         SettledOffered {
             /// The payout that was proposed to the counter party.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// The per update point that the local party would use for the next
             /// channel state.
             next_per_update_point: PublicKey,
@@ -130,9 +130,9 @@ typed_enum!(
         /// has received a [`dlc_messages::channel::SettleOffer`] message.
         SettledReceived {
             /// The payout that was proposed to the local party to settle the channel.
-            own_payout: u64,
+            own_payout: Amount,
             /// The payout that was proposed to the counter party.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// The per update point to be used by the counter party for the setup
             /// of the next channel state.
             counter_next_per_update_point: PublicKey,
@@ -157,9 +157,9 @@ typed_enum!(
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
             /// The payout to the local party after settling the channel.
-            own_payout: u64,
+            own_payout: Amount,
             /// The payout that was proposed to the counter party.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -184,9 +184,9 @@ typed_enum!(
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
             /// The payout to the local party after settling the channel.
-            own_payout: u64,
+            own_payout: Amount,
             /// The payout that was proposed to the counter party.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -203,9 +203,9 @@ typed_enum!(
             /// local party.
             own_settle_adaptor_signature: EcdsaAdaptorSignature,
             /// The amount the local party holds in the channel.
-            own_payout: u64,
+            own_payout: Amount,
             /// The amount the counter party holds in the channel.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -215,7 +215,7 @@ typed_enum!(
             /// The temporary [`crate::ContractId`] of the offered contract.
             offered_contract_id: ContractId,
             /// The payout offered to settle the previous channel state.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// The per update point to be used by the offer party for the setup
             /// of the next channel state.
             offer_next_per_update_point: PublicKey,
@@ -246,7 +246,7 @@ typed_enum!(
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
             /// The payout to the local party attributed for closing the previous state.
-            own_payout: u64,
+            own_payout: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -272,9 +272,9 @@ typed_enum!(
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
             /// The payout to the local party attributed for closing the previous state.
-            own_payout: u64,
+            own_payout: Amount,
             /// The total amount of collateral in the channel.
-            total_collateral: u64,
+            total_collateral: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -299,9 +299,9 @@ typed_enum!(
             /// unresponsive and the channel will be forced closed.
             timeout: u64,
             /// The payout to the local party attributed for closing the previous state.
-            own_payout: u64,
+            own_payout: Amount,
             /// The total amount of collateral in the channel.
-            total_collateral: u64,
+            total_collateral: Amount,
             /// Keys Id for generating the signers
             keys_id: KeysId,
         },
@@ -323,7 +323,7 @@ typed_enum!(
         /// has sent a [`dlc_messages::channel::CollaborativeCloseOffer`] message.
         CollaborativeCloseOffered {
             /// The payout offered to the counter party to close the channel.
-            counter_payout: u64,
+            counter_payout: Amount,
             /// The signature of the local party for the closing transaction.
             offer_signature: Signature,
             /// The closing transaction.

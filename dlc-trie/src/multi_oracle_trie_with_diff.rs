@@ -167,6 +167,7 @@ impl Iterator for MultiOracleTrieWithDiffIter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use dlc::{Payout, RangePayout};
 
     use crate::{test_utils::get_variable_oracle_numeric_infos, DlcTrie};
@@ -179,48 +180,48 @@ mod tests {
                 start: 0,
                 count: 1,
                 payout: Payout {
-                    offer: 0,
-                    accept: 200000000,
+                    offer: Amount::ZERO,
+                    accept: Amount::from_sat(200000000),
                 },
             },
             RangePayout {
                 start: 1,
                 count: 1,
                 payout: Payout {
-                    offer: 40000000,
-                    accept: 160000000,
+                    offer: Amount::from_sat(40000000),
+                    accept: Amount::from_sat(160000000),
                 },
             },
             RangePayout {
                 start: 2,
                 count: 1,
                 payout: Payout {
-                    offer: 80000000,
-                    accept: 120000000,
+                    offer: Amount::from_sat(80000000),
+                    accept: Amount::from_sat(120000000),
                 },
             },
             RangePayout {
                 start: 3,
                 count: 1,
                 payout: Payout {
-                    offer: 120000000,
-                    accept: 80000000,
+                    offer: Amount::from_sat(120000000),
+                    accept: Amount::from_sat(80000000),
                 },
             },
             RangePayout {
                 start: 4,
                 count: 1,
                 payout: Payout {
-                    offer: 160000000,
-                    accept: 40000000,
+                    offer: Amount::from_sat(160000000),
+                    accept: Amount::from_sat(40000000),
                 },
             },
             RangePayout {
                 start: 5,
                 count: 1019,
                 payout: Payout {
-                    offer: 200000000,
-                    accept: 0,
+                    offer: Amount::from_sat(200000000),
+                    accept: Amount::ZERO,
                 },
             },
         ];

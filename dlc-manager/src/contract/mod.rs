@@ -2,7 +2,7 @@
 
 use crate::error::Error;
 use crate::ContractId;
-use bitcoin::Transaction;
+use bitcoin::{SignedAmount, Transaction};
 use dlc_messages::{
     oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation},
     AcceptDlc, SignDlc,
@@ -169,7 +169,7 @@ pub struct ClosedContract {
     /// The public key of the counter-party's node.
     pub counter_party_id: PublicKey,
     /// The profit and loss for the given contract
-    pub pnl: i64,
+    pub pnl: SignedAmount,
 }
 
 /// Information about the adaptor signatures and the CET for which they are

@@ -5,7 +5,7 @@ use super::utils::{get_majority_combination, unordered_equal};
 use super::AdaptorInfo;
 use crate::error::Error;
 use bitcoin::hashes::Hash;
-use bitcoin::{Script, Transaction};
+use bitcoin::{Amount, Script, Transaction};
 use dlc::OracleInfo;
 use dlc::{EnumerationPayout, Payout};
 use dlc_messages::oracle_msgs::EnumEventDescriptor;
@@ -117,7 +117,7 @@ impl EnumDescriptor {
         threshold: usize,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
@@ -152,7 +152,7 @@ impl EnumDescriptor {
         threshold: usize,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
@@ -180,7 +180,7 @@ impl EnumDescriptor {
         threshold: usize,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
     ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
         let adaptor_sigs = self.get_adaptor_signatures(
@@ -205,7 +205,7 @@ impl EnumDescriptor {
         cets: &[Transaction],
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
         let mut adaptor_sigs = Vec::new();
         let mut callback =

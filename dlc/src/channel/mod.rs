@@ -114,7 +114,7 @@ pub struct DlcChannelTransactions {
 pub fn create_buffer_transaction(
     fund_tx_in: &TxIn,
     descriptor: &Descriptor<PublicKey>,
-    total_collateral: u64,
+    total_collateral: Amount,
     lock_time: u32,
 ) -> Transaction {
     Transaction {
@@ -122,7 +122,7 @@ pub fn create_buffer_transaction(
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![fund_tx_in.clone()],
         output: vec![TxOut {
-            value: Amount::from_sat(total_collateral),
+            value: total_collateral,
             script_pubkey: descriptor.script_pubkey(),
         }],
     }
@@ -133,7 +133,7 @@ pub fn create_buffer_transaction(
 pub fn get_tx_adaptor_signature<C: Signing>(
     secp: &Secp256k1<C>,
     tx: &Transaction,
-    input_value: u64,
+    input_value: Amount,
     script_pubkey: &Script,
     own_fund_sk: &SecretKey,
     other_publish_key: &SecpPublicKey,
@@ -155,7 +155,7 @@ pub fn get_tx_adaptor_signature<C: Signing>(
 pub fn verify_tx_adaptor_signature<C: Verification>(
     secp: &Secp256k1<C>,
     tx: &Transaction,
-    input_value: u64,
+    input_value: Amount,
     script_pubkey: &Script,
     other_fund_pk: &SecpPublicKey,
     own_publish_key: &SecpPublicKey,
@@ -173,11 +173,11 @@ pub fn create_settle_transaction(
     fund_tx_in: &TxIn,
     offer_revoke_params: &RevokeParams,
     accept_revoke_params: &RevokeParams,
-    offer_payout: u64,
-    accept_payout: u64,
+    offer_payout: Amount,
+    accept_payout: Amount,
     csv_timelock: u32,
     lock_time: u32,
-    fund_output_value: u64,
+    fund_output_value: Amount,
     fee_rate_per_vb: u64,
 ) -> Result<Transaction, Error> {
     let offer_descriptor = settle_descriptor(
@@ -194,11 +194,11 @@ pub fn create_settle_transaction(
     let mut output = crate::util::discard_dust(
         vec![
             TxOut {
-                value: Amount::from_sat(offer_payout),
+                value: offer_payout,
                 script_pubkey: offer_descriptor.script_pubkey(),
             },
             TxOut {
-                value: Amount::from_sat(accept_payout),
+                value: accept_payout,
                 script_pubkey: accept_descriptor.script_pubkey(),
             },
         ],
@@ -217,7 +217,7 @@ pub fn create_settle_transaction(
         / (output.len() as u64);
 
     for o in &mut output {
-        o.value += Amount::from_sat(remaining_fee);
+        o.value += remaining_fee;
     }
 
     Ok(Transaction {
@@ -307,7 +307,7 @@ pub fn create_renewal_channel_transactions(
     let buffer_transaction = create_buffer_transaction(
         &tx_in,
         &buffer_descriptor,
-        fund_output.value.to_sat() - extra_fee,
+        fund_output.value - extra_fee,
         cet_lock_time,
     );
 
@@ -342,7 +342,7 @@ pub fn create_renewal_channel_transactions(
 pub fn sign_cet<C: Signing>(
     secp: &Secp256k1<C>,
     cet: &mut Transaction,
-    input_amount: u64,
+    input_amount: Amount,
     offer_params: &RevokeParams,
     accept_params: &RevokeParams,
     own_sk: &SecretKey,
@@ -423,14 +423,14 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
     let tx_fee =
         crate::util::weight_to_fee(PUNISH_BUFFER_INPUT_WEIGHT + output_weight, fee_rate_per_vb)?;
 
-    let output_value = prev_tx.output[0].value.to_sat() - tx_fee;
+    let output_value = prev_tx.output[0].value - tx_fee;
 
     let mut tx = Transaction {
         version: super::TX_VERSION,
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
-            value: Amount::from_sat(output_value),
+            value: output_value,
             script_pubkey: dest_address.script_pubkey(),
         }],
     };
@@ -454,7 +454,7 @@ pub fn create_and_sign_punish_buffer_transaction<C: Signing>(
                         &tx,
                         0,
                         &descriptor.script_code()?,
-                        prev_tx.output[0].value.to_sat(),
+                        prev_tx.output[0].value,
                         sk,
                     )?,
                     sighash_type: EcdsaSighashType::All,
@@ -505,7 +505,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         witness: Witness::default(),
     };
 
-    let input_value = prev_tx.output[vout as usize].value.to_sat();
+    let input_value = prev_tx.output[vout as usize].value;
 
     let dest_script_pk_len = dest_address.script_pubkey().len();
     let var_int_prefix_len = crate::util::compute_var_int_prefix_size(dest_script_pk_len);
@@ -518,7 +518,7 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
         lock_time: LockTime::from_consensus(lock_time),
         input: vec![tx_in],
         output: vec![TxOut {
-            value: Amount::from_sat(input_value - tx_fee),
+            value: input_value - tx_fee,
             script_pubkey: dest_address.script_pubkey(),
         }],
     };
@@ -553,11 +553,11 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 /// Create a transaction for collaboratively closing a channel.
 pub fn create_collaborative_close_transaction(
     offer_params: &PartyParams,
-    offer_payout: u64,
+    offer_payout: Amount,
     accept_params: &PartyParams,
-    accept_payout: u64,
+    accept_payout: Amount,
     fund_outpoint: OutPoint,
-    _fund_output_amount: u64,
+    _fund_output_amount: Amount,
 ) -> Transaction {
     let input = TxIn {
         previous_output: fund_outpoint,
@@ -568,12 +568,12 @@ pub fn create_collaborative_close_transaction(
 
     //TODO(tibo): add fee re-payment
     let offer_output = TxOut {
-        value: Amount::from_sat(offer_payout),
+        value: offer_payout,
         script_pubkey: offer_params.payout_script_pubkey.clone(),
     };
 
     let accept_output = TxOut {
-        value: Amount::from_sat(accept_payout),
+        value: accept_payout,
         script_pubkey: accept_params.payout_script_pubkey.clone(),
     };
 
@@ -699,7 +699,7 @@ mod tests {
             ),
             Network::Regtest,
         );
-        let total_collateral = 100000000;
+        let total_collateral = Amount::ONE_BTC;
 
         let descriptor = buffer_descriptor(&offer_params, &accept_params);
 
@@ -812,7 +812,7 @@ mod tests {
             ),
             Network::Regtest,
         );
-        let payout = 100000000;
+        let payout = Amount::ONE_BTC;
         let csv_timelock = 100;
         let settle_tx = create_settle_transaction(
             &TxIn::default(),
@@ -822,7 +822,7 @@ mod tests {
             payout,
             csv_timelock,
             0,
-            200020000,
+            Amount::from_sat(200020000),
             FEE_RATE_PER_VB,
         )
         .unwrap();
@@ -938,14 +938,14 @@ mod tests {
         let accept_priv_params = RevokePrivateParams::new(Network::Regtest);
         let offer_params = offer_priv_params.public_params(SECP256K1);
         let accept_params = accept_priv_params.public_params(SECP256K1);
-        let total_collateral = 100000000;
+        let total_collateral = Amount::ONE_BTC;
 
         let descriptor = buffer_descriptor(&offer_params, &accept_params);
 
         let buffer_tx =
             create_buffer_transaction(&TxIn::default(), &descriptor, total_collateral, 0);
 
-        let input_value = total_collateral + 10000;
+        let input_value = total_collateral + Amount::from_sat(10000);
 
         let adaptor_sec_key = SecretKey::new(&mut thread_rng());
 

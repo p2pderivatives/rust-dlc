@@ -20,7 +20,7 @@ extern crate secp256k1_zkp;
 #[cfg(feature = "use-serde")]
 extern crate serde;
 
-use bitcoin::{Script, Transaction};
+use bitcoin::{Amount, Script, Transaction};
 use dlc::{Error, RangePayout};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -124,7 +124,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         secp: &Secp256k1<secp256k1_zkp::All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         outcomes: &[RangePayout],
         cets: &[Transaction],
         precomputed_points: &[Vec<Vec<PublicKey>>],
@@ -150,7 +150,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         secp: &Secp256k1<All>,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         outcomes: &[RangePayout],
         cets: &[Transaction],
         precomputed_points: &[Vec<Vec<PublicKey>>],
@@ -175,7 +175,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         secp: &Secp256k1<All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         adaptor_sigs: &[EcdsaAdaptorSignature],
         cets: &[Transaction],
         precomputed_points: &[Vec<Vec<PublicKey>>],
@@ -198,7 +198,7 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
         secp: &Secp256k1<All>,
         fund_privkey: &SecretKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
         precomputed_points: &[Vec<Vec<PublicKey>>],
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
@@ -229,7 +229,7 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
     cets: &[Transaction],
     fund_privkey: &SecretKey,
     funding_script_pubkey: &Script,
-    fund_output_value: u64,
+    fund_output_value: Amount,
     precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
@@ -261,7 +261,7 @@ fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
     cets: &[Transaction],
     fund_privkey: &SecretKey,
     funding_script_pubkey: &Script,
-    fund_output_value: u64,
+    fund_output_value: Amount,
     precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
@@ -296,7 +296,7 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
     adaptor_sigs: &[EcdsaAdaptorSignature],
     fund_pubkey: &PublicKey,
     funding_script_pubkey: &Script,
-    fund_output_value: u64,
+    fund_output_value: Amount,
     precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<usize, Error> {
@@ -329,7 +329,7 @@ fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
     adaptor_sigs: &[EcdsaAdaptorSignature],
     fund_pubkey: &PublicKey,
     funding_script_pubkey: &Script,
-    fund_output_value: u64,
+    fund_output_value: Amount,
     precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
 ) -> Result<usize, Error> {

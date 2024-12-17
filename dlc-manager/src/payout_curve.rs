@@ -3,6 +3,7 @@
 use std::ops::Deref;
 
 use crate::error::Error;
+use bitcoin::Amount;
 use dlc::{Payout, RangePayout};
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
@@ -98,7 +99,7 @@ impl PayoutFunction {
     /// Generate the range payouts from the function.
     pub fn to_range_payouts(
         &self,
-        total_collateral: u64,
+        total_collateral: Amount,
         rounding_intervals: &RoundingIntervals,
     ) -> Result<Vec<RangePayout>, Error> {
         let mut range_payouts = Vec::new();
@@ -127,7 +128,7 @@ impl PayoutFunctionPiece {
     /// Generate the range payouts for the function piece.
     pub fn to_range_payouts(
         &self,
-        total_collateral: u64,
+        total_collateral: Amount,
         rounding_intervals: &RoundingIntervals,
         range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
@@ -163,9 +164,10 @@ trait Evaluable {
         &self,
         outcome: u64,
         rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
-    ) -> Result<u64, Error> {
+        total_collateral: Amount,
+    ) -> Result<Amount, Error> {
         let payout_double = self.evaluate(outcome);
+        let total_collateral_sats = total_collateral.to_sat();
         if payout_double.is_sign_negative() || (payout_double != 0.0 && !payout_double.is_normal())
         {
             return Err(Error::InvalidParameters(format!(
@@ -174,17 +176,17 @@ trait Evaluable {
             )));
         }
 
-        if payout_double.round() > total_collateral as f64 {
+        if payout_double.round() > total_collateral_sats as f64 {
             return Err(Error::InvalidParameters(
                 "Computed payout is greater than total collateral".to_string(),
             ));
         }
 
         // Ensure that we never round over the total collateral.
-        Ok(u64::min(
+        Ok(Amount::from_sat(u64::min(
             rounding_intervals.round(outcome, payout_double),
-            total_collateral,
-        ))
+            total_collateral_sats,
+        )))
     }
 
     fn get_first_outcome(&self) -> u64;
@@ -194,7 +196,7 @@ trait Evaluable {
     fn get_cur_range(
         &self,
         range_payouts: &mut Vec<RangePayout>,
-        total_collateral: u64,
+        total_collateral: Amount,
         rounding_intervals: &RoundingIntervals,
     ) -> Result<RangePayout, Error> {
         let res = match range_payouts.pop() {
@@ -219,7 +221,7 @@ trait Evaluable {
     fn to_range_payouts(
         &self,
         rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
+        total_collateral: Amount,
         range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
         compute_range_payouts(self, rounding_intervals, total_collateral, range_payouts)
@@ -229,7 +231,7 @@ trait Evaluable {
 fn compute_range_payouts<E: Deref>(
     function: E,
     rounding_intervals: &RoundingIntervals,
-    total_collateral: u64,
+    total_collateral: Amount,
     range_payouts: &mut Vec<RangePayout>,
 ) -> Result<(), Error>
 where
@@ -308,13 +310,14 @@ impl Evaluable for PolynomialPayoutCurvePiece {
         // Optimizations for constant and linear cases.
         if nb_points == 2 {
             let (left_point, right_point) = (&self.payout_points[0], &self.payout_points[1]);
+            let right_point_payout_sats = right_point.outcome_payout.to_sat() as f64;
+            let left_point_payout_sats = left_point.outcome_payout.to_sat() as f64;
             return if left_point.outcome_payout == right_point.outcome_payout {
-                right_point.outcome_payout as f64
+                right_point_payout_sats
             } else {
-                let slope = (right_point.outcome_payout as f64 - left_point.outcome_payout as f64)
+                let slope = (right_point_payout_sats - left_point_payout_sats)
                     / (right_point.event_outcome - left_point.event_outcome) as f64;
-                (outcome - left_point.event_outcome) as f64 * slope
-                    + left_point.outcome_payout as f64
+                (outcome - left_point.event_outcome) as f64 * slope + left_point_payout_sats
             };
         }
 
@@ -352,7 +355,7 @@ impl Evaluable for PolynomialPayoutCurvePiece {
     fn to_range_payouts(
         &self,
         rounding_intervals: &RoundingIntervals,
-        total_collateral: u64,
+        total_collateral: Amount,
         range_payouts: &mut Vec<RangePayout>,
     ) -> Result<(), Error> {
         if self.payout_points.len() == 2
@@ -381,14 +384,14 @@ pub struct PayoutPoint {
     /// The event outcome.
     pub event_outcome: u64,
     /// The payout for the outcome.
-    pub outcome_payout: u64,
+    pub outcome_payout: Amount,
     /// Extra precision to use when computing the payout.
     pub extra_precision: u16,
 }
 
 impl PayoutPoint {
     fn get_outcome_payout(&self) -> f64 {
-        (self.outcome_payout as f64) + ((self.extra_precision as f64) / ((1 << 16) as f64))
+        (self.outcome_payout.to_sat() as f64) + ((self.extra_precision as f64) / ((1 << 16) as f64))
     }
 }
 
@@ -578,17 +581,17 @@ mod test {
             payout_points: vec![
                 PayoutPoint {
                     event_outcome: 0,
-                    outcome_payout: 1,
+                    outcome_payout: Amount::from_sat(1),
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: 2,
-                    outcome_payout: 5,
+                    outcome_payout: Amount::from_sat(5),
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: 4,
-                    outcome_payout: 17,
+                    outcome_payout: Amount::from_sat(17),
                     extra_precision: 0,
                 },
             ],
@@ -604,71 +607,71 @@ mod test {
             payout_points: Vec<PayoutPoint>,
             expected_len: usize,
             expected_first_start: usize,
-            expected_first_payout: u64,
+            expected_first_payout: Amount,
             expected_last_start: usize,
-            expected_last_payout: u64,
-            total_collateral: u64,
+            expected_last_payout: Amount,
+            total_collateral: Amount,
         }
         let test_cases: Vec<TestCase> = vec![
             TestCase {
                 payout_points: vec![
                     PayoutPoint {
                         event_outcome: 0,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 20,
-                        outcome_payout: 20,
+                        outcome_payout: Amount::from_sat(20),
                         extra_precision: 0,
                     },
                 ],
                 expected_len: 21,
                 expected_first_start: 0,
-                expected_first_payout: 0,
+                expected_first_payout: Amount::ZERO,
                 expected_last_start: 20,
-                expected_last_payout: 20,
-                total_collateral: 20,
+                expected_last_payout: Amount::from_sat(20),
+                total_collateral: Amount::from_sat(20),
             },
             TestCase {
                 payout_points: vec![
                     PayoutPoint {
                         event_outcome: 10,
-                        outcome_payout: 10,
+                        outcome_payout: Amount::from_sat(10),
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 20,
-                        outcome_payout: 10,
+                        outcome_payout: Amount::from_sat(10),
                         extra_precision: 0,
                     },
                 ],
                 expected_len: 1,
                 expected_first_start: 10,
-                expected_first_payout: 10,
+                expected_first_payout: Amount::from_sat(10),
                 expected_last_start: 10,
-                expected_last_payout: 10,
-                total_collateral: 10,
+                expected_last_payout: Amount::from_sat(10),
+                total_collateral: Amount::from_sat(10),
             },
             TestCase {
                 payout_points: vec![
                     PayoutPoint {
                         event_outcome: 50000,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 1048575,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                 ],
                 expected_len: 1,
                 expected_first_start: 50000,
-                expected_first_payout: 0,
+                expected_first_payout: Amount::ZERO,
                 expected_last_start: 50000,
-                expected_last_payout: 0,
-                total_collateral: 200000000,
+                expected_last_payout: Amount::ZERO,
+                total_collateral: Amount::from_sat(200000000),
             },
         ];
 
@@ -714,12 +717,12 @@ mod test {
         let hyperbola = HyperbolaPayoutCurvePiece {
             left_end_point: PayoutPoint {
                 event_outcome: 1,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             right_end_point: PayoutPoint {
                 event_outcome: u64::MAX,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             use_positive_piece: true,
@@ -741,12 +744,12 @@ mod test {
         let hyperbola = HyperbolaPayoutCurvePiece {
             left_end_point: PayoutPoint {
                 event_outcome: 1,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             right_end_point: PayoutPoint {
                 event_outcome: 1000,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             use_positive_piece: true,
@@ -766,7 +769,7 @@ mod test {
                         rounding_mod: 1,
                     }],
                 },
-                200000000,
+                Amount::from_sat(200000000),
                 &mut Vec::new(),
             )
             .expect_err("Should not tolerate negative payout");
@@ -777,12 +780,12 @@ mod test {
         let hyperbola = HyperbolaPayoutCurvePiece {
             left_end_point: PayoutPoint {
                 event_outcome: 1,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             right_end_point: PayoutPoint {
                 event_outcome: 1000,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             use_positive_piece: true,
@@ -802,7 +805,7 @@ mod test {
                         rounding_mod: 1,
                     }],
                 },
-                200000000,
+                Amount::from_sat(200000000),
                 &mut Vec::new(),
             )
             .expect("to be able to compute the range payouts");
@@ -813,12 +816,12 @@ mod test {
         HyperbolaPayoutCurvePiece::new(
             PayoutPoint {
                 event_outcome: 1,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             PayoutPoint {
                 event_outcome: 1000,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             true,
@@ -839,12 +842,12 @@ mod test {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: 0,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 9,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                 ])
@@ -854,12 +857,12 @@ mod test {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: 9,
-                        outcome_payout: 0,
+                        outcome_payout: Amount::ZERO,
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 10,
-                        outcome_payout: 9,
+                        outcome_payout: Amount::from_sat(9),
                         extra_precision: 0,
                     },
                 ])
@@ -869,12 +872,12 @@ mod test {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: 10,
-                        outcome_payout: 9,
+                        outcome_payout: Amount::from_sat(9),
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 19,
-                        outcome_payout: 9,
+                        outcome_payout: Amount::from_sat(9),
                         extra_precision: 0,
                     },
                 ])
@@ -884,12 +887,12 @@ mod test {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: 19,
-                        outcome_payout: 9,
+                        outcome_payout: Amount::from_sat(9),
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: 20,
-                        outcome_payout: 10,
+                        outcome_payout: Amount::from_sat(10),
                         extra_precision: 0,
                     },
                 ])
@@ -899,12 +902,12 @@ mod test {
                 PolynomialPayoutCurvePiece::new(vec![
                     PayoutPoint {
                         event_outcome: 20,
-                        outcome_payout: 10,
+                        outcome_payout: Amount::from_sat(10),
                         extra_precision: 0,
                     },
                     PayoutPoint {
                         event_outcome: u64::MAX,
-                        outcome_payout: 10,
+                        outcome_payout: Amount::from_sat(10),
                         extra_precision: 0,
                     },
                 ])
@@ -917,24 +920,24 @@ mod test {
                 start: 0,
                 count: 10,
                 payout: Payout {
-                    offer: 0,
-                    accept: 10,
+                    offer: Amount::ZERO,
+                    accept: Amount::from_sat(10),
                 },
             },
             RangePayout {
                 start: 10,
                 count: 10,
                 payout: Payout {
-                    offer: 9,
-                    accept: 1,
+                    offer: Amount::from_sat(9),
+                    accept: Amount::from_sat(1),
                 },
             },
             RangePayout {
                 start: 20,
                 count: (u64::MAX - 19) as usize,
                 payout: Payout {
-                    offer: 10,
-                    accept: 0,
+                    offer: Amount::from_sat(10),
+                    accept: Amount::ZERO,
                 },
             },
         ];
@@ -942,7 +945,7 @@ mod test {
             expected_ranges,
             payout_function
                 .to_range_payouts(
-                    10,
+                    Amount::from_sat(10),
                     &RoundingIntervals {
                         intervals: vec![RoundingInterval {
                             begin_interval: 0,
@@ -960,19 +963,19 @@ mod test {
             // Polynomial curve piece requires more than one
             vec![PayoutPoint {
                 event_outcome: 0,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             }],
             // Payout point outcomes should be increasing
             vec![
                 PayoutPoint {
                     event_outcome: 10,
-                    outcome_payout: 0,
+                    outcome_payout: Amount::ZERO,
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: 9,
-                    outcome_payout: 0,
+                    outcome_payout: Amount::ZERO,
                     extra_precision: 0,
                 },
             ],
@@ -988,12 +991,12 @@ mod test {
         HyperbolaPayoutCurvePiece::new(
             PayoutPoint {
                 event_outcome: 0,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             PayoutPoint {
                 event_outcome: 0,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             true,
@@ -1008,12 +1011,12 @@ mod test {
         HyperbolaPayoutCurvePiece::new(
             PayoutPoint {
                 event_outcome: 0,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             PayoutPoint {
                 event_outcome: 1,
-                outcome_payout: 0,
+                outcome_payout: Amount::ZERO,
                 extra_precision: 0,
             },
             true,
@@ -1036,12 +1039,12 @@ mod test {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 0,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 9,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                     ],
@@ -1050,12 +1053,12 @@ mod test {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 11,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 19,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                     ],
@@ -1066,12 +1069,12 @@ mod test {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 0,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 9,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                     ],
@@ -1080,12 +1083,12 @@ mod test {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 10,
-                            outcome_payout: 1,
+                            outcome_payout: Amount::from_sat(1),
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 19,
-                            outcome_payout: 1,
+                            outcome_payout: Amount::from_sat(1),
                             extra_precision: 0,
                         },
                     ],
@@ -1184,12 +1187,12 @@ mod test {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 0,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 500,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                     ],
@@ -1198,12 +1201,12 @@ mod test {
                     payout_points: vec![
                         PayoutPoint {
                             event_outcome: 500,
-                            outcome_payout: 0,
+                            outcome_payout: Amount::ZERO,
                             extra_precision: 0,
                         },
                         PayoutPoint {
                             event_outcome: 1048575,
-                            outcome_payout: 7513,
+                            outcome_payout: Amount::from_sat(7513),
                             extra_precision: 0,
                         },
                     ],
@@ -1212,7 +1215,7 @@ mod test {
         };
 
         payout_function
-            .to_range_payouts(7513, &rounding_intervals)
+            .to_range_payouts(Amount::from_sat(75130), &rounding_intervals)
             .expect("To be able to compute the range payouts");
     }
 
@@ -1222,12 +1225,12 @@ mod test {
             PolynomialPayoutCurvePiece::new(vec![
                 PayoutPoint {
                     event_outcome: 22352,
-                    outcome_payout: 0,
+                    outcome_payout: Amount::ZERO,
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: 55881,
-                    outcome_payout: 87455,
+                    outcome_payout: Amount::from_sat(87455),
                     extra_precision: 0,
                 },
             ])
@@ -1245,7 +1248,7 @@ mod test {
         };
 
         function
-            .to_range_payouts(87455, &rounding_intervals)
+            .to_range_payouts(Amount::from_sat(87455), &rounding_intervals)
             .expect("Not to fail");
     }
 
@@ -1255,12 +1258,12 @@ mod test {
             payout_points: vec![
                 PayoutPoint {
                     event_outcome: 0,
-                    outcome_payout: 1,
+                    outcome_payout: Amount::from_sat(1),
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: 2,
-                    outcome_payout: 5,
+                    outcome_payout: Amount::from_sat(5),
                     extra_precision: 0,
                 },
             ],
@@ -1276,12 +1279,12 @@ mod test {
             payout_points: vec![
                 PayoutPoint {
                     event_outcome: 0,
-                    outcome_payout: 10,
+                    outcome_payout: Amount::from_sat(10),
                     extra_precision: 0,
                 },
                 PayoutPoint {
                     event_outcome: 1,
-                    outcome_payout: 8,
+                    outcome_payout: Amount::from_sat(8),
                     extra_precision: 0,
                 },
             ],

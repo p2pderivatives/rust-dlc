@@ -36,8 +36,8 @@ pub mod serde_utils;
 use std::fmt::Display;
 
 use crate::ser_impls::{read_ecdsa_adaptor_signature, write_ecdsa_adaptor_signature};
-use bitcoin::ScriptBuf;
 use bitcoin::{consensus::Decodable, OutPoint, Transaction};
+use bitcoin::{Amount, ScriptBuf};
 use channel::{
     AcceptChannel, CollaborativeCloseOffer, OfferChannel, Reject, RenewAccept, RenewConfirm,
     RenewFinalize, RenewOffer, RenewRevoke, SettleAccept, SettleConfirm, SettleFinalize,
@@ -328,7 +328,7 @@ pub struct OfferDlc {
     /// Serial id to order CET outputs.
     pub payout_serial_id: u64,
     /// Collateral of the offer party.
-    pub offer_collateral: u64,
+    pub offer_collateral: Amount,
     /// Inputs used by the offer party to fund the contract.
     pub funding_inputs: Vec<FundingInput>,
     /// The SPK where the offer party will receive their change.
@@ -347,7 +347,7 @@ pub struct OfferDlc {
 
 impl OfferDlc {
     /// Returns the total collateral locked in the contract.
-    pub fn get_total_collateral(&self) -> u64 {
+    pub fn get_total_collateral(&self) -> Amount {
         match &self.contract_info {
             ContractInfo::SingleContractInfo(single) => single.total_collateral,
             ContractInfo::DisjointContractInfo(disjoint) => disjoint.total_collateral,
@@ -428,7 +428,7 @@ pub struct AcceptDlc {
     /// The temporary contract id for the contract.
     pub temporary_contract_id: [u8; 32],
     /// The collateral input by the accept party.
-    pub accept_collateral: u64,
+    pub accept_collateral: Amount,
     /// The public key of the accept party to be used to lock the collateral.
     pub funding_pubkey: PublicKey,
     /// The SPK where the accept party will receive their payout.
@@ -664,7 +664,7 @@ mod tests {
         let mut no_contract_input = offer.clone();
         no_contract_input.contract_info =
             ContractInfo::DisjointContractInfo(contract_msgs::DisjointContractInfo {
-                total_collateral: 100000000,
+                total_collateral: Amount::ONE_BTC,
                 contract_infos: vec![],
             });
 

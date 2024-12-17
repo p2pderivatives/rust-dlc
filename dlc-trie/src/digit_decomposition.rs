@@ -195,6 +195,7 @@ pub fn group_by_ignoring_digits(
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use dlc::{Payout, RangePayout};
     struct DecompositionTestCase {
         composed: usize,
@@ -456,16 +457,16 @@ mod tests {
                         start: 10,
                         count: 10,
                         payout: Payout {
-                            offer: 0,
-                            accept: 10,
+                            offer: Amount::ZERO,
+                            accept: Amount::from_sat(10),
                         },
                     },
                     RangePayout {
                         start: 20,
                         count: 10,
                         payout: Payout {
-                            offer: 10,
-                            accept: 0,
+                            offer: Amount::from_sat(10),
+                            accept: Amount::ZERO,
                         },
                     },
                 ],
@@ -474,16 +475,16 @@ mod tests {
                         start: 0,
                         count: 20,
                         payout: Payout {
-                            offer: 0,
-                            accept: 10,
+                            offer: Amount::ZERO,
+                            accept: Amount::from_sat(10),
                         },
                     },
                     RangePayout {
                         start: 20,
                         count: 80,
                         payout: Payout {
-                            offer: 10,
-                            accept: 0,
+                            offer: Amount::from_sat(10),
+                            accept: Amount::ZERO,
                         },
                     },
                 ],
@@ -495,16 +496,16 @@ mod tests {
                     start: 10,
                     count: 50,
                     payout: Payout {
-                        offer: 0,
-                        accept: 10,
+                        offer: Amount::ZERO,
+                        accept: Amount::from_sat(10),
                     },
                 }],
                 expected: vec![RangePayout {
                     start: 0,
                     count: 100,
                     payout: Payout {
-                        offer: 0,
-                        accept: 10,
+                        offer: Amount::ZERO,
+                        accept: Amount::from_sat(10),
                     },
                 }],
                 base: 10,
@@ -516,16 +517,16 @@ mod tests {
                         start: 10,
                         count: 10,
                         payout: Payout {
-                            offer: 0,
-                            accept: 10,
+                            offer: Amount::ZERO,
+                            accept: Amount::from_sat(10),
                         },
                     },
                     RangePayout {
                         start: 20,
                         count: 10,
                         payout: Payout {
-                            offer: 10,
-                            accept: 0,
+                            offer: Amount::from_sat(10),
+                            accept: Amount::ZERO,
                         },
                     },
                 ],
@@ -534,16 +535,16 @@ mod tests {
                         start: 0,
                         count: 20,
                         payout: Payout {
-                            offer: 0,
-                            accept: 10,
+                            offer: Amount::ZERO,
+                            accept: Amount::from_sat(10),
                         },
                     },
                     RangePayout {
                         start: 20,
                         count: 12,
                         payout: Payout {
-                            offer: 10,
-                            accept: 0,
+                            offer: Amount::from_sat(10),
+                            accept: Amount::ZERO,
                         },
                     },
                 ],
@@ -556,16 +557,16 @@ mod tests {
                         start: 0,
                         count: 20,
                         payout: Payout {
-                            offer: 0,
-                            accept: 10,
+                            offer: Amount::ZERO,
+                            accept: Amount::from_sat(10),
                         },
                     },
                     RangePayout {
                         start: 20,
                         count: 10,
                         payout: Payout {
-                            offer: 10,
-                            accept: 0,
+                            offer: Amount::from_sat(10),
+                            accept: Amount::ZERO,
                         },
                     },
                 ],
@@ -574,16 +575,16 @@ mod tests {
                         start: 0,
                         count: 20,
                         payout: Payout {
-                            offer: 0,
-                            accept: 10,
+                            offer: Amount::ZERO,
+                            accept: Amount::from_sat(10),
                         },
                     },
                     RangePayout {
                         start: 20,
                         count: 12,
                         payout: Payout {
-                            offer: 10,
-                            accept: 0,
+                            offer: Amount::from_sat(10),
+                            accept: Amount::ZERO,
                         },
                     },
                 ],

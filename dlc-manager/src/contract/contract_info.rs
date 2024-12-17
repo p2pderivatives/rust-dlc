@@ -5,6 +5,7 @@ use super::ContractDescriptor;
 use crate::error::Error;
 use crate::ContractSigner;
 use bitcoin::hashes::Hash;
+use bitcoin::Amount;
 use bitcoin::{Script, Transaction};
 use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
@@ -35,7 +36,7 @@ pub struct ContractInfo {
 
 impl ContractInfo {
     /// Get the payouts associated with the contract.
-    pub fn get_payouts(&self, total_collateral: u64) -> Result<Vec<Payout>, Error> {
+    pub fn get_payouts(&self, total_collateral: Amount) -> Result<Vec<Payout>, Error> {
         match &self.contract_descriptor {
             ContractDescriptor::Enum(e) => Ok(e.get_payouts()),
             ContractDescriptor::Numerical(n) => n.get_payouts(total_collateral),
@@ -69,7 +70,7 @@ impl ContractInfo {
         adaptor_info: &AdaptorInfo,
         signer: &S,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
     ) -> Result<Vec<EcdsaAdaptorSignature>, Error>
     where
@@ -113,10 +114,10 @@ impl ContractInfo {
     pub fn verify_and_get_adaptor_info(
         &self,
         secp: &Secp256k1<All>,
-        total_collateral: u64,
+        total_collateral: Amount,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
@@ -191,7 +192,7 @@ impl ContractInfo {
         secp: &Secp256k1<All>,
         fund_pubkey: &PublicKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
         adaptor_sigs: &[EcdsaAdaptorSignature],
         adaptor_sig_start: usize,
@@ -238,10 +239,10 @@ impl ContractInfo {
     pub fn get_adaptor_info(
         &self,
         secp: &Secp256k1<All>,
-        total_collateral: u64,
+        total_collateral: Amount,
         fund_priv_key: &SecretKey,
         funding_script_pubkey: &Script,
-        fund_output_value: u64,
+        fund_output_value: Amount,
         cets: &[Transaction],
         adaptor_index_start: usize,
     ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {

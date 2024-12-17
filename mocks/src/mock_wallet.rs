@@ -14,12 +14,12 @@ pub struct MockWallet {
 }
 
 impl MockWallet {
-    pub fn new(blockchain: &Rc<MockBlockchain>, utxo_values: &[u64]) -> Self {
+    pub fn new(blockchain: &Rc<MockBlockchain>, utxo_values: &[Amount]) -> Self {
         let mut utxos = Vec::with_capacity(utxo_values.len());
 
         for utxo_value in utxo_values {
             let tx_out = TxOut {
-                value: Amount::from_sat(*utxo_value),
+                value: *utxo_value,
                 script_pubkey: ScriptBuf::default(),
             };
             let tx = Transaction {
@@ -78,7 +78,7 @@ impl Wallet for MockWallet {
 
     fn get_utxos_for_amount(
         &self,
-        amount: u64,
+        amount: Amount,
         _fee_rate: u64,
         _lock_utxos: bool,
     ) -> Result<Vec<dlc_manager::Utxo>, Error> {
@@ -88,7 +88,7 @@ impl Wallet for MockWallet {
             seed, seed,
         ));
 
-        let mut sum = 0;
+        let mut sum = Amount::ZERO;
 
         let res = utxo_pool
             .iter()
@@ -96,7 +96,7 @@ impl Wallet for MockWallet {
                 if sum >= amount {
                     return false;
                 }
-                sum += x.tx_out.value.to_sat();
+                sum += x.tx_out.value;
                 true
             })
             .cloned()

@@ -1,6 +1,6 @@
 //! Contains messages used for the establishment and update of DLC channels.
 
-use bitcoin::ScriptBuf;
+use bitcoin::{Amount, ScriptBuf};
 use dlc::Error;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
@@ -63,7 +63,7 @@ pub struct OfferChannel {
     /// Serial id used to order outputs.
     pub payout_serial_id: u64,
     /// The collateral input by the offer party in the channel.
-    pub offer_collateral: u64,
+    pub offer_collateral: Amount,
     /// The inputs that the offer party will use to fund the channel.
     pub funding_inputs: Vec<FundingInput>,
     /// The script that the offer party to receive their change.
@@ -161,7 +161,7 @@ pub struct AcceptChannel {
     /// The temporary id of the channel.
     pub temporary_channel_id: [u8; 32],
     /// The collateral input by the accept party.
-    pub accept_collateral: u64,
+    pub accept_collateral: Amount,
     /// The [`PublicKey`] used for the fund output by the accept party.
     pub funding_pubkey: PublicKey,
     /// The [`PublicKey`] used for deriving revocation points by the accept party.
@@ -266,7 +266,7 @@ pub struct SettleOffer {
     /// The id of the channel referred to by the message.
     pub channel_id: [u8; 32],
     /// The payout offered to the receiving party.
-    pub counter_payout: u64,
+    pub counter_payout: Amount,
     /// The per update point to be used by the sending party to setup the next
     /// channel state.
     pub next_per_update_point: PublicKey,
@@ -388,7 +388,7 @@ pub struct RenewOffer {
     pub temporary_contract_id: [u8; 32],
     /// The proposed payout for the receiving party for the previous channel
     /// state.
-    pub counter_payout: u64,
+    pub counter_payout: Amount,
     /// The per update point to be used by the sending party to setup the next
     /// channel state.
     pub next_per_update_point: PublicKey,
@@ -556,7 +556,7 @@ pub struct CollaborativeCloseOffer {
     /// The id of the channel referred to by the message.
     pub channel_id: [u8; 32],
     /// The proposed payout for the receiving party to close the channel with.
-    pub counter_payout: u64,
+    pub counter_payout: Amount,
     /// The signature of the sending party for the closing transaction.
     pub close_signature: Signature,
 }

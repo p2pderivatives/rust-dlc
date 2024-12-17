@@ -141,7 +141,7 @@ mod benches {
                     &oracle_infos,
                     &seckey,
                     &funding_script_pubkey(),
-                    cet.output[0].value.to_sat(),
+                    cet.output[0].value,
                     &generate_single_outcome_messages(SINGLE_NB_ORACLES, SINGLE_NB_NONCES),
                 )
                 .unwrap(),
@@ -164,7 +164,7 @@ mod benches {
                     adaptor_point,
                     &seckey,
                     &funding_script_pubkey(),
-                    cet.output[0].value.to_sat(),
+                    cet.output[0].value,
                 )
                 .unwrap(),
             )
