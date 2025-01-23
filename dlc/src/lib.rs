@@ -583,7 +583,7 @@ pub fn create_cets(
     payouts: &[Payout],
     lock_time: u32,
 ) -> Vec<Transaction> {
-    let mut txs: Vec<Transaction> = Vec::new();
+    let mut txs: Vec<Transaction> = Vec::with_capacity(payouts.len());
     for payout in payouts {
         let offer_output = TxOut {
             value: payout.offer,
