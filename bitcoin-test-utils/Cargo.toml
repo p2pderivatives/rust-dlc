@@ -2,7 +2,7 @@
 authors = ["Crypto Garage"]
 name = "bitcoin-test-utils"
 version = "0.1.0"
-
+edition = "2015"
 [dependencies]
 bitcoin = { version = "0.32.2", default-features = false }
 bitcoincore-rpc = {version = "0.19"}

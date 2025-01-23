@@ -6,6 +6,7 @@ license-file = "../LICENSE"
 name = "dlc-messages"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-messages"
 version = "0.7.1"
+edition = "2018"
 
 [features]
 default = ["std"]
@@ -15,10 +16,12 @@ use-serde = ["serde", "secp256k1-zkp/serde", "bitcoin/serde"]
 
 [dependencies]
 bitcoin = { version = "0.32.2", default-features = false }
+crossbeam = "0.8.4"
 dlc = { version = "0.7.1", path = "../dlc", default-features = false }
 lightning = { version = "0.0.125", default-features = false }
 secp256k1-zkp = {version = "0.11.0"}
 serde = {version = "1.0", features = ["derive"], optional = true}
+tokio = { version = "1.43.0", features = ["sync"] }
 
 [dev-dependencies]
 bitcoin = { version = "0.32.2", default-features = false, features = ["serde"] }
@@ -26,3 +29,4 @@ dlc-messages = {path = "./", default-features = false, features = ["use-serde"]}
 secp256k1-zkp = {version = "0.11.0", features = ["serde", "global-context"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
+tokio = { version = "1.43.0", features = ["sync", "macros", "rt"] }

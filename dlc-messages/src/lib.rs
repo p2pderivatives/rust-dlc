@@ -14,6 +14,8 @@ extern crate bitcoin;
 extern crate dlc;
 extern crate lightning;
 extern crate secp256k1_zkp;
+extern crate tokio;
+
 #[macro_use]
 pub mod ser_macros;
 pub mod ser_impls;
