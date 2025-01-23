@@ -148,10 +148,7 @@ impl Iterator for MultiOracleTrieWithDiffIter<'_> {
     type Item = TrieIterInfo;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let res = match self.multi_trie_iterator.next() {
-            None => return None,
-            Some(res) => res,
-        };
+        let res = self.multi_trie_iterator.next()?;
         let (indexes, paths) =
             res.path
                 .iter()

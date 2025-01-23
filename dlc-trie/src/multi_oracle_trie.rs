@@ -299,10 +299,7 @@ impl Iterator for MultiOracleTrieIter<'_> {
         let res = match &self.cur_res {
             None => {
                 if let Some(extra_cover_trie_iterator) = &mut self.extra_cover_trie_iterator {
-                    let res = match extra_cover_trie_iterator.next() {
-                        None => return None,
-                        Some(res) => res,
-                    };
+                    let res = extra_cover_trie_iterator.next()?;
                     let (indexes, paths) = res.path.iter().fold(
                         (Vec::new(), Vec::new()),
                         |(mut indexes, mut paths), x| {
