@@ -97,12 +97,18 @@ fn remove_tail(v: &mut Vec<usize>, to_remove: usize) {
 }
 
 /// Returns the set of decomposed prefixes that cover the range [start, end].
+///
+/// # Panics
+///
+/// Panics if `start` is greater than `end`.
 pub fn group_by_ignoring_digits(
     start: usize,
     end: usize,
     base: usize,
     nb_digits: usize,
 ) -> Vec<Vec<usize>> {
+    assert!(start <= end);
+
     let mut ds = decompose_value(start, base, nb_digits);
     let mut de = decompose_value(end, base, nb_digits);
 
@@ -627,6 +633,12 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn group_by_ignoring_digits_start_greater_than_end_panics() {
+        super::group_by_ignoring_digits(11, 10, 2, 4);
     }
 
     #[test]

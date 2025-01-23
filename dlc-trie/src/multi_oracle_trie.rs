@@ -200,6 +200,9 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
         let mut trie_infos = Vec::new();
         let oracle_numeric_infos = &self.oracle_numeric_infos;
         for (cet_index, outcome) in outcomes.iter().enumerate() {
+            if outcome.count == 0 {
+                return Err(Error::InvalidArgument);
+            }
             let groups = group_by_ignoring_digits(
                 outcome.start,
                 outcome.start + outcome.count - 1,
@@ -296,10 +299,7 @@ impl Iterator for MultiOracleTrieIter<'_> {
         let res = match &self.cur_res {
             None => {
                 if let Some(extra_cover_trie_iterator) = &mut self.extra_cover_trie_iterator {
-                    let res = match extra_cover_trie_iterator.next() {
-                        None => return None,
-                        Some(res) => res,
-                    };
+                    let res = extra_cover_trie_iterator.next()?;
                     let (indexes, paths) = res.path.iter().fold(
                         (Vec::new(), Vec::new()),
                         |(mut indexes, mut paths), x| {
@@ -404,5 +404,23 @@ mod tests {
                 (4, vec![0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0]),
             ])
             .expect("Could not retrieve path with extra len.");
+    }
+
+    #[test]
+    fn test_invalid_range_payout() {
+        let range_payouts = vec![RangePayout {
+            start: 0,
+            count: 0,
+            payout: Payout {
+                offer: Amount::ZERO,
+                accept: Amount::from_sat(200000000),
+            },
+        }];
+
+        let oracle_numeric_infos = get_variable_oracle_numeric_infos(&[13, 12], 2);
+        let mut multi_oracle_trie = MultiOracleTrie::new(&oracle_numeric_infos, 2).unwrap();
+        multi_oracle_trie
+            .generate(0, &range_payouts)
+            .expect_err("Should fail when given a range payout with a count of 0");
     }
 }

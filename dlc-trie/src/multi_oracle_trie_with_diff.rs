@@ -59,6 +59,9 @@ impl<'a> DlcTrie<'a, MultiOracleTrieWithDiffIter<'a>> for MultiOracleTrieWithDif
         let mut trie_infos = Vec::new();
 
         for (cet_index, outcome) in outcomes.iter().enumerate() {
+            if outcome.count == 0 {
+                return Err(Error::InvalidArgument);
+            }
             let groups = group_by_ignoring_digits(
                 outcome.start,
                 outcome.start + outcome.count - 1,
@@ -145,10 +148,7 @@ impl Iterator for MultiOracleTrieWithDiffIter<'_> {
     type Item = TrieIterInfo;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let res = match self.multi_trie_iterator.next() {
-            None => return None,
-            Some(res) => res,
-        };
+        let res = self.multi_trie_iterator.next()?;
         let (indexes, paths) =
             res.path
                 .iter()
@@ -272,5 +272,24 @@ mod tests {
                 .collect::<Vec<_>>(),
             &iter_res.paths
         );
+    }
+
+    #[test]
+    fn test_invalid_range_payout() {
+        let range_payouts = vec![RangePayout {
+            start: 0,
+            count: 0,
+            payout: Payout {
+                offer: Amount::ZERO,
+                accept: Amount::from_sat(200000000),
+            },
+        }];
+
+        let oracle_numeric_infos = get_variable_oracle_numeric_infos(&[13, 12], 2);
+        let mut multi_oracle_trie =
+            MultiOracleTrieWithDiff::new(&oracle_numeric_infos, 2, 1, 2).unwrap();
+        multi_oracle_trie
+            .generate(0, &range_payouts)
+            .expect_err("Should fail when given a range payout with a count of 0");
     }
 }

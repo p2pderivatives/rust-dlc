@@ -140,12 +140,7 @@ impl<'a, T> Iterator for MultiTrieIterator<'a, T> {
             }
         }
 
-        let res = self.node_stack.pop();
-
-        let ((cur_trie_index, parent_path), mut cur_iter) = match res {
-            None => return None,
-            Some(cur) => cur,
-        };
+        let ((cur_trie_index, parent_path), mut cur_iter) = self.node_stack.pop()?;
 
         match cur_iter.next() {
             None => self.next(),
