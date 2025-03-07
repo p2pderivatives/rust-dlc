@@ -76,7 +76,11 @@ mod benches {
             for _ in 0..nb_oracles {
                 tmp.push(
                     cur.iter()
-                        .map(|x| Message::from_digest_slice(&[(*x) as u8]).unwrap())
+                        .map(|x| {
+                            let mut msg = [0u8; 32];
+                            msg[31] = (*x) as u8;
+                            Message::from_digest(msg)
+                        })
                         .collect(),
                 );
             }
@@ -107,7 +111,11 @@ mod benches {
         (0..base)
             .map(|i| {
                 (0..nb_nonces)
-                    .map(|_| Message::from_digest_slice(&[i as u8]).unwrap())
+                    .map(|_| {
+                        let mut msg = [0u8; 32];
+                        msg[31] = i as u8;
+                        Message::from_digest(msg)
+                    })
                     .collect()
             })
             .collect()
