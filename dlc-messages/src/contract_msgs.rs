@@ -1,9 +1,9 @@
 //! Structure containing information about contract details.
 
+use crate::oracle_msgs::OracleInfo;
 use bitcoin::Amount;
 use lightning::ln::msgs::DecodeError;
 use lightning::util::ser::{Readable, Writeable, Writer};
-use oracle_msgs::OracleInfo;
 
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(

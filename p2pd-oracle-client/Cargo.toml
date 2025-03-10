@@ -6,6 +6,7 @@ license-file = "../LICENSE"
 name = "p2pd-oracle-client"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/p2pd-oracle-client"
 version = "0.1.0"
+edition = "2015"
 
 [dependencies]
 chrono = {version = "0.4.19", features = ["serde"]}

@@ -6,7 +6,7 @@ license-file = "../LICENSE"
 name = "dlc-trie"
 repository = "https://github.com/p2pderivatives/rust-dlc/tree/master/dlc-trie"
 version = "0.7.1"
-
+edition = "2015"
 [features]
 default = ["std"]
 std = ["dlc/std", "bitcoin/std"]
