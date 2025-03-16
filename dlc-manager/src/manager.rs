@@ -13,7 +13,7 @@ use crate::contract::{
     accepted_contract::AcceptedContract, contract_info::ContractInfo,
     contract_input::ContractInput, contract_input::OracleInput, offered_contract::OfferedContract,
     signed_contract::SignedContract, AdaptorInfo, ClosedContract, Contract, FailedAcceptContract,
-    FailedSignContract, PreClosedContract,
+    FailedSignContract, PreClosedContract, CooperativeCloseContract,
 };
 use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract};
 use crate::error::Error;
@@ -30,7 +30,7 @@ use dlc_messages::channel::{
     SettleOffer, SignChannel,
 };
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
-use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc};
+use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc, CloseDlc};
 use hex::DisplayHex;
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
@@ -209,6 +209,10 @@ where
             DlcMessage::Accept(a) => Ok(Some(self.on_accept_message(a, &counter_party)?)),
             DlcMessage::Sign(s) => {
                 self.on_sign_message(s, &counter_party)?;
+                Ok(None)
+            }
+            DlcMessage::Close(c) => {
+                self.on_close_message(c, &counter_party)?;
                 Ok(None)
             }
             DlcMessage::OfferChannel(o) => {
@@ -466,6 +470,47 @@ where
             .update_contract(&Contract::Signed(signed_contract))?;
 
         self.blockchain.send_transaction(&fund_tx)?;
+
+        Ok(())
+    }
+
+    fn on_close_message(&self, close_msg: &CloseDlc, counter_party: &PublicKey) -> Result<(), Error> {
+        let signed_contract = get_contract_in_state!(
+            self,
+            &close_msg.contract_id,
+            Signed,
+            Some(*counter_party)
+        )?;
+
+        let close_tx = crate::contract_updater::verify_and_complete_cooperative_close(
+            &self.secp,
+            &signed_contract,
+            close_msg,
+            &self.signer_provider,
+        )?;
+
+        // Broadcast the closing transaction
+        self.blockchain.send_transaction(&close_tx)?;
+
+        // Update contract state to Closed
+        let closed_contract = ClosedContract {
+            attestations: None,
+            signed_cet: None,
+            contract_id: close_msg.contract_id,
+            temporary_contract_id: signed_contract.accepted_contract.offered_contract.id,
+            counter_party_id: *counter_party,
+            pnl: SignedAmount::from_sat(
+                if signed_contract.accepted_contract.offered_contract.is_offer_party {
+                    close_msg.offer_payout.to_sat() as i64 -
+                    signed_contract.accepted_contract.offered_contract.offer_params.collateral.to_sat() as i64
+                } else {
+                    close_msg.accept_payout.to_sat() as i64 -
+                    signed_contract.accepted_contract.accept_params.collateral.to_sat() as i64
+                }
+            ),
+        };
+
+        self.store.update_contract(&Contract::Closed(closed_contract))?;
 
         Ok(())
     }
@@ -894,6 +939,87 @@ where
         self.store.update_contract(&contract)?;
 
         Ok(contract)
+    }
+
+    /// Initiates a cooperative close of a contract by creating and signing a closing transaction.
+    /// Returns a CloseDlc message to be sent to the counter party.
+    pub fn cooperative_close_contract(
+        &self,
+        contract_id: &ContractId,
+        counter_payout: Amount,
+    ) -> Result<(CloseDlc, PublicKey), Error> {
+        let signed_contract = get_contract_in_state!(self, contract_id, Signed, None as Option<PublicKey>)?;
+
+        let (close_message, close_tx) = crate::contract_updater::create_cooperative_close(
+            &self.secp,
+            &signed_contract,
+            counter_payout,
+            &self.signer_provider,
+        )?;
+
+        // Add to chain monitor to watch for the close transaction
+        self.chain_monitor.lock().unwrap().add_tx(
+            close_tx.compute_txid(),
+            ChannelInfo {
+                channel_id: *contract_id,
+                tx_type: TxType::CollaborativeClose,
+            },
+        );
+
+        let counter_party = signed_contract.accepted_contract.offered_contract.counter_party;
+
+        // Update contract state to CooperativeClose
+        let cooperative_close_contract = CooperativeCloseContract {
+            close_message: close_message.clone(),
+            counter_party_id: counter_party,
+        };
+
+        self.store.update_contract(&Contract::CooperativeClose(cooperative_close_contract))?;
+        self.store.persist_chain_monitor(&self.chain_monitor.lock().unwrap())?;
+
+        Ok((close_message, counter_party))
+    }
+
+    /// Accepts a cooperative close request by verifying the counter party's signature,
+    /// signing the closing transaction, and broadcasting it to the network.
+    pub fn accept_cooperative_close(
+        &self,
+        contract_id: &ContractId,
+        close_message: &CloseDlc,
+    ) -> Result<(), Error> {
+        let signed_contract = get_contract_in_state!(self, contract_id, Signed, None as Option<PublicKey>)?;
+
+        let close_tx = crate::contract_updater::verify_and_complete_cooperative_close(
+            &self.secp,
+            &signed_contract,
+            close_message,
+            &self.signer_provider,
+        )?;
+
+        // Broadcast the closing transaction
+        self.blockchain.send_transaction(&close_tx)?;
+
+        // Update contract state to Closed
+        let closed_contract = ClosedContract {
+            attestations: None,
+            signed_cet: None,
+            contract_id: *contract_id,
+            temporary_contract_id: signed_contract.accepted_contract.offered_contract.id,
+            counter_party_id: signed_contract.accepted_contract.offered_contract.counter_party,
+            pnl: SignedAmount::from_sat(
+                if signed_contract.accepted_contract.offered_contract.is_offer_party {
+                    close_message.offer_payout.to_sat() as i64 -
+                    signed_contract.accepted_contract.offered_contract.offer_params.collateral.to_sat() as i64
+                } else {
+                    close_message.accept_payout.to_sat() as i64 -
+                    signed_contract.accepted_contract.accept_params.collateral.to_sat() as i64
+                }
+            ),
+        };
+
+        self.store.update_contract(&Contract::Closed(closed_contract))?;
+
+        Ok(())
     }
 }
 

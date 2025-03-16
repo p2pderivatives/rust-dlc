@@ -266,6 +266,9 @@ pub(crate) async fn poll_for_user_input(
                                 Contract::Refunded(_) => {
                                     println!("Refunded contract: {}", id);
                                 }
+                                Contract::CooperativeClose(_) => {
+                                    println!("Cooperative close contract: {}", id);
+                                }
                                 Contract::FailedAccept(_) | Contract::FailedSign(_) => {
                                     println!("Failed contract: {}", id);
                                 }

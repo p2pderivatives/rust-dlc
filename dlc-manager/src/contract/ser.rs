@@ -9,7 +9,7 @@ use crate::contract::offered_contract::OfferedContract;
 use crate::contract::signed_contract::SignedContract;
 use crate::contract::AdaptorInfo;
 use crate::contract::{
-    ClosedContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, PreClosedContract,
+    ClosedContract, CooperativeCloseContract, ContractDescriptor, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
 use crate::payout_curve::{
     HyperbolaPayoutCurvePiece, PayoutFunction, PayoutFunctionPiece, PayoutPoint,
@@ -137,6 +137,10 @@ impl_dlc_writeable!(ClosedContract, {
     (temporary_contract_id, writeable),
     (counter_party_id, writeable),
     (pnl, SignedAmount)
+});
+impl_dlc_writeable!(CooperativeCloseContract, {
+    (close_message, writeable),
+    (counter_party_id, writeable)
 });
 impl_dlc_writeable!(FailedAcceptContract, {(offered_contract, writeable), (accept_message, writeable), (error_message, string)});
 impl_dlc_writeable!(FailedSignContract, {(accepted_contract, writeable), (sign_message, writeable), (error_message, string)});

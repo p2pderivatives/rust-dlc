@@ -10,6 +10,7 @@ use dlc_messages::FundingInput;
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
+    CloseDlc,
 };
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
@@ -752,6 +753,129 @@ where
         0,
     )?;
     Ok(refund)
+}
+
+/// Creates a cooperative close transaction and signs it with the local party's key.
+pub fn create_cooperative_close<C: Signing, SP: Deref>(
+    secp: &Secp256k1<C>,
+    signed_contract: &SignedContract,
+    counter_payout: Amount,
+    signer_provider: &SP,
+) -> Result<(CloseDlc, Transaction), Error>
+where
+    SP::Target: ContractSignerProvider,
+{
+    let accepted_contract = &signed_contract.accepted_contract;
+    let offered_contract = &accepted_contract.offered_contract;
+    let total_collateral = offered_contract.total_collateral;
+
+    if counter_payout > total_collateral {
+        return Err(Error::InvalidParameters(
+            "Counter payout is greater than total collateral".to_string(),
+        ));
+    }
+
+    let offer_payout = total_collateral - counter_payout;
+    let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
+    let fund_outpoint = accepted_contract.dlc_transactions.get_fund_outpoint();
+
+    // Create the cooperative close transaction
+    let close_tx = dlc::channel::create_collaborative_close_transaction(
+        &offered_contract.offer_params,
+        offer_payout,
+        &accepted_contract.accept_params,
+        counter_payout,
+        fund_outpoint,
+        fund_output_value,
+    );
+
+    // Get our private key and sign the transaction
+    let fund_private_key = signer_provider.get_secret_key_for_pubkey(
+        if offered_contract.is_offer_party {
+            &offered_contract.offer_params.fund_pubkey
+        } else {
+            &accepted_contract.accept_params.fund_pubkey
+        }
+    )?;
+
+    let close_signature = dlc::util::get_raw_sig_for_tx_input(
+        secp,
+        &close_tx,
+        0,
+        &accepted_contract.dlc_transactions.funding_script_pubkey,
+        fund_output_value,
+        &fund_private_key,
+    )?;
+
+    // Create the CloseDlc message
+    let close_message = CloseDlc {
+        protocol_version: crate::conversion_utils::PROTOCOL_VERSION,
+        contract_id: accepted_contract.get_contract_id(),
+        close_signature,
+        offer_payout,
+        accept_payout: counter_payout,
+        fund_input_serial_id: offered_contract.fund_output_serial_id,
+        funding_inputs: accepted_contract.funding_inputs.clone(),
+        funding_signatures: signed_contract.funding_signatures.clone(),
+    };
+
+    Ok((close_message, close_tx))
+}
+
+/// Verifies and completes a cooperative close transaction using the counter party's signature.
+pub fn verify_and_complete_cooperative_close<C: Signing, SP: Deref>(
+    secp: &Secp256k1<C>,
+    signed_contract: &SignedContract,
+    close_message: &CloseDlc,
+    signer_provider: &SP,
+) -> Result<Transaction, Error>
+where
+    SP::Target: ContractSignerProvider,
+{
+    let accepted_contract = &signed_contract.accepted_contract;
+    let offered_contract = &accepted_contract.offered_contract;
+    let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
+    let fund_outpoint = accepted_contract.dlc_transactions.get_fund_outpoint();
+
+    // Recreate the close transaction to verify
+    let mut close_tx = dlc::channel::create_collaborative_close_transaction(
+        &offered_contract.offer_params,
+        close_message.offer_payout,
+        &accepted_contract.accept_params,
+        close_message.accept_payout,
+        fund_outpoint,
+        fund_output_value,
+    );
+
+    // Get our private key
+    let fund_private_key = signer_provider.get_secret_key_for_pubkey(
+        if offered_contract.is_offer_party {
+            &offered_contract.offer_params.fund_pubkey
+        } else {
+            &accepted_contract.accept_params.fund_pubkey
+        }
+    )?;
+
+    // Get counter party's pubkey
+    let counter_pubkey = if offered_contract.is_offer_party {
+        &accepted_contract.accept_params.fund_pubkey
+    } else {
+        &offered_contract.offer_params.fund_pubkey
+    };
+
+    // Sign and combine signatures
+    dlc::util::sign_multi_sig_input(
+        secp,
+        &mut close_tx,
+        &close_message.close_signature,
+        counter_pubkey,
+        &fund_private_key,
+        &accepted_contract.dlc_transactions.funding_script_pubkey,
+        fund_output_value,
+        0,
+    )?;
+
+    Ok(close_tx)
 }
 
 #[cfg(test)]

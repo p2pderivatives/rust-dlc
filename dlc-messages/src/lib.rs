@@ -68,6 +68,7 @@ macro_rules! impl_type {
 impl_type!(OFFER_TYPE, OfferDlc, 42778);
 impl_type!(ACCEPT_TYPE, AcceptDlc, 42780);
 impl_type!(SIGN_TYPE, SignDlc, 42782);
+impl_type!(CLOSE_TYPE, CloseDlc, 42784);
 impl_type!(OFFER_CHANNEL_TYPE, OfferChannel, 43000);
 impl_type!(ACCEPT_CHANNEL_TYPE, AcceptChannel, 43002);
 impl_type!(SIGN_CHANNEL_TYPE, SignChannel, 43004);
@@ -500,12 +501,57 @@ impl_dlc_writeable!(SignDlc, {
     (funding_signatures, writeable)
 });
 
+/// Contains information about a party wishing to close a DLC contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "use-serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct CloseDlc {
+    /// The version of the protocol used by the peer.
+    pub protocol_version: u32,
+    #[cfg_attr(
+        feature = "use-serde",
+        serde(
+            serialize_with = "crate::serde_utils::serialize_hex",
+            deserialize_with = "crate::serde_utils::deserialize_hex_array"
+        )
+    )]
+    /// The id of the contract to close.
+    pub contract_id: [u8; 32],
+    /// The signature for the closing transaction.
+    pub close_signature: Signature,
+    /// The payout amount for the offer party in satoshis.
+    pub offer_payout: Amount,
+    /// The payout amount for the accept party in satoshis.
+    pub accept_payout: Amount,
+    /// Serial id for the funding input.
+    pub fund_input_serial_id: u64,
+    /// The funding inputs to use.
+    pub funding_inputs: Vec<FundingInput>,
+    /// The funding signatures.
+    pub funding_signatures: FundingSignatures,
+}
+
+impl_dlc_writeable!(CloseDlc, {
+    (protocol_version, writeable),
+    (contract_id, writeable),
+    (close_signature, writeable),
+    (offer_payout, writeable),
+    (accept_payout, writeable),
+    (fund_input_serial_id, writeable),
+    (funding_inputs, vec),
+    (funding_signatures, writeable)
+});
+
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum Message {
     Offer(OfferDlc),
     Accept(AcceptDlc),
     Sign(SignDlc),
+    Close(CloseDlc),
     OfferChannel(OfferChannel),
     AcceptChannel(AcceptChannel),
     SignChannel(SignChannel),
@@ -547,6 +593,7 @@ impl_type_writeable_for_enum!(Message,
     Offer,
     Accept,
     Sign,
+    Close,
     OfferChannel,
     AcceptChannel,
     SignChannel,
@@ -624,6 +671,12 @@ mod tests {
     fn sign_msg_roundtrip() {
         let input = include_str!("./test_inputs/sign_msg.json");
         roundtrip_test!(SignDlc, input);
+    }
+
+    #[test]
+    fn close_msg_roundtrip() {
+        let input = include_str!("./test_inputs/close_msg.json");
+        roundtrip_test!(CloseDlc, input);
     }
 
     #[test]
