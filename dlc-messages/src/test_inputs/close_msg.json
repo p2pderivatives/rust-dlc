@@ -1,0 +1,32 @@
+{
+  "protocolVersion": 1,
+  "contractId": "1212121212121212121212121212121212121212121212121212121212121212",
+  "closeSignature": "304402204fbfc6d29decfe9cff65ee2313c92499db731cf70b1ec5ac0870e9129f5e37da022040c69282c66baa9f294a409a0e2a54475d3ec152f98e1a7e64e407d1ac0d2c6f",
+  "offerPayout": 100000000,
+  "acceptPayout": 100000000,
+  "fundInputSerialId": 4752179201940702056,
+  "fundingInputs": [
+    {
+      "inputSerialId": 3784123604127642354,
+      "prevTx": "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff03520101ffffffff0200f2052a010000001600143d7834074191c93d7fc2c0a54a6d40efbbfe76430000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000",
+      "prevTxVout": 0,
+      "sequence": 4294967295,
+      "maxWitnessLen": 107,
+      "redeemScript": ""
+    }
+  ],
+  "fundingSignatures": {
+    "fundingSignatures": [
+      {
+        "witnessElements": [
+          {
+            "witness": "304402205efdad3c52313450c5c2bbe36a20e1249fc8a4a8c6f9ad0e7da44de035f8e0fe022009dbc2ecfb5f7a2192f55cdc5c0c33c0a398b9e5ba3119cab924d14ab486484201"
+          },
+          {
+            "witness": "02baa435d217ad54d5cba493dbf4e0cfb90cb1c7c37751333a0a7c2ccf25f31703"
+          }
+        ]
+      }
+    ]
+  }
+}
