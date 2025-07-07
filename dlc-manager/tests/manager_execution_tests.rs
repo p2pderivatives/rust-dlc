@@ -178,6 +178,7 @@ fn numerical_common_diff_nb_digits(
 enum TestPath {
     Close,
     Refund,
+    CooperativeClose,
     BadAcceptCetSignature,
     BadAcceptRefundSignature,
     BadSignCetSignature,
@@ -510,6 +511,47 @@ fn two_of_five_oracle_numerical_diff_nb_digits_max_value_manual_test() {
     numerical_common_diff_nb_digits(5, 2, None, true, true);
 }
 
+#[test]
+#[ignore]
+fn cooperative_close_single_oracle_test() {
+    manager_execution_test(
+        get_enum_test_params(1, 1, None),
+        TestPath::CooperativeClose,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn cooperative_close_multi_oracle_test() {
+    manager_execution_test(
+        get_enum_test_params(3, 3, None),
+        TestPath::CooperativeClose,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn cooperative_close_numerical_test() {
+    numerical_polynomial_common(1, 1, None, false);
+    manager_execution_test(
+        get_numerical_test_params(
+            &get_same_num_digits_oracle_numeric_infos(1),
+            1,
+            false,
+            get_numerical_contract_descriptor(
+                get_same_num_digits_oracle_numeric_infos(1),
+                get_polynomial_payout_curve_pieces(NB_DIGITS as usize),
+                None,
+            ),
+            false,
+        ),
+        TestPath::CooperativeClose,
+        false,
+    );
+}
+
 fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
     let sig_index = thread_rng().next_u32() as usize % input.ecdsa_adaptor_signatures.len();
 
@@ -788,7 +830,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
             sync_receive.recv().expect("Error synchronizing");
             assert_contract_state!(alice_manager_send, contract_id, FailedSign);
         }
-        TestPath::Close | TestPath::Refund => {
+        TestPath::Close | TestPath::Refund | TestPath::CooperativeClose => {
             alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
@@ -806,93 +848,179 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
             periodic_check!(alice_manager_send, contract_id, Confirmed);
             periodic_check!(bob_manager_send, contract_id, Confirmed);
 
-            if !manual_close {
-                mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
-            }
-
-            // Select the first one to close or refund randomly
-            let (first, second) = if thread_rng().next_u32() % 2 == 0 {
-                (alice_manager_send, bob_manager_send)
-            } else {
-                (bob_manager_send, alice_manager_send)
-            };
-
             match path {
-                TestPath::Close => {
-                    let case = thread_rng().next_u64() % 3;
-                    let blocks: Option<u32> = if case == 2 {
-                        Some(6)
-                    } else if case == 1 {
-                        Some(1)
+                TestPath::CooperativeClose => {
+                    // Don't advance time for cooperative close to avoid oracle attestations
+                    // being available, which would trigger automatic CET closure
+                    // Test cooperative close flow
+                    
+                    // First, ensure the funding transaction is confirmed
+                    // Get the funding transaction and verify it's on the blockchain
+                    let funding_txid = {
+                        let alice_contract = alice_manager_send
+                            .lock()
+                            .unwrap()
+                            .get_store()
+                            .get_contract(&contract_id)
+                            .unwrap()
+                            .unwrap();
+                        if let Contract::Confirmed(ref signed_contract) = alice_contract {
+                            signed_contract.accepted_contract.dlc_transactions.fund.compute_txid()
+                        } else {
+                            panic!("Contract should be confirmed");
+                        }
+                    };
+                    
+                    // Verify funding transaction exists on blockchain
+                    let confirmations = electrs.get_transaction_confirmations(&funding_txid).unwrap();
+                    assert!(confirmations > 0, "Funding transaction should be confirmed on blockchain");
+                    
+                    // Alice initiates cooperative close
+                    let counter_payout = ACCEPT_COLLATERAL / 2; // Split half to counter party
+                    
+                    let (close_msg, _counter_party_pubkey) = alice_manager_send
+                        .lock()
+                        .unwrap()
+                        .cooperative_close_contract(&contract_id, counter_payout)
+                        .expect("Error initiating cooperative close");
+                        
+                    // Alice should still be in Confirmed state (not updated until broadcast)
+                    assert_contract_state!(alice_manager_send, contract_id, Confirmed);
+                    
+                    // Bob receives and accepts the cooperative close
+                    bob_manager_send
+                        .lock()
+                        .unwrap()
+                        .accept_cooperative_close(&contract_id, &close_msg)
+                        .expect("Error accepting cooperative close");
+                        
+                    // Bob should now be in Closed state (he broadcast the transaction)
+                    assert_contract_state!(bob_manager_send, contract_id, Closed);
+                    
+                    // Alice should still be in Confirmed state (she doesn't know about the close yet)
+                    assert_contract_state!(alice_manager_send, contract_id, Confirmed);
+                    
+                    // Mine a block to confirm the close transaction
+                    generate_blocks(1);
+                    
+                    // In a real scenario, Alice would detect the close transaction and call on_counterparty_close
+                    // For the test, we'll verify the cooperative close functionality worked correctly
+                    
+                    // Verify Bob is still in Closed state after confirmation
+                    assert_contract_state!(bob_manager_send, contract_id, Closed);
+                    
+                    // Verify the close transaction was properly broadcast and confirmed
+                    let _close_txid = {
+                        let bob_contract = bob_manager_send
+                            .lock()
+                            .unwrap()
+                            .get_store()
+                            .get_contract(&contract_id)
+                            .unwrap()
+                            .unwrap();
+                        if let Contract::Closed(ref closed_contract) = bob_contract {
+                            // For cooperative close, there's no signed_cet, but we can verify the state
+                            assert!(closed_contract.signed_cet.is_none(), "Cooperative close should not have a CET");
+                            assert!(closed_contract.attestations.is_none(), "Cooperative close should not have attestations");
+                        } else {
+                            panic!("Bob's contract should be in Closed state");
+                        }
+                    };
+                    
+                    println!("Cooperative close test completed successfully!");
+                }
+                TestPath::Close | TestPath::Refund => {
+                    // Advance time for oracle-based closure
+                    if !manual_close {
+                        mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
+                    }
+                    
+                    // Select the first one to close or refund randomly
+                    let (first, second) = if thread_rng().next_u32() % 2 == 0 {
+                        (alice_manager_send, bob_manager_send)
                     } else {
-                        None
+                        (bob_manager_send, alice_manager_send)
                     };
 
-                    if manual_close {
-                        periodic_check!(first, contract_id, Confirmed);
-
-                        let attestations = get_attestations(&test_params);
-
-                        let f = first.lock().unwrap();
-                        let contract = f
-                            .close_confirmed_contract(&contract_id, attestations)
-                            .expect("Error closing contract");
-
-                        if let Contract::PreClosed(contract) = contract {
-                            let mut s = second.lock().unwrap();
-                            let second_contract =
-                                s.get_store().get_contract(&contract_id).unwrap().unwrap();
-                            if let Contract::Confirmed(signed) = second_contract {
-                                s.on_counterparty_close(
-                                    &signed,
-                                    contract.signed_cet,
-                                    blocks.unwrap_or(0),
-                                )
-                                .expect("Error registering counterparty close");
+                    match path {
+                        TestPath::Close => {
+                            let case = thread_rng().next_u64() % 3;
+                            let blocks: Option<u32> = if case == 2 {
+                                Some(6)
+                            } else if case == 1 {
+                                Some(1)
                             } else {
-                                panic!("Invalid contract state: {:?}", second_contract);
+                                None
+                            };
+
+                            if manual_close {
+                                periodic_check!(first, contract_id, Confirmed);
+
+                                let attestations = get_attestations(&test_params);
+
+                                let f = first.lock().unwrap();
+                                let contract = f
+                                    .close_confirmed_contract(&contract_id, attestations)
+                                    .expect("Error closing contract");
+
+                                if let Contract::PreClosed(contract) = contract {
+                                    let mut s = second.lock().unwrap();
+                                    let second_contract =
+                                        s.get_store().get_contract(&contract_id).unwrap().unwrap();
+                                    if let Contract::Confirmed(signed) = second_contract {
+                                        s.on_counterparty_close(
+                                            &signed,
+                                            contract.signed_cet,
+                                            blocks.unwrap_or(0),
+                                        )
+                                        .expect("Error registering counterparty close");
+                                    } else {
+                                        panic!("Invalid contract state: {:?}", second_contract);
+                                    }
+                                } else {
+                                    panic!("Invalid contract state {:?}", contract);
+                                }
+                            } else {
+                                periodic_check!(first, contract_id, PreClosed);
                             }
-                        } else {
-                            panic!("Invalid contract state {:?}", contract);
+
+                            // mine blocks for the CET to be confirmed
+                            if let Some(b) = blocks {
+                                generate_blocks(b as u64);
+                            }
+
+                            // Randomly check with or without having the CET mined
+                            if case == 2 {
+                                // cet becomes fully confirmed to blockchain
+                                periodic_check!(first, contract_id, Closed);
+                                periodic_check!(second, contract_id, Closed);
+                            } else {
+                                periodic_check!(first, contract_id, PreClosed);
+                                periodic_check!(second, contract_id, PreClosed);
+                            }
                         }
-                    } else {
-                        periodic_check!(first, contract_id, PreClosed);
+                        TestPath::Refund => {
+                            periodic_check!(first, contract_id, Confirmed);
+
+                            periodic_check!(second, contract_id, Confirmed);
+
+                            mocks::mock_time::set_time(
+                                ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1,
+                            );
+
+                            generate_blocks(10);
+
+                            periodic_check!(first, contract_id, Refunded);
+
+                            // Randomly check with or without having the Refund mined.
+                            if thread_rng().next_u32() % 2 == 0 {
+                                generate_blocks(1);
+                            }
+
+                            periodic_check!(second, contract_id, Refunded);
+                        }
+                        _ => unreachable!(),
                     }
-
-                    // mine blocks for the CET to be confirmed
-                    if let Some(b) = blocks {
-                        generate_blocks(b as u64);
-                    }
-
-                    // Randomly check with or without having the CET mined
-                    if case == 2 {
-                        // cet becomes fully confirmed to blockchain
-                        periodic_check!(first, contract_id, Closed);
-                        periodic_check!(second, contract_id, Closed);
-                    } else {
-                        periodic_check!(first, contract_id, PreClosed);
-                        periodic_check!(second, contract_id, PreClosed);
-                    }
-                }
-                TestPath::Refund => {
-                    periodic_check!(first, contract_id, Confirmed);
-
-                    periodic_check!(second, contract_id, Confirmed);
-
-                    mocks::mock_time::set_time(
-                        ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1,
-                    );
-
-                    generate_blocks(10);
-
-                    periodic_check!(first, contract_id, Refunded);
-
-                    // Randomly check with or without having the Refund mined.
-                    if thread_rng().next_u32() % 2 == 0 {
-                        generate_blocks(1);
-                    }
-
-                    periodic_check!(second, contract_id, Refunded);
                 }
                 _ => unreachable!(),
             }

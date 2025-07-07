@@ -13,7 +13,7 @@ use crate::contract::{
     accepted_contract::AcceptedContract, contract_info::ContractInfo,
     contract_input::ContractInput, contract_input::OracleInput, offered_contract::OfferedContract,
     signed_contract::SignedContract, AdaptorInfo, ClosedContract, Contract, FailedAcceptContract,
-    FailedSignContract, PreClosedContract, CooperativeCloseContract,
+    FailedSignContract, PreClosedContract,
 };
 use crate::contract_updater::{accept_contract, verify_accepted_and_sign_contract};
 use crate::error::Error;
@@ -478,11 +478,11 @@ where
         let signed_contract = get_contract_in_state!(
             self,
             &close_msg.contract_id,
-            Signed,
+            Confirmed,
             Some(*counter_party)
         )?;
 
-        let close_tx = crate::contract_updater::verify_and_complete_cooperative_close(
+        let close_tx = crate::contract_updater::complete_cooperative_close(
             &self.secp,
             &signed_contract,
             close_msg,
@@ -943,40 +943,24 @@ where
 
     /// Initiates a cooperative close of a contract by creating and signing a closing transaction.
     /// Returns a CloseDlc message to be sent to the counter party.
+    /// The contract remains in Confirmed state until the close transaction is broadcast.
     pub fn cooperative_close_contract(
         &self,
         contract_id: &ContractId,
         counter_payout: Amount,
     ) -> Result<(CloseDlc, PublicKey), Error> {
-        let signed_contract = get_contract_in_state!(self, contract_id, Signed, None as Option<PublicKey>)?;
+        let signed_contract = get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
 
-        let (close_message, close_tx) = crate::contract_updater::create_cooperative_close(
+        let (close_message, _close_tx) = crate::contract_updater::create_cooperative_close(
             &self.secp,
             &signed_contract,
             counter_payout,
             &self.signer_provider,
         )?;
 
-        // Add to chain monitor to watch for the close transaction
-        self.chain_monitor.lock().unwrap().add_tx(
-            close_tx.compute_txid(),
-            ChannelInfo {
-                channel_id: *contract_id,
-                tx_type: TxType::CollaborativeClose,
-            },
-        );
-
         let counter_party = signed_contract.accepted_contract.offered_contract.counter_party;
 
-        // Update contract state to CooperativeClose
-        let cooperative_close_contract = CooperativeCloseContract {
-            close_message: close_message.clone(),
-            counter_party_id: counter_party,
-        };
-
-        self.store.update_contract(&Contract::CooperativeClose(cooperative_close_contract))?;
-        self.store.persist_chain_monitor(&self.chain_monitor.lock().unwrap())?;
-
+        // Don't update contract state - keep it in Confirmed until close tx is broadcast
         Ok((close_message, counter_party))
     }
 
@@ -987,9 +971,9 @@ where
         contract_id: &ContractId,
         close_message: &CloseDlc,
     ) -> Result<(), Error> {
-        let signed_contract = get_contract_in_state!(self, contract_id, Signed, None as Option<PublicKey>)?;
+        let signed_contract = get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
 
-        let close_tx = crate::contract_updater::verify_and_complete_cooperative_close(
+        let close_tx = crate::contract_updater::complete_cooperative_close(
             &self.secp,
             &signed_contract,
             close_message,

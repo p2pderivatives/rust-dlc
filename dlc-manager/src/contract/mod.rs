@@ -5,7 +5,7 @@ use crate::ContractId;
 use bitcoin::{SignedAmount, Transaction};
 use dlc_messages::{
     oracle_msgs::{EventDescriptor, OracleAnnouncement, OracleAttestation},
-    AcceptDlc, SignDlc, CloseDlc,
+    AcceptDlc, SignDlc,
 };
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
@@ -43,8 +43,6 @@ pub enum Contract {
     Closed(ClosedContract),
     /// A contract whose refund transaction was broadcast.
     Refunded(signed_contract::SignedContract),
-    /// A contract that was closed cooperatively.
-    CooperativeClose(CooperativeCloseContract),
     /// A contract that failed when verifying information from an accept message.
     FailedAccept(FailedAcceptContract),
     /// A contract that failed when verifying information from a sign message.
@@ -63,7 +61,6 @@ impl std::fmt::Debug for Contract {
             Contract::PreClosed(_) => "pre-closed",
             Contract::Closed(_) => "closed",
             Contract::Refunded(_) => "refunded",
-            Contract::CooperativeClose(_) => "cooperative-closed",
             Contract::FailedAccept(_) => "failed accept",
             Contract::FailedSign(_) => "failed sign",
             Contract::Rejected(_) => "rejected",
@@ -82,7 +79,6 @@ impl Contract {
             Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
                 o.accepted_contract.get_contract_id()
             }
-            Contract::CooperativeClose(o) => o.close_message.contract_id,
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.get_contract_id(),
             Contract::PreClosed(c) => c.signed_contract.accepted_contract.get_contract_id(),
@@ -98,7 +94,6 @@ impl Contract {
             Contract::Signed(o) | Contract::Confirmed(o) | Contract::Refunded(o) => {
                 o.accepted_contract.offered_contract.id
             }
-            Contract::CooperativeClose(o) => o.close_message.contract_id,
             Contract::FailedAccept(c) => c.offered_contract.id,
             Contract::FailedSign(c) => c.accepted_contract.offered_contract.id,
             Contract::PreClosed(c) => c.signed_contract.accepted_contract.offered_contract.id,
@@ -121,7 +116,6 @@ impl Contract {
                 .counter_party
             }
             Contract::Closed(c) => c.counter_party_id,
-            Contract::CooperativeClose(c) => c.counter_party_id,
             Contract::FailedAccept(f) => f.offered_contract.counter_party,
             Contract::FailedSign(f) => f.accepted_contract.offered_contract.counter_party,
         }
@@ -178,14 +172,7 @@ pub struct ClosedContract {
     pub pnl: SignedAmount,
 }
 
-/// Information about a contract that was closed cooperatively.
-#[derive(Clone)]
-pub struct CooperativeCloseContract {
-    /// The close message that was received.
-    pub close_message: CloseDlc,
-    /// The public key of the counter-party's node.
-    pub counter_party_id: PublicKey,
-}
+
 
 /// Information about the adaptor signatures and the CET for which they are
 /// valid.

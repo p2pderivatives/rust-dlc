@@ -823,7 +823,7 @@ where
 }
 
 /// Verifies and completes a cooperative close transaction using the counter party's signature.
-pub fn verify_and_complete_cooperative_close<C: Signing, SP: Deref>(
+pub fn complete_cooperative_close<C: Signing, SP: Deref>(
     secp: &Secp256k1<C>,
     signed_contract: &SignedContract,
     close_message: &CloseDlc,

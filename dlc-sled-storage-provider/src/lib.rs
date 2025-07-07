@@ -28,7 +28,7 @@ use dlc_manager::contract::offered_contract::OfferedContract;
 use dlc_manager::contract::ser::Serializable;
 use dlc_manager::contract::signed_contract::SignedContract;
 use dlc_manager::contract::{
-    ClosedContract, Contract, CooperativeCloseContract, FailedAcceptContract, FailedSignContract, PreClosedContract,
+    ClosedContract, Contract, FailedAcceptContract, FailedSignContract, PreClosedContract,
 };
 #[cfg(feature = "wallet")]
 use dlc_manager::Utxo;
@@ -109,7 +109,6 @@ convertible_enum!(
         Confirmed,
         PreClosed,
         Closed,
-        CooperativeClose,
         FailedAccept,
         FailedSign,
         Refunded,
@@ -556,7 +555,6 @@ fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, lightning::io::Err
         Contract::FailedSign(c) => c.serialize(),
         Contract::PreClosed(c) => c.serialize(),
         Contract::Closed(c) => c.serialize(),
-        Contract::CooperativeClose(c) => c.serialize(),
     };
     let mut serialized = serialized?;
     let mut res = Vec::with_capacity(serialized.len() + 1);
@@ -588,9 +586,6 @@ fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
         ),
         ContractPrefix::Closed => {
             Contract::Closed(ClosedContract::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ContractPrefix::CooperativeClose => {
-            Contract::CooperativeClose(CooperativeCloseContract::deserialize(&mut cursor).map_err(to_storage_error)?)
         }
         ContractPrefix::FailedAccept => Contract::FailedAccept(
             FailedAcceptContract::deserialize(&mut cursor).map_err(to_storage_error)?,
