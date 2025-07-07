@@ -138,7 +138,6 @@ impl_dlc_writeable!(ClosedContract, {
     (counter_party_id, writeable),
     (pnl, SignedAmount)
 });
-
 impl_dlc_writeable!(FailedAcceptContract, {(offered_contract, writeable), (accept_message, writeable), (error_message, string)});
 impl_dlc_writeable!(FailedSignContract, {(accepted_contract, writeable), (sign_message, writeable), (error_message, string)});
 

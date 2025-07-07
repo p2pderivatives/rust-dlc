@@ -30,7 +30,7 @@ use dlc_messages::channel::{
     SettleOffer, SignChannel,
 };
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
-use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc, CloseDlc};
+use dlc_messages::{AcceptDlc, CloseDlc, Message as DlcMessage, OfferDlc, SignDlc};
 use hex::DisplayHex;
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
@@ -474,7 +474,11 @@ where
         Ok(())
     }
 
-    fn on_close_message(&self, close_msg: &CloseDlc, counter_party: &PublicKey) -> Result<(), Error> {
+    fn on_close_message(
+        &self,
+        close_msg: &CloseDlc,
+        counter_party: &PublicKey,
+    ) -> Result<(), Error> {
         let signed_contract = get_contract_in_state!(
             self,
             &close_msg.contract_id,
@@ -500,17 +504,31 @@ where
             temporary_contract_id: signed_contract.accepted_contract.offered_contract.id,
             counter_party_id: *counter_party,
             pnl: SignedAmount::from_sat(
-                if signed_contract.accepted_contract.offered_contract.is_offer_party {
-                    close_msg.offer_payout.to_sat() as i64 -
-                    signed_contract.accepted_contract.offered_contract.offer_params.collateral.to_sat() as i64
+                if signed_contract
+                    .accepted_contract
+                    .offered_contract
+                    .is_offer_party
+                {
+                    close_msg.offer_payout.to_sat() as i64
+                        - signed_contract
+                            .accepted_contract
+                            .offered_contract
+                            .offer_params
+                            .collateral
+                            .to_sat() as i64
                 } else {
-                    close_msg.accept_payout.to_sat() as i64 -
-                    signed_contract.accepted_contract.accept_params.collateral.to_sat() as i64
-                }
+                    close_msg.accept_payout.to_sat() as i64
+                        - signed_contract
+                            .accepted_contract
+                            .accept_params
+                            .collateral
+                            .to_sat() as i64
+                },
             ),
         };
 
-        self.store.update_contract(&Contract::Closed(closed_contract))?;
+        self.store
+            .update_contract(&Contract::Closed(closed_contract))?;
 
         Ok(())
     }
@@ -949,7 +967,8 @@ where
         contract_id: &ContractId,
         counter_payout: Amount,
     ) -> Result<(CloseDlc, PublicKey), Error> {
-        let signed_contract = get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
+        let signed_contract =
+            get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
 
         let (close_message, _close_tx) = crate::contract_updater::create_cooperative_close(
             &self.secp,
@@ -958,7 +977,10 @@ where
             &self.signer_provider,
         )?;
 
-        let counter_party = signed_contract.accepted_contract.offered_contract.counter_party;
+        let counter_party = signed_contract
+            .accepted_contract
+            .offered_contract
+            .counter_party;
 
         // Don't update contract state - keep it in Confirmed until close tx is broadcast
         Ok((close_message, counter_party))
@@ -971,7 +993,8 @@ where
         contract_id: &ContractId,
         close_message: &CloseDlc,
     ) -> Result<(), Error> {
-        let signed_contract = get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
+        let signed_contract =
+            get_contract_in_state!(self, contract_id, Confirmed, None as Option<PublicKey>)?;
 
         let close_tx = crate::contract_updater::complete_cooperative_close(
             &self.secp,
@@ -989,19 +1012,36 @@ where
             signed_cet: None,
             contract_id: *contract_id,
             temporary_contract_id: signed_contract.accepted_contract.offered_contract.id,
-            counter_party_id: signed_contract.accepted_contract.offered_contract.counter_party,
+            counter_party_id: signed_contract
+                .accepted_contract
+                .offered_contract
+                .counter_party,
             pnl: SignedAmount::from_sat(
-                if signed_contract.accepted_contract.offered_contract.is_offer_party {
-                    close_message.offer_payout.to_sat() as i64 -
-                    signed_contract.accepted_contract.offered_contract.offer_params.collateral.to_sat() as i64
+                if signed_contract
+                    .accepted_contract
+                    .offered_contract
+                    .is_offer_party
+                {
+                    close_message.offer_payout.to_sat() as i64
+                        - signed_contract
+                            .accepted_contract
+                            .offered_contract
+                            .offer_params
+                            .collateral
+                            .to_sat() as i64
                 } else {
-                    close_message.accept_payout.to_sat() as i64 -
-                    signed_contract.accepted_contract.accept_params.collateral.to_sat() as i64
-                }
+                    close_message.accept_payout.to_sat() as i64
+                        - signed_contract
+                            .accepted_contract
+                            .accept_params
+                            .collateral
+                            .to_sat() as i64
+                },
             ),
         };
 
-        self.store.update_contract(&Contract::Closed(closed_contract))?;
+        self.store
+            .update_contract(&Contract::Closed(closed_contract))?;
 
         Ok(())
     }

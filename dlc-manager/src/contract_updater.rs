@@ -9,8 +9,7 @@ use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::FundingInput;
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
-    AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
-    CloseDlc,
+    AcceptDlc, CloseDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
 };
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
@@ -790,13 +789,12 @@ where
     );
 
     // Get our private key and sign the transaction
-    let fund_private_key = signer_provider.get_secret_key_for_pubkey(
-        if offered_contract.is_offer_party {
+    let fund_private_key =
+        signer_provider.get_secret_key_for_pubkey(if offered_contract.is_offer_party {
             &offered_contract.offer_params.fund_pubkey
         } else {
             &accepted_contract.accept_params.fund_pubkey
-        }
-    )?;
+        })?;
 
     let close_signature = dlc::util::get_raw_sig_for_tx_input(
         secp,
@@ -848,13 +846,12 @@ where
     );
 
     // Get our private key
-    let fund_private_key = signer_provider.get_secret_key_for_pubkey(
-        if offered_contract.is_offer_party {
+    let fund_private_key =
+        signer_provider.get_secret_key_for_pubkey(if offered_contract.is_offer_party {
             &offered_contract.offer_params.fund_pubkey
         } else {
             &accepted_contract.accept_params.fund_pubkey
-        }
-    )?;
+        })?;
 
     // Get counter party's pubkey
     let counter_pubkey = if offered_contract.is_offer_party {

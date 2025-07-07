@@ -111,9 +111,9 @@ impl Contract {
             }
             Contract::PreClosed(c) => {
                 c.signed_contract
-                .accepted_contract
-                .offered_contract
-                .counter_party
+                    .accepted_contract
+                    .offered_contract
+                    .counter_party
             }
             Contract::Closed(c) => c.counter_party_id,
             Contract::FailedAccept(f) => f.offered_contract.counter_party,
@@ -171,8 +171,6 @@ pub struct ClosedContract {
     /// The profit and loss for the given contract
     pub pnl: SignedAmount,
 }
-
-
 
 /// Information about the adaptor signatures and the CET for which they are
 /// valid.

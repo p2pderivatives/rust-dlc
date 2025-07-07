@@ -853,7 +853,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                     // Don't advance time for cooperative close to avoid oracle attestations
                     // being available, which would trigger automatic CET closure
                     // Test cooperative close flow
-                    
+
                     // First, ensure the funding transaction is confirmed
                     // Get the funding transaction and verify it's on the blockchain
                     let funding_txid = {
@@ -865,50 +865,59 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                             .unwrap()
                             .unwrap();
                         if let Contract::Confirmed(ref signed_contract) = alice_contract {
-                            signed_contract.accepted_contract.dlc_transactions.fund.compute_txid()
+                            signed_contract
+                                .accepted_contract
+                                .dlc_transactions
+                                .fund
+                                .compute_txid()
                         } else {
                             panic!("Contract should be confirmed");
                         }
                     };
-                    
+
                     // Verify funding transaction exists on blockchain
-                    let confirmations = electrs.get_transaction_confirmations(&funding_txid).unwrap();
-                    assert!(confirmations > 0, "Funding transaction should be confirmed on blockchain");
-                    
+                    let confirmations = electrs
+                        .get_transaction_confirmations(&funding_txid)
+                        .unwrap();
+                    assert!(
+                        confirmations > 0,
+                        "Funding transaction should be confirmed on blockchain"
+                    );
+
                     // Alice initiates cooperative close
                     let counter_payout = ACCEPT_COLLATERAL / 2; // Split half to counter party
-                    
+
                     let (close_msg, _counter_party_pubkey) = alice_manager_send
                         .lock()
                         .unwrap()
                         .cooperative_close_contract(&contract_id, counter_payout)
                         .expect("Error initiating cooperative close");
-                        
+
                     // Alice should still be in Confirmed state (not updated until broadcast)
                     assert_contract_state!(alice_manager_send, contract_id, Confirmed);
-                    
+
                     // Bob receives and accepts the cooperative close
                     bob_manager_send
                         .lock()
                         .unwrap()
                         .accept_cooperative_close(&contract_id, &close_msg)
                         .expect("Error accepting cooperative close");
-                        
+
                     // Bob should now be in Closed state (he broadcast the transaction)
                     assert_contract_state!(bob_manager_send, contract_id, Closed);
-                    
+
                     // Alice should still be in Confirmed state (she doesn't know about the close yet)
                     assert_contract_state!(alice_manager_send, contract_id, Confirmed);
-                    
+
                     // Mine a block to confirm the close transaction
                     generate_blocks(1);
-                    
+
                     // In a real scenario, Alice would detect the close transaction and call on_counterparty_close
                     // For the test, we'll verify the cooperative close functionality worked correctly
-                    
+
                     // Verify Bob is still in Closed state after confirmation
                     assert_contract_state!(bob_manager_send, contract_id, Closed);
-                    
+
                     // Verify the close transaction was properly broadcast and confirmed
                     let _close_txid = {
                         let bob_contract = bob_manager_send
@@ -920,13 +929,19 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                             .unwrap();
                         if let Contract::Closed(ref closed_contract) = bob_contract {
                             // For cooperative close, there's no signed_cet, but we can verify the state
-                            assert!(closed_contract.signed_cet.is_none(), "Cooperative close should not have a CET");
-                            assert!(closed_contract.attestations.is_none(), "Cooperative close should not have attestations");
+                            assert!(
+                                closed_contract.signed_cet.is_none(),
+                                "Cooperative close should not have a CET"
+                            );
+                            assert!(
+                                closed_contract.attestations.is_none(),
+                                "Cooperative close should not have attestations"
+                            );
                         } else {
                             panic!("Bob's contract should be in Closed state");
                         }
                     };
-                    
+
                     println!("Cooperative close test completed successfully!");
                 }
                 TestPath::Close | TestPath::Refund => {
@@ -934,7 +949,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                     if !manual_close {
                         mocks::mock_time::set_time((EVENT_MATURITY as u64) + 1);
                     }
-                    
+
                     // Select the first one to close or refund randomly
                     let (first, second) = if thread_rng().next_u32() % 2 == 0 {
                         (alice_manager_send, bob_manager_send)
