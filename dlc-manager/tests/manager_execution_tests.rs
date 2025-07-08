@@ -510,6 +510,16 @@ fn two_of_five_oracle_numerical_diff_nb_digits_max_value_manual_test() {
     numerical_common_diff_nb_digits(5, 2, None, true, true);
 }
 
+#[test]
+#[ignore]
+fn single_funded_dlc_test() {
+    manager_execution_test(
+        get_single_funded_test_params(1, 1, None),
+        TestPath::Close,
+        false,
+    );
+}
+
 fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
     let sig_index = thread_rng().next_u32() as usize % input.ecdsa_adaptor_signatures.len();
 

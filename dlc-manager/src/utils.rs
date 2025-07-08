@@ -2,7 +2,7 @@
 use std::ops::Deref;
 
 use bitcoin::{consensus::Encodable, Amount, Txid};
-use dlc::{PartyParams, TxInputInfo};
+use dlc::{util::get_common_fee, PartyParams, TxInputInfo};
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
     FundingInput,
@@ -92,6 +92,7 @@ pub(crate) fn compute_id(
 pub(crate) fn get_party_params<W: Deref, B: Deref, X: ContractSigner, C: Signing>(
     secp: &Secp256k1<C>,
     own_collateral: Amount,
+    total_collateral: Amount,
     fee_rate: u64,
     wallet: &W,
     signer: &X,
@@ -110,9 +111,8 @@ where
     let change_spk = change_addr.script_pubkey();
     let change_serial_id = get_new_serial_id();
 
-    // Add base cost of fund tx + CET / 2 and a CET output to the collateral.
     let appr_required_amount =
-        own_collateral + get_half_common_fee(fee_rate)? + dlc::util::weight_to_fee(124, fee_rate)?;
+        get_approximate_required_amount(total_collateral, own_collateral, fee_rate)?;
     let utxos = wallet.get_utxos_for_amount(appr_required_amount, fee_rate, true)?;
 
     let mut funding_inputs: Vec<FundingInput> = Vec::new();
@@ -151,6 +151,37 @@ where
     };
 
     Ok((party_params, funding_inputs))
+}
+
+// If own_collateral is zero, appr_required_amount is zero.
+// If own_collateral is equal to total_collateral, appr_required_amount is the common fee.
+// Otherwise, appr_required_amount is the half common fee.
+// Add base cost of fund tx + CET / 2 and a CET output to the collateral.
+fn get_approximate_required_amount(
+    total_collateral: Amount,
+    own_collateral: Amount,
+    fee_rate: u64,
+) -> Result<Amount, Error> {
+    // defaults to a p2wpkh address for CET execution
+    // 20 bytes pubkey hash + 2 bytes opcodes + 9 bytes base output size = 31 bytes * 4 = 124 bytes
+    // TODO: handle different address types for CET execution (multisig, p2wsh, p2tr, etc.)
+    const ASSUME_P2WPKH_WEIGHT: usize = 124;
+
+    let appr_required_amount = if own_collateral == Amount::ZERO {
+        // No collateral = no fees
+        Amount::ZERO
+    } else if own_collateral == total_collateral {
+        // Full collateral = full fees
+        own_collateral
+            + get_common_fee(fee_rate)?
+            + dlc::util::weight_to_fee(ASSUME_P2WPKH_WEIGHT, fee_rate)?
+    } else {
+        // Partial collateral = split fees
+        own_collateral
+            + get_half_common_fee(fee_rate)?
+            + dlc::util::weight_to_fee(ASSUME_P2WPKH_WEIGHT, fee_rate)?
+    };
+    Ok(appr_required_amount)
 }
 
 pub(crate) fn get_party_base_points<C: Signing, SP: Deref>(
@@ -228,6 +259,37 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn get_appr_required_amount_single_funded_dlc() {
+        let total_collateral = Amount::ONE_BTC;
+        let own_collateral = Amount::ONE_BTC;
+        let fee_rate = 2;
+        let appr_required_amount =
+            get_approximate_required_amount(total_collateral, own_collateral, fee_rate).unwrap();
+        let expected_amount = Amount::ONE_BTC + Amount::from_sat(420);
+        assert_eq!(appr_required_amount, expected_amount);
+    }
+
+    #[test]
+    fn get_appr_required_amount_unfunded_dlc() {
+        let total_collateral = Amount::ONE_BTC;
+        let own_collateral = Amount::ZERO;
+        let fee_rate = 2;
+        let appr_required_amount =
+            get_approximate_required_amount(total_collateral, own_collateral, fee_rate).unwrap();
+        assert_eq!(appr_required_amount, Amount::ZERO);
+    }
+
+    #[test]
+    fn get_appr_required_amount_dual_funded_dlc() {
+        let total_collateral = Amount::ONE_BTC;
+        let own_collateral = Amount::from_sat(50_000_000);
+        let fee_rate = 2;
+        let appr_required_amount =
+            get_approximate_required_amount(total_collateral, own_collateral, fee_rate).unwrap();
+        assert_eq!(appr_required_amount, Amount::from_sat(50_000_000 + 241));
+    }
 
     #[test]
     fn id_computation_test() {

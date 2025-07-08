@@ -300,6 +300,35 @@ pub fn get_enum_test_params(
     }
 }
 
+pub fn get_single_funded_test_params(
+    nb_oracles: usize,
+    threshold: usize,
+    oracles: Option<Vec<MockOracle>>,
+) -> TestParams {
+    let oracles = oracles.unwrap_or_else(|| get_enum_oracles(nb_oracles, threshold));
+    let contract_descriptor = get_enum_contract_descriptor();
+    let contract_info = ContractInputInfo {
+        contract_descriptor,
+        oracles: OracleInput {
+            public_keys: oracles.iter().map(|x| x.get_public_key()).collect(),
+            event_id: EVENT_ID.to_owned(),
+            threshold: 1,
+        },
+    };
+
+    let contract_input = ContractInput {
+        offer_collateral: TOTAL_COLLATERAL,
+        accept_collateral: Amount::ZERO,
+        fee_rate: 2,
+        contract_infos: vec![contract_info],
+    };
+
+    TestParams {
+        oracles,
+        contract_input,
+    }
+}
+
 pub fn get_polynomial_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFunctionPiece> {
     vec![
         PayoutFunctionPiece::PolynomialPayoutCurvePiece(
