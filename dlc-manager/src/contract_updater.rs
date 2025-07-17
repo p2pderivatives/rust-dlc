@@ -793,12 +793,8 @@ where
     );
 
     // Get our private key and sign the transaction
-    let fund_private_key =
-        signer_provider.get_secret_key_for_pubkey(if offered_contract.is_offer_party {
-            &offered_contract.offer_params.fund_pubkey
-        } else {
-            &accepted_contract.accept_params.fund_pubkey
-        })?;
+    let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
+    let fund_private_key = signer.get_secret_key()?;
 
     let close_signature = dlc::util::get_raw_sig_for_tx_input(
         secp,
@@ -850,12 +846,8 @@ where
     );
 
     // Get our private key
-    let fund_private_key =
-        signer_provider.get_secret_key_for_pubkey(if offered_contract.is_offer_party {
-            &offered_contract.offer_params.fund_pubkey
-        } else {
-            &accepted_contract.accept_params.fund_pubkey
-        })?;
+    let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
+    let fund_private_key = signer.get_secret_key()?;
 
     // Get counter party's pubkey
     let counter_pubkey = if offered_contract.is_offer_party {
