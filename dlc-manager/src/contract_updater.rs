@@ -165,6 +165,7 @@ pub(crate) fn accept_contract_internal(
         cets,
         refund,
         funding_script_pubkey,
+        pending_close_txs: _,
     } = dlc_transactions;
 
     let mut cets = cets.clone();
@@ -212,6 +213,7 @@ pub(crate) fn accept_contract_internal(
         cets,
         refund: refund.clone(),
         funding_script_pubkey: funding_script_pubkey.clone(),
+        pending_close_txs: vec![],
     };
 
     let accepted_contract = AcceptedContract {
@@ -340,6 +342,7 @@ where
         cets,
         refund,
         funding_script_pubkey,
+        pending_close_txs: _,
     } = dlc_transactions;
 
     let mut fund_psbt = Psbt::from_unsigned_tx(fund.clone())
@@ -492,6 +495,7 @@ where
         cets,
         refund: refund.clone(),
         funding_script_pubkey: funding_script_pubkey.clone(),
+        pending_close_txs: vec![],
     };
 
     let accepted_contract = AcceptedContract {

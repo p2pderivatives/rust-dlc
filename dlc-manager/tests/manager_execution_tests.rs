@@ -903,20 +903,37 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                         .accept_cooperative_close(&contract_id, &close_msg)
                         .expect("Error accepting cooperative close");
 
-                    // Bob should now be in Closed state (he broadcast the transaction)
-                    assert_contract_state!(bob_manager_send, contract_id, Closed);
+                    // Bob should now be in PreClosed state (he broadcast the transaction)
+                    assert_contract_state!(bob_manager_send, contract_id, PreClosed);
 
                     // Alice should still be in Confirmed state (she doesn't know about the close yet)
                     assert_contract_state!(alice_manager_send, contract_id, Confirmed);
 
-                    // Mine a block to confirm the close transaction
-                    generate_blocks(1);
+                    // Mine a few blocks to partially confirm the close transaction
+                    generate_blocks(3);
 
-                    // In a real scenario, Alice would detect the close transaction and call on_counterparty_close
-                    // For the test, we'll verify the cooperative close functionality worked correctly
+                    // Alice should now detect the pending close transaction and move to PreClosed
+                    alice_manager_send
+                        .lock()
+                        .unwrap()
+                        .periodic_check(true)
+                        .expect("Periodic check error");
 
-                    // Verify Bob is still in Closed state after confirmation
+                    assert_contract_state!(alice_manager_send, contract_id, PreClosed);
+
+                    // Bob should still be in PreClosed (not enough confirmations yet)
+                    assert_contract_state!(bob_manager_send, contract_id, PreClosed);
+
+                    // Mine more blocks to reach full confirmation (6 total)
+                    generate_blocks(3);
+
+                    // Both parties should now move to Closed state after full confirmations
+                    periodic_check!(bob_manager_send, contract_id, Closed);
+                    periodic_check!(alice_manager_send, contract_id, Closed);
+
+                    // Verify both parties are now in Closed state
                     assert_contract_state!(bob_manager_send, contract_id, Closed);
+                    assert_contract_state!(alice_manager_send, contract_id, Closed);
 
                     // Verify the close transaction was properly broadcast and confirmed
                     let _close_txid = {

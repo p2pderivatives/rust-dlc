@@ -332,6 +332,7 @@ pub fn create_renewal_channel_transactions(
             cets,
             refund,
             funding_script_pubkey: funding_script_pubkey.to_owned(),
+            pending_close_txs: vec![],
         },
         buffer_transaction,
         buffer_script_pubkey: buffer_descriptor.script_code()?,

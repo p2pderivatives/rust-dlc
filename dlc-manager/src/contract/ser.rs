@@ -107,7 +107,8 @@ impl_dlc_writeable_external!(
     { (fund, writeable),
     (cets, vec),
     (refund, writeable),
-    (funding_script_pubkey, writeable) }
+    (funding_script_pubkey, writeable),
+    (pending_close_txs, vec) }
 );
 impl_dlc_writeable!(AcceptedContract, {
     (offered_contract, writeable),
