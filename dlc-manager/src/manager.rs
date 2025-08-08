@@ -836,8 +836,6 @@ where
         Ok(())
     }
 
-
-
     fn close_contract(
         &self,
         contract: &SignedContract,

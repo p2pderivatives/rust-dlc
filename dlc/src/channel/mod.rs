@@ -575,7 +575,7 @@ pub fn create_collaborative_close_transaction(
     // Add additional inputs if provided (to prevent free option problem)
     for additional_outpoint in additional_inputs {
         inputs.push(TxIn {
-            previous_output: additional_outpoint.clone(),
+            previous_output: *additional_outpoint,
             witness: Witness::default(),
             script_sig: ScriptBuf::default(),
             sequence: crate::util::DISABLE_LOCKTIME,

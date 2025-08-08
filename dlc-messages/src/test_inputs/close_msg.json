@@ -2,8 +2,8 @@
   "protocolVersion": 1,
   "contractId": "1212121212121212121212121212121212121212121212121212121212121212",
   "closeSignature": "304402204fbfc6d29decfe9cff65ee2313c92499db731cf70b1ec5ac0870e9129f5e37da022040c69282c66baa9f294a409a0e2a54475d3ec152f98e1a7e64e407d1ac0d2c6f",
-  "offerPayout": 100000000,
   "acceptPayout": 100000000,
+  "feeRatePerVb": 5,
   "fundInputSerialId": 4752179201940702056,
   "fundingInputs": [
     {
