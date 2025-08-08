@@ -790,6 +790,7 @@ where
         counter_payout,
         fund_outpoint,
         fund_output_value,
+        &[], // No additional inputs for contract cooperative close
     );
 
     // Get our private key and sign the transaction
@@ -810,8 +811,8 @@ where
         protocol_version: crate::conversion_utils::PROTOCOL_VERSION,
         contract_id: accepted_contract.get_contract_id(),
         close_signature,
-        offer_payout,
         accept_payout: counter_payout,
+        fee_rate_per_vb: offered_contract.fee_rate_per_vb,
         fund_input_serial_id: offered_contract.fund_output_serial_id,
         funding_inputs: accepted_contract.funding_inputs.clone(),
         funding_signatures: signed_contract.funding_signatures.clone(),
@@ -835,14 +836,18 @@ where
     let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
     let fund_outpoint = accepted_contract.dlc_transactions.get_fund_outpoint();
 
+    let total_collateral = offered_contract.total_collateral;
+    let offer_payout = total_collateral - close_message.accept_payout;
+
     // Recreate the close transaction to verify
     let mut close_tx = dlc::channel::create_collaborative_close_transaction(
         &offered_contract.offer_params,
-        close_message.offer_payout,
+        offer_payout,
         &accepted_contract.accept_params,
         close_message.accept_payout,
         fund_outpoint,
         fund_output_value,
+        &[], // No additional inputs for contract cooperative close verification
     );
 
     // Get our private key

@@ -94,7 +94,7 @@ pub struct RevokeParams {
     /// Key used to restrict the transaction output path.
     pub own_pk: PublicKey,
     /// Key used to restrict the transaction output path and for generating
-    /// an adaptor signature, that gets revealed when using the transaction.  
+    /// an adaptor signature, that gets revealed when using the transaction.
     pub publish_pk: PublicKey,
     /// Key used to revoke the transaction.
     pub revoke_pk: PublicKey,
@@ -552,6 +552,10 @@ pub fn create_and_sign_punish_settle_transaction<C: Signing>(
 }
 
 /// Create a transaction for collaboratively closing a channel.
+///
+/// This function is primarily intended for on-chain DLC contracts where the offeror
+/// can provide additional inputs to prevent the free option problem. For off-chain
+/// channels, the additional_inputs parameter should typically be empty.
 pub fn create_collaborative_close_transaction(
     offer_params: &PartyParams,
     offer_payout: Amount,
@@ -559,13 +563,24 @@ pub fn create_collaborative_close_transaction(
     accept_payout: Amount,
     fund_outpoint: OutPoint,
     _fund_output_amount: Amount,
+    additional_inputs: &[OutPoint],
 ) -> Transaction {
-    let input = TxIn {
+    let mut inputs = vec![TxIn {
         previous_output: fund_outpoint,
         witness: Witness::default(),
         script_sig: ScriptBuf::default(),
         sequence: crate::util::DISABLE_LOCKTIME,
-    };
+    }];
+
+    // Add additional inputs if provided (to prevent free option problem)
+    for additional_outpoint in additional_inputs {
+        inputs.push(TxIn {
+            previous_output: additional_outpoint.clone(),
+            witness: Witness::default(),
+            script_sig: ScriptBuf::default(),
+            sequence: crate::util::DISABLE_LOCKTIME,
+        });
+    }
 
     //TODO(tibo): add fee re-payment
     let offer_output = TxOut {
@@ -589,7 +604,7 @@ pub fn create_collaborative_close_transaction(
     Transaction {
         version: crate::TX_VERSION,
         lock_time: LockTime::ZERO,
-        input: vec![input],
+        input: inputs,
         output,
     }
 }
