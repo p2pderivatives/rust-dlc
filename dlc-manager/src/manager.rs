@@ -383,7 +383,6 @@ where
         self.check_signed_contracts()?;
         self.check_confirmed_contracts()?;
         self.check_preclosed_contracts()?;
-        self.check_pending_close_transactions()?;
 
         if check_channels {
             self.channel_checks()?;
@@ -674,6 +673,45 @@ where
             }
         }
 
+        // Check for pending cooperative close transactions
+        for pending_close_tx in &contract
+            .accepted_contract
+            .dlc_transactions
+            .pending_close_txs
+        {
+            let confirmations = self
+                .blockchain
+                .get_transaction_confirmations(&pending_close_tx.compute_txid())?;
+
+            if confirmations >= NB_CONFIRMATIONS {
+                // Found a fully confirmed pending close - move directly to Closed
+                let pnl = contract.accepted_contract.compute_pnl(pending_close_tx)?;
+                let closed_contract = ClosedContract {
+                    attestations: None, // Cooperative close has no attestations
+                    signed_cet: Some(pending_close_tx.clone()), // Save the closing transaction
+                    contract_id: contract.accepted_contract.get_contract_id(),
+                    temporary_contract_id: contract.accepted_contract.offered_contract.id,
+                    counter_party_id: contract.accepted_contract.offered_contract.counter_party,
+                    pnl,
+                };
+
+                self.store
+                    .update_contract(&Contract::Closed(closed_contract))?;
+                return Ok(()); // Only one close can be confirmed
+            } else if confirmations >= 1 {
+                // Found a confirmed but not fully confirmed pending close - move to PreClosed
+                let preclosed_contract = PreClosedContract {
+                    signed_contract: contract.clone(),
+                    attestations: None, // Cooperative close has no attestations
+                    signed_cet: pending_close_tx.clone(),
+                };
+
+                self.store
+                    .update_contract(&Contract::PreClosed(preclosed_contract))?;
+                return Ok(()); // Only one close can be confirmed
+            }
+        }
+
         self.check_refund(contract)?;
 
         Ok(())
@@ -770,26 +808,14 @@ where
             .blockchain
             .get_transaction_confirmations(&broadcasted_txid)?;
         if confirmations >= NB_CONFIRMATIONS {
-            // Check if this is a cooperative close (no attestations) or a CET close (with attestations)
-            let (signed_cet, pnl) = if contract.attestations.is_none() {
-                // Cooperative close - no signed_cet in the final closed contract
-                let pnl = contract
-                    .signed_contract
-                    .accepted_contract
-                    .compute_pnl(&contract.signed_cet)?;
-                (None, pnl)
-            } else {
-                // CET close - include the signed_cet
-                let pnl = contract
-                    .signed_contract
-                    .accepted_contract
-                    .compute_pnl(&contract.signed_cet)?;
-                (Some(contract.signed_cet.clone()), pnl)
-            };
+            let pnl = contract
+                .signed_contract
+                .accepted_contract
+                .compute_pnl(&contract.signed_cet)?;
 
             let closed_contract = ClosedContract {
                 attestations: contract.attestations.clone(),
-                signed_cet,
+                signed_cet: Some(contract.signed_cet.clone()),
                 contract_id: contract.signed_contract.accepted_contract.get_contract_id(),
                 temporary_contract_id: contract
                     .signed_contract
@@ -810,56 +836,7 @@ where
         Ok(())
     }
 
-    /// Check for pending cooperative close transactions
-    fn check_pending_close_transactions(&self) -> Result<(), Error> {
-        // Get all Confirmed contracts that might have pending close transactions
-        for contract in self.store.get_confirmed_contracts()? {
-            // Skip channel contracts (they have their own monitoring)
-            if contract.channel_id.is_some() {
-                continue;
-            }
 
-            // Check each pending close transaction
-            for pending_close_tx in &contract
-                .accepted_contract
-                .dlc_transactions
-                .pending_close_txs
-            {
-                let confirmations = self
-                    .blockchain
-                    .get_transaction_confirmations(&pending_close_tx.compute_txid())?;
-
-                if confirmations >= NB_CONFIRMATIONS {
-                    // Found a fully confirmed pending close - move directly to Closed
-                    let pnl = contract.accepted_contract.compute_pnl(pending_close_tx)?;
-                    let closed_contract = ClosedContract {
-                        attestations: None, // Cooperative close has no attestations
-                        signed_cet: None,   // Cooperative close doesn't use a CET
-                        contract_id: contract.accepted_contract.get_contract_id(),
-                        temporary_contract_id: contract.accepted_contract.offered_contract.id,
-                        counter_party_id: contract.accepted_contract.offered_contract.counter_party,
-                        pnl,
-                    };
-
-                    self.store
-                        .update_contract(&Contract::Closed(closed_contract))?;
-                    break; // Only one close can be confirmed
-                } else if confirmations >= 1 {
-                    // Found a confirmed but not fully confirmed pending close - move to PreClosed
-                    let preclosed_contract = PreClosedContract {
-                        signed_contract: contract.clone(),
-                        attestations: None, // Cooperative close has no attestations
-                        signed_cet: pending_close_tx.clone(),
-                    };
-
-                    self.store
-                        .update_contract(&Contract::PreClosed(preclosed_contract))?;
-                    break; // Only one close can be confirmed
-                }
-            }
-        }
-        Ok(())
-    }
 
     fn close_contract(
         &self,
@@ -1040,8 +1017,8 @@ where
         Ok((close_message, counter_party))
     }
 
-    /// Accepts a cooperative close request by verifying the counter party's signature,
-    /// signing the closing transaction, and broadcasting it to the network.
+    /// Accepts a cooperative close request by completing the closing transaction
+    /// and broadcasting it to the network.
     pub fn accept_cooperative_close(
         &self,
         contract_id: &ContractId,
@@ -1406,6 +1383,7 @@ where
         &self,
         channel_id: &ChannelId,
         counter_payout: Amount,
+        additional_inputs: Vec<OutPoint>,
     ) -> Result<CollaborativeCloseOffer, Error> {
         let mut signed_channel =
             get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
@@ -1414,6 +1392,7 @@ where
             &self.secp,
             &mut signed_channel,
             counter_payout,
+            additional_inputs,
             &self.signer_provider,
             &self.time,
         )?;
