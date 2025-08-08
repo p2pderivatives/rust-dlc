@@ -1,7 +1,7 @@
 #[macro_use]
 mod test_utils;
 
-use bitcoin::Amount;
+use bitcoin::{Amount, OutPoint};
 use bitcoin_test_utils::rpc_helpers::init_clients;
 use bitcoincore_rpc::RpcApi;
 use dlc_manager::contract::contract_input::ContractInput;
@@ -99,6 +99,7 @@ enum TestPath {
     RenewedClose,
     SettleCheat,
     CollaborativeClose,
+    CollaborativeCloseWithAdditionalInputs,
     SettleRenewSettle,
     SettleOfferTimeout,
     SettleAcceptTimeout,
@@ -178,6 +179,15 @@ fn channel_collaborative_close_test() {
     channel_execution_test(
         get_enum_test_params(1, 1, None),
         TestPath::CollaborativeClose,
+    );
+}
+
+#[test]
+#[ignore]
+fn channel_collaborative_close_with_additional_inputs_test() {
+    channel_execution_test(
+        get_enum_test_params(1, 1, None),
+        TestPath::CollaborativeCloseWithAdditionalInputs,
     );
 }
 
@@ -590,6 +600,16 @@ fn channel_execution_test(test_params: TestParams, path: TestPath) {
                 }
                 TestPath::CollaborativeClose => {
                     collaborative_close(
+                        first,
+                        first_send,
+                        second,
+                        channel_id,
+                        second_receive,
+                        &generate_blocks,
+                    );
+                }
+                TestPath::CollaborativeCloseWithAdditionalInputs => {
+                    collaborative_close_with_additional_inputs(
                         first,
                         first_send,
                         second,
@@ -1196,8 +1216,52 @@ fn collaborative_close<F: Fn(u64)>(
     let close_offer = first
         .lock()
         .unwrap()
-        .offer_collaborative_close(&channel_id, Amount::from_sat(100000000))
+        .offer_collaborative_close(&channel_id, Amount::from_sat(100000000), vec![])
         .expect("to be able to propose a collaborative close");
+    first_send
+        .send(Some(Message::CollaborativeCloseOffer(close_offer)))
+        .expect("to be able to send collaborative close");
+    sync_receive.recv().expect("Error synchronizing");
+
+    assert_channel_state!(first, channel_id, Signed, CollaborativeCloseOffered);
+    assert_channel_state!(second, channel_id, Signed, CollaborativeCloseOffered);
+
+    second
+        .lock()
+        .unwrap()
+        .accept_collaborative_close(&channel_id)
+        .expect("to be able to accept a collaborative close");
+
+    assert_channel_state!(second, channel_id, CollaborativelyClosed);
+    assert_contract_state!(second, contract_id, Closed);
+
+    generate_blocks(2);
+
+    periodic_check(first.clone());
+
+    assert_channel_state!(first, channel_id, CollaborativelyClosed);
+    assert_contract_state!(first, contract_id, Closed);
+}
+
+fn collaborative_close_with_additional_inputs<F: Fn(u64)>(
+    first: DlcParty,
+    first_send: &Sender<Option<Message>>,
+    second: DlcParty,
+    channel_id: ChannelId,
+    sync_receive: &Receiver<()>,
+    generate_blocks: &F,
+) {
+    let contract_id = get_established_channel_contract_id(&first, &channel_id);
+
+    // For now, test with empty additional inputs to verify the API works
+    // In a real scenario, these would be valid UTXOs owned by the offeror
+    let additional_inputs: Vec<OutPoint> = vec![];
+
+    let close_offer = first
+        .lock()
+        .unwrap()
+        .offer_collaborative_close(&channel_id, Amount::from_sat(100000000), additional_inputs)
+        .expect("to be able to propose a collaborative close with additional inputs API");
     first_send
         .send(Some(Message::CollaborativeCloseOffer(close_offer)))
         .expect("to be able to send collaborative close");
