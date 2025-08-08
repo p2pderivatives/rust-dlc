@@ -522,10 +522,10 @@ pub struct CloseDlc {
     pub contract_id: [u8; 32],
     /// The signature for the closing transaction.
     pub close_signature: Signature,
-    /// The payout amount for the offer party in satoshis.
-    pub offer_payout: Amount,
     /// The payout amount for the accept party in satoshis.
     pub accept_payout: Amount,
+    /// The fee rate for the closing transaction.
+    pub fee_rate_per_vb: u64,
     /// Serial id for the funding input.
     pub fund_input_serial_id: u64,
     /// The funding inputs to use.
@@ -538,8 +538,8 @@ impl_dlc_writeable!(CloseDlc, {
     (protocol_version, writeable),
     (contract_id, writeable),
     (close_signature, writeable),
-    (offer_payout, writeable),
     (accept_payout, writeable),
+    (fee_rate_per_vb, writeable),
     (fund_input_serial_id, writeable),
     (funding_inputs, vec),
     (funding_signatures, writeable)
