@@ -201,7 +201,7 @@ pub fn sign_multi_sig_input<C: Signing>(
 }
 
 /// Transforms a redeem script for a p2sh-p2w* output to a script signature.
-pub(crate) fn redeem_script_to_script_sig(redeem: &Script) -> ScriptBuf {
+pub fn redeem_script_to_script_sig(redeem: &Script) -> ScriptBuf {
     match redeem.len() {
         0 => ScriptBuf::new(),
         _ => {
@@ -236,7 +236,8 @@ pub(crate) fn discard_dust(txs: Vec<TxOut>, dust_limit: Amount) -> Vec<TxOut> {
     txs.into_iter().filter(|x| x.value >= dust_limit).collect()
 }
 
-pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
+/// Get sequence for the given locktime
+pub fn get_sequence(lock_time: u32) -> Sequence {
     if lock_time == 0 {
         DISABLE_LOCKTIME
     } else {
@@ -244,7 +245,8 @@ pub(crate) fn get_sequence(lock_time: u32) -> Sequence {
     }
 }
 
-pub(crate) fn compute_var_int_prefix_size(len: usize) -> usize {
+/// Compute the var int prefix size
+pub fn compute_var_int_prefix_size(len: usize) -> usize {
     bitcoin::VarInt(len as u64).size()
 }
 

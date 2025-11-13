@@ -49,7 +49,7 @@ use lightning::ln::msgs::DecodeError;
 use lightning::ln::wire::Type;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use secp256k1_zkp::Verification;
-use secp256k1_zkp::{ecdsa::Signature, EcdsaAdaptorSignature, PublicKey, Secp256k1};
+use secp256k1_zkp::{EcdsaAdaptorSignature, PublicKey, Secp256k1};
 use segmentation::{SegmentChunk, SegmentStart};
 
 macro_rules! impl_type {
@@ -441,10 +441,6 @@ pub struct AcceptDlc {
     pub change_spk: ScriptBuf,
     /// Serial id to order funding transaction outputs.
     pub change_serial_id: u64,
-    /// The set of adaptor signatures from the accept party.
-    pub cet_adaptor_signatures: CetAdaptorSignatures,
-    /// The refund signature of the accept party.
-    pub refund_signature: Signature,
     /// The negotiation fields from the accept party.
     pub negotiation_fields: Option<NegotiationFields>,
 }
@@ -459,8 +455,6 @@ impl_dlc_writeable!(AcceptDlc, {
     (funding_inputs, vec),
     (change_spk, writeable),
     (change_serial_id, writeable),
-    (cet_adaptor_signatures, writeable),
-    (refund_signature, writeable),
     (negotiation_fields, option)
 });
 
@@ -484,10 +478,6 @@ pub struct SignDlc {
     )]
     /// The id of the contract referred to by this message.
     pub contract_id: [u8; 32],
-    /// The set of adaptor signatures from the offer party.
-    pub cet_adaptor_signatures: CetAdaptorSignatures,
-    /// The refund signature from the offer party.
-    pub refund_signature: Signature,
     /// The set of funding signatures from the offer party.
     pub funding_signatures: FundingSignatures,
 }
@@ -495,8 +485,6 @@ pub struct SignDlc {
 impl_dlc_writeable!(SignDlc, {
     (protocol_version, writeable),
     (contract_id, writeable),
-    (cet_adaptor_signatures, writeable),
-    (refund_signature, writeable),
     (funding_signatures, writeable)
 });
 

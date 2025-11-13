@@ -16,6 +16,9 @@
 extern crate alloc;
 extern crate bitcoin;
 extern crate core;
+extern crate hex;
+extern crate lazy_static;
+extern crate log;
 extern crate miniscript;
 extern crate secp256k1_sys;
 pub extern crate secp256k1_zkp;
@@ -43,7 +46,8 @@ use secp256k1_zkp::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub mod channel;
+// pub mod channel;
+pub mod opcat_utils;
 pub mod secp_utils;
 pub mod util;
 
@@ -87,7 +91,7 @@ macro_rules! checked_add {
 /// Represents the payouts for a unique contract outcome. Offer party represents
 /// the initiator of the contract while accept party represents the party
 /// accepting the contract.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(feature = "use-serde", derive(Serialize, Deserialize))]
 pub struct Payout {
     /// Payout for the offering party
@@ -122,12 +126,6 @@ pub struct EnumerationPayout {
 pub struct DlcTransactions {
     /// The fund transaction locking both parties collaterals
     pub fund: Transaction,
-    /// The contract execution transactions for closing the contract on a
-    /// certain outcome
-    pub cets: Vec<Transaction>,
-    /// The refund transaction for returning the collateral for each party in
-    /// case of an oracle misbehavior
-    pub refund: Transaction,
 
     /// The script pubkey of the fund output in the fund transaction
     pub funding_script_pubkey: ScriptBuf,
@@ -373,57 +371,40 @@ impl PartyParams {
     }
 }
 
-/// Create the transactions for a DLC contract based on the provided parameters
-pub fn create_dlc_transactions(
-    offer_params: &PartyParams,
-    accept_params: &PartyParams,
-    payouts: &[Payout],
-    refund_lock_time: u32,
-    fee_rate_per_vb: u64,
-    fund_lock_time: u32,
-    cet_lock_time: u32,
-    fund_output_serial_id: u64,
-) -> Result<DlcTransactions, Error> {
-    let (fund_tx, funding_script_pubkey) = create_fund_transaction_with_fees(
-        offer_params,
-        accept_params,
-        fee_rate_per_vb,
-        fund_lock_time,
-        fund_output_serial_id,
-        Amount::ZERO,
-    )?;
-    let fund_outpoint = OutPoint {
-        txid: fund_tx.compute_txid(),
-        vout: util::get_output_for_script_pubkey(&fund_tx, &funding_script_pubkey.to_p2wsh())
-            .expect("to find the funding script pubkey")
-            .0 as u32,
-    };
-    let (cets, refund_tx) = create_cets_and_refund_tx(
-        offer_params,
-        accept_params,
-        fund_outpoint,
-        payouts,
-        refund_lock_time,
-        cet_lock_time,
-        None,
-    )?;
+/// Return payout outputs for the given parameters, filtering dust amounts. Panics if both payouts
+/// are below dust threshold.
+pub fn get_payout_outputs(payout: &Payout, offer_spk: &Script, accept_spk: &Script) -> Vec<TxOut> {
+    let offer_dust_amount = offer_spk.minimal_non_dust();
+    let accept_dust_amount = accept_spk.minimal_non_dust();
 
-    Ok(DlcTransactions {
-        fund: fund_tx,
-        cets,
-        refund: refund_tx,
-        funding_script_pubkey,
-    })
+    let mut tx_outs = Vec::new();
+    if payout.offer >= offer_dust_amount {
+        tx_outs.push(TxOut {
+            value: payout.offer,
+            script_pubkey: offer_spk.to_owned(),
+        });
+    }
+    if payout.accept >= accept_dust_amount {
+        tx_outs.push(TxOut {
+            value: payout.accept,
+            script_pubkey: accept_spk.to_owned(),
+        });
+    }
+    assert!(!tx_outs.is_empty());
+
+    tx_outs
 }
 
-pub(crate) fn create_fund_transaction_with_fees(
+/// Create a funding transaction accounting for fees
+pub fn create_fund_transaction_with_fees(
     offer_params: &PartyParams,
     accept_params: &PartyParams,
     fee_rate_per_vb: u64,
     fund_lock_time: u32,
     fund_output_serial_id: u64,
+    funding_script_pubkey: &Script,
     extra_fee: Amount,
-) -> Result<(Transaction, ScriptBuf), Error> {
+) -> Result<Transaction, Error> {
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
     let (offer_change_output, offer_fund_fee, offer_cet_fee) =
@@ -459,11 +440,8 @@ pub(crate) fn create_fund_transaction_with_fees(
     let (accept_tx_ins, accept_inputs_serial_ids) =
         accept_params.get_unsigned_tx_inputs_and_serial_ids(fund_sequence);
 
-    let funding_script_pubkey =
-        make_funding_redeemscript(&offer_params.fund_pubkey, &accept_params.fund_pubkey);
-
     let fund_tx = create_funding_transaction(
-        &funding_script_pubkey,
+        funding_script_pubkey,
         fund_output_value,
         &offer_tx_ins,
         &offer_inputs_serial_ids,
@@ -477,75 +455,7 @@ pub(crate) fn create_fund_transaction_with_fees(
         fund_lock_time,
     );
 
-    Ok((fund_tx, funding_script_pubkey))
-}
-
-pub(crate) fn create_cets_and_refund_tx(
-    offer_params: &PartyParams,
-    accept_params: &PartyParams,
-    prev_outpoint: OutPoint,
-    payouts: &[Payout],
-    refund_lock_time: u32,
-    cet_lock_time: u32,
-    cet_nsequence: Option<Sequence>,
-) -> Result<(Vec<Transaction>, Transaction), Error> {
-    let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
-
-    let has_proper_outcomes = payouts.iter().all(|o| {
-        let total = checked_add!(o.offer, o.accept);
-        if let Ok(total) = total {
-            total == total_collateral
-        } else {
-            false
-        }
-    });
-
-    if !has_proper_outcomes {
-        return Err(Error::InvalidArgument);
-    }
-
-    let cet_input = TxIn {
-        previous_output: prev_outpoint,
-        witness: Witness::default(),
-        script_sig: ScriptBuf::default(),
-        sequence: cet_nsequence.unwrap_or_else(|| util::get_sequence(cet_lock_time)),
-    };
-
-    let cets = create_cets(
-        &cet_input,
-        &offer_params.payout_script_pubkey,
-        offer_params.payout_serial_id,
-        &accept_params.payout_script_pubkey,
-        accept_params.payout_serial_id,
-        payouts,
-        cet_lock_time,
-    );
-
-    let offer_refund_output = TxOut {
-        value: offer_params.collateral,
-        script_pubkey: offer_params.payout_script_pubkey.clone(),
-    };
-
-    let accept_refund_ouput = TxOut {
-        value: accept_params.collateral,
-        script_pubkey: accept_params.payout_script_pubkey.clone(),
-    };
-
-    let refund_input = TxIn {
-        previous_output: prev_outpoint,
-        witness: Witness::default(),
-        script_sig: ScriptBuf::default(),
-        sequence: util::ENABLE_LOCKTIME,
-    };
-
-    let refund_tx = create_refund_transaction(
-        offer_refund_output,
-        accept_refund_ouput,
-        refund_input,
-        refund_lock_time,
-    );
-
-    Ok((cets, refund_tx))
+    Ok(fund_tx)
 }
 
 /// Create a contract execution transaction
@@ -625,7 +535,7 @@ pub fn create_funding_transaction(
 ) -> Transaction {
     let fund_tx_out = TxOut {
         value: output_amount,
-        script_pubkey: funding_script_pubkey.to_p2wsh(),
+        script_pubkey: funding_script_pubkey.to_owned(),
     };
 
     let output: Vec<TxOut> = {
@@ -821,7 +731,8 @@ pub fn create_cet_adaptor_sigs_from_oracle_info(
         .collect()
 }
 
-fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey, Error> {
+/// Transforms the set of given signatures to a secret key.
+pub fn signatures_to_secret(signatures: &[Vec<SchnorrSignature>]) -> Result<SecretKey, Error> {
     let s_values = signatures
         .iter()
         .flatten()
@@ -931,14 +842,9 @@ mod tests {
     use bitcoin::blockdata::script::ScriptBuf;
     use bitcoin::blockdata::transaction::OutPoint;
     use bitcoin::consensus::encode::Encodable;
-    use bitcoin::hashes::sha256;
-    use bitcoin::hashes::Hash;
     use bitcoin::sighash::EcdsaSighashType;
     use bitcoin::{Address, CompressedPublicKey, Network, Txid};
-    use secp256k1_zkp::{
-        rand::{Rng, RngCore},
-        Keypair, PublicKey, Secp256k1, SecretKey, Signing,
-    };
+    use secp256k1_zkp::{rand::Rng, PublicKey, Secp256k1, SecretKey, Signing};
     use std::fmt::Write;
     use std::str::FromStr;
     use util;
@@ -1155,7 +1061,7 @@ mod tests {
             SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000006")
                 .unwrap();
 
-        let expected_serialized = "020000000001024F601442E48EEC22FF3A907C5F5290C6A0D3D08FB869E46EBFBAA9226B6D26830000000000FFFFFFFF98BBD477219A151A1DAF5377B30E8C5F9FB574783943F33AC523EF072FA292BC0000000000FFFFFFFF0338C3EB0B000000002200209B984C7BAE3EFDDC3A3F0A20FF81BFE89ED1FE07FF13E562149EE654BED845DBE70F102401000000160014FA3629F3060B6C1A5A365C30BF66FA00F155CB9EE70F10240100000016001465D4D622585BAF5151DE860B1E7AF58710F20DA20247304402207108DE1563AE311F8D4217E1C0C7463386C1A135BE6AF88CBE8D89A3A08D65090220195A2B0140FB9BA83F20CF45AD6EA088BB0C6860C0D4995F1CF1353739CA65A90121022F8BDE4D1A07209355B4A7250A5C5128E88B84BDDC619AB7CBA8D569B240EFE4024730440220048716EAEE918AEBCB1BFCFAF7564E78293A7BB0164D9A7844E42FCEB5AE393C022022817D033C9DB19C5BDCADD49B7587A810B6FC2264158A59665ABA8AB298455B012103FFF97BD5755EEEA420453A14355235D382F6472F8568A18B2F057A146029755600000000";
+        let expected_serialized = "020000000001024F601442E48EEC22FF3A907C5F5290C6A0D3D08FB869E46EBFBAA9226B6D26830000000000FFFFFFFF98BBD477219A151A1DAF5377B30E8C5F9FB574783943F33AC523EF072FA292BC0000000000FFFFFFFF0338C3EB0B000000004752210279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F817982102C6047F9441ED7D6D3045406E95C07CD85C778E4B8CEF3CA7ABAC09B95C709EE552AEE70F102401000000160014FA3629F3060B6C1A5A365C30BF66FA00F155CB9EE70F10240100000016001465D4D622585BAF5151DE860B1E7AF58710F20DA20247304402204E570507695AE62FCEF8558DA87E853B4A532A9418E617E86F31E02E94444E39022045C96EB4E9CD46FDC8814481864CFB6B2ACCC871C92BA064DE11D40AF4586F780121022F8BDE4D1A07209355B4A7250A5C5128E88B84BDDC619AB7CBA8D569B240EFE4024730440220148E0ACD03DD990DF42D37A3A689295ED0B8DF73F473A000971D0A56E10B78C802200C9313FF0FFBD9F12C4D3143057DD4BBF34400C717EE0D97FB8FABB003ADE196012103FFF97BD5755EEEA420453A14355235D382F6472F8568A18B2F057A146029755600000000";
 
         let funding_script_pubkey =
             make_funding_redeemscript(&offer_fund_pubkey, &accept_fund_pubkey);
@@ -1253,19 +1159,6 @@ mod tests {
         )
     }
 
-    fn payouts() -> Vec<Payout> {
-        vec![
-            Payout {
-                offer: Amount::from_sat(200_000_000),
-                accept: Amount::ZERO,
-            },
-            Payout {
-                offer: Amount::ZERO,
-                accept: Amount::from_sat(200_000_000),
-            },
-        ]
-    }
-
     #[test]
     fn get_change_output_and_fees_enough_funds() {
         // Arrange
@@ -1295,287 +1188,5 @@ mod tests {
 
         // Assert
         assert!(res.is_err());
-    }
-
-    #[test]
-    fn create_dlc_transactions_no_error() {
-        // Arrange
-        let (offer_party_params, _) = get_party_params(
-            Amount::from_sat(1000000000),
-            Amount::from_sat(100000000),
-            None,
-        );
-        let (accept_party_params, _) = get_party_params(
-            Amount::from_sat(1000000000),
-            Amount::from_sat(100000000),
-            None,
-        );
-
-        // Act
-        let dlc_txs = create_dlc_transactions(
-            &offer_party_params,
-            &accept_party_params,
-            &payouts(),
-            100,
-            4,
-            10,
-            10,
-            0,
-        )
-        .unwrap();
-
-        // Assert
-        assert_eq!(10, dlc_txs.fund.lock_time.to_consensus_u32());
-        assert_eq!(100, dlc_txs.refund.lock_time.to_consensus_u32());
-        assert!(dlc_txs
-            .cets
-            .iter()
-            .all(|x| x.lock_time.to_consensus_u32() == 10));
-    }
-
-    #[test]
-    fn create_cet_adaptor_sig_is_valid() {
-        // Arrange
-        let secp = Secp256k1::new();
-        let mut rng = secp256k1_zkp::rand::thread_rng();
-        let (offer_party_params, offer_fund_sk) = get_party_params(
-            Amount::from_sat(1000000000),
-            Amount::from_sat(100000000),
-            None,
-        );
-        let (accept_party_params, accept_fund_sk) = get_party_params(
-            Amount::from_sat(1000000000),
-            Amount::from_sat(100000000),
-            None,
-        );
-
-        let dlc_txs = create_dlc_transactions(
-            &offer_party_params,
-            &accept_party_params,
-            &payouts(),
-            100,
-            4,
-            10,
-            10,
-            0,
-        )
-        .unwrap();
-
-        let cets = dlc_txs.cets;
-        const NB_ORACLES: usize = 3;
-        const NB_OUTCOMES: usize = 2;
-        const NB_DIGITS: usize = 20;
-        let mut oracle_infos: Vec<OracleInfo> = Vec::with_capacity(NB_ORACLES);
-        let mut oracle_sks: Vec<Keypair> = Vec::with_capacity(NB_ORACLES);
-        let mut oracle_sk_nonce: Vec<Vec<[u8; 32]>> = Vec::with_capacity(NB_ORACLES);
-        let mut oracle_sigs: Vec<Vec<SchnorrSignature>> = Vec::with_capacity(NB_ORACLES);
-        let messages: Vec<Vec<Vec<_>>> = (0..NB_OUTCOMES)
-            .map(|x| {
-                (0..NB_ORACLES)
-                    .map(|y| {
-                        (0..NB_DIGITS)
-                            .map(|z| {
-                                let message = &[(x + y + z) as u8];
-                                let hash = sha256::Hash::hash(message).to_byte_array();
-                                Message::from_digest(hash)
-                            })
-                            .collect()
-                    })
-                    .collect()
-            })
-            .collect();
-
-        for i in 0..NB_ORACLES {
-            let oracle_kp = Keypair::new(&secp, &mut rng);
-            let oracle_pubkey = oracle_kp.x_only_public_key().0;
-            let mut nonces: Vec<XOnlyPublicKey> = Vec::with_capacity(NB_DIGITS);
-            let mut sk_nonces: Vec<[u8; 32]> = Vec::with_capacity(NB_DIGITS);
-            oracle_sigs.push(Vec::with_capacity(NB_DIGITS));
-            for j in 0..NB_DIGITS {
-                let mut sk_nonce = [0u8; 32];
-                rng.fill_bytes(&mut sk_nonce);
-                let oracle_r_kp = Keypair::from_seckey_slice(&secp, &sk_nonce).unwrap();
-                let nonce = XOnlyPublicKey::from_keypair(&oracle_r_kp).0;
-                let sig = secp_utils::schnorrsig_sign_with_nonce(
-                    &secp,
-                    &messages[0][i][j],
-                    &oracle_kp,
-                    &sk_nonce,
-                );
-                oracle_sigs[i].push(sig);
-                nonces.push(nonce);
-                sk_nonces.push(sk_nonce);
-            }
-            oracle_infos.push(OracleInfo {
-                public_key: oracle_pubkey,
-                nonces,
-            });
-            oracle_sk_nonce.push(sk_nonces);
-            oracle_sks.push(oracle_kp);
-        }
-
-        let funding_script_pubkey = make_funding_redeemscript(
-            &offer_party_params.fund_pubkey,
-            &accept_party_params.fund_pubkey,
-        );
-        let fund_output_value = dlc_txs.fund.output[0].value;
-
-        // Act
-        let cet_sigs = create_cet_adaptor_sigs_from_oracle_info(
-            &secp,
-            &cets,
-            &oracle_infos,
-            &offer_fund_sk,
-            &funding_script_pubkey,
-            fund_output_value,
-            &messages,
-        )
-        .unwrap();
-
-        let sign_res = sign_cet(
-            &secp,
-            &mut cets[0].clone(),
-            &cet_sigs[0],
-            &oracle_sigs,
-            &accept_fund_sk,
-            &offer_party_params.fund_pubkey,
-            &funding_script_pubkey,
-            fund_output_value,
-        );
-
-        let adaptor_secret = signatures_to_secret(&oracle_sigs).unwrap();
-        let adapted_sig = cet_sigs[0].decrypt(&adaptor_secret).unwrap();
-
-        // Assert
-        assert!(cet_sigs
-            .iter()
-            .enumerate()
-            .all(|(i, x)| verify_cet_adaptor_sig_from_oracle_info(
-                &secp,
-                x,
-                &cets[i],
-                &oracle_infos,
-                &offer_party_params.fund_pubkey,
-                &funding_script_pubkey,
-                fund_output_value,
-                &messages[i],
-            )
-            .is_ok()));
-        sign_res.expect("Error signing CET");
-        verify_tx_input_sig(
-            &secp,
-            &adapted_sig,
-            &cets[0],
-            0,
-            &funding_script_pubkey,
-            fund_output_value,
-            &offer_party_params.fund_pubkey,
-        )
-        .expect("Invalid decrypted adaptor signature");
-    }
-
-    #[test]
-    fn input_output_ordering_test() {
-        struct OrderingCase {
-            serials: [u64; 3],
-            expected_input_order: [usize; 2],
-            expected_fund_output_order: [usize; 3],
-            expected_payout_order: [usize; 2],
-        }
-
-        let cases = vec![
-            OrderingCase {
-                serials: [0, 1, 2],
-                expected_input_order: [0, 1],
-                expected_fund_output_order: [0, 1, 2],
-                expected_payout_order: [0, 1],
-            },
-            OrderingCase {
-                serials: [1, 0, 2],
-                expected_input_order: [0, 1],
-                expected_fund_output_order: [1, 0, 2],
-                expected_payout_order: [0, 1],
-            },
-            OrderingCase {
-                serials: [2, 0, 1],
-                expected_input_order: [0, 1],
-                expected_fund_output_order: [2, 0, 1],
-                expected_payout_order: [0, 1],
-            },
-            OrderingCase {
-                serials: [2, 1, 0],
-                expected_input_order: [1, 0],
-                expected_fund_output_order: [2, 1, 0],
-                expected_payout_order: [1, 0],
-            },
-        ];
-
-        for case in cases {
-            let (offer_party_params, _) = get_party_params(
-                Amount::from_sat(1000000000),
-                Amount::from_sat(100000000),
-                Some(case.serials[1]),
-            );
-            let (accept_party_params, _) = get_party_params(
-                Amount::from_sat(1000000000),
-                Amount::from_sat(100000000),
-                Some(case.serials[2]),
-            );
-
-            let dlc_txs = create_dlc_transactions(
-                &offer_party_params,
-                &accept_party_params,
-                &[Payout {
-                    offer: Amount::from_sat(100000000),
-                    accept: Amount::from_sat(100000000),
-                }],
-                100,
-                4,
-                10,
-                10,
-                case.serials[0],
-            )
-            .unwrap();
-
-            // Check that fund inputs are in correct order
-            assert!(
-                dlc_txs.fund.input[case.expected_input_order[0]].previous_output
-                    == offer_party_params.inputs[0].outpoint
-            );
-            assert!(
-                dlc_txs.fund.input[case.expected_input_order[1]].previous_output
-                    == accept_party_params.inputs[0].outpoint
-            );
-
-            // Check that fund output are in correct order
-            assert!(
-                dlc_txs.fund.output[case.expected_fund_output_order[0]].script_pubkey
-                    == dlc_txs.funding_script_pubkey.to_p2wsh()
-            );
-            assert!(
-                dlc_txs.fund.output[case.expected_fund_output_order[1]].script_pubkey
-                    == offer_party_params.change_script_pubkey
-            );
-            assert!(
-                dlc_txs.fund.output[case.expected_fund_output_order[2]].script_pubkey
-                    == accept_party_params.change_script_pubkey
-            );
-
-            // Check payout output ordering
-            assert!(
-                dlc_txs.cets[0].output[case.expected_payout_order[0]].script_pubkey
-                    == offer_party_params.payout_script_pubkey
-            );
-            assert!(
-                dlc_txs.cets[0].output[case.expected_payout_order[1]].script_pubkey
-                    == accept_party_params.payout_script_pubkey
-            );
-
-            crate::util::get_output_for_script_pubkey(
-                &dlc_txs.fund,
-                &dlc_txs.funding_script_pubkey.to_p2wsh(),
-            )
-            .expect("Could not find fund output");
-        }
     }
 }

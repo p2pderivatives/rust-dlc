@@ -1,7 +1,7 @@
 bitcoinInfo:
   rpcUsername: testuser
   rpcPassword: lq6zequb-gYTdF2_ZEUtr8ywTXzLYtknzWU4nV8uVoo=
-  rpcPort: 18443
+  rpcPort: 38332
   rpcHost: localhost
   wallet: bob
 storageDirPath: './dlc_sample_bob'

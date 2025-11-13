@@ -9,9 +9,8 @@ extern crate dlc_manager;
 mod test_utils;
 
 use bitcoin::Amount;
+use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc_manager::payout_curve::PayoutFunctionPiece;
-use electrs_blockchain_provider::ElectrsBlockchainProvider;
-use simple_wallet::SimpleWallet;
 use test_utils::*;
 
 use bitcoin_test_utils::rpc_helpers::init_clients;
@@ -91,7 +90,7 @@ macro_rules! periodic_check {
     ($d:expr, $id:expr, $p:ident) => {
         $d.lock()
             .unwrap()
-            .periodic_check(true)
+            .periodic_check()
             .expect("Periodic check error");
 
         assert_contract_state!($d, $id, $p);
@@ -177,11 +176,6 @@ fn numerical_common_diff_nb_digits(
 #[derive(Eq, PartialEq, Clone)]
 enum TestPath {
     Close,
-    Refund,
-    BadAcceptCetSignature,
-    BadAcceptRefundSignature,
-    BadSignCetSignature,
-    BadSignRefundSignature,
 }
 
 #[test]
@@ -362,66 +356,6 @@ fn enum_and_numerical_5_of_5_manual_test() {
 
 #[test]
 #[ignore]
-fn enum_single_oracle_refund_test() {
-    manager_execution_test(
-        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
-        TestPath::Refund,
-        false,
-    );
-}
-
-#[test]
-#[ignore]
-fn enum_single_oracle_refund_manual_test() {
-    manager_execution_test(
-        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
-        TestPath::Refund,
-        true,
-    );
-}
-
-#[test]
-#[ignore]
-fn enum_single_oracle_bad_accept_cet_sig_test() {
-    manager_execution_test(
-        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
-        TestPath::BadAcceptCetSignature,
-        false,
-    );
-}
-
-#[test]
-#[ignore]
-fn enum_single_oracle_bad_accept_refund_sig_test() {
-    manager_execution_test(
-        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
-        TestPath::BadAcceptRefundSignature,
-        false,
-    );
-}
-
-#[test]
-#[ignore]
-fn enum_single_oracle_bad_sign_cet_sig_test() {
-    manager_execution_test(
-        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
-        TestPath::BadSignCetSignature,
-        false,
-    );
-}
-
-#[test]
-#[ignore]
-fn enum_single_oracle_bad_sign_refund_sig_test() {
-    manager_execution_test(
-        get_enum_test_params(1, 1, Some(get_enum_oracles(1, 0))),
-        TestPath::BadSignRefundSignature,
-        false,
-    );
-}
-
-#[test]
-#[ignore]
 fn two_of_two_oracle_numerical_diff_nb_digits_test() {
     numerical_common_diff_nb_digits(2, 2, None, false, false);
 }
@@ -563,7 +497,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     let (sync_send, sync_receive) = channel::<()>();
     let alice_sync_send = sync_send.clone();
     let bob_sync_send = sync_send;
-    let (_, _, sink_rpc) = init_clients();
+    let (alice_rpc, bob_rpc, sink_rpc) = init_clients();
 
     let mut alice_oracles = HashMap::with_capacity(1);
     let mut bob_oracles = HashMap::with_capacity(1);
@@ -579,22 +513,8 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     let mock_time = Arc::new(mocks::mock_time::MockTime {});
     mocks::mock_time::set_time((EVENT_MATURITY as u64) - 1);
 
-    let electrs = Arc::new(ElectrsBlockchainProvider::new(
-        "http://localhost:3004/".to_string(),
-        bitcoin::Network::Regtest,
-    ));
-
-    let alice_wallet = Arc::new(SimpleWallet::new(
-        electrs.clone(),
-        alice_store.clone(),
-        bitcoin::Network::Regtest,
-    ));
-
-    let bob_wallet = Arc::new(SimpleWallet::new(
-        electrs.clone(),
-        bob_store.clone(),
-        bitcoin::Network::Regtest,
-    ));
+    let alice_wallet = Arc::new(BitcoinCoreProvider::new_from_rpc_client(alice_rpc));
+    let bob_wallet = Arc::new(BitcoinCoreProvider::new_from_rpc_client(bob_rpc));
 
     let alice_fund_address = alice_wallet.get_new_address().unwrap();
     let bob_fund_address = bob_wallet.get_new_address().unwrap();
@@ -626,7 +546,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
         .unwrap();
 
     let generate_blocks = |nb_blocks: u64| {
-        let prev_blockchain_height = electrs.get_blockchain_height().unwrap();
+        let prev_blockchain_height = alice_wallet.get_blockchain_height().unwrap();
 
         let sink_address = sink_rpc
             .get_new_address(None, None)
@@ -640,24 +560,20 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
         let mut cur_blockchain_height = prev_blockchain_height;
         while cur_blockchain_height < prev_blockchain_height + nb_blocks {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            cur_blockchain_height = electrs.get_blockchain_height().unwrap();
+            cur_blockchain_height = alice_wallet.get_blockchain_height().unwrap();
         }
     };
 
     generate_blocks(6);
 
-    refresh_wallet(&alice_wallet, Amount::from_sat(200000000));
-    refresh_wallet(&bob_wallet, Amount::from_sat(200000000));
-
     let alice_manager = Arc::new(Mutex::new(
         Manager::new(
             Arc::clone(&alice_wallet),
             Arc::clone(&alice_wallet),
-            Arc::clone(&electrs),
+            Arc::clone(&alice_wallet),
             alice_store,
             alice_oracles,
             Arc::clone(&mock_time),
-            Arc::clone(&electrs),
         )
         .unwrap(),
     ));
@@ -669,11 +585,10 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
         Manager::new(
             Arc::clone(&bob_wallet),
             Arc::clone(&bob_wallet),
-            Arc::clone(&electrs),
+            Arc::clone(&bob_wallet),
             bob_store,
             bob_oracles,
             Arc::clone(&mock_time),
-            Arc::clone(&electrs),
         )
         .unwrap(),
     ));
@@ -688,23 +603,6 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
     let alice_expect_error_loop = alice_expect_error.clone();
     let bob_expect_error_loop = bob_expect_error.clone();
-
-    let path_copy = path.clone();
-    let alter_sign = move |msg| match msg {
-        Message::Sign(mut sign_dlc) => {
-            match path_copy {
-                TestPath::BadSignCetSignature => {
-                    alter_adaptor_sig(&mut sign_dlc.cet_adaptor_signatures)
-                }
-                TestPath::BadSignRefundSignature => {
-                    sign_dlc.refund_signature = alter_refund_sig(&sign_dlc.refund_signature);
-                }
-                _ => {}
-            }
-            Some(Message::Sign(sign_dlc))
-        }
-        _ => Some(msg),
-    };
 
     let msg_callback = |msg: &Message| {
         if let Message::Sign(s) = msg {
@@ -728,7 +626,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
         bob_send_loop,
         bob_expect_error_loop,
         bob_sync_send,
-        alter_sign,
+        Some,
         msg_callback
     );
 
@@ -753,7 +651,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
 
     assert_contract_state!(alice_manager_send, temporary_contract_id, Offered);
 
-    let (contract_id, _, mut accept_msg) = alice_manager_send
+    let (contract_id, _, accept_msg) = alice_manager_send
         .lock()
         .unwrap()
         .accept_contract_offer(&temporary_contract_id)
@@ -764,31 +662,7 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
     assert_contract_state!(alice_manager_send, contract_id, Accepted);
 
     match path {
-        TestPath::BadAcceptCetSignature | TestPath::BadAcceptRefundSignature => {
-            match path {
-                TestPath::BadAcceptCetSignature => {
-                    alter_adaptor_sig(&mut accept_msg.cet_adaptor_signatures)
-                }
-                TestPath::BadAcceptRefundSignature => {
-                    accept_msg.refund_signature = alter_refund_sig(&accept_msg.refund_signature);
-                }
-                _ => {}
-            };
-            bob_expect_error.store(true, Ordering::Relaxed);
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
-            sync_receive.recv().expect("Error synchronizing");
-            assert_contract_state!(bob_manager_send, temporary_contract_id, FailedAccept);
-        }
-        TestPath::BadSignCetSignature | TestPath::BadSignRefundSignature => {
-            alice_expect_error.store(true, Ordering::Relaxed);
-            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
-            // Bob receives accept message
-            sync_receive.recv().expect("Error synchronizing");
-            // Alice receives sign message
-            sync_receive.recv().expect("Error synchronizing");
-            assert_contract_state!(alice_manager_send, contract_id, FailedSign);
-        }
-        TestPath::Close | TestPath::Refund => {
+        TestPath::Close => {
             alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
             sync_receive.recv().expect("Error synchronizing");
 
@@ -874,27 +748,6 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                         periodic_check!(second, contract_id, PreClosed);
                     }
                 }
-                TestPath::Refund => {
-                    periodic_check!(first, contract_id, Confirmed);
-
-                    periodic_check!(second, contract_id, Confirmed);
-
-                    mocks::mock_time::set_time(
-                        ((EVENT_MATURITY + dlc_manager::manager::REFUND_DELAY) as u64) + 1,
-                    );
-
-                    generate_blocks(10);
-
-                    periodic_check!(first, contract_id, Refunded);
-
-                    // Randomly check with or without having the Refund mined.
-                    if thread_rng().next_u32() % 2 == 0 {
-                        generate_blocks(1);
-                    }
-
-                    periodic_check!(second, contract_id, Refunded);
-                }
-                _ => unreachable!(),
             }
         }
     }

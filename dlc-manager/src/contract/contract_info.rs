@@ -3,17 +3,14 @@
 use super::AdaptorInfo;
 use super::ContractDescriptor;
 use crate::error::Error;
-use crate::ContractSigner;
 use bitcoin::hashes::Hash;
 use bitcoin::Amount;
-use bitcoin::{Script, Transaction};
+use bitcoin::Script;
+use bitcoin::ScriptBuf;
 use dlc::{OracleInfo, Payout};
 use dlc_messages::oracle_msgs::{EventDescriptor, OracleAnnouncement};
-use dlc_trie::{DlcTrie, RangeInfo};
-use secp256k1_zkp::{
-    All, EcdsaAdaptorSignature, Message, PublicKey, Secp256k1, SecretKey, Verification,
-};
-use std::ops::Deref;
+use dlc_trie::RangeInfo;
+use secp256k1_zkp::{All, Message, PublicKey, Secp256k1, Verification};
 
 pub(super) type OracleIndexAndPrefixLength = Vec<(usize, usize)>;
 
@@ -62,90 +59,33 @@ impl ContractInfo {
         self.oracle_announcements.iter().map(|x| x.into()).collect()
     }
 
-    /// Uses the provided AdaptorInfo and SecretKey to generate the set of
-    /// adaptor signatures for the contract.
-    pub fn get_adaptor_signatures<S: Deref>(
-        &self,
-        secp: &Secp256k1<All>,
-        adaptor_info: &AdaptorInfo,
-        signer: &S,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        cets: &[Transaction],
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error>
-    where
-        S::Target: ContractSigner,
-    {
-        let fund_privkey = signer.get_secret_key()?;
-        match adaptor_info {
-            AdaptorInfo::Enum => match &self.contract_descriptor {
-                ContractDescriptor::Enum(e) => e.get_adaptor_signatures(
-                    secp,
-                    &self.get_oracle_infos(),
-                    self.threshold,
-                    cets,
-                    &fund_privkey,
-                    funding_script_pubkey,
-                    fund_output_value,
-                ),
-                _ => unreachable!(),
-            },
-            AdaptorInfo::Numerical(trie) => Ok(trie.sign(
-                secp,
-                &fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-                cets,
-                &self.precompute_points(secp)?,
-            )?),
-            AdaptorInfo::NumericalWithDifference(trie) => Ok(trie.sign(
-                secp,
-                &fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-                cets,
-                &self.precompute_points(secp)?,
-            )?),
-        }
-    }
-
-    /// Generate the AdaptorInfo for the contract while verifying the provided
-    /// set of adaptor signatures.
-    pub fn verify_and_get_adaptor_info(
+    /// Generate the script for the taproot tree
+    pub fn get_scripts(
         &self,
         secp: &Secp256k1<All>,
         total_collateral: Amount,
-        fund_pubkey: &PublicKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        cets: &[Transaction],
-        adaptor_sigs: &[EcdsaAdaptorSignature],
-        adaptor_sig_start: usize,
-    ) -> Result<(AdaptorInfo, usize), Error> {
-        let oracle_infos = self.get_oracle_infos();
+        offer_spk: &Script,
+        accept_spk: &Script,
+        index_start: usize,
+    ) -> Result<(AdaptorInfo, Vec<ScriptBuf>), Error> {
         match &self.contract_descriptor {
-            ContractDescriptor::Enum(e) => Ok(e.verify_and_get_adaptor_info(
-                secp,
-                &oracle_infos,
-                self.threshold,
-                fund_pubkey,
-                funding_script_pubkey,
-                fund_output_value,
-                cets,
-                adaptor_sigs,
-                adaptor_sig_start,
-            )?),
-            ContractDescriptor::Numerical(n) => Ok(n.verify_and_get_adaptor_info(
-                secp,
+            ContractDescriptor::Enum(e) => Ok((
+                AdaptorInfo::Enum,
+                e.get_scripts(
+                    secp,
+                    offer_spk,
+                    accept_spk,
+                    &self.get_oracle_infos(),
+                    self.threshold,
+                )?,
+            )),
+            ContractDescriptor::Numerical(n) => Ok(n.get_scripts(
+                offer_spk,
+                accept_spk,
                 total_collateral,
-                fund_pubkey,
-                funding_script_pubkey,
-                fund_output_value,
-                self.threshold,
                 &self.precompute_points(secp)?,
-                cets,
-                adaptor_sigs,
-                adaptor_sig_start,
+                index_start,
+                self.threshold,
             )?),
         }
     }
@@ -182,94 +122,6 @@ impl ContractInfo {
                     res.0.clone(),
                 ))
             }
-        }
-    }
-
-    /// Verifies the given adaptor signatures are valid with respect to the given
-    /// adaptor info.
-    pub fn verify_adaptor_info(
-        &self,
-        secp: &Secp256k1<All>,
-        fund_pubkey: &PublicKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        cets: &[Transaction],
-        adaptor_sigs: &[EcdsaAdaptorSignature],
-        adaptor_sig_start: usize,
-        adaptor_info: &AdaptorInfo,
-    ) -> Result<usize, Error> {
-        let oracle_infos = self.get_oracle_infos();
-        match &self.contract_descriptor {
-            ContractDescriptor::Enum(e) => Ok(e.verify_adaptor_info(
-                secp,
-                &oracle_infos,
-                self.threshold,
-                fund_pubkey,
-                funding_script_pubkey,
-                fund_output_value,
-                cets,
-                adaptor_sigs,
-                adaptor_sig_start,
-            )?),
-            ContractDescriptor::Numerical(_) => match adaptor_info {
-                AdaptorInfo::Enum => unreachable!(),
-                AdaptorInfo::Numerical(trie) => Ok(trie.verify(
-                    secp,
-                    fund_pubkey,
-                    funding_script_pubkey,
-                    fund_output_value,
-                    adaptor_sigs,
-                    cets,
-                    &self.precompute_points(secp)?,
-                )?),
-                AdaptorInfo::NumericalWithDifference(trie) => Ok(trie.verify(
-                    secp,
-                    fund_pubkey,
-                    funding_script_pubkey,
-                    fund_output_value,
-                    adaptor_sigs,
-                    cets,
-                    &self.precompute_points(secp)?,
-                )?),
-            },
-        }
-    }
-
-    /// Generate the adaptor info and adaptor signatures for the contract.
-    pub fn get_adaptor_info(
-        &self,
-        secp: &Secp256k1<All>,
-        total_collateral: Amount,
-        fund_priv_key: &SecretKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        cets: &[Transaction],
-        adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
-        match &self.contract_descriptor {
-            ContractDescriptor::Enum(e) => {
-                let oracle_infos = self.get_oracle_infos();
-                Ok(e.get_adaptor_info(
-                    secp,
-                    &oracle_infos,
-                    self.threshold,
-                    fund_priv_key,
-                    funding_script_pubkey,
-                    fund_output_value,
-                    cets,
-                )?)
-            }
-            ContractDescriptor::Numerical(n) => Ok(n.get_adaptor_info(
-                secp,
-                total_collateral,
-                fund_priv_key,
-                funding_script_pubkey,
-                fund_output_value,
-                self.threshold,
-                &self.precompute_points(secp)?,
-                cets,
-                adaptor_index_start,
-            )?),
         }
     }
 

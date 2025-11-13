@@ -3,12 +3,12 @@
 use super::AdaptorInfo;
 use crate::error::Error;
 use crate::payout_curve::{PayoutFunction, RoundingIntervals};
-use bitcoin::{Amount, Script, Transaction};
+use bitcoin::{Amount, Script, ScriptBuf};
 use dlc::{Payout, RangePayout};
 use dlc_trie::multi_oracle_trie::MultiOracleTrie;
 use dlc_trie::multi_oracle_trie_with_diff::MultiOracleTrieWithDiff;
 use dlc_trie::{DlcTrie, OracleNumericInfo};
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::PublicKey;
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
@@ -73,24 +73,20 @@ impl NumericalDescriptor {
         Ok(self
             .get_range_payouts(total_collateral)?
             .iter()
-            .map(|x| x.payout.clone())
+            .map(|x| x.payout)
             .collect())
     }
 
     /// Verify the given set of adaptor signatures and generate the adaptor info.
-    pub fn verify_and_get_adaptor_info(
+    pub fn get_scripts(
         &self,
-        secp: &Secp256k1<All>,
+        offer_spk: &Script,
+        accept_spk: &Script,
         total_collateral: Amount,
-        fund_pubkey: &PublicKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        threshold: usize,
         precomputed_points: &[Vec<Vec<PublicKey>>],
-        cets: &[Transaction],
-        adaptor_pairs: &[EcdsaAdaptorSignature],
-        adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, usize), Error> {
+        index_start: usize,
+        threshold: usize,
+    ) -> Result<(AdaptorInfo, Vec<ScriptBuf>), Error> {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
@@ -99,33 +95,25 @@ impl NumericalDescriptor {
                     params.min_support_exp,
                     params.max_error_exp,
                 )?;
-                let index = multi_trie.generate_verify(
-                    secp,
-                    fund_pubkey,
-                    funding_script_pubkey,
-                    fund_output_value,
+                let scripts = multi_trie.generate_scripts(
+                    offer_spk,
+                    accept_spk,
                     &self.get_range_payouts(total_collateral)?,
-                    cets,
                     precomputed_points,
-                    adaptor_pairs,
-                    adaptor_index_start,
+                    index_start,
                 )?;
-                Ok((AdaptorInfo::NumericalWithDifference(multi_trie), index))
+                Ok((AdaptorInfo::NumericalWithDifference(multi_trie), scripts))
             }
             None => {
                 let mut trie = MultiOracleTrie::new(&self.oracle_numeric_infos, threshold)?;
-                let index = trie.generate_verify(
-                    secp,
-                    fund_pubkey,
-                    funding_script_pubkey,
-                    fund_output_value,
+                let scripts = trie.generate_scripts(
+                    offer_spk,
+                    accept_spk,
                     &self.get_range_payouts(total_collateral)?,
-                    cets,
                     precomputed_points,
-                    adaptor_pairs,
-                    adaptor_index_start,
+                    index_start,
                 )?;
-                Ok((AdaptorInfo::Numerical(trie), index))
+                Ok((AdaptorInfo::Numerical(trie), scripts))
             }
         }
     }
@@ -133,16 +121,13 @@ impl NumericalDescriptor {
     /// Generate the set of adaptor signatures and the adaptor info.
     pub fn get_adaptor_info(
         &self,
-        secp: &Secp256k1<All>,
         total_collateral: Amount,
-        fund_priv_key: &SecretKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
+        offer_spk: &Script,
+        accept_spk: &Script,
         threshold: usize,
         precomputed_points: &[Vec<Vec<PublicKey>>],
-        cets: &[Transaction],
         adaptor_index_start: usize,
-    ) -> Result<(AdaptorInfo, Vec<EcdsaAdaptorSignature>), Error> {
+    ) -> Result<(AdaptorInfo, Vec<ScriptBuf>), Error> {
         match &self.difference_params {
             Some(params) => {
                 let mut multi_trie = MultiOracleTrieWithDiff::new(
@@ -151,31 +136,22 @@ impl NumericalDescriptor {
                     params.min_support_exp,
                     params.max_error_exp,
                 )?;
-                let adaptor_pairs = multi_trie.generate_sign(
-                    secp,
-                    fund_priv_key,
-                    funding_script_pubkey,
-                    fund_output_value,
+                let scripts = multi_trie.generate_scripts(
+                    offer_spk,
+                    accept_spk,
                     &self.get_range_payouts(total_collateral)?,
-                    cets,
                     precomputed_points,
                     adaptor_index_start,
                 )?;
-                Ok((
-                    AdaptorInfo::NumericalWithDifference(multi_trie),
-                    adaptor_pairs,
-                ))
+                Ok((AdaptorInfo::NumericalWithDifference(multi_trie), scripts))
             }
 
             None => {
                 let mut trie = MultiOracleTrie::new(&self.oracle_numeric_infos, threshold)?;
-                let sigs = trie.generate_sign(
-                    secp,
-                    fund_priv_key,
-                    funding_script_pubkey,
-                    fund_output_value,
+                let sigs = trie.generate_scripts(
+                    offer_spk,
+                    accept_spk,
                     &self.get_range_payouts(total_collateral)?,
-                    cets,
                     precomputed_points,
                     adaptor_index_start,
                 )?;

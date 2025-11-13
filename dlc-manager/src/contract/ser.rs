@@ -17,8 +17,8 @@ use crate::payout_curve::{
 };
 use dlc::DlcTransactions;
 use dlc_messages::ser_impls::{
-    read_ecdsa_adaptor_signatures, read_option_cb, read_usize, read_vec, read_vec_cb,
-    write_ecdsa_adaptor_signatures, write_option_cb, write_usize, write_vec, write_vec_cb,
+    read_option_cb, read_usize, read_vec, read_vec_cb, write_option_cb, write_usize, write_vec,
+    write_vec_cb,
 };
 use dlc_trie::digit_trie::{DigitNodeData, DigitTrieDump};
 use dlc_trie::multi_oracle_trie::{MultiOracleTrie, MultiOracleTrieDump};
@@ -100,13 +100,11 @@ impl_dlc_writeable!(OfferedContract, {
     (counter_party, writeable),
     (keys_id, writeable)
 });
-impl_dlc_writeable_external!(RangeInfo, range_info, { (cet_index, usize), (adaptor_index, usize)});
+impl_dlc_writeable_external!(RangeInfo, range_info, { (script_index, usize), (payout_index, usize)});
 impl_dlc_writeable_enum!(AdaptorInfo,;; (0, Numerical, write_multi_oracle_trie, read_multi_oracle_trie), (1, NumericalWithDifference, write_multi_oracle_trie_with_diff, read_multi_oracle_trie_with_diff); (2, Enum));
 impl_dlc_writeable_external!(
     DlcTransactions, dlc_transactions,
     { (fund, writeable),
-    (cets, vec),
-    (refund, writeable),
     (funding_script_pubkey, writeable) }
 );
 impl_dlc_writeable!(AcceptedContract, {
@@ -114,16 +112,12 @@ impl_dlc_writeable!(AcceptedContract, {
     (accept_params, { cb_writeable, dlc_messages::ser_impls::party_params::write, dlc_messages::ser_impls::party_params::read }),
     (funding_inputs, vec),
     (adaptor_infos, vec),
-    (adaptor_signatures, {option_cb, write_ecdsa_adaptor_signatures, read_ecdsa_adaptor_signatures }),
-    (accept_refund_signature, writeable),
-    (dlc_transactions, {cb_writeable, dlc_transactions::write, dlc_transactions::read })
+    (opcat_scripts, vec),
+    (fund_transaction, writeable)
 });
 impl_dlc_writeable!(SignedContract, {
     (accepted_contract, writeable),
-    (adaptor_signatures, {option_cb, write_ecdsa_adaptor_signatures, read_ecdsa_adaptor_signatures }),
-    (offer_refund_signature, writeable),
-    (funding_signatures, writeable),
-    (channel_id, option)
+    (funding_signatures, writeable)
 });
 impl_dlc_writeable!(PreClosedContract, {
     (signed_contract, writeable),

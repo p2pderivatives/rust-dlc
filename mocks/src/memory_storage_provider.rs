@@ -1,15 +1,9 @@
 use bitcoin::{Address, OutPoint, Txid};
-use dlc_manager::chain_monitor::ChainMonitor;
-use dlc_manager::channel::{
-    offered_channel::OfferedChannel,
-    signed_channel::{SignedChannel, SignedChannelStateType},
-    Channel,
-};
 use dlc_manager::contract::{
     offered_contract::OfferedContract, signed_contract::SignedContract, Contract, PreClosedContract,
 };
 use dlc_manager::Storage;
-use dlc_manager::{error::Error as DaemonError, ChannelId, ContractId, Utxo};
+use dlc_manager::{error::Error as DaemonError, ContractId, Utxo};
 use secp256k1_zkp::SecretKey;
 use simple_wallet::WalletStorage;
 use std::collections::HashMap;
@@ -17,9 +11,7 @@ use std::sync::{Mutex, RwLock};
 
 pub struct MemoryStorage {
     contracts: RwLock<HashMap<ContractId, Contract>>,
-    channels: RwLock<HashMap<ChannelId, Channel>>,
     contracts_saved: Mutex<Option<HashMap<ContractId, Contract>>>,
-    channels_saved: Mutex<Option<HashMap<ChannelId, Channel>>>,
     addresses: RwLock<HashMap<Address, SecretKey>>,
     utxos: RwLock<HashMap<OutPoint, Utxo>>,
     key_pairs: RwLock<HashMap<Vec<u8>, SecretKey>>,
@@ -29,9 +21,7 @@ impl MemoryStorage {
     pub fn new() -> Self {
         MemoryStorage {
             contracts: RwLock::new(HashMap::new()),
-            channels: RwLock::new(HashMap::new()),
             contracts_saved: Mutex::new(None),
-            channels_saved: Mutex::new(None),
             addresses: RwLock::new(HashMap::new()),
             utxos: RwLock::new(HashMap::new()),
             key_pairs: RwLock::new(HashMap::new()),
@@ -47,13 +37,6 @@ impl MemoryStorage {
                 .expect("Could not get read lock")
                 .clone(),
         );
-        let mut channels_saved = self.channels_saved.lock().unwrap();
-        *channels_saved = Some(
-            self.channels
-                .read()
-                .expect("Could not get read lock")
-                .clone(),
-        );
     }
 
     pub fn rollback(&self) {
@@ -62,12 +45,6 @@ impl MemoryStorage {
         let mut tmp = None;
         std::mem::swap(&mut tmp, &mut *contracts_saved);
         *contracts = tmp.unwrap();
-
-        let mut channels = self.channels.write().unwrap();
-        let mut channels_saved = self.channels_saved.lock().unwrap();
-        let mut tmp = None;
-        std::mem::swap(&mut tmp, &mut *channels_saved);
-        *channels = tmp.unwrap();
     }
 }
 
@@ -175,84 +152,6 @@ impl Storage for MemoryStorage {
             }
         }
         Ok(res)
-    }
-    fn upsert_channel(
-        &self,
-        channel: Channel,
-        contract: Option<Contract>,
-    ) -> Result<(), DaemonError> {
-        {
-            let mut map = self.channels.write().expect("Could not get write lock");
-            match &channel {
-                a @ Channel::Accepted(_) | a @ Channel::Signed(_) => {
-                    map.remove(&a.get_temporary_id());
-                }
-                _ => {}
-            };
-            map.insert(channel.get_id(), channel);
-        }
-        if let Some(c) = contract {
-            self.update_contract(&c)?;
-        }
-        Ok(())
-    }
-
-    fn delete_channel(&self, channel_id: &ChannelId) -> Result<(), DaemonError> {
-        let mut map = self.channels.write().expect("Could not get write lock");
-        map.remove(channel_id);
-        Ok(())
-    }
-
-    fn get_channel(&self, channel_id: &ChannelId) -> Result<Option<Channel>, DaemonError> {
-        let map = self.channels.read().expect("could not get read lock");
-        Ok(map.get(channel_id).cloned())
-    }
-
-    fn get_signed_channels(
-        &self,
-        channel_state: Option<SignedChannelStateType>,
-    ) -> Result<Vec<SignedChannel>, DaemonError> {
-        let map = self.channels.read().expect("Could not get read lock");
-
-        let mut res: Vec<SignedChannel> = Vec::new();
-
-        for (_, val) in map.iter() {
-            if let Channel::Signed(c) = val {
-                match channel_state {
-                    Some(ref state) => {
-                        if c.state.is_of_type(state) {
-                            res.push(c.clone())
-                        }
-                    }
-                    None => res.push(c.clone()),
-                };
-            }
-        }
-
-        Ok(res)
-    }
-
-    fn get_offered_channels(&self) -> Result<Vec<OfferedChannel>, DaemonError> {
-        let map = self.channels.read().expect("Could not get read lock");
-
-        let mut res: Vec<OfferedChannel> = Vec::new();
-
-        for (_, val) in map.iter() {
-            if let Channel::Offered(c) = val {
-                res.push(c.clone())
-            }
-        }
-
-        Ok(res)
-    }
-
-    fn persist_chain_monitor(&self, _: &ChainMonitor) -> Result<(), DaemonError> {
-        // No need to persist for mocks
-        Ok(())
-    }
-
-    fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, DaemonError> {
-        Ok(None)
     }
 }
 

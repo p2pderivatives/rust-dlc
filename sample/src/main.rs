@@ -2,19 +2,21 @@ mod cli;
 mod disk;
 mod hex_utils;
 
+use bitcoin_rpc_provider::BitcoinCoreProvider;
 use disk::FilesystemLogger;
 
 use bitcoin::secp256k1::rand::{thread_rng, RngCore};
 use bitcoin::secp256k1::SecretKey;
-use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc_manager::{CachedContractSignerProvider, Oracle, SimpleSigner, SystemTimeProvider};
 use dlc_messages::message_handler::MessageHandler as DlcMessageHandler;
+use electrs_blockchain_provider::ElectrsBlockchainProvider;
 use lightning::ln::peer_handler::{
     ErroringMessageHandler, IgnoringMessageHandler, MessageHandler, PeerManager as LdkPeerManager,
 };
 use lightning::sign::{KeysManager, NodeSigner};
 use lightning_net_tokio::SocketDescriptor;
 use p2pd_oracle_client::P2PDOracleClient;
+use simple_wallet::SimpleWallet;
 use std::collections::hash_map::HashMap;
 use std::env;
 use std::fs;
@@ -32,13 +34,27 @@ pub(crate) type PeerManager = LdkPeerManager<
 >;
 
 pub(crate) type DlcManager = dlc_manager::manager::Manager<
+    Arc<
+        SimpleWallet<
+            Arc<ElectrsBlockchainProvider>,
+            Arc<dlc_sled_storage_provider::SledStorageProvider>,
+        >,
+    >,
+    Arc<
+        CachedContractSignerProvider<
+            Arc<
+                SimpleWallet<
+                    Arc<ElectrsBlockchainProvider>,
+                    Arc<dlc_sled_storage_provider::SledStorageProvider>,
+                >,
+            >,
+            SimpleSigner,
+        >,
+    >,
     Arc<BitcoinCoreProvider>,
-    Arc<CachedContractSignerProvider<Arc<BitcoinCoreProvider>, SimpleSigner>>,
-    Arc<BitcoinCoreProvider>,
-    Box<dlc_sled_storage_provider::SledStorageProvider>,
+    Arc<dlc_sled_storage_provider::SledStorageProvider>,
     Box<P2PDOracleClient>,
     Arc<SystemTimeProvider>,
-    Arc<BitcoinCoreProvider>,
     SimpleSigner,
 >;
 
@@ -56,7 +72,10 @@ async fn main() {
     let offers_path = format!("{}/{}", config.storage_dir_path, "offers");
     fs::create_dir_all(&offers_path).expect("Error creating offered contract directory");
 
-    // Instantiate a bitcoind provider instance.
+    let electrs = Arc::new(ElectrsBlockchainProvider::new(
+        "https://mempool.space/signet/api/".to_string(),
+        bitcoin::Network::Signet,
+    ));
     let bitcoind_provider = Arc::new(
         bitcoin_rpc_provider::BitcoinCoreProvider::new(
             config.bitcoin_info.rpc_host,
@@ -67,6 +86,17 @@ async fn main() {
         )
         .expect("Error creating BitcoinCoreProvider"),
     );
+
+    let storage = Arc::new(
+        dlc_sled_storage_provider::SledStorageProvider::new(&config.storage_dir_path)
+            .expect("Error creating storage."),
+    );
+
+    let simple_wallet = Arc::new(SimpleWallet::new(
+        electrs.clone(),
+        storage.clone(),
+        bitcoin::Network::Signet,
+    ));
 
     // Instantiate an oracle client. At the moment the implementation of the oracle
     // client uses reqwest in blocking mode to satisfy the non async oracle interface
@@ -83,16 +113,12 @@ async fn main() {
     // Instantiate a DlcManager.
     let dlc_manager = Arc::new(Mutex::new(
         dlc_manager::manager::Manager::new(
+            simple_wallet.clone(),
+            simple_wallet.clone(),
             bitcoind_provider.clone(),
-            bitcoind_provider.clone(),
-            bitcoind_provider.clone(),
-            Box::new(
-                dlc_sled_storage_provider::SledStorageProvider::new(&config.storage_dir_path)
-                    .expect("Error creating storage."),
-            ),
+            storage.clone(),
             oracles,
             Arc::new(dlc_manager::SystemTimeProvider {}),
-            bitcoind_provider.clone(),
         )
         .expect("Could not create manager."),
     ));

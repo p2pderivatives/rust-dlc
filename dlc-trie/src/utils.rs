@@ -129,13 +129,13 @@ pub(crate) fn get_max_covering_paths(
 pub(crate) fn get_value_callback(
     paths: &[Vec<usize>],
     oracle_indexes: &[usize],
-    cet_index: usize,
-    adaptor_index: &mut usize,
+    payout_index: usize,
+    script_index: &mut usize,
     trie_infos: &mut Vec<TrieIterInfo>,
 ) -> Result<RangeInfo, Error> {
     let range_info = RangeInfo {
-        cet_index,
-        adaptor_index: *adaptor_index,
+        payout_index,
+        script_index: *script_index,
     };
     let iter_info = TrieIterInfo {
         value: range_info.clone(),
@@ -143,7 +143,7 @@ pub(crate) fn get_value_callback(
         paths: paths.to_vec(),
     };
     trie_infos.push(iter_info);
-    *adaptor_index += 1;
+    *script_index += 1;
     Ok(range_info)
 }
 

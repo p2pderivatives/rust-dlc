@@ -30,7 +30,17 @@ pub fn get_new_wallet_rpc(
         }
     };
     if !wallet_list.contains(&wallet_name.to_owned()) {
-        default_rpc.create_wallet(wallet_name, Some(false), None, None, None)?;
+        default_rpc.call::<bitcoincore_rpc_json::LoadWalletResult>(
+            "createwallet",
+            &[
+                wallet_name.into(),
+                false.into(),
+                false.into(),
+                "".into(),
+                false.into(),
+                false.into(),
+            ],
+        )?;
     }
     let rpc_url = format!("{}/wallet/{}", rpc_base(), wallet_name);
     Client::new(&rpc_url, auth)

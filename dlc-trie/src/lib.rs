@@ -20,11 +20,11 @@ extern crate secp256k1_zkp;
 #[cfg(feature = "use-serde")]
 extern crate serde;
 
-use bitcoin::{Amount, Script, Transaction};
+use bitcoin::{Script, ScriptBuf};
 use dlc::{Error, RangePayout};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use secp256k1_zkp::{All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey};
+use secp256k1_zkp::PublicKey;
 #[cfg(feature = "use-serde")]
 use serde::{Deserialize, Serialize};
 
@@ -64,14 +64,13 @@ pub enum Node<TLeaf, TNode> {
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
-/// Structure that stores the indexes at which the CET and adaptor signature
-/// related to a given outcome are located in CET and adaptor signatures arrays
-/// respectively.
+/// Structure that stores the indexes at which the script
+/// related to a given outcome is located in the script array
 pub struct RangeInfo {
-    /// a cet index
-    pub cet_index: usize,
-    /// an adaptor signature index
-    pub adaptor_index: usize,
+    /// the script index
+    pub script_index: usize,
+    /// the payout index
+    pub payout_index: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -111,106 +110,29 @@ pub trait DlcTrie<'a, TrieIterator: Iterator<Item = TrieIterInfo>> {
     /// each adaptor signature.
     fn generate(
         &'a mut self,
-        adaptor_index_start: usize,
+        index_start: usize,
         outcomes: &[RangePayout],
     ) -> Result<Vec<TrieIterInfo>, Error>;
 
     /// Returns an iterator to this trie.
     fn iter(&'a self) -> TrieIterator;
 
-    /// Generate the trie while verifying the provided adaptor signatures.
-    fn generate_verify(
+    /// Generate the trie and generate the scripts
+    fn generate_scripts(
         &'a mut self,
-        secp: &Secp256k1<secp256k1_zkp::All>,
-        fund_pubkey: &PublicKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
+        offer_spk: &Script,
+        accept_spk: &Script,
         outcomes: &[RangePayout],
-        cets: &[Transaction],
         precomputed_points: &[Vec<Vec<PublicKey>>],
-        adaptor_sigs: &[EcdsaAdaptorSignature],
-        adaptor_index_start: usize,
-    ) -> Result<usize, Error> {
-        let trie_info = self.generate(adaptor_index_start, outcomes)?;
-        verify_helper(
-            secp,
-            cets,
-            adaptor_sigs,
-            fund_pubkey,
-            funding_script_pubkey,
-            fund_output_value,
+        index_start: usize,
+    ) -> Result<Vec<ScriptBuf>, Error> {
+        let trie_info = self.generate(index_start, outcomes)?;
+        script_helper(
+            offer_spk,
+            accept_spk,
+            outcomes,
             precomputed_points,
             trie_info.into_iter(),
-        )
-    }
-
-    /// Generate the trie while creating the set of adaptor signatures.
-    fn generate_sign(
-        &'a mut self,
-        secp: &Secp256k1<All>,
-        fund_privkey: &SecretKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        outcomes: &[RangePayout],
-        cets: &[Transaction],
-        precomputed_points: &[Vec<Vec<PublicKey>>],
-        adaptor_index_start: usize,
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
-        let trie_info = self.generate(adaptor_index_start, outcomes)?;
-        sign_helper(
-            secp,
-            cets,
-            fund_privkey,
-            funding_script_pubkey,
-            fund_output_value,
-            precomputed_points,
-            trie_info.into_iter(),
-        )
-    }
-
-    /// Verify that the provided signatures are valid with respect to the
-    /// information stored in the trie.
-    fn verify(
-        &'a self,
-        secp: &Secp256k1<All>,
-        fund_pubkey: &PublicKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        adaptor_sigs: &[EcdsaAdaptorSignature],
-        cets: &[Transaction],
-        precomputed_points: &[Vec<Vec<PublicKey>>],
-    ) -> Result<usize, Error> {
-        verify_helper(
-            secp,
-            cets,
-            adaptor_sigs,
-            fund_pubkey,
-            funding_script_pubkey,
-            fund_output_value,
-            precomputed_points,
-            self.iter(),
-        )
-    }
-
-    /// Produce the set of adaptor signatures for the trie.
-    fn sign(
-        &'a self,
-        secp: &Secp256k1<All>,
-        fund_privkey: &SecretKey,
-        funding_script_pubkey: &Script,
-        fund_output_value: Amount,
-        cets: &[Transaction],
-        precomputed_points: &[Vec<Vec<PublicKey>>],
-    ) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
-        let trie_info = self.iter();
-        sign_helper(
-            secp,
-            cets,
-            fund_privkey,
-            funding_script_pubkey,
-            fund_output_value,
-            precomputed_points,
-            trie_info,
         )
     }
 }
@@ -224,135 +146,63 @@ pub struct TrieIterInfo {
 }
 
 #[cfg(not(feature = "parallel"))]
-fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
-    secp: &Secp256k1<All>,
-    cets: &[Transaction],
-    fund_privkey: &SecretKey,
-    funding_script_pubkey: &Script,
-    fund_output_value: Amount,
+fn script_helper<T: Iterator<Item = TrieIterInfo>>(
+    offer_spk: &Script,
+    accept_spk: &Script,
+    payouts: &[RangePayout],
     precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
-) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+) -> Result<Vec<ScriptBuf>, Error> {
     let mut unsorted = trie_info
         .map(|x| {
+            use bitcoin::XOnlyPublicKey;
+
+            use dlc::opcat_utils::vault_dlc_withdrawal;
+
             let adaptor_point = utils::get_adaptor_point_for_indexed_paths(
                 &x.indexes,
                 &x.paths,
                 precomputed_points,
             )?;
-            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                secp,
-                &cets[x.value.cet_index],
-                &adaptor_point,
-                fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-            )?;
-            Ok((x.value.adaptor_index, adaptor_sig))
+            let payout = &payouts[x.value.payout_index];
+            let outputs = dlc::get_payout_outputs(&payout.payout, offer_spk, accept_spk);
+            let pubkey: XOnlyPublicKey = adaptor_point.into();
+            let script = vault_dlc_withdrawal(&outputs, pubkey);
+            Ok((x.value.script_index, script))
         })
-        .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
+        .collect::<Result<Vec<(usize, ScriptBuf)>, Error>>()?;
     unsorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     Ok(unsorted.into_iter().map(|(_, y)| y).collect())
 }
 
 #[cfg(feature = "parallel")]
-fn sign_helper<T: Iterator<Item = TrieIterInfo>>(
-    secp: &Secp256k1<All>,
-    cets: &[Transaction],
-    fund_privkey: &SecretKey,
-    funding_script_pubkey: &Script,
-    fund_output_value: Amount,
+fn script_helper<T: Iterator<Item = TrieIterInfo>>(
+    offer_spk: &Script,
+    accept_spk: &Script,
+    payouts: &[RangePayout],
     precomputed_points: &[Vec<Vec<PublicKey>>],
     trie_info: T,
-) -> Result<Vec<EcdsaAdaptorSignature>, Error> {
+) -> Result<Vec<ScriptBuf>, Error> {
     let trie_info: Vec<TrieIterInfo> = trie_info.collect();
     let mut unsorted = trie_info
         .par_iter()
         .map(|x| {
+            use bitcoin::XOnlyPublicKey;
+
+            use dlc::opcat_utils::vault_dlc_withdrawal;
+
             let adaptor_point = utils::get_adaptor_point_for_indexed_paths(
                 &x.indexes,
                 &x.paths,
                 precomputed_points,
             )?;
-            let adaptor_sig = dlc::create_cet_adaptor_sig_from_point(
-                secp,
-                &cets[x.value.cet_index],
-                &adaptor_point,
-                fund_privkey,
-                funding_script_pubkey,
-                fund_output_value,
-            )?;
-            Ok((x.value.adaptor_index, adaptor_sig))
+            let payout = &payouts[x.value.payout_index];
+            let outputs = dlc::get_payout_outputs(&payout.payout, offer_spk, accept_spk);
+            let pubkey: XOnlyPublicKey = adaptor_point.into();
+            let script = vault_dlc_withdrawal(&outputs, pubkey);
+            Ok((x.value.script_index, script))
         })
-        .collect::<Result<Vec<(usize, EcdsaAdaptorSignature)>, Error>>()?;
+        .collect::<Result<Vec<(usize, ScriptBuf)>, Error>>()?;
     unsorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     Ok(unsorted.into_iter().map(|(_, y)| y).collect())
-}
-
-#[cfg(not(feature = "parallel"))]
-fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
-    secp: &Secp256k1<All>,
-    cets: &[Transaction],
-    adaptor_sigs: &[EcdsaAdaptorSignature],
-    fund_pubkey: &PublicKey,
-    funding_script_pubkey: &Script,
-    fund_output_value: Amount,
-    precomputed_points: &[Vec<Vec<PublicKey>>],
-    trie_info: T,
-) -> Result<usize, Error> {
-    let mut max_adaptor_index = 0;
-    for x in trie_info {
-        let adaptor_point =
-            utils::get_adaptor_point_for_indexed_paths(&x.indexes, &x.paths, precomputed_points)?;
-        let adaptor_sig = adaptor_sigs[x.value.adaptor_index];
-        let cet = &cets[x.value.cet_index];
-        if x.value.adaptor_index > max_adaptor_index {
-            max_adaptor_index = x.value.adaptor_index;
-        }
-        dlc::verify_cet_adaptor_sig_from_point(
-            secp,
-            &adaptor_sig,
-            cet,
-            &adaptor_point,
-            fund_pubkey,
-            funding_script_pubkey,
-            fund_output_value,
-        )?;
-    }
-    Ok(max_adaptor_index + 1)
-}
-
-#[cfg(feature = "parallel")]
-fn verify_helper<T: Iterator<Item = TrieIterInfo>>(
-    secp: &Secp256k1<All>,
-    cets: &[Transaction],
-    adaptor_sigs: &[EcdsaAdaptorSignature],
-    fund_pubkey: &PublicKey,
-    funding_script_pubkey: &Script,
-    fund_output_value: Amount,
-    precomputed_points: &[Vec<Vec<PublicKey>>],
-    trie_info: T,
-) -> Result<usize, Error> {
-    let trie_info: Vec<TrieIterInfo> = trie_info.collect();
-    let max_adaptor_index = trie_info
-        .iter()
-        .max_by(|x, y| x.value.adaptor_index.cmp(&y.value.adaptor_index))
-        .unwrap();
-    trie_info.par_iter().try_for_each(|x| {
-        let adaptor_point =
-            utils::get_adaptor_point_for_indexed_paths(&x.indexes, &x.paths, precomputed_points)?;
-        let adaptor_sig = adaptor_sigs[x.value.adaptor_index];
-        let cet = &cets[x.value.cet_index];
-        dlc::verify_cet_adaptor_sig_from_point(
-            secp,
-            &adaptor_sig,
-            cet,
-            &adaptor_point,
-            fund_pubkey,
-            funding_script_pubkey,
-            fund_output_value,
-        )
-    })?;
-
-    Ok(max_adaptor_index.value.adaptor_index + 1)
 }

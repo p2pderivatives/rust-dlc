@@ -190,16 +190,16 @@ impl MultiOracleTrie {
 impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
     fn generate(
         &mut self,
-        adaptor_index_start: usize,
+        script_index_start: usize,
         outcomes: &[RangePayout],
     ) -> Result<Vec<TrieIterInfo>, Error> {
         let threshold = self.threshold;
         let nb_oracles = self.oracle_numeric_infos.nb_digits.len();
         let min_nb_digits = self.oracle_numeric_infos.get_min_nb_digits();
-        let mut adaptor_index = adaptor_index_start;
+        let mut script_index = script_index_start;
         let mut trie_infos = Vec::new();
         let oracle_numeric_infos = &self.oracle_numeric_infos;
-        for (cet_index, outcome) in outcomes.iter().enumerate() {
+        for (payout_index, outcome) in outcomes.iter().enumerate() {
             if outcome.count == 0 {
                 return Err(Error::InvalidArgument);
             }
@@ -215,10 +215,10 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
                     let mut range_infos: Vec<RangeInfo> = Vec::new();
                     for selector in combination_iterator {
                         let range_info = RangeInfo {
-                            cet_index,
-                            adaptor_index,
+                            payout_index,
+                            script_index,
                         };
-                        adaptor_index += 1;
+                        script_index += 1;
                         let paths = oracle_numeric_infos
                             .nb_digits
                             .iter()
@@ -252,7 +252,7 @@ impl<'a> DlcTrie<'a, MultiOracleTrieIter<'a>> for MultiOracleTrie {
                         paths,
                         oracle_indexes,
                         outcomes.len() - 1,
-                        &mut adaptor_index,
+                        &mut script_index,
                         &mut trie_infos,
                     )
                 };
