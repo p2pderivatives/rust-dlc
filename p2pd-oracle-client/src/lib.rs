@@ -38,7 +38,8 @@ struct PublicKeyResponse {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EventDescriptor {
+/// Descriptor for a numerical event
+pub struct EventDescriptor {
     base: u16,
     is_signed: bool,
     unit: String,
@@ -47,7 +48,8 @@ struct EventDescriptor {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Event {
+/// Numerical event information
+pub struct Event {
     nonces: Vec<XOnlyPublicKey>,
     event_maturity: DateTime<Utc>,
     event_id: String,
@@ -56,7 +58,8 @@ struct Event {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AnnoucementResponse {
+/// Response returned by the oracle with information about an event (announcement)
+pub struct AnnoucementResponse {
     oracle_public_key: XOnlyPublicKey,
     oracle_event: Event,
 }

@@ -46,14 +46,14 @@ pub(crate) struct MultiTrieIterator<'a, T> {
     cur_path: Vec<(usize, Vec<usize>)>,
 }
 
-fn create_node_iterator<T>(node: &MultiTrieNode<T>) -> DigitTrieIter<Vec<TrieNodeInfo>> {
+fn create_node_iterator<T>(node: &MultiTrieNode<T>) -> DigitTrieIter<'_, Vec<TrieNodeInfo>> {
     match node {
         Node::Node(d_trie) => DigitTrieIter::new(d_trie),
         _ => unreachable!(),
     }
 }
 
-fn create_leaf_iterator<T>(node: &MultiTrieNode<T>) -> DigitTrieIter<T> {
+fn create_leaf_iterator<T>(node: &MultiTrieNode<T>) -> DigitTrieIter<'_, T> {
     match node {
         Node::Leaf(d_trie) => DigitTrieIter::new(d_trie),
         _ => unreachable!(),

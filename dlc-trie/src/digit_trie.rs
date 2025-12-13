@@ -395,7 +395,7 @@ impl<T> DigitTrie<T> {
     }
 
     /// Lookup for nodes whose path is either equal or a prefix of `path`.
-    pub fn look_up(&self, path: &[usize]) -> Option<Vec<LookupResult<T, usize>>> {
+    pub fn look_up(&self, path: &[usize]) -> Option<Vec<LookupResult<'_, T, usize>>> {
         self.look_up_internal(self.root, path)
     }
 
@@ -403,7 +403,7 @@ impl<T> DigitTrie<T> {
         &self,
         cur_index: Option<usize>,
         path: &[usize],
-    ) -> Option<Vec<LookupResult<T, usize>>> {
+    ) -> Option<Vec<LookupResult<'_, T, usize>>> {
         match cur_index {
             None => None,
             Some(cur_index) => match &self.store[cur_index] {

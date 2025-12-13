@@ -43,8 +43,5 @@ pub fn hex_str(value: &[u8]) -> String {
 
 pub fn to_compressed_pubkey(hex: &str) -> Option<PublicKey> {
     let data = to_vec(&hex[0..33 * 2])?;
-    match PublicKey::from_slice(&data) {
-        Ok(pk) => Some(pk),
-        Err(_) => None,
-    }
+    PublicKey::from_slice(&data).ok()
 }

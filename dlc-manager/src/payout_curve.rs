@@ -241,10 +241,7 @@ where
     let mut cur_range =
         function.get_cur_range(range_payouts, total_collateral, rounding_intervals)?;
 
-    let range_end = function
-        .get_last_outcome()
-        .checked_add(1)
-        .unwrap_or(u64::MAX);
+    let range_end = function.get_last_outcome().saturating_add(1);
 
     for outcome in (first_outcome + 1)..range_end {
         let payout = function.get_rounded_payout(outcome, rounding_intervals, total_collateral)?;
