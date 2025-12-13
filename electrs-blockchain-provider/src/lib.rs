@@ -299,7 +299,7 @@ impl BlockSource for ElectrsBlockchainProvider {
 
     fn get_best_block(
         &self,
-    ) -> lightning_block_sync::AsyncBlockSourceResult<(bitcoin::BlockHash, Option<u32>)> {
+    ) -> lightning_block_sync::AsyncBlockSourceResult<'_, (bitcoin::BlockHash, Option<u32>)> {
         Box::pin(async move {
             let block_tip_hash: String = self
                 .get_async("blocks/tip/hash")

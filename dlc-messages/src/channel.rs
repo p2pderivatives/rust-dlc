@@ -573,7 +573,6 @@ impl_dlc_writeable!(CollaborativeCloseOffer, {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-
 /// Message used to reject an received offer.
 pub struct Reject {
     #[cfg_attr(

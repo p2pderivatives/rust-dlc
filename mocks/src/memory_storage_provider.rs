@@ -61,13 +61,13 @@ impl MemoryStorage {
         let mut contracts_saved = self.contracts_saved.lock().unwrap();
         let mut tmp = None;
         std::mem::swap(&mut tmp, &mut *contracts_saved);
-        std::mem::swap(&mut *contracts, &mut tmp.unwrap());
+        *contracts = tmp.unwrap();
 
         let mut channels = self.channels.write().unwrap();
         let mut channels_saved = self.channels_saved.lock().unwrap();
         let mut tmp = None;
         std::mem::swap(&mut tmp, &mut *channels_saved);
-        std::mem::swap(&mut *channels, &mut tmp.unwrap());
+        *channels = tmp.unwrap();
     }
 }
 
