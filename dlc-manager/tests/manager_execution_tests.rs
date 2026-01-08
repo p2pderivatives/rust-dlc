@@ -178,6 +178,7 @@ fn numerical_common_diff_nb_digits(
 enum TestPath {
     Close,
     Refund,
+    CooperativeClose,
     BadAcceptCetSignature,
     BadAcceptRefundSignature,
     BadSignCetSignature,
@@ -508,6 +509,47 @@ fn two_of_five_oracle_numerical_diff_nb_digits_max_value_test() {
 #[ignore]
 fn two_of_five_oracle_numerical_diff_nb_digits_max_value_manual_test() {
     numerical_common_diff_nb_digits(5, 2, None, true, true);
+}
+
+#[test]
+#[ignore]
+fn cooperative_close_single_oracle_test() {
+    manager_execution_test(
+        get_enum_test_params(1, 1, None),
+        TestPath::CooperativeClose,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn cooperative_close_multi_oracle_test() {
+    manager_execution_test(
+        get_enum_test_params(3, 3, None),
+        TestPath::CooperativeClose,
+        false,
+    );
+}
+
+#[test]
+#[ignore]
+fn cooperative_close_numerical_test() {
+    numerical_polynomial_common(1, 1, None, false);
+    manager_execution_test(
+        get_numerical_test_params(
+            &get_same_num_digits_oracle_numeric_infos(1),
+            1,
+            false,
+            get_numerical_contract_descriptor(
+                get_same_num_digits_oracle_numeric_infos(1),
+                get_polynomial_payout_curve_pieces(NB_DIGITS as usize),
+                None,
+            ),
+            false,
+        ),
+        TestPath::CooperativeClose,
+        false,
+    );
 }
 
 fn alter_adaptor_sig(input: &mut CetAdaptorSignatures) {
@@ -896,6 +938,106 @@ fn manager_execution_test(test_params: TestParams, path: TestPath, manual_close:
                 }
                 _ => unreachable!(),
             }
+        }
+        TestPath::CooperativeClose => {
+            alice_send.send(Some(Message::Accept(accept_msg))).unwrap();
+            sync_receive.recv().expect("Error synchronizing");
+
+            assert_contract_state!(bob_manager_send, contract_id, Signed);
+
+            // Should not change state and should not error
+            periodic_check!(bob_manager_send, contract_id, Signed);
+
+            sync_receive.recv().expect("Error synchronizing");
+
+            assert_contract_state!(alice_manager_send, contract_id, Signed);
+
+            generate_blocks(6);
+
+            periodic_check!(alice_manager_send, contract_id, Confirmed);
+            periodic_check!(bob_manager_send, contract_id, Confirmed);
+
+            // Get the funding transaction and verify it's on the blockchain
+            let funding_txid = {
+                let alice_contract = alice_manager_send
+                    .lock()
+                    .unwrap()
+                    .get_store()
+                    .get_contract(&contract_id)
+                    .unwrap()
+                    .unwrap();
+                if let Contract::Confirmed(ref signed_contract) = alice_contract {
+                    signed_contract
+                        .accepted_contract
+                        .dlc_transactions
+                        .fund
+                        .compute_txid()
+                } else {
+                    panic!("Contract should be confirmed");
+                }
+            };
+
+            // Verify funding transaction exists on blockchain
+            let confirmations = electrs
+                .get_transaction_confirmations(&funding_txid)
+                .unwrap();
+            assert!(
+                confirmations > 0,
+                "Funding transaction should be confirmed on blockchain"
+            );
+
+            // Alice initiates cooperative close
+            let counter_payout = ACCEPT_COLLATERAL / 2; // Split half to counter party
+
+            let (close_msg, _counter_party_pubkey) = alice_manager_send
+                .lock()
+                .unwrap()
+                .cooperative_close_contract(&contract_id, counter_payout)
+                .expect("Error initiating cooperative close");
+
+            // Alice should still be in Confirmed state (not updated until broadcast)
+            assert_contract_state!(alice_manager_send, contract_id, Confirmed);
+
+            // Bob receives and accepts the cooperative close
+            bob_manager_send
+                .lock()
+                .unwrap()
+                .accept_cooperative_close(&contract_id, &close_msg)
+                .expect("Error accepting cooperative close");
+
+            // Bob should now be in PreClosed state (he broadcast the transaction)
+            assert_contract_state!(bob_manager_send, contract_id, PreClosed);
+
+            // Alice should still be in Confirmed state (she doesn't know about the close yet)
+            assert_contract_state!(alice_manager_send, contract_id, Confirmed);
+
+            // Mine a few blocks to partially confirm the close transaction
+            generate_blocks(3);
+
+            // Alice should now detect the pending close transaction and move to PreClosed
+            alice_manager_send
+                .lock()
+                .unwrap()
+                .periodic_check(true)
+                .expect("Periodic check error");
+
+            assert_contract_state!(alice_manager_send, contract_id, PreClosed);
+
+            // Bob should still be in PreClosed (not enough confirmations yet)
+            assert_contract_state!(bob_manager_send, contract_id, PreClosed);
+
+            // Mine more blocks to reach full confirmation (6 total)
+            generate_blocks(3);
+
+            // Both parties should now move to Closed state after full confirmations
+            periodic_check!(bob_manager_send, contract_id, Closed);
+            periodic_check!(alice_manager_send, contract_id, Closed);
+
+            // Verify both parties are now in Closed state
+            assert_contract_state!(bob_manager_send, contract_id, Closed);
+            assert_contract_state!(alice_manager_send, contract_id, Closed);
+
+            println!("Cooperative close test completed successfully!");
         }
     }
 

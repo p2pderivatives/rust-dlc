@@ -1770,6 +1770,7 @@ pub fn offer_collaborative_close<C: Signing, SP: Deref, T: Deref>(
     secp: &Secp256k1<C>,
     signed_channel: &mut SignedChannel,
     counter_payout: Amount,
+    additional_inputs: Vec<OutPoint>,
     signer_provider: &SP,
     time: &T,
 ) -> Result<(CollaborativeCloseOffer, Transaction), Error>
@@ -1800,6 +1801,7 @@ where
             vout: signed_channel.fund_output_index as u32,
         },
         fund_output_value,
+        &additional_inputs,
     );
 
     let keys_id = signed_channel
@@ -1875,6 +1877,7 @@ where
             vout: signed_channel.fund_output_index as u32,
         },
         fund_output_value,
+        &[], // TODO: Add additional inputs parameter to prevent free option problem
     );
 
     let mut state = SignedChannelState::CollaborativeCloseOffered {

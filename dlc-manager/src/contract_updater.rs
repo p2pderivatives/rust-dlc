@@ -9,7 +9,7 @@ use dlc::{DlcTransactions, PartyParams};
 use dlc_messages::FundingInput;
 use dlc_messages::{
     oracle_msgs::{OracleAnnouncement, OracleAttestation},
-    AcceptDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
+    AcceptDlc, CloseDlc, FundingSignature, FundingSignatures, OfferDlc, SignDlc, WitnessElement,
 };
 use secp256k1_zkp::{
     ecdsa::Signature, All, EcdsaAdaptorSignature, PublicKey, Secp256k1, SecretKey, Signing,
@@ -165,6 +165,7 @@ pub(crate) fn accept_contract_internal(
         cets,
         refund,
         funding_script_pubkey,
+        pending_close_txs: _,
     } = dlc_transactions;
 
     let mut cets = cets.clone();
@@ -212,6 +213,7 @@ pub(crate) fn accept_contract_internal(
         cets,
         refund: refund.clone(),
         funding_script_pubkey: funding_script_pubkey.clone(),
+        pending_close_txs: vec![],
     };
 
     let accepted_contract = AcceptedContract {
@@ -340,6 +342,7 @@ where
         cets,
         refund,
         funding_script_pubkey,
+        pending_close_txs: _,
     } = dlc_transactions;
 
     let mut fund_psbt = Psbt::from_unsigned_tx(fund.clone())
@@ -492,6 +495,7 @@ where
         cets,
         refund: refund.clone(),
         funding_script_pubkey: funding_script_pubkey.clone(),
+        pending_close_txs: vec![],
     };
 
     let accepted_contract = AcceptedContract {
@@ -752,6 +756,124 @@ where
         0,
     )?;
     Ok(refund)
+}
+
+/// Creates a cooperative close transaction and signs it with the local party's key.
+pub fn create_cooperative_close<C: Signing, SP: Deref>(
+    secp: &Secp256k1<C>,
+    signed_contract: &SignedContract,
+    counter_payout: Amount,
+    signer_provider: &SP,
+) -> Result<(CloseDlc, Transaction), Error>
+where
+    SP::Target: ContractSignerProvider,
+{
+    let accepted_contract = &signed_contract.accepted_contract;
+    let offered_contract = &accepted_contract.offered_contract;
+    let total_collateral = offered_contract.total_collateral;
+
+    if counter_payout > total_collateral {
+        return Err(Error::InvalidParameters(
+            "Counter payout is greater than total collateral".to_string(),
+        ));
+    }
+
+    let offer_payout = total_collateral - counter_payout;
+    let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
+    let fund_outpoint = accepted_contract.dlc_transactions.get_fund_outpoint();
+
+    // Create the cooperative close transaction
+    let close_tx = dlc::channel::create_collaborative_close_transaction(
+        &offered_contract.offer_params,
+        offer_payout,
+        &accepted_contract.accept_params,
+        counter_payout,
+        fund_outpoint,
+        fund_output_value,
+        &[], // No additional inputs for contract cooperative close
+    );
+
+    // Get our private key and sign the transaction
+    let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
+    let fund_private_key = signer.get_secret_key()?;
+
+    let close_signature = dlc::util::get_raw_sig_for_tx_input(
+        secp,
+        &close_tx,
+        0,
+        &accepted_contract.dlc_transactions.funding_script_pubkey,
+        fund_output_value,
+        &fund_private_key,
+    )?;
+
+    // Create the CloseDlc message
+    let close_message = CloseDlc {
+        protocol_version: crate::conversion_utils::PROTOCOL_VERSION,
+        contract_id: accepted_contract.get_contract_id(),
+        close_signature,
+        accept_payout: counter_payout,
+        fee_rate_per_vb: offered_contract.fee_rate_per_vb,
+        fund_input_serial_id: offered_contract.fund_output_serial_id,
+        funding_inputs: accepted_contract.funding_inputs.clone(),
+        funding_signatures: signed_contract.funding_signatures.clone(),
+    };
+
+    Ok((close_message, close_tx))
+}
+
+/// Verifies and completes a cooperative close transaction using the counter party's signature.
+pub fn complete_cooperative_close<C: Signing, SP: Deref>(
+    secp: &Secp256k1<C>,
+    signed_contract: &SignedContract,
+    close_message: &CloseDlc,
+    signer_provider: &SP,
+) -> Result<Transaction, Error>
+where
+    SP::Target: ContractSignerProvider,
+{
+    let accepted_contract = &signed_contract.accepted_contract;
+    let offered_contract = &accepted_contract.offered_contract;
+    let fund_output_value = accepted_contract.dlc_transactions.get_fund_output().value;
+    let fund_outpoint = accepted_contract.dlc_transactions.get_fund_outpoint();
+
+    let total_collateral = offered_contract.total_collateral;
+    let offer_payout = total_collateral - close_message.accept_payout;
+
+    // Recreate the close transaction to verify
+    let mut close_tx = dlc::channel::create_collaborative_close_transaction(
+        &offered_contract.offer_params,
+        offer_payout,
+        &accepted_contract.accept_params,
+        close_message.accept_payout,
+        fund_outpoint,
+        fund_output_value,
+        &[], // No additional inputs for contract cooperative close verification
+    );
+
+    // Get our private key
+    let signer = signer_provider.derive_contract_signer(offered_contract.keys_id)?;
+    let fund_private_key = signer.get_secret_key()?;
+
+    // Get counter party's pubkey
+    let counter_pubkey = if offered_contract.is_offer_party {
+        &accepted_contract.accept_params.fund_pubkey
+    } else {
+        &offered_contract.offer_params.fund_pubkey
+    };
+
+    // Sign and combine signatures
+    dlc::util::sign_multi_sig_input(
+        secp,
+        &mut close_tx,
+        &close_message.close_signature,
+        counter_pubkey,
+        &fund_private_key,
+        &accepted_contract.dlc_transactions.funding_script_pubkey,
+        fund_output_value,
+        0,
+    )?;
+
+    Ok(close_tx)
 }
 
 #[cfg(test)]
