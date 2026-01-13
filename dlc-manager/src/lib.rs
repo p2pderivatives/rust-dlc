@@ -230,9 +230,23 @@ pub trait Oracle {
     /// Returns the public key of the oracle.
     fn get_public_key(&self) -> XOnlyPublicKey;
     /// Returns the announcement for the event with the given id if found.
+    #[cfg(not(feature = "async"))]
     fn get_announcement(&self, event_id: &str) -> Result<OracleAnnouncement, Error>;
     /// Returns the attestation for the event with the given id if found.
+    #[cfg(not(feature = "async"))]
     fn get_attestation(&self, event_id: &str) -> Result<OracleAttestation, Error>;
+    /// Returns the announcement for the event with the given id if found.
+    #[cfg(feature = "async")]
+    fn get_announcement(
+        &self,
+        event_id: &str,
+    ) -> impl std::future::Future<Output = Result<OracleAnnouncement, Error>> + Send;
+    /// Returns the attestation for the event with the given id if found.
+    #[cfg(feature = "async")]
+    fn get_attestation(
+        &self,
+        event_id: &str,
+    ) -> impl std::future::Future<Output = Result<OracleAttestation, Error>> + Send;
 }
 
 /// Represents a UTXO.

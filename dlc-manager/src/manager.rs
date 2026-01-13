@@ -31,6 +31,10 @@ use dlc_messages::channel::{
 };
 use dlc_messages::oracle_msgs::{OracleAnnouncement, OracleAttestation};
 use dlc_messages::{AcceptDlc, Message as DlcMessage, OfferDlc, SignDlc};
+#[cfg(feature = "async")]
+use futures::stream::FuturesUnordered;
+#[cfg(feature = "async")]
+use futures::StreamExt;
 use hex::DisplayHex;
 use lightning::chain::chaininterface::FeeEstimator;
 use lightning::ln::chan_utils::{
@@ -269,6 +273,7 @@ where
     /// and an OfferDlc message returned.
     ///
     /// This function will fetch the oracle announcements from the oracle.
+    #[cfg(not(feature = "async"))]
     pub fn send_offer(
         &self,
         contract_input: &ContractInput,
@@ -278,6 +283,29 @@ where
             .contract_infos
             .iter()
             .map(|x| self.get_oracle_announcements(&x.oracles))
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        self.send_offer_with_announcements(contract_input, counter_party, oracle_announcements)
+    }
+
+    /// Function called to create a new DLC. The offered contract will be stored
+    /// and an OfferDlc message returned.
+    ///
+    /// This function will fetch the oracle announcements from the oracle.
+    #[cfg(feature = "async")]
+    pub async fn send_offer(
+        &self,
+        contract_input: &ContractInput,
+        counter_party: PublicKey,
+    ) -> Result<OfferDlc, Error> {
+        let oracle_announcements = contract_input
+            .contract_infos
+            .iter()
+            .map(|x| self.get_oracle_announcements(&x.oracles))
+            .collect::<FuturesUnordered<_>>()
+            .collect::<Vec<Result<Vec<_>, Error>>>()
+            .await
+            .into_iter()
             .collect::<Result<Vec<_>, Error>>()?;
 
         self.send_offer_with_announcements(contract_input, counter_party, oracle_announcements)
@@ -375,6 +403,7 @@ where
 
     /// Function to call to check the state of the currently executing DLCs and
     /// update them if possible.
+    #[cfg(not(feature = "async"))]
     pub fn periodic_check(&self, check_channels: bool) -> Result<(), Error> {
         self.check_signed_contracts()?;
         self.check_confirmed_contracts()?;
@@ -382,6 +411,21 @@ where
 
         if check_channels {
             self.channel_checks()?;
+        }
+
+        Ok(())
+    }
+
+    /// Function to call to check the state of the currently executing DLCs and
+    /// update them if possible.
+    #[cfg(feature = "async")]
+    pub async fn periodic_check(&self, check_channels: bool) -> Result<(), Error> {
+        self.check_signed_contracts()?;
+        self.check_confirmed_contracts().await?;
+        self.check_preclosed_contracts()?;
+
+        if check_channels {
+            self.channel_checks().await?;
         }
 
         Ok(())
@@ -470,6 +514,7 @@ where
         Ok(())
     }
 
+    #[cfg(not(feature = "async"))]
     fn get_oracle_announcements(
         &self,
         oracle_inputs: &OracleInput,
@@ -481,6 +526,28 @@ where
                 .get(pubkey)
                 .ok_or_else(|| Error::InvalidParameters("Unknown oracle public key".to_string()))?;
             announcements.push(oracle.get_announcement(&oracle_inputs.event_id)?.clone());
+        }
+
+        Ok(announcements)
+    }
+
+    #[cfg(feature = "async")]
+    async fn get_oracle_announcements(
+        &self,
+        oracle_inputs: &OracleInput,
+    ) -> Result<Vec<OracleAnnouncement>, Error> {
+        let mut announcements = Vec::new();
+        for pubkey in &oracle_inputs.public_keys {
+            let oracle = self
+                .oracles
+                .get(pubkey)
+                .ok_or_else(|| Error::InvalidParameters("Unknown oracle public key".to_string()))?;
+            announcements.push(
+                oracle
+                    .get_announcement(&oracle_inputs.event_id)
+                    .await?
+                    .clone(),
+            );
         }
 
         Ok(announcements)
@@ -547,6 +614,7 @@ where
         Ok(())
     }
 
+    #[cfg(not(feature = "async"))]
     fn check_confirmed_contracts(&self) -> Result<(), Error> {
         for c in self.store.get_confirmed_contracts()? {
             // Confirmed contracts from channel are processed in channel specific methods.
@@ -564,7 +632,26 @@ where
 
         Ok(())
     }
+    #[cfg(feature = "async")]
+    async fn check_confirmed_contracts(&self) -> Result<(), Error> {
+        for c in self.store.get_confirmed_contracts()? {
+            // Confirmed contracts from channel are processed in channel specific methods.
+            if c.channel_id.is_some() {
+                continue;
+            }
+            if let Err(e) = self.check_confirmed_contract(&c).await {
+                error!(
+                    "Error checking confirmed contract {}: {}",
+                    c.accepted_contract.get_contract_id_string(),
+                    e
+                )
+            }
+        }
 
+        Ok(())
+    }
+
+    #[cfg(not(feature = "async"))]
     fn get_closable_contract_info<'a>(
         &'a self,
         contract: &'a SignedContract,
@@ -608,9 +695,94 @@ where
         }
         None
     }
+    #[cfg(feature = "async")]
+    async fn get_closable_contract_info<'a>(
+        &'a self,
+        contract: &'a SignedContract,
+    ) -> ClosableContractInfo<'a> {
+        let contract_infos = &contract.accepted_contract.offered_contract.contract_info;
+        let adaptor_infos = &contract.accepted_contract.adaptor_infos;
+        for (contract_info, adaptor_info) in contract_infos.iter().zip(adaptor_infos.iter()) {
+            let matured: Vec<_> = contract_info
+                .oracle_announcements
+                .iter()
+                .filter(|x| {
+                    (x.oracle_event.event_maturity_epoch as u64) <= self.time.unix_time_now()
+                })
+                .enumerate()
+                .collect();
 
+            if matured.len() >= contract_info.threshold {
+                let attestations: Vec<_> = matured
+                    .iter()
+                    .filter_map(|(i, announcement)| {
+                        let oracle = self.oracles.get(&announcement.oracle_public_key)?;
+                        Some((*i, oracle, announcement.oracle_event.event_id.clone()))
+                    })
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|(i, oracle, event_id)| async move {
+                        oracle
+                            .get_attestation(&event_id)
+                            .await
+                            .ok()
+                            .map(|attestation| (i, attestation))
+                    })
+                    .collect::<FuturesUnordered<_>>()
+                    .filter_map(|result| async move { result })
+                    .collect()
+                    .await;
+
+                if attestations.len() >= contract_info.threshold {
+                    return Some((contract_info, adaptor_info, attestations));
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(not(feature = "async"))]
     fn check_confirmed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
         let closable_contract_info = self.get_closable_contract_info(contract);
+        if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
+            let offer = &contract.accepted_contract.offered_contract;
+            let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
+            let cet = crate::contract_updater::get_signed_cet(
+                &self.secp,
+                contract,
+                contract_info,
+                adaptor_info,
+                &attestations,
+                &signer,
+            )?;
+            match self.close_contract(
+                contract,
+                cet,
+                attestations.iter().map(|x| x.1.clone()).collect(),
+            ) {
+                Ok(closed_contract) => {
+                    self.store.update_contract(&closed_contract)?;
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to close contract {}: {}",
+                        contract.accepted_contract.get_contract_id_string(),
+                        e
+                    );
+                    return Err(e);
+                }
+            }
+        }
+
+        self.check_refund(contract)?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "async")]
+    async fn check_confirmed_contract(&self, contract: &SignedContract) -> Result<(), Error> {
+        let closable_contract_info = self.get_closable_contract_info(contract).await;
         if let Some((contract_info, adaptor_info, attestations)) = closable_contract_info {
             let offer = &contract.accepted_contract.offered_contract;
             let signer = self.signer_provider.derive_contract_signer(offer.keys_id)?;
@@ -910,6 +1082,7 @@ where
 {
     /// Create a new channel offer and return the [`dlc_messages::channel::OfferChannel`]
     /// message to be sent to the `counter_party`.
+    #[cfg(not(feature = "async"))]
     pub fn offer_channel(
         &self,
         contract_input: &ContractInput,
@@ -919,6 +1092,47 @@ where
             .contract_infos
             .iter()
             .map(|x| self.get_oracle_announcements(&x.oracles))
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let (offered_channel, offered_contract) = crate::channel_updater::offer_channel(
+            &self.secp,
+            contract_input,
+            &counter_party,
+            &oracle_announcements,
+            CET_NSEQUENCE,
+            REFUND_DELAY,
+            &self.wallet,
+            &self.signer_provider,
+            &self.blockchain,
+            &self.time,
+            crate::utils::get_new_temporary_id(),
+        )?;
+
+        let msg = offered_channel.get_offer_channel_msg(&offered_contract);
+
+        self.store.upsert_channel(
+            Channel::Offered(offered_channel),
+            Some(Contract::Offered(offered_contract)),
+        )?;
+
+        Ok(msg)
+    }
+    /// Create a new channel offer and return the [`dlc_messages::channel::OfferChannel`]
+    /// message to be sent to the `counter_party`.
+    #[cfg(feature = "async")]
+    pub async fn offer_channel(
+        &self,
+        contract_input: &ContractInput,
+        counter_party: PublicKey,
+    ) -> Result<OfferChannel, Error> {
+        let oracle_announcements = contract_input
+            .contract_infos
+            .iter()
+            .map(|x| self.get_oracle_announcements(&x.oracles))
+            .collect::<FuturesUnordered<_>>()
+            .collect::<Vec<Result<Vec<OracleAnnouncement>, Error>>>()
+            .await
+            .into_iter()
             .collect::<Result<Vec<_>, Error>>()?;
 
         let (offered_channel, offered_contract) = crate::channel_updater::offer_channel(
@@ -1092,6 +1306,7 @@ where
     /// Returns a [`RenewOffer`] message as well as the [`PublicKey`] of the
     /// counter party's node to offer the establishment of a new contract in the
     /// channel.
+    #[cfg(not(feature = "async"))]
     pub fn renew_offer(
         &self,
         channel_id: &ChannelId,
@@ -1105,6 +1320,52 @@ where
             .contract_infos
             .iter()
             .map(|x| self.get_oracle_announcements(&x.oracles))
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let (msg, offered_contract) = crate::channel_updater::renew_offer(
+            &self.secp,
+            &mut signed_channel,
+            contract_input,
+            oracle_announcements,
+            counter_payout,
+            REFUND_DELAY,
+            PEER_TIMEOUT,
+            CET_NSEQUENCE,
+            &self.signer_provider,
+            &self.time,
+        )?;
+
+        let counter_party = offered_contract.counter_party;
+
+        self.store.upsert_channel(
+            Channel::Signed(signed_channel),
+            Some(Contract::Offered(offered_contract)),
+        )?;
+
+        Ok((msg, counter_party))
+    }
+    /// Returns a [`RenewOffer`] message as well as the [`PublicKey`] of the
+    /// counter party's node to offer the establishment of a new contract in the
+    /// channel.
+    #[cfg(feature = "async")]
+    pub async fn renew_offer(
+        &self,
+        channel_id: &ChannelId,
+        counter_payout: u64,
+        contract_input: &ContractInput,
+    ) -> Result<(RenewOffer, PublicKey), Error> {
+        let mut signed_channel =
+            get_channel_in_state!(self, channel_id, Signed, None as Option<PublicKey>)?;
+
+        // TODO: helper function
+        let oracle_announcements = contract_input
+            .contract_infos
+            .iter()
+            .map(|x| self.get_oracle_announcements(&x.oracles))
+            .collect::<FuturesUnordered<_>>()
+            .collect::<Vec<Result<Vec<_>, Error>>>()
+            .await
+            .into_iter()
             .collect::<Result<Vec<_>, Error>>()?;
 
         let (msg, offered_contract) = crate::channel_updater::renew_offer(
@@ -1300,6 +1561,7 @@ where
         Ok(())
     }
 
+    #[cfg(not(feature = "async"))]
     fn try_finalize_closing_established_channel(
         &self,
         signed_channel: SignedChannel,
@@ -1327,6 +1589,69 @@ where
 
             let (contract_info, adaptor_info, attestations) = self
                 .get_closable_contract_info(&confirmed_contract)
+                .ok_or_else(|| {
+                    Error::InvalidState("Could not get information to close contract".to_string())
+                })?;
+
+            let (signed_cet, closed_channel) =
+                crate::channel_updater::finalize_unilateral_close_settled_channel(
+                    &self.secp,
+                    &signed_channel,
+                    &confirmed_contract,
+                    contract_info,
+                    &attestations,
+                    adaptor_info,
+                    &self.signer_provider,
+                    is_initiator,
+                )?;
+
+            let closed_contract = self.close_contract(
+                &confirmed_contract,
+                signed_cet,
+                attestations.iter().map(|x| &x.1).cloned().collect(),
+            )?;
+
+            self.chain_monitor
+                .lock()
+                .unwrap()
+                .cleanup_channel(signed_channel.channel_id);
+
+            self.store
+                .upsert_channel(closed_channel, Some(closed_contract))?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "async")]
+    async fn try_finalize_closing_established_channel(
+        &self,
+        signed_channel: SignedChannel,
+    ) -> Result<(), Error> {
+        let (buffer_tx, contract_id, &is_initiator) = get_signed_channel_state!(
+            signed_channel,
+            Closing,
+            buffer_transaction,
+            contract_id,
+            is_initiator
+        )?;
+
+        if self
+            .blockchain
+            .get_transaction_confirmations(&buffer_tx.compute_txid())?
+            >= CET_NSEQUENCE
+        {
+            log::info!(
+                "Buffer transaction for contract {} has enough confirmations to spend from it",
+                serialize_hex(&contract_id)
+            );
+
+            let confirmed_contract =
+                get_contract_in_state!(self, &contract_id, Confirmed, None as Option<PublicKey>)?;
+
+            let (contract_info, adaptor_info, attestations) = self
+                .get_closable_contract_info(&confirmed_contract)
+                .await
                 .ok_or_else(|| {
                     Error::InvalidState("Could not get information to close contract".to_string())
                 })?;
@@ -2087,6 +2412,25 @@ where
         Ok(())
     }
 
+    #[cfg(feature = "async")]
+    async fn channel_checks(&self) -> Result<(), Error> {
+        let established_closing_channels = self
+            .store
+            .get_signed_channels(Some(SignedChannelStateType::Closing))?;
+
+        for channel in established_closing_channels {
+            if let Err(e) = self.try_finalize_closing_established_channel(channel).await {
+                error!("Error trying to close established channel: {}", e);
+            }
+        }
+
+        if let Err(e) = self.check_for_timed_out_channels() {
+            error!("Error checking timed out channels {}", e);
+        }
+        self.check_for_watched_tx()
+    }
+
+    #[cfg(not(feature = "async"))]
     fn channel_checks(&self) -> Result<(), Error> {
         let established_closing_channels = self
             .store
