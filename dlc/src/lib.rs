@@ -293,10 +293,21 @@ impl PartyParams {
     /// plus the required fees, an error is returned.
     pub(crate) fn get_change_output_and_fees(
         &self,
+        total_collateral: Amount,
         fee_rate_per_vb: u64,
         extra_fee: Amount,
     ) -> Result<(TxOut, Amount, Amount), Error> {
         let mut inputs_weight: usize = 0;
+
+        // first check if a party does not need to fund the contract if so, then it is zero
+        if self.collateral == Amount::ZERO {
+            // We use a zero value output to indicate that the party does not need to fund the contract
+            let change_output = TxOut {
+                value: Amount::ZERO,
+                script_pubkey: self.change_script_pubkey.clone(),
+            };
+            return Ok((change_output, Amount::ZERO, Amount::ZERO));
+        }
 
         for w in &self.inputs {
             let script_weight = util::redeem_script_to_script_sig(&w.redeem_script)
@@ -316,9 +327,14 @@ impl PartyParams {
         // Change size is scaled by 4 from vBytes to weight units
         let change_weight = change_size.checked_mul(4).ok_or(Error::InvalidArgument)?;
 
-        // Base weight (nLocktime, nVersion, ...) is distributed among parties
+        // If the party is funding the whole contract, then the base weight is the full base weight
+        // otherwise, the base weight (nLocktime, nVersion, ...) is distributed among parties
         // independently of inputs contributed
-        let this_party_fund_base_weight = FUND_TX_BASE_WEIGHT / 2;
+        let this_party_fund_base_weight = if self.collateral == total_collateral {
+            FUND_TX_BASE_WEIGHT
+        } else {
+            FUND_TX_BASE_WEIGHT / 2
+        };
 
         let total_fund_weight = checked_add!(
             this_party_fund_base_weight,
@@ -328,9 +344,14 @@ impl PartyParams {
         )?;
         let fund_fee = util::weight_to_fee(total_fund_weight, fee_rate_per_vb)?;
 
-        // Base weight (nLocktime, nVersion, funding input ...) is distributed
+        // If the party is funding the whole contract, then the base weight is the full base weight
+        // otherwise, the base weight (nLocktime, nVersion, funding input ...) is distributed
         // among parties independently of output types
-        let this_party_cet_base_weight = CET_BASE_WEIGHT / 2;
+        let this_party_cet_base_weight = if self.collateral == total_collateral {
+            CET_BASE_WEIGHT
+        } else {
+            CET_BASE_WEIGHT / 2
+        };
 
         // size of the payout script pubkey scaled by 4 from vBytes to weight units
         let output_spk_weight = self
@@ -340,6 +361,7 @@ impl PartyParams {
             .ok_or(Error::InvalidArgument)?;
         let total_cet_weight = checked_add!(this_party_cet_base_weight, output_spk_weight)?;
         let cet_or_refund_fee = util::weight_to_fee(total_cet_weight, fee_rate_per_vb)?;
+
         let required_input_funds =
             checked_add!(self.collateral, fund_fee, cet_or_refund_fee, extra_fee)?;
         if self.input_amount < required_input_funds {
@@ -427,9 +449,9 @@ pub(crate) fn create_fund_transaction_with_fees(
     let total_collateral = checked_add!(offer_params.collateral, accept_params.collateral)?;
 
     let (offer_change_output, offer_fund_fee, offer_cet_fee) =
-        offer_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
+        offer_params.get_change_output_and_fees(total_collateral, fee_rate_per_vb, extra_fee)?;
     let (accept_change_output, accept_fund_fee, accept_cet_fee) =
-        accept_params.get_change_output_and_fees(fee_rate_per_vb, extra_fee)?;
+        accept_params.get_change_output_and_fees(total_collateral, fee_rate_per_vb, extra_fee)?;
 
     let fund_output_value = checked_add!(offer_params.input_amount, accept_params.input_amount)?
         - offer_change_output.value
@@ -1267,15 +1289,56 @@ mod tests {
     }
 
     #[test]
+    fn get_change_output_and_fees_no_inputs_no_funding() {
+        let (party_params, _) = get_party_params(Amount::ZERO, Amount::ZERO, None);
+
+        let total_collateral = Amount::ONE_BTC;
+
+        let (change_out, fund_fee, cet_fee) = party_params
+            .get_change_output_and_fees(total_collateral, 4, Amount::ZERO)
+            .unwrap();
+
+        assert_eq!(change_out.value, Amount::ZERO);
+        assert_eq!(fund_fee, Amount::ZERO);
+        assert_eq!(cet_fee, Amount::ZERO);
+    }
+
+    #[test]
+    fn get_change_output_and_fees_single_funded_vs_dual_funded() {
+        let (party_params_single_funded, _) =
+            get_party_params(Amount::from_sat(150_000_000), Amount::ONE_BTC, None);
+
+        let total_collateral = Amount::ONE_BTC;
+
+        let (change_out_single_funded, fund_fee_single_funded, cet_fee_single_funded) =
+            party_params_single_funded
+                .get_change_output_and_fees(total_collateral, 4, Amount::ZERO)
+                .unwrap();
+
+        let (party_params_dual_funded, _) =
+            get_party_params(Amount::from_sat(150_000_000), Amount::ONE_BTC, None);
+        let total_collateral = Amount::ONE_BTC + Amount::ONE_BTC;
+
+        let (change_out_dual_funded, fund_fee_dual_funded, cet_fee_dual_funded) =
+            party_params_dual_funded
+                .get_change_output_and_fees(total_collateral, 4, Amount::ZERO)
+                .unwrap();
+
+        assert!(change_out_single_funded.value < change_out_dual_funded.value);
+        assert!(fund_fee_single_funded > fund_fee_dual_funded);
+        assert!(cet_fee_single_funded > cet_fee_dual_funded);
+    }
+
+    #[test]
     fn get_change_output_and_fees_enough_funds() {
         // Arrange
         let (party_params, _) =
             get_party_params(Amount::from_sat(100000), Amount::from_sat(10000), None);
 
         // Act
-
+        let total_collateral = Amount::from_sat(100001);
         let (change_out, fund_fee, cet_fee) = party_params
-            .get_change_output_and_fees(4, Amount::ZERO)
+            .get_change_output_and_fees(total_collateral, 4, Amount::ZERO)
             .unwrap();
 
         // Assert
@@ -1290,8 +1353,9 @@ mod tests {
         let (party_params, _) =
             get_party_params(Amount::from_sat(100000), Amount::from_sat(100000), None);
 
+        let total_collateral = Amount::from_sat(100001);
         // Act
-        let res = party_params.get_change_output_and_fees(4, Amount::ZERO);
+        let res = party_params.get_change_output_and_fees(total_collateral, 4, Amount::ZERO);
 
         // Assert
         assert!(res.is_err());
