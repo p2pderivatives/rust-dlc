@@ -40,6 +40,7 @@ services:
 
   oracle-db:
     image: oracledb:latest
+    pull_policy: build
     build:
       context: .
       dockerfile: ./testconfig/oracle/oracledb.dockerfile

@@ -1,3 +1,8 @@
+# Running this sample on Signet
+
+This branch modified this sample to run on Signet.
+Follow the below instruction, using the `-f docker-compose-signer.yml` with `docker compose up` (note that it takes a little bit of time to get the node up to date).
+
 # rust-dlc sample
 
 Example of combining the various components of the rust-dlc library together with the custom message handler of [rust-lightning](https://github.com/rust-bitcoin/rust-lightning) to enable networked communication.
