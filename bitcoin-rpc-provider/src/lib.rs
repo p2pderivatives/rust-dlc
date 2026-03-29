@@ -14,8 +14,6 @@ use bitcoin::secp256k1::SecretKey;
 use bitcoin::Amount;
 use bitcoin::{consensus::Decodable, Network, PrivateKey, Transaction, Txid};
 use bitcoin::{secp256k1::PublicKey, Address, OutPoint, ScriptBuf, TxOut};
-use bitcoincore_rpc::jsonrpc::serde_json;
-use bitcoincore_rpc::jsonrpc::serde_json::Value;
 use bitcoincore_rpc::{json, Auth, Client, RpcApi};
 use bitcoincore_rpc_json::AddressType;
 use dlc_manager::error::Error as ManagerError;
@@ -25,6 +23,8 @@ use json::EstimateMode;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use log::error;
 use rust_bitcoin_coin_selection::select_coins;
+use serde::Deserialize;
+use serde_json::{json, Value};
 
 /// The minimum feerate we are allowed to send, as specify by LDK.
 const MIN_FEERATE: u32 = 253;
@@ -398,6 +398,14 @@ impl Wallet for BitcoinCoreProvider {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RawTransaction {
+    pub txid: String,
+    pub confirmations: Option<u64>,
+    pub blockhash: Option<String>,
+    pub blocktime: Option<u64>,
+}
+
 impl Blockchain for BitcoinCoreProvider {
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), ManagerError> {
         self.client
@@ -437,26 +445,32 @@ impl Blockchain for BitcoinCoreProvider {
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, ManagerError> {
-        let tx_info = self
+        let tx = self
             .client
             .lock()
             .unwrap()
-            .get_transaction(tx_id, None)
+            .get_raw_transaction(tx_id, None)
             .map_err(rpc_err_to_manager_err)?;
-        let tx = Transaction::consensus_decode(&mut tx_info.hex.as_slice())
-            .or(Err(Error::BitcoinError))?;
         Ok(tx)
     }
 
     fn get_transaction_confirmations(&self, tx_id: &Txid) -> Result<u32, ManagerError> {
-        let tx_info_res = self.client.lock().unwrap().get_transaction(tx_id, None);
+        let tx_info_res = self
+            .client
+            .lock()
+            .unwrap()
+            .call("getrawtransaction", &[json!(tx_id), json!(true)]);
         match tx_info_res {
-            Ok(tx_info) => Ok(tx_info.info.confirmations as u32),
+            Ok(result) => {
+                let tx_info: RawTransaction = serde_json::from_value(result)
+                    .map_err(|e| ManagerError::InvalidState(e.to_string()))?;
+                Ok(tx_info.confirmations.unwrap_or_default() as u32)
+            }
             Err(e) => match e {
                 bitcoincore_rpc::Error::JsonRpc(json_rpc_err) => match json_rpc_err {
                     bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error) => {
                         if rpc_error.code == -5
-                            && rpc_error.message == *"Invalid or non-wallet transaction id"
+                            && rpc_error.message == *"No such mempool or blockchain transaction. Use gettransaction for wallet transactions."
                         {
                             return Ok(0);
                         }

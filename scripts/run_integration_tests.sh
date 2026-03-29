@@ -17,7 +17,7 @@ do
     if [ ! -z $TEST_NAME ]
     then
         docker-compose up -d
-        ./scripts/wait_for_electrs.sh
+        # ./scripts/wait_for_electrs.sh
         cargo test -- $TEST_NAME --ignored --exact --nocapture
         docker-compose down -v
     fi

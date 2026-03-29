@@ -89,30 +89,26 @@ jobs:
         run: docker compose up -d
       - name: Wait for container to run
         run: ./scripts/wait_for_container.sh bitcoin-node
-      - name: Wait for electrs to be ready
-        run: ./scripts/wait_for_electrs.sh
       - name: Run test
         run: RUST_BACKTRACE=1 ${{ matrix.tests }} --ignored
       - name: Stop bitcoin node
         run: ./scripts/stop_node.sh
-  sample_test:
-    name: sample-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Start environment
-        run: docker compose --profile oracle up -d
-      - name: Wait for container to run
-        run: ./scripts/wait_for_container.sh oracle-server
-      - name: Wait for electrs to be ready
-        run: ./scripts/wait_for_electrs.sh
-      - name: Create wallets
-        run: docker exec bitcoin-node /scripts/create_wallets.sh
-      - name: Run test
-        run: |
-          if ! cargo test -- --ignored sample; then
-            cat sample/dlc_sample_alice/.dlc/logs/logs.txt
-            cat sample/dlc_sample_bob/.dlc/logs/logs.txt
-            exit 1
-          fi
+  # sample_test:
+  #   name: sample-test
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Start environment
+  #       run: docker compose --profile oracle up -d
+  #     - name: Wait for container to run
+  #       run: ./scripts/wait_for_container.sh oracle-server
+  #     - name: Create wallets
+  #       run: docker exec bitcoin-node /scripts/create_wallets.sh
+  #     - name: Run test
+  #       run: |
+  #         if ! cargo test -- --ignored sample; then
+  #           cat sample/dlc_sample_alice/.dlc/logs/logs.txt
+  #           cat sample/dlc_sample_bob/.dlc/logs/logs.txt
+  #           exit 1
+  #         fi

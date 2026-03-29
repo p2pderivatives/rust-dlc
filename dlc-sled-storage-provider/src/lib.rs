@@ -16,13 +16,6 @@ extern crate sled;
 
 #[cfg(feature = "wallet")]
 use bitcoin::{address::NetworkUnchecked, Address, Txid};
-use dlc_manager::chain_monitor::ChainMonitor;
-use dlc_manager::channel::accepted_channel::AcceptedChannel;
-use dlc_manager::channel::offered_channel::OfferedChannel;
-use dlc_manager::channel::signed_channel::{SignedChannel, SignedChannelStateType};
-use dlc_manager::channel::{
-    Channel, ClosedChannel, ClosedPunishedChannel, ClosingChannel, FailedAccept, FailedSign,
-};
 use dlc_manager::contract::accepted_contract::AcceptedContract;
 use dlc_manager::contract::offered_contract::OfferedContract;
 use dlc_manager::contract::ser::Serializable;
@@ -40,14 +33,11 @@ use lightning::util::ser::{Readable, Writeable};
 use secp256k1_zkp::SecretKey;
 #[cfg(feature = "wallet")]
 use simple_wallet::WalletStorage;
-use sled::transaction::{ConflictableTransactionResult, UnabortableTransactionError};
-use sled::{Db, Transactional, Tree};
+use sled::transaction::UnabortableTransactionError;
+use sled::{Db, Tree};
 use std::convert::TryInto;
 
 const CONTRACT_TREE: u8 = 1;
-const CHANNEL_TREE: u8 = 2;
-const CHAIN_MONITOR_TREE: u8 = 3;
-const CHAIN_MONITOR_KEY: u8 = 4;
 #[cfg(feature = "wallet")]
 const UTXO_TREE: u8 = 6;
 #[cfg(feature = "wallet")]
@@ -117,41 +107,6 @@ convertible_enum!(
     Contract
 );
 
-convertible_enum!(
-    enum ChannelPrefix {
-        Offered = 100,
-        Accepted,
-        Signed,
-        Closing,
-        Closed,
-        CounterClosed,
-        ClosedPunished,
-        CollaborativelyClosed,
-        FailedAccept,
-        FailedSign,
-        Cancelled,;
-    },
-    Channel
-);
-
-convertible_enum!(
-    enum SignedChannelPrefix {;
-        Established = 1,
-        SettledOffered,
-        SettledReceived,
-        SettledAccepted,
-        SettledConfirmed,
-        Settled,
-        Closing,
-        CollaborativeCloseOffered,
-        RenewAccepted,
-        RenewOffered,
-        RenewConfirmed,
-        RenewFinalized,
-    },
-    SignedChannelStateType
-);
-
 fn to_storage_error<T>(e: T) -> Error
 where
     T: std::fmt::Display,
@@ -200,10 +155,6 @@ impl SledStorageProvider {
 
     fn contract_tree(&self) -> Result<Tree, Error> {
         self.open_tree(&[CONTRACT_TREE])
-    }
-
-    fn channel_tree(&self) -> Result<Tree, Error> {
-        self.open_tree(&[CHANNEL_TREE])
     }
 }
 
@@ -305,108 +256,6 @@ impl Storage for SledStorageProvider {
             &[ContractPrefix::PreClosed.into()],
             None,
         )
-    }
-
-    fn upsert_channel(&self, channel: Channel, contract: Option<Contract>) -> Result<(), Error> {
-        let serialized = serialize_channel(&channel)?;
-        let serialized_contract = match contract.as_ref() {
-            Some(c) => Some(serialize_contract(c)?),
-            None => None,
-        };
-        let channel_tree = self.channel_tree()?;
-        let contract_tree = self.contract_tree()?;
-        (&channel_tree, &contract_tree)
-            .transaction::<_, ()>(
-                |(channel_db, contract_db)| -> ConflictableTransactionResult<(), UnabortableTransactionError> {
-                    match &channel {
-                        a @ Channel::Accepted(_) | a @ Channel::Signed(_) => {
-                            channel_db.remove(&a.get_temporary_id())?;
-                        }
-                        _ => {}
-                    };
-
-                    channel_db.insert(&channel.get_id(), serialized.clone())?;
-
-                    if let Some(c) = contract.as_ref() {
-                        insert_contract(
-                            contract_db,
-                            serialized_contract
-                                .clone()
-                                .expect("to have the serialized version"),
-                            c,
-                        )?;
-                    }
-                    Ok(())
-                },
-            )
-        .map_err(to_storage_error)?;
-        Ok(())
-    }
-
-    fn delete_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<(), Error> {
-        self.channel_tree()?
-            .remove(channel_id)
-            .map_err(to_storage_error)?;
-        Ok(())
-    }
-
-    fn get_channel(&self, channel_id: &dlc_manager::ChannelId) -> Result<Option<Channel>, Error> {
-        match self
-            .channel_tree()?
-            .get(channel_id)
-            .map_err(to_storage_error)?
-        {
-            Some(res) => Ok(Some(deserialize_channel(&res)?)),
-            None => Ok(None),
-        }
-    }
-
-    fn get_signed_channels(
-        &self,
-        channel_state: Option<SignedChannelStateType>,
-    ) -> Result<Vec<SignedChannel>, Error> {
-        let (prefix, consume) = if let Some(state) = &channel_state {
-            (
-                vec![
-                    ChannelPrefix::Signed.into(),
-                    SignedChannelPrefix::get_prefix(state),
-                ],
-                None,
-            )
-        } else {
-            (vec![ChannelPrefix::Signed.into()], Some(1))
-        };
-
-        self.get_data_with_prefix(&self.channel_tree()?, &prefix, consume)
-    }
-
-    fn get_offered_channels(&self) -> Result<Vec<OfferedChannel>, Error> {
-        self.get_data_with_prefix(
-            &self.channel_tree()?,
-            &[ChannelPrefix::Offered.into()],
-            None,
-        )
-    }
-
-    fn persist_chain_monitor(&self, monitor: &ChainMonitor) -> Result<(), Error> {
-        self.open_tree(&[CHAIN_MONITOR_TREE])?
-            .insert([CHAIN_MONITOR_KEY], monitor.serialize()?)
-            .map_err(|e| Error::StorageError(format!("Error writing chain monitor: {}", e)))?;
-        Ok(())
-    }
-    fn get_chain_monitor(&self) -> Result<Option<ChainMonitor>, dlc_manager::error::Error> {
-        let serialized = self
-            .open_tree(&[CHAIN_MONITOR_TREE])?
-            .get([CHAIN_MONITOR_KEY])
-            .map_err(|e| Error::StorageError(format!("Error reading chain monitor: {}", e)))?;
-        let deserialized = match serialized {
-            Some(s) => Some(
-                ChainMonitor::deserialize(&mut lightning::io::Cursor::new(s))
-                    .map_err(to_storage_error)?,
-            ),
-            None => None,
-        };
-        Ok(deserialized)
     }
 }
 
@@ -531,21 +380,6 @@ impl WalletStorage for SledStorageProvider {
     }
 }
 
-fn insert_contract(
-    db: &sled::transaction::TransactionalTree,
-    serialized: Vec<u8>,
-    contract: &Contract,
-) -> Result<Option<sled::IVec>, UnabortableTransactionError> {
-    match contract {
-        a @ Contract::Accepted(_) | a @ Contract::Signed(_) => {
-            db.remove(&a.get_temporary_id())?;
-        }
-        _ => {}
-    };
-
-    db.insert(&contract.get_id(), serialized)
-}
-
 fn serialize_contract(contract: &Contract) -> Result<Vec<u8>, lightning::io::Error> {
     let serialized = match contract {
         Contract::Offered(o) | Contract::Rejected(o) => o.serialize(),
@@ -601,75 +435,6 @@ fn deserialize_contract(buff: &sled::IVec) -> Result<Contract, Error> {
         }
     };
     Ok(contract)
-}
-
-fn serialize_channel(channel: &Channel) -> Result<Vec<u8>, lightning::io::Error> {
-    let serialized = match channel {
-        Channel::Offered(o) => o.serialize(),
-        Channel::Accepted(a) => a.serialize(),
-        Channel::Signed(s) => s.serialize(),
-        Channel::FailedAccept(f) => f.serialize(),
-        Channel::FailedSign(f) => f.serialize(),
-        Channel::Closing(c) => c.serialize(),
-        Channel::Closed(c) | Channel::CounterClosed(c) | Channel::CollaborativelyClosed(c) => {
-            c.serialize()
-        }
-        Channel::ClosedPunished(c) => c.serialize(),
-        Channel::Cancelled(o) => o.serialize(),
-    };
-    let mut serialized = serialized?;
-    let mut res = Vec::with_capacity(serialized.len() + 1);
-    res.push(ChannelPrefix::get_prefix(channel));
-    if let Channel::Signed(s) = channel {
-        res.push(SignedChannelPrefix::get_prefix(&s.state.get_type()))
-    }
-    res.append(&mut serialized);
-    Ok(res)
-}
-
-fn deserialize_channel(buff: &sled::IVec) -> Result<Channel, Error> {
-    let mut cursor = lightning::io::Cursor::new(buff);
-    let mut prefix = [0u8; 1];
-    cursor.read_exact(&mut prefix)?;
-    let channel_prefix: ChannelPrefix = prefix[0].try_into()?;
-    let channel = match channel_prefix {
-        ChannelPrefix::Offered => {
-            Channel::Offered(OfferedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::Accepted => {
-            Channel::Accepted(AcceptedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::Signed => {
-            // Skip the channel state prefix.
-            cursor.set_position(cursor.position() + 1);
-            Channel::Signed(SignedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::FailedAccept => {
-            Channel::FailedAccept(FailedAccept::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::FailedSign => {
-            Channel::FailedSign(FailedSign::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::Closing => {
-            Channel::Closing(ClosingChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::Closed => {
-            Channel::Closed(ClosedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-        ChannelPrefix::CollaborativelyClosed => Channel::CollaborativelyClosed(
-            ClosedChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        ),
-        ChannelPrefix::CounterClosed => Channel::CounterClosed(
-            ClosedChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        ),
-        ChannelPrefix::ClosedPunished => Channel::ClosedPunished(
-            ClosedPunishedChannel::deserialize(&mut cursor).map_err(to_storage_error)?,
-        ),
-        ChannelPrefix::Cancelled => {
-            Channel::Cancelled(OfferedChannel::deserialize(&mut cursor).map_err(to_storage_error)?)
-        }
-    };
-    Ok(channel)
 }
 
 #[cfg(feature = "wallet")]
@@ -818,44 +583,6 @@ mod tests {
             .expect("Error creating contract");
     }
 
-    fn insert_offered_and_signed_channels(storage: &mut SledStorageProvider) {
-        let serialized = include_bytes!("../test_files/Offered");
-        let offered_contract = deserialize_object(serialized);
-        let serialized = include_bytes!("../test_files/OfferedChannel");
-        let offered_channel = deserialize_object(serialized);
-        storage
-            .upsert_channel(
-                Channel::Offered(offered_channel),
-                Some(Contract::Offered(offered_contract)),
-            )
-            .expect("Error creating contract");
-
-        let serialized = include_bytes!("../test_files/SignedChannelEstablished");
-        let signed_channel = Channel::Signed(deserialize_object(serialized));
-        storage
-            .upsert_channel(signed_channel, None)
-            .expect("Error creating contract");
-
-        let serialized = include_bytes!("../test_files/SignedChannelSettled");
-        let signed_channel = Channel::Signed(deserialize_object(serialized));
-        storage
-            .upsert_channel(signed_channel, None)
-            .expect("Error creating contract");
-    }
-
-    sled_test!(
-        get_signed_contracts_only_signed,
-        |mut storage: SledStorageProvider| {
-            insert_offered_signed_and_confirmed(&mut storage);
-
-            let signed_contracts = storage
-                .get_signed_contracts()
-                .expect("Error retrieving signed contracts");
-
-            assert_eq!(2, signed_contracts.len());
-        }
-    );
-
     sled_test!(
         get_confirmed_contracts_only_confirmed,
         |mut storage: SledStorageProvider| {
@@ -902,106 +629,6 @@ mod tests {
             let contracts = storage.get_contracts().expect("Error retrieving contracts");
 
             assert_eq!(6, contracts.len());
-        }
-    );
-
-    sled_test!(
-        get_offered_channels_only_offered,
-        |mut storage: SledStorageProvider| {
-            insert_offered_and_signed_channels(&mut storage);
-
-            let offered_channels = storage
-                .get_offered_channels()
-                .expect("Error retrieving offered channels");
-            assert_eq!(1, offered_channels.len());
-        }
-    );
-
-    sled_test!(
-        get_signed_established_channel_only_established,
-        |mut storage: SledStorageProvider| {
-            insert_offered_and_signed_channels(&mut storage);
-
-            let signed_channels = storage
-                .get_signed_channels(Some(
-                    dlc_manager::channel::signed_channel::SignedChannelStateType::Established,
-                ))
-                .expect("Error retrieving offered channels");
-            assert_eq!(1, signed_channels.len());
-            if let dlc_manager::channel::signed_channel::SignedChannelState::Established {
-                ..
-            } = &signed_channels[0].state
-            {
-            } else {
-                panic!(
-                    "Expected established state got {:?}",
-                    &signed_channels[0].state
-                );
-            }
-        }
-    );
-
-    sled_test!(
-        get_channel_by_id_returns_correct_channel,
-        |mut storage: SledStorageProvider| {
-            insert_offered_and_signed_channels(&mut storage);
-
-            let serialized = include_bytes!("../test_files/AcceptedChannel");
-            let accepted_channel: AcceptedChannel = deserialize_object(serialized);
-            let channel_id = accepted_channel.channel_id;
-            storage
-                .upsert_channel(Channel::Accepted(accepted_channel), None)
-                .expect("Error creating contract");
-
-            storage
-                .get_channel(&channel_id)
-                .expect("error retrieving previously inserted channel.")
-                .expect("to have found the previously inserted channel.");
-        }
-    );
-
-    sled_test!(
-        delete_channel_is_not_returned,
-        |mut storage: SledStorageProvider| {
-            insert_offered_and_signed_channels(&mut storage);
-
-            let serialized = include_bytes!("../test_files/AcceptedChannel");
-            let accepted_channel: AcceptedChannel = deserialize_object(serialized);
-            let channel_id = accepted_channel.channel_id;
-            storage
-                .upsert_channel(Channel::Accepted(accepted_channel), None)
-                .expect("Error creating contract");
-
-            storage
-                .get_channel(&channel_id)
-                .expect("could not retrieve previously inserted channel.");
-
-            storage
-                .delete_channel(&channel_id)
-                .expect("to be able to delete the channel");
-
-            assert!(storage
-                .get_channel(&channel_id)
-                .expect("error getting channel.")
-                .is_none());
-        }
-    );
-
-    sled_test!(
-        persist_chain_monitor_test,
-        |storage: SledStorageProvider| {
-            let chain_monitor = ChainMonitor::new(123);
-
-            storage
-                .persist_chain_monitor(&chain_monitor)
-                .expect("to be able to persist the chain monistor.");
-
-            let retrieved = storage
-                .get_chain_monitor()
-                .expect("to be able to retrieve the chain monitor.")
-                .expect("to have a persisted chain monitor.");
-
-            assert_eq!(chain_monitor, retrieved);
         }
     );
 }

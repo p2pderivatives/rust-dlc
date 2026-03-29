@@ -3,11 +3,9 @@ use crate::Error;
 
 use super::offered_contract::OfferedContract;
 use super::AdaptorInfo;
-use bitcoin::{Amount, SignedAmount, Transaction};
-use dlc::{DlcTransactions, PartyParams};
+use bitcoin::{Amount, ScriptBuf, SignedAmount, Transaction};
+use dlc::PartyParams;
 use dlc_messages::{AcceptDlc, FundingInput};
-use secp256k1_zkp::ecdsa::Signature;
-use secp256k1_zkp::EcdsaAdaptorSignature;
 
 use std::fmt::Write as _;
 
@@ -25,11 +23,10 @@ pub struct AcceptedContract {
     pub adaptor_infos: Vec<AdaptorInfo>,
     /// The adaptor signatures of the accepting party. Note that the accepting
     /// party does not keep them thus an option is used.
-    pub adaptor_signatures: Option<Vec<EcdsaAdaptorSignature>>,
-    /// The signature for the refund transaction from the accepting party.
-    pub accept_refund_signature: Signature,
-    /// The bitcoin set of bitcoin transactions for the contract.
-    pub dlc_transactions: DlcTransactions,
+    pub opcat_scripts: Vec<ScriptBuf>,
+
+    /// The fund transaction
+    pub fund_transaction: Transaction,
 }
 
 impl AcceptedContract {
@@ -37,8 +34,8 @@ impl AcceptedContract {
     /// <https://github.com/discreetlogcontracts/dlcspecs/blob/master/Protocol.md#requirements-2>
     pub fn get_contract_id(&self) -> [u8; 32] {
         crate::utils::compute_id(
-            self.dlc_transactions.fund.compute_txid(),
-            self.dlc_transactions.get_fund_output_index() as u16,
+            self.fund_transaction.compute_txid(),
+            0,
             &self.offered_contract.id,
         )
     }
@@ -55,10 +52,7 @@ impl AcceptedContract {
         string_id
     }
 
-    pub(crate) fn get_accept_contract_msg(
-        &self,
-        ecdsa_adaptor_signatures: &[EcdsaAdaptorSignature],
-    ) -> AcceptDlc {
+    pub(crate) fn get_accept_contract_msg(&self) -> AcceptDlc {
         AcceptDlc {
             protocol_version: crate::conversion_utils::PROTOCOL_VERSION,
             temporary_contract_id: self.offered_contract.id,
@@ -69,8 +63,6 @@ impl AcceptedContract {
             funding_inputs: self.funding_inputs.clone(),
             change_spk: self.accept_params.change_script_pubkey.clone(),
             change_serial_id: self.accept_params.change_serial_id,
-            cet_adaptor_signatures: ecdsa_adaptor_signatures.into(),
-            refund_signature: self.accept_refund_signature,
             negotiation_fields: None,
         }
     }
@@ -98,31 +90,5 @@ impl AcceptedContract {
             .unwrap_or(Amount::ZERO);
         Ok(final_payout.to_signed().map_err(|_| Error::OutOfRange)?
             - collateral.to_signed().map_err(|_| Error::OutOfRange)?)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use lightning::io::Cursor;
-
-    use lightning::util::ser::Readable;
-
-    use super::*;
-
-    #[test]
-    fn pnl_compute_test() {
-        let buf = include_bytes!("../../../dlc-sled-storage-provider/test_files/Accepted");
-        let accepted_contract: AcceptedContract = Readable::read(&mut Cursor::new(&buf)).unwrap();
-        let cets = &accepted_contract.dlc_transactions.cets;
-        assert_eq!(
-            accepted_contract.compute_pnl(&cets[0]).unwrap(),
-            SignedAmount::from_sat(90000000)
-        );
-        assert_eq!(
-            accepted_contract
-                .compute_pnl(&cets[cets.len() - 1])
-                .unwrap(),
-            SignedAmount::from_sat(-11000000)
-        );
     }
 }

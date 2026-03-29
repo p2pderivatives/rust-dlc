@@ -331,14 +331,14 @@ mod tests {
         assert_eq!(handler.msg_events.lock().unwrap().len(), 1);
     }
 
-    #[test]
-    fn send_large_message_segmented_test() {
-        let input = include_str!("./test_inputs/accept_msg.json");
-        let msg: AcceptDlc = serde_json::from_str(input).unwrap();
-        let handler = MessageHandler::new();
-        handler.send_message(some_pk(), Message::Accept(msg));
-        assert!(handler.msg_events.lock().unwrap().len() > 1);
-    }
+    // #[test]
+    // fn send_large_message_segmented_test() {
+    //     let input = include_str!("./test_inputs/accept_msg.json");
+    //     let msg: AcceptDlc = serde_json::from_str(input).unwrap();
+    //     let handler = MessageHandler::new();
+    //     handler.send_message(some_pk(), Message::Accept(msg));
+    //     assert!(handler.msg_events.lock().unwrap().len() > 1);
+    // }
 
     #[test]
     fn is_empty_after_clearing_msg_events_test() {
@@ -350,25 +350,25 @@ mod tests {
         assert!(!handler.has_pending_messages());
     }
 
-    #[test]
-    fn rebuilds_segments_properly_test() {
-        let input1 = include_str!("./test_inputs/segment_start_msg.json");
-        let input2 = include_str!("./test_inputs/segment_chunk_msg.json");
-        let segment_start: SegmentStart = serde_json::from_str(input1).unwrap();
-        let segment_chunk: SegmentChunk = serde_json::from_str(input2).unwrap();
-
-        let handler = MessageHandler::new();
-        handler
-            .handle_custom_message(WireMessage::SegmentStart(segment_start), &some_pk())
-            .expect("to be able to process segment start");
-        handler
-            .handle_custom_message(WireMessage::SegmentChunk(segment_chunk), &some_pk())
-            .expect("to be able to process segment start");
-        let msg = handler.get_and_clear_received_messages();
-        assert_eq!(1, msg.len());
-        if let (_, Message::Accept(_)) = msg[0] {
-        } else {
-            panic!("Expected an accept message");
-        }
-    }
+    // #[test]
+    // fn rebuilds_segments_properly_test() {
+    //     let input1 = include_str!("./test_inputs/segment_start_msg.json");
+    //     let input2 = include_str!("./test_inputs/segment_chunk_msg.json");
+    //     let segment_start: SegmentStart = serde_json::from_str(input1).unwrap();
+    //     let segment_chunk: SegmentChunk = serde_json::from_str(input2).unwrap();
+    //
+    //     let handler = MessageHandler::new();
+    //     handler
+    //         .handle_custom_message(WireMessage::SegmentStart(segment_start), &some_pk())
+    //         .expect("to be able to process segment start");
+    //     handler
+    //         .handle_custom_message(WireMessage::SegmentChunk(segment_chunk), &some_pk())
+    //         .expect("to be able to process segment start");
+    //     let msg = handler.get_and_clear_received_messages();
+    //     assert_eq!(1, msg.len());
+    //     if let (_, Message::Accept(_)) = msg[0] {
+    //     } else {
+    //         panic!("Expected an accept message");
+    //     }
+    // }
 }

@@ -174,6 +174,10 @@ where
 
         self.blockchain.send_transaction(&tx)
     }
+
+    pub fn get_deposit_addresses(&self) -> Result<Vec<Address>> {
+        self.storage.get_addresses()
+    }
 }
 
 impl<B: Deref, W: Deref> ContractSignerProvider for SimpleWallet<B, W>

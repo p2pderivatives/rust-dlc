@@ -29,7 +29,6 @@ pub enum Target {
 
 pub struct ElectrsBlockchainProvider {
     host: String,
-    client: reqwest::blocking::Client,
     async_client: reqwest::Client,
     network: Network,
     fees: Arc<HashMap<Target, AtomicU32>>,
@@ -46,14 +45,13 @@ impl ElectrsBlockchainProvider {
         Self {
             host,
             network,
-            client: reqwest::blocking::Client::new(),
             async_client: reqwest::Client::new(),
             fees,
         }
     }
 
     fn get(&self, sub_url: &str) -> Result<Response, Error> {
-        self.client
+        reqwest::blocking::Client::new()
             .get(format!("{}{}", self.host, sub_url))
             .send()
             .map_err(|x| {
@@ -110,8 +108,7 @@ impl ElectrsBlockchainProvider {
 
 impl Blockchain for ElectrsBlockchainProvider {
     fn send_transaction(&self, transaction: &Transaction) -> Result<(), dlc_manager::error::Error> {
-        let res = self
-            .client
+        let res = reqwest::blocking::Client::new()
             .post(format!("{}tx", self.host))
             .body(tx_to_string(transaction))
             .send()
@@ -327,13 +324,13 @@ impl BlockSource for ElectrsBlockchainProvider {
 
 impl BroadcasterInterface for ElectrsBlockchainProvider {
     fn broadcast_transactions(&self, txs: &[&Transaction]) {
-        let client = self.client.clone();
         let host = self.host.clone();
         let bodies = txs
             .iter()
             .map(|tx| bitcoin_test_utils::tx_to_string(tx))
             .collect::<Vec<_>>();
         std::thread::spawn(move || {
+            let client = reqwest::blocking::Client::new();
             for body in bodies {
                 match client.post(format!("{host}tx")).body(body).send() {
                     Err(_) => {}

@@ -232,7 +232,7 @@ mod tests {
         let info = multi_oracle_trie.generate(0, &range_payouts).unwrap();
         let mut indexes: Vec<_> = info
             .into_iter()
-            .map(|info| info.value.adaptor_index)
+            .map(|info| info.value.script_index)
             .collect();
 
         let lookup_res = multi_oracle_trie
@@ -251,7 +251,7 @@ mod tests {
 
         let mut indexes: Vec<_> = multi_oracle_trie
             .iter()
-            .map(|info| info.value.adaptor_index)
+            .map(|info| info.value.script_index)
             .collect();
 
         indexes.sort();
@@ -262,7 +262,7 @@ mod tests {
 
         let iter_res = multi_oracle_trie
             .iter()
-            .find(|x| x.value.adaptor_index == 22)
+            .find(|x| x.value.script_index == 22)
             .unwrap();
         assert_eq!(
             &lookup_res

@@ -9,6 +9,7 @@ extern crate dlc_manager;
 use std::ops::Deref;
 
 use bitcoin::Amount;
+use bitcoin_rpc_provider::BitcoinCoreProvider;
 use dlc::{EnumerationPayout, Payout};
 use dlc_manager::payout_curve::{
     PayoutFunction, PayoutFunctionPiece, PayoutPoint, PolynomialPayoutCurvePiece, RoundingInterval,
@@ -301,6 +302,22 @@ pub fn get_enum_test_params(
 }
 
 pub fn get_polynomial_payout_curve_pieces(min_nb_digits: usize) -> Vec<PayoutFunctionPiece> {
+    // vec![PayoutFunctionPiece::PolynomialPayoutCurvePiece(
+    //     PolynomialPayoutCurvePiece::new(vec![
+    //         PayoutPoint {
+    //             event_outcome: 0,
+    //             outcome_payout: Amount::ZERO,
+    //             extra_precision: 0,
+    //         },
+    //         PayoutPoint {
+    //             event_outcome: 1,
+    //             outcome_payout: OFFER_COLLATERAL,
+    //             extra_precision: 0,
+    //         },
+    //     ])
+    //     .unwrap(),
+    // )]
+
     vec![
         PayoutFunctionPiece::PolynomialPayoutCurvePiece(
             PolynomialPayoutCurvePiece::new(vec![
@@ -566,23 +583,5 @@ pub fn get_variable_oracle_numeric_infos(nb_digits: &[usize]) -> OracleNumericIn
     OracleNumericInfo {
         base: BASE as usize,
         nb_digits: nb_digits.to_vec(),
-    }
-}
-
-pub fn refresh_wallet<B: Deref, W: Deref>(
-    wallet: &simple_wallet::SimpleWallet<B, W>,
-    expected_funds: Amount,
-) where
-    B::Target: Blockchain + WalletBlockchainProvider,
-    W::Target: WalletStorage,
-{
-    let mut retry = 0;
-    while wallet.get_balance() != expected_funds {
-        if retry > 30 {
-            panic!("Wallet refresh taking too long.")
-        }
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        wallet.refresh().unwrap();
-        retry += 1;
     }
 }

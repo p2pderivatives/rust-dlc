@@ -5,13 +5,14 @@ services:
     image: ghcr.io/p2pderivatives/bitcoin-inq:latest
     container_name: bitcoin-node
     command: |
+      -signet
+      -server
+      -addnode=inquisition.bitcoin-signet.net
       -conf=/config/default.conf
       -printtoconsole
-      -regtest
     ports:
-      # regtest ports
-      - 18443:18443
-      - 18444:18444
+      - 38333:38333
+      - 38332:38332
     volumes:
       - bitcoind-data:/home/bitcoin/.bitcoin
       - ./testconfig/config:/config
@@ -40,7 +41,6 @@ services:
 
   oracle-db:
     image: oracledb:latest
-    pull_policy: build
     build:
       context: .
       dockerfile: ./testconfig/oracle/oracledb.dockerfile
